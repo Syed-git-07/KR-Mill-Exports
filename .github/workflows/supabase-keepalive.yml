@@ -1,0 +1,137 @@
+# =====================================================
+# GitHub Actions - Supabase Keep Alive
+# Purpose: Prevent Supabase free tier from pausing due to inactivity
+# Schedule: Runs every 6 hours
+# =====================================================
+
+name: Supabase Keep Alive
+
+on:
+  # Run every 6 hours to keep database active
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+env:
+  SUPABASE_URL: https://hdmaifhcaolxfsmbgpel.supabase.co
+  SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkbWFpZmhjYW9seGZzbWJncGVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NzA1MjUsImV4cCI6MjA3OTE0NjUyNX0.WiW9od8BblLbTPo21PMMA786KKVgohJeb3PabCZSV4k
+
+jobs:
+  keepalive:
+    name: Ping Supabase Tables
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Ping Supabase - Fetch Tables
+        run: |
+          echo "🔄 Starting Supabase Keep Alive check..."
+          echo "📅 Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          
+          # Function to fetch from a table
+          fetch_table() {
+            TABLE_NAME=$1
+            echo "📊 Fetching from $TABLE_NAME..."
+            
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              "${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=id&limit=1" \
+              -H "apikey: ${SUPABASE_ANON_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              -H "Content-Type: application/json")
+            
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "   ✅ $TABLE_NAME - OK (HTTP $HTTP_CODE)"
+              return 0
+            else
+              echo "   ❌ $TABLE_NAME - FAILED (HTTP $HTTP_CODE)"
+              echo "   Response: $BODY"
+              return 1
+            fi
+          }
+          
+          echo "=========================================="
+          echo "🏭 KR Production System - Database Check"
+          echo "=========================================="
+          echo ""
+          
+          # Fetch from various tables to keep database active
+          FAILED=0
+          
+          # Master Tables
+          echo "📋 Master Tables:"
+          fetch_table "departments" || FAILED=$((FAILED+1))
+          fetch_table "supervisors" || FAILED=$((FAILED+1))
+          fetch_table "spinning_counts" || FAILED=$((FAILED+1))
+          fetch_table "stoppage_details" || FAILED=$((FAILED+1))
+          echo ""
+          
+          # Machine Tables
+          echo "🏭 Machine Tables:"
+          fetch_table "carding_machines" || FAILED=$((FAILED+1))
+          fetch_table "drawing_breaker_machines" || FAILED=$((FAILED+1))
+          fetch_table "comber_machines" || FAILED=$((FAILED+1))
+          fetch_table "simplex_machines" || FAILED=$((FAILED+1))
+          fetch_table "lap_former_machines" || FAILED=$((FAILED+1))
+          echo ""
+          
+          # Production Tables
+          echo "📈 Production Tables:"
+          fetch_table "carding_production_header" || FAILED=$((FAILED+1))
+          fetch_table "breaker_drawing_production_header" || FAILED=$((FAILED+1))
+          fetch_table "simplex_production_header" || FAILED=$((FAILED+1))
+          fetch_table "lap_former_production_header" || FAILED=$((FAILED+1))
+          echo ""
+          
+          # Setup Tables
+          echo "⚙️ Setup Tables:"
+          fetch_table "carding_machine_setup" || FAILED=$((FAILED+1))
+          fetch_table "breaker_drawing_machine_setup" || FAILED=$((FAILED+1))
+          fetch_table "simplex_machine_setup" || FAILED=$((FAILED+1))
+          fetch_table "lap_former_machine_setup" || FAILED=$((FAILED+1))
+          echo ""
+          
+          # HOK Tables
+          echo "👥 HOK Tables:"
+          fetch_table "hok_strength_head" || FAILED=$((FAILED+1))
+          fetch_table "hok_strength_detail" || FAILED=$((FAILED+1))
+          echo ""
+          
+          echo "=========================================="
+          if [ $FAILED -eq 0 ]; then
+            echo "✅ All tables checked successfully!"
+            echo "🎉 Supabase database is ACTIVE"
+          else
+            echo "⚠️ $FAILED table(s) failed to respond"
+            echo "📧 Check Supabase dashboard for issues"
+          fi
+          echo "=========================================="
+          
+          # Exit with error if any table failed
+          if [ $FAILED -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Log Success
+        if: success()
+        run: |
+          echo "✅ Supabase keep-alive completed successfully"
+          echo "Next run scheduled in 6 hours"
+
+      - name: Log Failure
+        if: failure()
+        run: |
+          echo "❌ Supabase keep-alive failed"
+          echo "Please check the Supabase dashboard: https://supabase.com/dashboard/project/hdmaifhcaolxfsmbgpel"
