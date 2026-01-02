@@ -38,13 +38,14 @@ jobs:
           echo "📅 Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
           
-          # Function to fetch from a table
+          # Function to fetch from a table (default uses 'id' column)
           fetch_table() {
             TABLE_NAME=$1
+            COLUMN=${2:-id}  # Default to 'id' if not specified
             echo "📊 Fetching from $TABLE_NAME..."
             
             RESPONSE=$(curl -s -w "\n%{http_code}" \
-              "${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=id&limit=1" \
+              "${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=${COLUMN}&limit=1" \
               -H "apikey: ${SUPABASE_ANON_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
               -H "Content-Type: application/json")
@@ -103,9 +104,9 @@ jobs:
           fetch_table "lap_former_machine_setup" || FAILED=$((FAILED+1))
           echo ""
           
-          # HOK Tables
+          # HOK Tables (hok_strength_head uses hok_id as primary key)
           echo "👥 HOK Tables:"
-          fetch_table "hok_strength_head" || FAILED=$((FAILED+1))
+          fetch_table "hok_strength_head" "hok_id" || FAILED=$((FAILED+1))
           fetch_table "hok_strength_detail" || FAILED=$((FAILED+1))
           echo ""
           
