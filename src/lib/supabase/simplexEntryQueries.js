@@ -100,10 +100,11 @@ export async function getSimplexProductionWithSetup(headerId) {
     .from('simplex_production_detail')
     .select(`
       *,
-      machine:simplex_machines(id, machine_no, description, prodn_mixing, speed, mc_effi, tpi, no_of_spindles),
+      machine:simplex_machines!inner(id, machine_no, description, prodn_mixing, speed, mc_effi, tpi, no_of_spindles, is_active),
       stoppage:simplex_stoppage_entry(*)
     `)
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   if (error) throw error
   
@@ -228,7 +229,7 @@ export async function getSimplexStoppageEntries(headerId) {
         machine_id,
         act_effi_percent,
         session_no,
-        machine:simplex_machines(id, machine_no)
+        machine:simplex_machines!inner(id, machine_no, is_active)
       ),
       stoppage1:stoppage_details!stoppage1_id(id, stoppage_name, short_code),
       stoppage2:stoppage_details!stoppage2_id(id, stoppage_name, short_code),
@@ -239,11 +240,12 @@ export async function getSimplexStoppageEntries(headerId) {
 
   if (error) throw error
 
-  // Filter to only include entries for this header
+  // Filter to only include entries for this header AND active machines
   const { data: details } = await supabase
     .from('simplex_production_detail')
-    .select('id')
+    .select('id, machine:simplex_machines!inner(is_active)')
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   const detailIds = details?.map(d => d.id) || []
   return data?.filter(s => detailIds.includes(s.production_detail_id)) || []
