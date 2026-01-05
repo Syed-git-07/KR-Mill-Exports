@@ -6,11 +6,12 @@ import { supabase } from '../supabase';
  * NOTE: Simplex has 3 additional fields: mc_effi, tpi, no_of_spindles
  */
 
-// Get all simplex machines
+// Get all simplex machines (only active ones)
 export async function getSimplexMachines() {
   const { data, error } = await supabase
     .from('simplex_machines')
     .select('*')
+    .eq('is_active', true)
     .order('mc_id', { ascending: true });
 
   if (error) throw error;
@@ -87,22 +88,26 @@ export async function updateSimplexMachine(id, machineData) {
   return data;
 }
 
-// Delete a simplex machine
+// Delete a simplex machine (soft delete - sets is_active to false)
+// Using soft delete to preserve production history and avoid foreign key violations
 export async function deleteSimplexMachine(id) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('simplex_machines')
-    .delete()
-    .eq('id', id);
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
 
   if (error) throw error;
-  return true;
+  return data;
 }
 
-// Search simplex machines
+// Search simplex machines (only active ones)
 export async function searchSimplexMachines(field, condition, value) {
   let query = supabase
     .from('simplex_machines')
-    .select('*');
+    .select('*')
+    .eq('is_active', true);
 
   // Apply search condition based on field and condition type
   switch (condition) {
