@@ -115,10 +115,12 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
     setStoppageData(prev => prev.map(row => {
       if (row.id === rowId) {
         const updatedRow = { ...row, [field]: numValue }
-        // Recalculate total
+        // Recalculate total (all 4 stoppages)
         updatedRow.total_stoppage_time = 
           (updatedRow.stoppage1_time || 0) +
-          (updatedRow.stoppage2_time || 0)
+          (updatedRow.stoppage2_time || 0) +
+          (updatedRow.stoppage3_time || 0) +
+          (updatedRow.stoppage4_time || 0)
         return updatedRow
       }
       return row
@@ -171,11 +173,13 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
         // Speed from machine table (source of truth)
         const machineSpeed = prodDetail.machine?.speed ?? setup?.speed ?? 90
         
-        // Calculate new total stoppage
+        // Calculate new total stoppage (all 4 stoppages)
         const editedChanges = editedRows[rowId]
         const newTotalStoppage = 
           (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
-          (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0)
+          (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
+          (editedChanges.stoppage3_time ?? stoppageRow.stoppage3_time ?? 0) +
+          (editedChanges.stoppage4_time ?? stoppageRow.stoppage4_time ?? 0)
         
         // Recalculate production values with new stoppage and machine speed
         const calculated = calculateLapFormerValues(
@@ -186,6 +190,9 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
           setup,
           machineSpeed  // Pass machine speed explicitly (source of truth)
         )
+        
+        // Also update total_stoppage_mins in production detail
+        calculated.total_stoppage_mins = newTotalStoppage
         
         // Update production detail
         return updateLapFormerDetail(prodDetail.id, calculated)
@@ -304,10 +311,14 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Session</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">Effi</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">R.Time</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Stoppage 1</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 1</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time1</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Stoppage 2</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 2</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time2</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 3</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time3</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 4</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time4</th>
               </tr>
             </thead>
             <tbody>
@@ -333,7 +344,7 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
                       value={row.stoppage1?.id || row.stoppage1_id || undefined}
                       onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage1_id', value)}
                     >
-                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
+                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
                         <SelectValue placeholder="" />
                       </SelectTrigger>
                       <SelectContent>
@@ -358,7 +369,7 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
                       value={row.stoppage2?.id || row.stoppage2_id || undefined}
                       onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage2_id', value)}
                     >
-                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
+                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
                         <SelectValue placeholder="" />
                       </SelectTrigger>
                       <SelectContent>
@@ -375,6 +386,56 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
                       type="number"
                       value={row.stoppage2_time || ''}
                       onChange={(e) => handleTimeChange(row.id, 'stoppage2_time', e.target.value)}
+                      className="h-6 text-xs text-right w-14 border-gray-300"
+                    />
+                  </td>
+                  <td className="border border-gray-300 px-1 py-1">
+                    <Select
+                      value={row.stoppage3?.id || row.stoppage3_id || undefined}
+                      onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage3_id', value)}
+                    >
+                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
+                        <SelectValue placeholder="" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stoppageReasons.map(reason => (
+                          <SelectItem key={reason.id} value={reason.id}>
+                            {reason.stoppage_name}--&gt;{reason.short_code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="border border-gray-300 px-1 py-1">
+                    <Input
+                      type="number"
+                      value={row.stoppage3_time || ''}
+                      onChange={(e) => handleTimeChange(row.id, 'stoppage3_time', e.target.value)}
+                      className="h-6 text-xs text-right w-14 border-gray-300"
+                    />
+                  </td>
+                  <td className="border border-gray-300 px-1 py-1">
+                    <Select
+                      value={row.stoppage4?.id || row.stoppage4_id || undefined}
+                      onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage4_id', value)}
+                    >
+                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
+                        <SelectValue placeholder="" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stoppageReasons.map(reason => (
+                          <SelectItem key={reason.id} value={reason.id}>
+                            {reason.stoppage_name}--&gt;{reason.short_code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="border border-gray-300 px-1 py-1">
+                    <Input
+                      type="number"
+                      value={row.stoppage4_time || ''}
+                      onChange={(e) => handleTimeChange(row.id, 'stoppage4_time', e.target.value)}
                       className="h-6 text-xs text-right w-14 border-gray-300"
                     />
                   </td>
@@ -406,6 +467,8 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
                   <SelectContent>
                     <SelectItem value="1">Stoppage 1</SelectItem>
                     <SelectItem value="2">Stoppage 2</SelectItem>
+                    <SelectItem value="3">Stoppage 3</SelectItem>
+                    <SelectItem value="4">Stoppage 4</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -467,6 +530,8 @@ export default function LapFormerStoppageTab({ headerId, totalTime = 510, onRefr
                   <SelectContent>
                     <SelectItem value="1">Stoppage 1</SelectItem>
                     <SelectItem value="2">Stoppage 2</SelectItem>
+                    <SelectItem value="3">Stoppage 3</SelectItem>
+                    <SelectItem value="4">Stoppage 4</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

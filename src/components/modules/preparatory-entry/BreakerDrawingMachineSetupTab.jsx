@@ -48,6 +48,7 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
   // New machine form - Breaker Drawing specific defaults
   const [newMachine, setNewMachine] = useState({
     machine_no: '',
+    description: '',
     make_name: 'LMW',
     prodn_mixing: '64COMBED GOLD',
     speed: 750,
@@ -175,11 +176,12 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
   const handleAddMachine = async () => {
     setIsSaving(true)
     try {
-      await addBreakerDrawingMachine(newMachine)
-      toast.success('New machine added successfully')
+      const result = await addBreakerDrawingMachine(newMachine)
+      toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
+        description: '',
         make_name: 'LMW',
         prodn_mixing: '64COMBED GOLD',
         speed: 750,
@@ -192,7 +194,7 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
       onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
-      toast.error('Failed to add machine')
+      toast.error(error.message || 'Failed to add machine')
     } finally {
       setIsSaving(false)
     }
@@ -471,6 +473,15 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
                   className="h-10 text-sm"
                 />
               </div>
+            </div>
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Description</Label>
+              <Input
+                value={newMachine.description}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Enter machine description"
+                className="h-10 text-sm"
+              />
             </div>
             <div>
               <Label className="text-sm font-medium mb-2 block">Count / Mixing</Label>

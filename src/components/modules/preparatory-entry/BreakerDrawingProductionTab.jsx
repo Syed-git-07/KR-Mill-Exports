@@ -9,7 +9,8 @@ import {
   getBreakerDrawingProductionWithSetup,
   updateBreakerDrawingDetail,
   calculateBreakerDrawingValues,
-  getBreakerDrawingMachineSetups
+  getBreakerDrawingMachineSetups,
+  syncNewMachinesToBreakerDrawingHeader
 } from '@/lib/supabase/breakerDrawingQueries'
 
 export default function BreakerDrawingProductionTab({ headerId, totalTime = 510, onRefresh }) {
@@ -25,6 +26,9 @@ export default function BreakerDrawingProductionTab({ headerId, totalTime = 510,
     
     setIsLoading(true)
     try {
+      // Sync any newly added machines to this header first
+      await syncNewMachinesToBreakerDrawingHeader(headerId)
+      
       const [details, setups] = await Promise.all([
         getBreakerDrawingProductionWithSetup(headerId),
         getBreakerDrawingMachineSetups()
@@ -308,6 +312,7 @@ export default function BreakerDrawingProductionTab({ headerId, totalTime = 510,
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">UTI</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Waste</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Waste%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Total Stopp</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">RunTime</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">WorkTime</th>
               </tr>
@@ -383,21 +388,14 @@ export default function BreakerDrawingProductionTab({ headerId, totalTime = 510,
                   <td className="border border-gray-300 px-2 py-1 text-right">
                     {row.waste_percent?.toFixed(2)}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.run_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center text-orange-600 font-medium">
+                    {row.total_stoppage_mins ?? row.stoppage?.[0]?.total_stoppage_time ?? 0}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.work_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'work_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center bg-gray-100">
+                    {row.run_time || 510}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center bg-gray-100">
+                    {row.work_time || 510}
                   </td>
                 </tr>
               ))}

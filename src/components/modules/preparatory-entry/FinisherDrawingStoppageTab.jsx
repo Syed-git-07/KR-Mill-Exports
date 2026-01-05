@@ -23,7 +23,8 @@ import {
   getFinisherDrawingMachines,
   getFinisherDrawingMachineSetups,
   updateFinisherDrawingDetail,
-  calculateFinisherDrawingValues
+  calculateFinisherDrawingValues,
+  syncFinisherDrawingNewMachinesToHeader
 } from '@/lib/supabase/finisherDrawingEntryQueries'
 
 export default function FinisherDrawingStoppageTab({ headerId, totalTime = 510, onRefresh }) {
@@ -57,6 +58,9 @@ export default function FinisherDrawingStoppageTab({ headerId, totalTime = 510, 
     
     setIsLoading(true)
     try {
+      // First, sync any new machines that were added after this header was created
+      await syncFinisherDrawingNewMachinesToHeader(headerId)
+
       const [stoppages, reasons, machineList, setups] = await Promise.all([
         getFinisherDrawingStoppageEntries(headerId),
         getFinisherDrawingStoppageReasons(),
@@ -298,7 +302,7 @@ export default function FinisherDrawingStoppageTab({ headerId, totalTime = 510, 
         </div>
       </div>
 
-      {/* Stoppage Grid - Finisher Drawing has 3 stoppage columns visible */}
+      {/* Stoppage Grid - Finisher Drawing has 4 stoppage columns */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
           <table className="w-full border-collapse text-sm">
@@ -314,6 +318,8 @@ export default function FinisherDrawingStoppageTab({ headerId, totalTime = 510, 
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">S.Time2</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 3</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">S.Time3</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 4</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">S.Time4</th>
               </tr>
             </thead>
             <tbody>
@@ -424,6 +430,37 @@ export default function FinisherDrawingStoppageTab({ headerId, totalTime = 510, 
                       type="number"
                       value={row.stoppage3_time || ''}
                       onChange={(e) => handleTimeChange(row.id, 'stoppage3_time', e.target.value)}
+                      className="h-6 text-xs text-right w-14 border-gray-300"
+                    />
+                  </td>
+                  {/* Stoppage 4 */}
+                  <td className="border border-gray-300 px-1 py-1">
+                    <Select
+                      value={row.stoppage4?.id || row.stoppage4_id || 'NONE'}
+                      onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage4_id', value === 'NONE' ? null : value)}
+                    >
+                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
+                        <SelectValue>
+                          {row.stoppage4 
+                            ? `${row.stoppage4.stoppage_name}-->${row.stoppage4.short_code}`
+                            : ''}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">-- None --</SelectItem>
+                        {stoppageReasons.map(reason => (
+                          <SelectItem key={reason.id} value={reason.id}>
+                            {reason.stoppage_name}--&gt;{reason.short_code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="border border-gray-300 px-1 py-1">
+                    <Input
+                      type="number"
+                      value={row.stoppage4_time || ''}
+                      onChange={(e) => handleTimeChange(row.id, 'stoppage4_time', e.target.value)}
                       className="h-6 text-xs text-right w-14 border-gray-300"
                     />
                   </td>

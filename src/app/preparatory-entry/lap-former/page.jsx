@@ -42,7 +42,8 @@ import {
   getSupervisors,
   initializeLapFormerDetails,
   copyLapFormerFromPreviousDate,
-  getLapFormerAvailableDates
+  getLapFormerAvailableDates,
+  syncNewMachinesToLapFormerHeader
 } from '@/lib/supabase/lapFormerQueries'
 
 export default function LapFormerEntryPage() {
@@ -86,6 +87,16 @@ export default function LapFormerEntryPage() {
         setHeaderId(existing.id)
         setSupervisorId(existing.supervisor_id || '')
         setMaisitryId(existing.maisitry_id || '')
+        
+        // Sync any newly added machines to this existing header
+        try {
+          const syncResult = await syncNewMachinesToLapFormerHeader(existing.id)
+          if (syncResult.added > 0) {
+            toast.success(`Added ${syncResult.added} new machine(s): ${syncResult.machines.join(', ')}`)
+          }
+        } catch (syncError) {
+          console.error('Error syncing new machines:', syncError)
+        }
       } else {
         setHeaderId(null)
         setSupervisorId('')

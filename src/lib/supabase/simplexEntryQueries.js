@@ -825,7 +825,10 @@ export async function addSimplexMachine(machineData) {
           console.error('Error updating setup:', updateSetupError)
         }
 
-        return { machine: reactivatedMachine, setup: updatedSetup }
+        // Add production details and stoppage entries for all existing headers
+        await addMachineToExistingHeaders(existingMachine.id, machineData)
+
+        return { machine: reactivatedMachine, setup: updatedSetup, reactivated: true }
       } else {
         // Create new setup
         const { data: newSetup, error: setupError } = await supabase
@@ -849,7 +852,10 @@ export async function addSimplexMachine(machineData) {
           console.error('Error creating setup:', setupError)
         }
 
-        return { machine: reactivatedMachine, setup: newSetup }
+        // Add production details and stoppage entries for all existing headers
+        await addMachineToExistingHeaders(existingMachine.id, machineData)
+
+        return { machine: reactivatedMachine, setup: newSetup, reactivated: true }
       }
     } else {
       // Machine exists and is active - throw error
@@ -906,6 +912,10 @@ export async function addSimplexMachine(machineData) {
   }
 
   console.log('Setup created:', newSetup)
+
+  // Add production details and stoppage entries for all existing headers
+  await addMachineToExistingHeaders(newMachine.id, machineData)
+
   return { machine: newMachine, setup: newSetup }
 }
 
@@ -955,6 +965,103 @@ export async function removeSimplexMachine(machineId) {
 
   if (error) throw error
   return data
+}
+
+// Add production detail and stoppage entry for a new machine to existing headers
+export async function addMachineToExistingHeaders(machineId, machineData = {}) {
+  // Get all existing production headers
+  const { data: headers, error: headerError } = await supabase
+    .from('simplex_production_header')
+    .select('id')
+
+  if (headerError) {
+    console.error('Error fetching headers:', headerError)
+    return
+  }
+
+  if (!headers || headers.length === 0) return
+
+  // For each header, create production detail and stoppage entry if not exists
+  for (const header of headers) {
+    // Check if production detail already exists for this machine and header
+    const { data: existingDetail } = await supabase
+      .from('simplex_production_detail')
+      .select('id')
+      .eq('header_id', header.id)
+      .eq('machine_id', machineId)
+      .maybeSingle()
+
+    if (!existingDetail) {
+      // Create production detail
+      const { data: newDetail, error: detailError } = await supabase
+        .from('simplex_production_detail')
+        .insert([{
+          header_id: header.id,
+          machine_id: machineId,
+          prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
+          run_hrs: 0,
+          run_min: 0,
+          idle_spindles: 0,
+          waste: machineData.default_waste || 0.9,
+          act_prodn: 0,
+          waste_percent: 0,
+          act_effi_percent: 0,
+          uti_percent: 0,
+          std_hrs: 0,
+          work_time: 510,
+          session_no: 1
+        }])
+        .select()
+        .single()
+
+      if (detailError) {
+        console.error('Error creating production detail:', detailError)
+        continue
+      }
+
+      // Create stoppage entry for the new production detail
+      await supabase
+        .from('simplex_stoppage_entry')
+        .insert([{
+          production_detail_id: newDetail.id,
+          stoppage1_time: 0,
+          stoppage2_time: 0,
+          stoppage3_time: 0,
+          stoppage4_time: 0,
+          total_stoppage_time: 0
+        }])
+    }
+  }
+}
+
+// Remove production details and stoppage entries for a machine from all headers
+export async function removeMachineFromAllHeaders(machineId) {
+  // Get all production details for this machine
+  const { data: details, error: detailError } = await supabase
+    .from('simplex_production_detail')
+    .select('id')
+    .eq('machine_id', machineId)
+
+  if (detailError) {
+    console.error('Error fetching production details:', detailError)
+    return
+  }
+
+  if (!details || details.length === 0) return
+
+  const detailIds = details.map(d => d.id)
+
+  // Delete stoppage entries first (due to foreign key)
+  await supabase
+    .from('simplex_stoppage_entry')
+    .delete()
+    .in('production_detail_id', detailIds)
+
+  // Delete production details
+  await supabase
+    .from('simplex_production_detail')
+    .delete()
+    .in('id', detailIds)
 }
 // Bulk update machine count/mixing
 export async function bulkUpdateSimplexMachineCount(machineIds, newCount) {

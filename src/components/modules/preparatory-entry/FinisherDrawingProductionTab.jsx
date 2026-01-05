@@ -9,7 +9,8 @@ import {
   getFinisherDrawingProductionWithSetup,
   updateFinisherDrawingDetail,
   calculateFinisherDrawingValues,
-  getFinisherDrawingMachineSetups
+  getFinisherDrawingMachineSetups,
+  syncFinisherDrawingNewMachinesToHeader
 } from '@/lib/supabase/finisherDrawingEntryQueries'
 
 export default function FinisherDrawingProductionTab({ headerId, totalTime = 510, onRefresh }) {
@@ -25,6 +26,12 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
     
     setIsLoading(true)
     try {
+      // First, sync any new machines that were added after this header was created
+      const syncResult = await syncFinisherDrawingNewMachinesToHeader(headerId)
+      if (syncResult.added > 0) {
+        toast.info(`Added ${syncResult.added} new machine(s): ${syncResult.machines.join(', ')}`)
+      }
+
       const [details, setups] = await Promise.all([
         getFinisherDrawingProductionWithSetup(headerId),
         getFinisherDrawingMachineSetups()
@@ -121,21 +128,30 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
         // Recalculate based on which field changed
         if (['act_hank', 'act_prodn', 'exp_prodn', 'waste', 'run_time', 'work_time'].includes(field)) {
           const actHank = field === 'act_hank' ? numValue : row.act_hank
-          const actProdn = field === 'act_prodn' ? numValue : row.act_prodn
+          // FINISHER DRAWING: Act Prodn = Act Hank × 3.240 (Constant = 1/2.20456/0.14)
+          let actProdn = field === 'act_prodn' ? numValue : row.act_prodn
+          
+          // Auto-calculate Act Prodn when Act Hank changes
+          if (field === 'act_hank') {
+            const constant = 1 / 2.20456 / 0.14  // ≈ 3.240
+            actProdn = numValue * constant
+          }
+          
           const waste = field === 'waste' ? numValue : row.waste
           const runTime = field === 'run_time' ? numValue : row.run_time
           const workTime = field === 'work_time' ? numValue : row.work_time
           
           // If work_time changes, recalculate exp_prodn from std_prodn
           let expProdn = field === 'exp_prodn' ? numValue : row.exp_prodn
-          if (field === 'work_time') {
+          if (field === 'work_time' || field === 'act_hank') {
             // FINISHER DRAWING Hank = 0.14, Std Effi = 0.90
             const hankConstant = setup?.hank_constant || 0.14
             const stdEffiFactor = setup?.std_efficiency_factor || 0.90
             const delivery = setup?.delivery || 1
             const divisor = setup?.divisor_constant || 1693
             const stdProdn = (machineSpeed / divisor / hankConstant) * totalTime * stdEffiFactor * delivery
-            expProdn = stdProdn * (workTime / totalTime)
+            const currentWorkTime = field === 'work_time' ? numValue : workTime
+            expProdn = stdProdn * (currentWorkTime / totalTime)
           }
           
           // Calculate efficiency
@@ -150,7 +166,7 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
           return { 
             ...updatedRow, 
             act_hank: actHank,
-            act_prodn: actProdn,
+            act_prodn: Math.round(actProdn * 100) / 100,
             exp_prodn: Math.round(expProdn * 100) / 100,
             waste: waste,
             run_time: runTime,
@@ -215,7 +231,9 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
         const machineSpeed = row.machine?.speed ?? setup?.speed ?? 350
         
         const actHank = changes.act_hank ?? row.act_hank ?? 0
-        const actProdn = changes.act_prodn ?? row.act_prodn ?? 0
+        // FINISHER DRAWING: Act Prodn = Act Hank × 3.240 (auto-calculated)
+        const constant = 1 / 2.20456 / 0.14  // ≈ 3.240
+        const actProdn = changes.act_prodn ?? (actHank * constant)
         const waste = changes.waste ?? row.waste ?? 0.41
         
         // Use Finisher Drawing specific calculations (Hank = 0.14, Std Effi = 0.90)
@@ -230,12 +248,13 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
 
         calculated.waste = waste
         calculated.waste_percent = actProdn > 0 ? Math.round((waste / actProdn) * 100 * 100) / 100 : 0
+        calculated.act_prodn = Math.round(actProdn * 100) / 100
 
         return updateFinisherDrawingDetail(rowId, {
           employee_name: changes.employee_name ?? row.employee_name,
           prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
-          act_prodn: actProdn,
+          act_prodn: calculated.act_prodn,
           ...calculated
         })
       }).filter(Boolean)
@@ -297,18 +316,19 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
           <table className="w-full border-collapse text-sm">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Emp.Name</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28">Mixing</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Act.Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Act.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Exp.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Act.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">UTI</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Waste</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Waste%</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">RunTime</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-40">Emp.Name</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-28">Mixing</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Act.Hank</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Act.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Exp.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Act.Effi%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">UTI%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Waste</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Waste%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">RunTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Total Stopp</th>
               </tr>
             </thead>
             <tbody>
@@ -317,7 +337,7 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
                   key={row.id}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                 >
-                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700">
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700">
                     {row.machine?.machine_no}
                   </td>
                   <td className="border border-gray-300 px-1 py-1">
@@ -340,35 +360,23 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
                       step="0.01"
                       value={row.act_hank || ''}
                       onChange={(e) => handleInputChange(row.id, 'act_hank', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
+                      className="h-6 text-xs text-center w-full border-gray-300"
                     />
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={row.act_prodn || ''}
-                      onChange={(e) => handleInputChange(row.id, 'act_prodn', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium">
+                    {row.act_prodn?.toFixed(2) || '0.00'}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={row.exp_prodn || ''}
-                      onChange={(e) => handleInputChange(row.id, 'exp_prodn', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.exp_prodn?.toFixed(2) || '0.00'}
                   </td>
-                  <td className={`border border-gray-300 px-2 py-1 text-right font-medium ${
+                  <td className={`border border-gray-300 px-2 py-1 text-center font-medium ${
                     row.effi_percent >= 100 ? 'text-green-600' : 
                     row.effi_percent >= 90 ? 'text-yellow-600' : 'text-red-600'
                   }`}>
-                    {row.effi_percent?.toFixed(2)}
+                    {row.effi_percent?.toFixed(2) || '0.00'}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right">
-                    {row.uti_percent?.toFixed(2)}
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.uti_percent?.toFixed(2) || '0.00'}
                   </td>
                   <td className="border border-gray-300 px-1 py-1">
                     <Input
@@ -376,27 +384,20 @@ export default function FinisherDrawingProductionTab({ headerId, totalTime = 510
                       step="0.01"
                       value={row.waste || ''}
                       onChange={(e) => handleInputChange(row.id, 'waste', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
+                      className="h-6 text-xs text-center w-full border-gray-300"
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right">
-                    {row.waste_percent?.toFixed(2)}
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.waste_percent?.toFixed(2) || '0.00'}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.run_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.run_time || 510}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.work_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'work_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.work_time || 0}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center text-orange-600 font-medium">
+                    {row.total_stoppage_mins || row.stoppage?.[0]?.total_stoppage_time || 0}
                   </td>
                 </tr>
               ))}

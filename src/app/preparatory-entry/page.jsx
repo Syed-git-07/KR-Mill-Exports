@@ -27,16 +27,16 @@ export default function PreparatoryEntryPage() {
       description: "Comber machine production entry (CO1-CO13)",
       href: "/preparatory-entry/comber",
       icon: Settings,
-      status: "Coming Soon",
-      color: "gray"
+      status: "Ready",
+      color: "blue"
     },
     {
       title: "Finisher Drawing Entry",
       description: "Drawing finisher production entry (FD1-FD5)",
       href: "/preparatory-entry/finisher-drawing",
       icon: Layers,
-      status: "Coming Soon",
-      color: "gray"
+      status: "Ready",
+      color: "blue"
     },
     {
       title: "Lap Former Entry",
@@ -51,8 +51,8 @@ export default function PreparatoryEntryPage() {
       description: "Simplex machine production entry (1-10)",
       href: "/preparatory-entry/simplex",
       icon: Wind,
-      status: "Coming Soon",
-      color: "gray"
+      status: "Ready",
+      color: "blue"
     }
   ]
 

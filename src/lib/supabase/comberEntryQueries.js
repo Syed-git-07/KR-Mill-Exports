@@ -119,10 +119,11 @@ export async function getComberProductionWithSetup(headerId) {
     .from('comber_production_detail')
     .select(`
       *,
-      machine:comber_machines(id, machine_no, description, mc_id),
+      machine:comber_machines!inner(id, machine_no, description, mc_id, is_active),
       stoppage:comber_stoppage_entry(*)
     `)
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   if (error) throw error
   
@@ -245,7 +246,7 @@ export async function getComberStoppageEntries(headerId) {
         machine_id,
         act_effi_percent,
         session_no,
-        machine:comber_machines(id, machine_no)
+        machine:comber_machines!inner(id, machine_no, is_active)
       ),
       stoppage1:stoppage_details!stoppage1_id(id, stoppage_name, short_code),
       stoppage2:stoppage_details!stoppage2_id(id, stoppage_name, short_code),
@@ -256,11 +257,12 @@ export async function getComberStoppageEntries(headerId) {
 
   if (error) throw error
 
-  // Filter to only include entries for this header
+  // Filter to only include entries for this header AND active machines
   const { data: details } = await supabase
     .from('comber_production_detail')
-    .select('id')
+    .select('id, machine:comber_machines!inner(is_active)')
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   const detailIds = details?.map(d => d.id) || []
   return data?.filter(s => detailIds.includes(s.production_detail_id)) || []
@@ -382,8 +384,9 @@ export async function getComberMachineSetups() {
     .from('comber_machine_setup')
     .select(`
       *,
-      machine:comber_machines(id, machine_no, description, mc_id)
+      machine:comber_machines!inner(id, machine_no, description, mc_id, make_name, speed, mc_effi, is_active)
     `)
+    .eq('machine.is_active', true)
     .order('machine_id')
 
   if (error) throw error
@@ -427,6 +430,54 @@ export async function createComberMachineSetup(setupData) {
 
 // Add new comber machine (creates both machine and setup)
 export async function addComberMachine(machineData) {
+  // Check if machine_no already exists (might be inactive)
+  if (machineData.machine_no) {
+    const { data: existingMachine } = await supabase
+      .from('comber_machines')
+      .select('id, is_active, machine_no')
+      .eq('machine_no', machineData.machine_no)
+      .single()
+
+    if (existingMachine && !existingMachine.is_active) {
+      // Reactivate the existing machine
+      const { data: reactivated, error: reactivateError } = await supabase
+        .from('comber_machines')
+        .update({ 
+          is_active: true,
+          description: machineData.description || existingMachine.machine_no,
+          make_name: machineData.make_name || 'LMW',
+          prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
+          speed: machineData.speed || 350,
+          mc_effi: machineData.mc_effi || 93
+        })
+        .eq('id', existingMachine.id)
+        .select()
+        .single()
+
+      if (reactivateError) throw new Error(`Failed to reactivate machine: ${reactivateError.message}`)
+      
+      // Update the existing setup
+      const slHank = machineData.sl_hank || 0.14
+      await supabase
+        .from('comber_machine_setup')
+        .update({
+          prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
+          session_no: machineData.session_no || machineData.session || 1,
+          cc_time: machineData.cc_time || 0,
+          sl_hank: slHank,
+          mc_effi: machineData.mc_effi || 93,
+          constant: 1 / 2.20456 / slHank
+        })
+        .eq('machine_id', existingMachine.id)
+      
+      return { machine: reactivated, setup: null, reactivated: true }
+    }
+
+    if (existingMachine && existingMachine.is_active) {
+      throw new Error(`Machine ${machineData.machine_no} already exists and is active`)
+    }
+  }
+
   // Get the max mc_id to generate next one
   const { data: maxMachine } = await supabase
     .from('comber_machines')
@@ -444,13 +495,17 @@ export async function addComberMachine(machineData) {
     .insert([{
       machine_no: nextMachineNo,
       mc_id: nextMcId,
-      description: machineData.description || `Comber Machine ${nextMcId}`,
+      description: machineData.description || `COMBER ${nextMcId}`,
+      make_name: machineData.make_name || 'LMW',
+      prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
+      speed: machineData.speed || 350,
+      mc_effi: machineData.mc_effi || 93,
       is_active: true
     }])
     .select()
     .single()
 
-  if (machineError) throw machineError
+  if (machineError) throw new Error(`Failed to add machine: ${machineError.message}`)
 
   // Create machine setup for the new machine
   const slHank = machineData.sl_hank || 0.14
@@ -470,9 +525,9 @@ export async function addComberMachine(machineData) {
     .select()
     .single()
 
-  if (setupError) throw setupError
+  if (setupError) throw new Error(`Failed to create machine setup: ${setupError.message}`)
 
-  return { machine: newMachine, setup: newSetup }
+  return { machine: newMachine, setup: newSetup, reactivated: false }
 }
 
 // Remove (deactivate) comber machine

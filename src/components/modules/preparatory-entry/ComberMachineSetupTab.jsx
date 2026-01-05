@@ -48,7 +48,10 @@ export default function ComberMachineSetupTab({ onRefresh }) {
   // New machine form
   const [newMachine, setNewMachine] = useState({
     machine_no: '',
+    description: '',
+    make_name: 'LMW',
     prodn_count: '64COMBED GOLD',
+    speed: 350,
     session: 1,
     cc_time: 0,
     sl_hank: 0.14,
@@ -169,19 +172,25 @@ export default function ComberMachineSetupTab({ onRefresh }) {
 
     setIsSaving(true)
     try {
-      await addComberMachine({
+      const result = await addComberMachine({
         machine_no: newMachine.machine_no,
+        description: newMachine.description || newMachine.machine_no,
+        make_name: newMachine.make_name,
         prodn_mixing: newMachine.prodn_count,
+        speed: newMachine.speed,
         session_no: newMachine.session,
         cc_time: newMachine.cc_time,
         sl_hank: newMachine.sl_hank,
         mc_effi: newMachine.mc_effi
       })
-      toast.success('New machine added successfully')
+      toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
+        description: '',
+        make_name: 'LMW',
         prodn_count: '64COMBED GOLD',
+        speed: 350,
         session: 1,
         cc_time: 0,
         sl_hank: 0.14,
@@ -191,7 +200,7 @@ export default function ComberMachineSetupTab({ onRefresh }) {
       onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
-      toast.error('Failed to add machine')
+      toast.error(error.message || 'Failed to add machine')
     } finally {
       setIsSaving(false)
     }
@@ -301,12 +310,12 @@ export default function ComberMachineSetupTab({ onRefresh }) {
                     className="border-white"
                   />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Mc. No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-44">Count</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24">C.C. Time</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24">Sl.Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24">MCEffi</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-36">Description</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Make</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-36">Mixing Name</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Speed</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">McEffi</th>
               </tr>
             </thead>
             <tbody>
@@ -321,15 +330,21 @@ export default function ComberMachineSetupTab({ onRefresh }) {
                       onCheckedChange={() => handleRowSelect(row.machine_id)}
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700">
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700">
                     {row.machine?.machine_no || row.machine_id}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.machine?.description || '-'}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.machine?.make_name || 'LMW'}
                   </td>
                   <td className="border border-gray-300 px-1 py-1">
                     <Select
                       value={row.prodn_mixing || '64COMBED GOLD'}
                       onValueChange={(value) => handleInputChange(row.id, 'prodn_mixing', value)}
                     >
-                      <SelectTrigger className="h-7 text-xs w-40 border-gray-300">
+                      <SelectTrigger className="h-7 text-xs w-full border-gray-300">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -348,38 +363,11 @@ export default function ComberMachineSetupTab({ onRefresh }) {
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.session_no || 1}
-                      onChange={(e) => handleInputChange(row.id, 'session_no', e.target.value)}
-                      className="h-7 text-xs text-center w-16 border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.machine?.speed || 350}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.cc_time || 0}
-                      onChange={(e) => handleInputChange(row.id, 'cc_time', e.target.value)}
-                      className="h-7 text-xs text-right w-20 border-gray-300"
-                    />
-                  </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={row.sl_hank || 0.14}
-                      onChange={(e) => handleInputChange(row.id, 'sl_hank', e.target.value)}
-                      className="h-7 text-xs text-right w-20 border-gray-300"
-                    />
-                  </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.mc_effi || 93}
-                      onChange={(e) => handleInputChange(row.id, 'mc_effi', e.target.value)}
-                      className="h-7 text-xs text-right w-20 border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.machine?.mc_effi || row.mc_effi || 93}
                   </td>
                 </tr>
               ))}
@@ -388,7 +376,7 @@ export default function ComberMachineSetupTab({ onRefresh }) {
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons - Centered like Carding */}
       <div className="flex justify-center gap-4">
         <Button 
           variant="outline"
@@ -434,6 +422,41 @@ export default function ComberMachineSetupTab({ onRefresh }) {
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Description</Label>
+              <Input
+                className="col-span-3"
+                placeholder="e.g., Comber Machine 14"
+                value={newMachine.description}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Make</Label>
+              <Select
+                value={newMachine.make_name}
+                onValueChange={(value) => setNewMachine(prev => ({ ...prev, make_name: value }))}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LMW">LMW</SelectItem>
+                  <SelectItem value="RIETER">RIETER</SelectItem>
+                  <SelectItem value="TRUTZSCHLER">TRUTZSCHLER</SelectItem>
+                  <SelectItem value="LAKSHMI">LAKSHMI</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Speed</Label>
+              <Input
+                className="col-span-3"
+                type="number"
+                value={newMachine.speed}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, speed: parseInt(e.target.value) || 350 }))}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Count</Label>
               <Select
                 value={newMachine.prodn_count}
@@ -449,34 +472,6 @@ export default function ComberMachineSetupTab({ onRefresh }) {
                   <SelectItem value="60COMBED">60COMBED</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Session</Label>
-              <Input
-                className="col-span-3"
-                type="number"
-                value={newMachine.session}
-                onChange={(e) => setNewMachine(prev => ({ ...prev, session: parseInt(e.target.value) || 1 }))}
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">C.C. Time</Label>
-              <Input
-                className="col-span-3"
-                type="number"
-                value={newMachine.cc_time}
-                onChange={(e) => setNewMachine(prev => ({ ...prev, cc_time: parseInt(e.target.value) || 0 }))}
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Sl.Hank</Label>
-              <Input
-                className="col-span-3"
-                type="number"
-                step="0.01"
-                value={newMachine.sl_hank}
-                onChange={(e) => setNewMachine(prev => ({ ...prev, sl_hank: parseFloat(e.target.value) || 0.14 }))}
-              />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">MCEffi</Label>

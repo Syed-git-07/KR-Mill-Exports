@@ -118,7 +118,7 @@ Efficiency % = 76.51 %
 ## 6️⃣ STEP-6: Calculate Utilization (UTI %)
 
 ```
-UTI % = Run Time / Total Time × 100
+UTI % = Run Time(Worktime) / Total Time(510) × 100 
 ```
 
 Example:

@@ -98,10 +98,11 @@ export async function getBreakerDrawingProductionWithSetup(headerId) {
     .from('breaker_drawing_production_detail')
     .select(`
       *,
-      machine:drawing_breaker_machines(id, machine_no, description, prodn_mixing, mc_id, speed),
+      machine:drawing_breaker_machines!inner(id, machine_no, description, prodn_mixing, mc_id, speed, is_active),
       stoppage:breaker_drawing_stoppage_entry(*)
     `)
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   if (error) throw error
   
@@ -116,12 +117,11 @@ export async function getBreakerDrawingProductionWithSetup(headerId) {
 // Initialize production details for all breaker drawing machines
 // Speed is fetched from machine table (source of truth)
 export async function initializeBreakerDrawingDetails(headerId) {
-  // Get all active breaker drawing machines WITH SPEED
+  // Get all active breaker drawing machines WITH SPEED (no hardcoded list)
   const { data: machines, error: machineError } = await supabase
     .from('drawing_breaker_machines')
     .select('id, machine_no, prodn_mixing, speed')
     .eq('is_active', true)
-    .in('machine_no', ['BD1', 'BD2', 'BD3', 'BD4'])
     .order('mc_id')
 
   if (machineError) throw machineError
@@ -209,6 +209,112 @@ export async function initializeBreakerDrawingDetails(headerId) {
   return data
 }
 
+// Sync newly added machines to an existing header
+// This adds production details and stoppage entries for any active machines
+// that don't already have records in this header
+export async function syncNewMachinesToBreakerDrawingHeader(headerId) {
+  // Get all active machines
+  const { data: allMachines, error: machineError } = await supabase
+    .from('drawing_breaker_machines')
+    .select('id, machine_no, prodn_mixing, speed')
+    .eq('is_active', true)
+    .order('mc_id')
+
+  if (machineError) throw machineError
+
+  // Get existing production details for this header
+  const { data: existingDetails, error: existingError } = await supabase
+    .from('breaker_drawing_production_detail')
+    .select('machine_id')
+    .eq('header_id', headerId)
+
+  if (existingError) throw existingError
+
+  // Find machines that don't have details yet
+  const existingMachineIds = new Set(existingDetails?.map(d => d.machine_id) || [])
+  const newMachines = allMachines?.filter(m => !existingMachineIds.has(m.id)) || []
+
+  if (newMachines.length === 0) {
+    return [] // No new machines to add
+  }
+
+  // Get machine setups
+  const { data: setups } = await supabase
+    .from('breaker_drawing_machine_setup')
+    .select('*')
+
+  const setupMap = {}
+  setups?.forEach(s => {
+    setupMap[s.machine_id] = s
+  })
+
+  // Default values
+  const defaultStoppage = 80
+  const totalTime = 510
+  const defaultWorkTime = totalTime - defaultStoppage
+
+  // Create detail records for new machines
+  const details = newMachines.map(machine => {
+    const setup = setupMap[machine.id] || {}
+    const speed = machine.speed || setup.speed || 750
+    const hankConstant = setup.hank_constant || 0.14
+    const stdEffiFactor = setup.std_efficiency_factor || 0.85
+    const delivery = setup.delivery || 1
+    
+    const stdProdn = (speed / 1693 / hankConstant) * totalTime * stdEffiFactor * delivery
+    const expProdn = stdProdn * (defaultWorkTime / totalTime)
+    
+    return {
+      header_id: headerId,
+      machine_id: machine.id,
+      prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+      act_hank: 0,
+      act_prodn: 0,
+      std_prodn: stdProdn,
+      exp_prodn: Math.round(expProdn * 100) / 100,
+      effi_percent: 0,
+      uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
+      waste: setup.default_waste || 0.85,
+      waste_percent: 0,
+      run_time: totalTime,
+      work_time: defaultWorkTime,
+      total_stoppage_mins: defaultStoppage,
+      session_no: 1
+    }
+  })
+
+  const { data, error } = await supabase
+    .from('breaker_drawing_production_detail')
+    .insert(details)
+    .select()
+
+  if (error) throw error
+
+  // Create stoppage entries for new details
+  const { data: stoppageReasons } = await supabase
+    .from('stoppage_details')
+    .select('id, code')
+    .in('code', [1511, 1512])
+
+  const bssId = stoppageReasons?.find(r => r.code === 1511)?.id
+  const airCleaningId = stoppageReasons?.find(r => r.code === 1512)?.id
+
+  const stoppageEntries = data.map(detail => ({
+    production_detail_id: detail.id,
+    stoppage1_id: bssId || null,
+    stoppage1_time: 60,
+    stoppage2_id: airCleaningId || null,
+    stoppage2_time: 20,
+    total_stoppage_time: 80
+  }))
+
+  await supabase
+    .from('breaker_drawing_stoppage_entry')
+    .insert(stoppageEntries)
+
+  return data
+}
+
 // Update production detail
 export async function updateBreakerDrawingDetail(id, updates) {
   // Remove any fields that shouldn't be updated (like speed from calculations)
@@ -262,7 +368,7 @@ export async function getBreakerDrawingStoppageEntries(headerId) {
         act_hank,
         act_prodn,
         session_no,
-        machine:drawing_breaker_machines(id, machine_no, speed)
+        machine:drawing_breaker_machines!inner(id, machine_no, speed, is_active)
       ),
       stoppage1:stoppage_details!stoppage1_id(id, stoppage_name, short_code),
       stoppage2:stoppage_details!stoppage2_id(id, stoppage_name, short_code),
@@ -273,11 +379,12 @@ export async function getBreakerDrawingStoppageEntries(headerId) {
 
   if (error) throw error
 
-  // Filter to only include entries for this header
+  // Filter to only include entries for this header AND active machines
   const { data: details } = await supabase
     .from('breaker_drawing_production_detail')
-    .select('id')
+    .select('id, machine:drawing_breaker_machines!inner(is_active)')
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   const detailIds = details?.map(d => d.id) || []
   return data?.filter(s => detailIds.includes(s.production_detail_id)) || []
@@ -482,8 +589,9 @@ export async function getBreakerDrawingMachineSetups() {
     .from('breaker_drawing_machine_setup')
     .select(`
       *,
-      machine:drawing_breaker_machines(id, machine_no, description, make_name, prodn_mixing, speed)
+      machine:drawing_breaker_machines!inner(id, machine_no, description, make_name, prodn_mixing, speed, is_active)
     `)
+    .eq('machine.is_active', true)
     .order('machine_id')
 
   if (error) throw error
@@ -699,7 +807,6 @@ export async function getBreakerDrawingMachines() {
     .from('drawing_breaker_machines')
     .select('id, machine_no, description, make_name, prodn_mixing, speed, mc_id, is_active')
     .eq('is_active', true)
-    .in('machine_no', ['BD1', 'BD2', 'BD3', 'BD4'])
     .order('mc_id')
 
   if (error) throw error
@@ -724,6 +831,66 @@ export async function getBreakerDrawingMachineWithSpeed(machineId) {
 
 // Add new breaker drawing machine
 export async function addBreakerDrawingMachine(machineData) {
+  // Check if machine_no already exists (might be inactive)
+  if (machineData.machine_no) {
+    const { data: existingMachine } = await supabase
+      .from('drawing_breaker_machines')
+      .select('id, is_active, machine_no')
+      .eq('machine_no', machineData.machine_no)
+      .single()
+
+    if (existingMachine && !existingMachine.is_active) {
+      // Reactivate the existing machine
+      const { data: reactivated, error: reactivateError } = await supabase
+        .from('drawing_breaker_machines')
+        .update({ 
+          is_active: true,
+          description: machineData.description || existingMachine.machine_no,
+          make_name: machineData.make_name || 'LMW',
+          prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
+          speed: machineData.speed || 750
+        })
+        .eq('id', existingMachine.id)
+        .select()
+        .single()
+
+      if (reactivateError) throw new Error(`Failed to reactivate machine: ${reactivateError.message}`)
+      
+      // Update the existing setup if needed
+      const { data: existingSetup } = await supabase
+        .from('breaker_drawing_machine_setup')
+        .select('id')
+        .eq('machine_id', existingMachine.id)
+        .single()
+
+      if (existingSetup) {
+        const speed = machineData.speed || 750
+        const hankConstant = machineData.hank_constant || 0.14
+        const stdEffi = machineData.std_efficiency_factor || 0.85
+        const shiftTime = machineData.shift_time || 510
+        const delivery = machineData.delivery || 1
+
+        await supabase
+          .from('breaker_drawing_machine_setup')
+          .update({
+            speed: speed,
+            hank_constant: hankConstant,
+            std_efficiency_factor: stdEffi,
+            shift_time: shiftTime,
+            delivery: delivery,
+            std_prodn: (speed / 1693 / hankConstant) * shiftTime * stdEffi * delivery
+          })
+          .eq('id', existingSetup.id)
+      }
+      
+      return { machine: reactivated, setup: existingSetup, reactivated: true }
+    }
+
+    if (existingMachine && existingMachine.is_active) {
+      throw new Error(`Machine ${machineData.machine_no} already exists and is active`)
+    }
+  }
+
   // Get the max mc_id to generate next one
   const { data: maxMachine } = await supabase
     .from('drawing_breaker_machines')
@@ -733,26 +900,26 @@ export async function addBreakerDrawingMachine(machineData) {
     .single()
 
   const nextMcId = (maxMachine?.mc_id || 0) + 1
-  const nextMachineNo = `BD${nextMcId}`
+  const nextMachineNo = machineData.machine_no || `BD${nextMcId}`
 
   // Insert new machine
   const { data: newMachine, error: machineError } = await supabase
     .from('drawing_breaker_machines')
     .insert([{
-      machine_no: machineData.machine_no || nextMachineNo,
+      machine_no: nextMachineNo,
       mc_id: nextMcId,
-      description: machineData.description || `Breaker Drawing Machine ${nextMcId}`,
+      description: machineData.description || nextMachineNo,
       make_name: machineData.make_name || 'LMW',
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
+      speed: machineData.speed || 750,
       is_active: true
     }])
     .select()
     .single()
 
-  if (machineError) throw machineError
+  if (machineError) throw new Error(`Failed to add machine: ${machineError.message}`)
 
   // Create machine setup for the new machine
-  // Default: Speed=750, Delivery=1, Std.Prodn=1371.72
   const speed = machineData.speed || 750
   const hankConstant = machineData.hank_constant || 0.14
   const stdEffi = machineData.std_efficiency_factor || 0.85
@@ -776,9 +943,9 @@ export async function addBreakerDrawingMachine(machineData) {
     .select()
     .single()
 
-  if (setupError) throw setupError
+  if (setupError) throw new Error(`Failed to create machine setup: ${setupError.message}`)
 
-  return { machine: newMachine, setup: newSetup }
+  return { machine: newMachine, setup: newSetup, reactivated: false }
 }
 
 // Remove (deactivate) breaker drawing machine

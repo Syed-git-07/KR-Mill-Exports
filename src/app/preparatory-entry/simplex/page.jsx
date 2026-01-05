@@ -483,28 +483,23 @@ export default function SimplexEntryPage() {
             <CardContent className="pt-4">
               <TabsContent value="production" className="m-0">
                 <SimplexProductionTab 
-                  productionData={productionData}
-                  productionHeader={{ id: headerId }}
+                  headerId={headerId}
                   totalTime={totalTime}
-                  onDataRefresh={handleRefresh}
-                  machineSetups={machineSetupData}
+                  onRefresh={handleRefresh}
                 />
               </TabsContent>
 
               <TabsContent value="stoppage" className="m-0">
                 <SimplexStoppageTab 
-                  stoppageData={stoppageData}
-                  productionHeader={{ id: headerId }}
+                  headerId={headerId}
                   totalTime={totalTime}
-                  machines={machines}
-                  onDataRefresh={handleRefresh}
+                  onRefresh={handleRefresh}
                 />
               </TabsContent>
 
               <TabsContent value="setup" className="m-0">
                 <SimplexMachineSetupTab 
-                  machineSetupData={machineSetupData}
-                  onDataRefresh={handleRefresh}
+                  onRefresh={handleRefresh}
                 />
               </TabsContent>
             </CardContent>

@@ -179,8 +179,12 @@ export default function CardingMachineSetupTab({ onRefresh }) {
   const handleAddMachine = async () => {
     setIsSaving(true)
     try {
-      await addCardingMachine(newMachine)
-      toast.success('New machine added successfully')
+      const result = await addCardingMachine(newMachine)
+      if (result.reactivated) {
+        toast.success('Machine reactivated successfully')
+      } else {
+        toast.success('New machine added successfully')
+      }
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
@@ -195,7 +199,7 @@ export default function CardingMachineSetupTab({ onRefresh }) {
       onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
-      toast.error('Failed to add machine')
+      toast.error(error.message || 'Failed to add machine')
     } finally {
       setIsSaving(false)
     }

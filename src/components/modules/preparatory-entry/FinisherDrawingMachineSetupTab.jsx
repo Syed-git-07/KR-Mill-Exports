@@ -48,6 +48,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
   // New machine form - Finisher Drawing specific defaults (Hank=0.14, Std Effi=0.90)
   const [newMachine, setNewMachine] = useState({
     machine_no: '',
+    description: '',
     make_name: 'LMW',
     prodn_mixing: '64COMBED GOLD',
     speed: 350,
@@ -80,6 +81,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
             id: setup?.id || `new-${machine.id}`,
             machine_id: machine.id,
             machine_no: machine.machine_no,
+            description: machine.description || `Finisher Drawing Machine ${machine.machine_no}`,
             make_name: machine.make_name || 'LMW',
             mixing: machine.prodn_mixing || '64COMBED GOLD',
             speed: machine.speed || setup?.speed || 350,
@@ -206,13 +208,29 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
 
   // Add new machine
   const handleAddMachine = async () => {
+    if (!newMachine.machine_no) {
+      toast.warning('Please enter machine number')
+      return
+    }
+
     setIsSaving(true)
     try {
-      await addFinisherDrawingMachine(newMachine)
-      toast.success('New machine added successfully')
+      const result = await addFinisherDrawingMachine({
+        machine_no: newMachine.machine_no,
+        description: newMachine.description || `Finisher Drawing Machine ${newMachine.machine_no}`,
+        make_name: newMachine.make_name,
+        prodn_mixing: newMachine.prodn_mixing,
+        speed: newMachine.speed,
+        shift_time: newMachine.shift_time,
+        hank_constant: newMachine.hank_constant,
+        std_efficiency_factor: newMachine.std_efficiency_factor,
+        delivery: newMachine.delivery
+      })
+      toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
+        description: '',
         make_name: 'LMW',
         prodn_mixing: '64COMBED GOLD',
         speed: 350,
@@ -225,7 +243,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
       onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
-      toast.error('Failed to add machine')
+      toast.error(error.message || 'Failed to add machine')
     } finally {
       setIsSaving(false)
     }
@@ -339,17 +357,15 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                     className="border-white"
                   />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Make</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28">Mixing</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Shift Time</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Std.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">Speed</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Std.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">Sl.Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Delivery</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">TYPE</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-36">Description</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Make</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-28">Mixing</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Speed</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Std.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Std.Effi</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Hank</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">TYPE</th>
               </tr>
             </thead>
             <tbody>
@@ -364,64 +380,31 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                       onCheckedChange={() => handleRowSelect(row.machine_id)}
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700">
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700">
                     {row.machine_no}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1">
-                    {row.make_name}
+                  <td className="border border-gray-300 px-2 py-1 text-center text-xs">
+                    {row.description || `Finisher Drawing Machine ${row.machine_no}`}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-xs">
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.make_name || 'LMW'}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center text-xs">
                     {row.mixing}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center">
-                    1
+                    {row.speed || 350}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.shift_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'shift_time', e.target.value)}
-                      className="h-6 text-xs text-right w-14 border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium">
+                    {row.std_prodn?.toFixed(2) || '677.79'}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium">
-                    {row.std_prodn?.toFixed(2)}
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.std_efficiency_factor ? Math.round(row.std_efficiency_factor * 100) : 90}%
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.speed || ''}
-                      onChange={(e) => handleInputChange(row.id, 'speed', e.target.value)}
-                      className="h-6 text-xs text-right w-14 border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-center">
+                    {row.hank_constant || 0.14}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="1"
-                      value={row.std_efficiency_factor ? Math.round(row.std_efficiency_factor * 100) : ''}
-                      onChange={(e) => handleInputChange(row.id, 'std_efficiency_factor', parseFloat(e.target.value) / 100)}
-                      className="h-6 text-xs text-right w-14 border-gray-300"
-                    />
-                  </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="0.0001"
-                      value={row.hank_constant || ''}
-                      onChange={(e) => handleInputChange(row.id, 'hank_constant', e.target.value)}
-                      className="h-6 text-xs text-right w-14 border-gray-300"
-                    />
-                  </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.delivery || ''}
-                      onChange={(e) => handleInputChange(row.id, 'delivery', e.target.value)}
-                      className="h-6 text-xs text-center w-12 border-gray-300"
-                    />
-                  </td>
-                  <td className="border border-gray-300 px-2 py-1 text-xs">
+                  <td className="border border-gray-300 px-2 py-1 text-center text-xs">
                     FINISHER
                   </td>
                 </tr>
@@ -431,49 +414,32 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
         </div>
       </div>
 
-      {/* Action Buttons - VB6 Layout */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setShowMixingChangeDialog(true)}
-            disabled={selectedRows.length === 0}
-          >
-            <Edit className="h-4 w-4 mr-1" />
-            Change Mixing {selectedRows.length > 0 && `(${selectedRows.length})`}
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setShowAddDialog(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add new machine
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setShowRemoveDialog(true)}
-            disabled={selectedRows.length === 0}
-            className="text-red-600 hover:text-red-700"
-          >
-            <Trash2 className="h-4 w-4 mr-1" />
-            Remove machine {selectedRows.length > 0 && `(${selectedRows.length})`}
-          </Button>
-        </div>
-        <span className="text-sm text-gray-500">
-          {selectedRows.length > 0 && (
-            <span className="text-blue-600 font-medium mr-4">
-              {selectedRows.length} machine(s) selected
-            </span>
-          )}
-          {Object.keys(editedRows).length > 0 && (
-            <span className="text-yellow-600 font-medium">
-              {Object.keys(editedRows).length} row(s) modified
-            </span>
-          )}
-        </span>
+      {/* Action Buttons - Centered like Carding */}
+      <div className="flex justify-center gap-4">
+        <Button 
+          variant="outline" 
+          onClick={() => setShowMixingChangeDialog(true)}
+          disabled={selectedRows.length === 0}
+        >
+          <Edit className="h-4 w-4 mr-1" />
+          Count change
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => setShowAddDialog(true)}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add new machine
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => setShowRemoveDialog(true)}
+          disabled={selectedRows.length === 0}
+          className="text-red-600 hover:text-red-700"
+        >
+          <Trash2 className="h-4 w-4 mr-1" />
+          Remove machine
+        </Button>
       </div>
 
       {/* Formula Reference */}
@@ -497,7 +463,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                 <Input
                   placeholder="e.g., FD11"
                   value={newMachine.machine_no}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value.toUpperCase() }))}
                 />
               </div>
               <div>
@@ -513,9 +479,18 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                     <SelectItem value="LMW">LMW</SelectItem>
                     <SelectItem value="RIETER">RIETER</SelectItem>
                     <SelectItem value="LAKSHMI">LAKSHMI</SelectItem>
+                    <SelectItem value="TRUTZSCHLER">TRUTZSCHLER</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Description</Label>
+              <Input
+                placeholder="e.g., Finisher Drawing Machine 11"
+                value={newMachine.description}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -534,26 +509,6 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Hank Constant</Label>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  value={newMachine.hank_constant}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, hank_constant: parseFloat(e.target.value) || 0.14 }))}
-                />
-              </div>
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Std Efficiency</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={newMachine.std_efficiency_factor}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, std_efficiency_factor: parseFloat(e.target.value) || 0.90 }))}
-                />
-              </div>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -562,9 +517,9 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
             <Button 
               onClick={handleAddMachine}
               disabled={isSaving}
-              className="bg-green-600 hover:bg-green-700"
             >
               {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              <Plus className="h-4 w-4 mr-1" />
               Add Machine
             </Button>
           </DialogFooter>
@@ -616,10 +571,10 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
             <Button 
               onClick={handleChangeMixing}
               disabled={isSaving}
-              className="bg-orange-500 hover:bg-orange-600"
             >
               {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              Update Mixing
+              <Edit className="h-4 w-4 mr-1" />
+              Apply Change
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -629,7 +584,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
       <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Remove Machine(s)</DialogTitle>
+            <DialogTitle className="text-red-600">Remove Machine(s)</DialogTitle>
             <DialogDescription>
               Are you sure you want to remove {selectedRows.length} machine(s)? This action will deactivate the machines.
             </DialogDescription>
@@ -644,6 +599,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
               variant="destructive"
             >
               {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              <Trash2 className="h-4 w-4 mr-1" />
               Remove
             </Button>
           </DialogFooter>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Loader2, Save, Plus, Trash2, Edit, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -21,14 +21,13 @@ import {
   bulkUpdateSimplexMachineCount,
   getSimplexCountOptions,
   addSimplexMachine,
-  removeSimplexMachine
+  removeSimplexMachine,
+  getSimplexMachineSetups
 } from '@/lib/supabase/simplexEntryQueries'
 
-export default function SimplexMachineSetupTab({
-  machineSetupData = [],
-  onDataRefresh
-}) {
-  const [localData, setLocalData] = useState([])
+export default function SimplexMachineSetupTab({ onRefresh }) {
+  const [setupData, setSetupData] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
   const [editedRows, setEditedRows] = useState({})
   const [isSaving, setIsSaving] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
@@ -57,35 +56,37 @@ export default function SimplexMachineSetupTab({
     speed: 1000
   })
 
-  // Initialize local data
-  useEffect(() => {
-    // Sort by machine number
-    const sortedData = [...machineSetupData].sort((a, b) => {
-      const aNum = parseInt(a.machine?.machine_no || '0')
-      const bNum = parseInt(b.machine?.machine_no || '0')
-      return aNum - bNum
-    })
-    setLocalData(sortedData)
-    setEditedRows({})
-  }, [machineSetupData])
-
-  // Load count options
-  useEffect(() => {
-    loadCountOptions()
+  // Load machine setups
+  const loadData = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const [setups, counts] = await Promise.all([
+        getSimplexMachineSetups(),
+        getSimplexCountOptions()
+      ])
+      // Sort by natural machine number order (1, 2, ... 10, 11)
+      const sortedSetups = setups?.sort((a, b) => {
+        const aNum = parseInt(a.machine?.machine_no || '0')
+        const bNum = parseInt(b.machine?.machine_no || '0')
+        return aNum - bNum
+      }) || []
+      setSetupData(sortedSetups)
+      setCountOptions(counts || [])
+    } catch (error) {
+      console.error('Error loading machine setups:', error)
+      toast.error('Failed to load machine setups')
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
-  const loadCountOptions = async () => {
-    try {
-      const options = await getSimplexCountOptions()
-      setCountOptions(options || [])
-    } catch (error) {
-      console.error('Error loading count options:', error)
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
-    setLocalData(prev => prev.map(row => {
+    setSetupData(prev => prev.map(row => {
       if (row.id !== rowId) return row
       return { ...row, [field]: value }
     }))
@@ -103,10 +104,10 @@ export default function SimplexMachineSetupTab({
 
   // Select all rows
   const handleSelectAll = () => {
-    if (selectedRows.length === localData.length) {
+    if (selectedRows.length === setupData.length) {
       setSelectedRows([])
     } else {
-      setSelectedRows(localData.map(row => row.id))
+      setSelectedRows(setupData.map(row => row.id))
     }
   }
 
@@ -120,7 +121,7 @@ export default function SimplexMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const rowsToSave = localData.filter(row => editedRows[row.id])
+      const rowsToSave = setupData.filter(row => editedRows[row.id])
       
       for (const row of rowsToSave) {
         await updateSimplexMachineSetup(row.id, {
@@ -138,9 +139,8 @@ export default function SimplexMachineSetupTab({
       toast.success(`${rowsToSave.length} row(s) saved successfully`)
       setEditedRows({})
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error saving machine setup:', error)
       toast.error('Failed to save changes')
@@ -166,7 +166,7 @@ export default function SimplexMachineSetupTab({
     try {
       // Extract machine IDs from selected setup row IDs
       const machineIds = selectedRows.map(rowId => {
-        const setup = localData.find(r => r.id === rowId)
+        const setup = setupData.find(r => r.id === rowId)
         return setup?.machine?.id
       }).filter(Boolean)
       
@@ -177,9 +177,8 @@ export default function SimplexMachineSetupTab({
       setCustomCount('')
       setSelectedRows([])
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error updating count:', error)
       toast.error('Failed to update count')
@@ -225,9 +224,8 @@ export default function SimplexMachineSetupTab({
         speed: 1000
       })
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
       const errorMsg = error?.message || error?.toString() || 'Failed to add machine'
@@ -247,7 +245,7 @@ export default function SimplexMachineSetupTab({
     setIsSaving(true)
     try {
       for (const rowId of selectedRows) {
-        const machineSetup = localData.find(s => s.id === rowId)
+        const machineSetup = setupData.find(s => s.id === rowId)
         if (machineSetup?.machine?.id) {
           await removeSimplexMachine(machineSetup.machine.id)
         }
@@ -257,9 +255,8 @@ export default function SimplexMachineSetupTab({
       setShowRemoveDialog(false)
       setSelectedRows([])
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -270,25 +267,43 @@ export default function SimplexMachineSetupTab({
 
   return (
     <div className="space-y-4">
-      {/* Save Bar */}
-      <div className="flex items-center justify-end gap-2">
-        {Object.keys(editedRows).length > 0 && (
-          <span className="text-yellow-600 font-medium text-sm mr-2">
-            {Object.keys(editedRows).length} unsaved change(s)
-          </span>
-        )}
-        <Button 
-          onClick={handleSave}
-          disabled={isSaving || Object.keys(editedRows).length === 0}
-        >
-          {isSaving ? (
-            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4 mr-1" />
-          )}
-          Save Changes
-        </Button>
-      </div>
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <span className="ml-2">Loading machine setups...</span>
+        </div>
+      ) : (
+        <>
+          {/* Action Bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">{setupData.length} machines</span>
+              {Object.keys(editedRows).length > 0 && (
+                <span className="text-yellow-600 font-medium text-sm">
+                  • {Object.keys(editedRows).length} unsaved change(s)
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={loadData}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh
+              </Button>
+              <Button 
+                size="sm"
+                onClick={handleSave}
+                disabled={isSaving || Object.keys(editedRows).length === 0}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                Save Changes
+              </Button>
+            </div>
+          </div>
 
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
@@ -299,7 +314,7 @@ export default function SimplexMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 w-10">
                   <input
                     type="checkbox"
-                    checked={selectedRows.length === localData.length && localData.length > 0}
+                    checked={selectedRows.length === setupData.length && setupData.length > 0}
                     onChange={handleSelectAll}
                     className="rounded border-gray-300"
                   />
@@ -318,7 +333,7 @@ export default function SimplexMachineSetupTab({
               </tr>
             </thead>
             <tbody>
-              {localData.map((row, index) => {
+              {setupData.map((row, index) => {
                 const machine = row.machine || {}
                 const isEdited = editedRows[row.id]
                 const isSelected = selectedRows.includes(row.id)
@@ -700,7 +715,7 @@ export default function SimplexMachineSetupTab({
               Selected machines to remove:
               <ul className="list-disc pl-5 mt-2">
                 {selectedRows.map(rowId => {
-                  const machine = localData.find(r => r.id === rowId)?.machine
+                  const machine = setupData.find(r => r.id === rowId)?.machine
                   return (
                     <li key={rowId}>
                       {machine?.machine_no || 'Unknown'} - {machine?.machine_name || 'N/A'}
@@ -725,6 +740,8 @@ export default function SimplexMachineSetupTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   )
 }

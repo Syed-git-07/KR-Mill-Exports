@@ -17,7 +17,8 @@ import {
   getCardingProductionWithSetup,
   updateProductionDetail,
   calculateProductionValues,
-  getCardingMachineSetups
+  getCardingMachineSetups,
+  syncNewMachinesToHeader
 } from '@/lib/supabase/cardingEntryQueries'
 
 export default function CardingProductionTab({ headerId, totalTime = 510, onRefresh }) {
@@ -33,6 +34,12 @@ export default function CardingProductionTab({ headerId, totalTime = 510, onRefr
     
     setIsLoading(true)
     try {
+      // First, sync any new machines that were added after this header was created
+      const syncResult = await syncNewMachinesToHeader(headerId)
+      if (syncResult.added > 0) {
+        toast.info(`Added ${syncResult.added} new machine(s): ${syncResult.machines.join(', ')}`)
+      }
+
       const [details, setups] = await Promise.all([
         getCardingProductionWithSetup(headerId),
         getCardingMachineSetups()
@@ -88,11 +95,11 @@ export default function CardingProductionTab({ headerId, totalTime = 510, onRefr
           const runTime = field === 'run_time' ? numValue : row.run_time
           const workTime = field === 'work_time' ? numValue : row.work_time
           
-          // Calculate efficiency
+          // Calculate efficiency (Performance %)
           const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
           
-          // Calculate UTI
-          const utiPercent = totalTime > 0 ? (runTime / totalTime) * 100 : 0
+          // Calculate UTI% = WorkTime / TotalTime × 100 (based on actual working time)
+          const utiPercent = totalTime > 0 ? (workTime / totalTime) * 100 : 0
           
           // Calculate Waste%
           const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
@@ -247,11 +254,12 @@ export default function CardingProductionTab({ headerId, totalTime = 510, onRefr
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Act.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Exp.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Effi%</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">UTI</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">UTI%</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Waste</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Waste%</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">RunTime</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">RunTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Total Stopp</th>
               </tr>
             </thead>
             <tbody>
@@ -328,9 +336,10 @@ export default function CardingProductionTab({ headerId, totalTime = 510, onRefr
                   <td className="border border-gray-300 px-1 py-1">
                     <Input
                       type="number"
-                      value={row.run_time || ''}
+                      value={row.run_time || 510}
                       onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
+                      className="h-6 text-xs text-center w-full border-gray-300"
+                      readOnly
                     />
                   </td>
                   <td className="border border-gray-300 px-1 py-1">
@@ -338,8 +347,12 @@ export default function CardingProductionTab({ headerId, totalTime = 510, onRefr
                       type="number"
                       value={row.work_time || ''}
                       onChange={(e) => handleInputChange(row.id, 'work_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
+                      className="h-6 text-xs text-center w-full border-gray-300"
+                      readOnly
                     />
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-orange-600">
+                    {row.total_stoppage_mins ?? row.stoppage?.[0]?.total_stoppage_time ?? 0}
                   </td>
                 </tr>
               ))}

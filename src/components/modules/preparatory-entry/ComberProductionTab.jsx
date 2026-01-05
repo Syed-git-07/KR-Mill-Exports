@@ -225,19 +225,20 @@ export default function ComberProductionTab({ headerId, totalTime = 510, onRefre
           <table className="w-full border-collapse text-sm">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">EmpName</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28">Count</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Act.Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">RunHrs</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">RunMin</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Waste</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20">Act.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">Waste%</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Act.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">Uti</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Std.hrs</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-36">EmpName</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-28">Count</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Act.Hank</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">RunHrs</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">RunMin</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Waste</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Act.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Waste%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Act.Effi</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Uti%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Std.hrs</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Total Stopp</th>
               </tr>
             </thead>
             <tbody>
@@ -316,8 +317,11 @@ export default function ComberProductionTab({ headerId, totalTime = 510, onRefre
                   <td className="border border-gray-300 px-2 py-1 text-right">
                     {row.std_hrs?.toFixed(1) || '0.0'}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right">
+                  <td className="border border-gray-300 px-2 py-1 text-center">
                     {row.work_time || 0}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center text-orange-600 font-medium">
+                    {row.total_stoppage_mins || 0}
                   </td>
                 </tr>
               ))}

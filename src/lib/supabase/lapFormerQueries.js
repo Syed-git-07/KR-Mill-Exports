@@ -233,14 +233,15 @@ export async function getLapFormerProductionWithSetup(headerId) {
     .from('lap_former_production_detail')
     .select(`
       *,
-      machine:lap_former_machines(id, machine_no, description, prodn_mixing, mc_id, speed),
+      machine:lap_former_machines!inner(id, machine_no, description, prodn_mixing, mc_id, speed, is_active),
       stoppage:lap_former_stoppage_entry(*)
     `)
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   if (error) throw error
   
-  // Sort by natural machine number order (LF1, LF2, LF3)
+  // Sort by natural machine number order (LF1, LF2, LF3, LF4)
   return data?.sort((a, b) => {
     const aNum = parseInt(a.machine?.machine_no?.replace(/\D/g, '') || '0')
     const bNum = parseInt(b.machine?.machine_no?.replace(/\D/g, '') || '0')
@@ -250,12 +251,11 @@ export async function getLapFormerProductionWithSetup(headerId) {
 
 // Initialize production details for all lap former machines
 export async function initializeLapFormerDetails(headerId) {
-  // Get all active lap former machines WITH SPEED
+  // Get all active lap former machines WITH SPEED (no hardcoded filter)
   const { data: machines, error: machineError } = await supabase
     .from('lap_former_machines')
-    .select('id, machine_no, prodn_mixing, speed')
+    .select('id, machine_no, prodn_mixing, speed, description')
     .eq('is_active', true)
-    .in('machine_no', ['LF1', 'LF2', 'LF3'])
     .order('mc_id')
 
   if (machineError) throw machineError
@@ -306,8 +306,9 @@ export async function initializeLapFormerDetails(headerId) {
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
       waste: setup.default_waste || 0.85,
       waste_percent: 0,
-      run_time: totalTime,
-      work_time: defaultWorkTime,
+      run_time: totalTime,  // Default 510 (Total Time)
+      work_time: defaultWorkTime,  // 510 - stoppage = Running Time
+      total_stoppage_mins: defaultStoppage, // Store total stoppage mins
       session_no: 1
     }
   })
@@ -334,6 +335,108 @@ export async function initializeLapFormerDetails(headerId) {
     .insert(stoppageEntries)
 
   return data
+}
+
+// Sync newly added machines to an existing production header
+// This function adds production details for machines that don't have entries yet
+export async function syncNewMachinesToLapFormerHeader(headerId) {
+  // Get all active lap former machines
+  const { data: machines, error: machineError } = await supabase
+    .from('lap_former_machines')
+    .select('id, machine_no, prodn_mixing, speed, description')
+    .eq('is_active', true)
+    .order('mc_id')
+
+  if (machineError) throw machineError
+
+  // Get existing production details for this header
+  const { data: existingDetails, error: detailError } = await supabase
+    .from('lap_former_production_detail')
+    .select('machine_id')
+    .eq('header_id', headerId)
+
+  if (detailError) throw detailError
+
+  const existingMachineIds = existingDetails?.map(d => d.machine_id) || []
+
+  // Find machines that don't have entries
+  const newMachines = machines?.filter(m => !existingMachineIds.includes(m.id)) || []
+
+  if (newMachines.length === 0) {
+    return { added: 0, machines: [] }
+  }
+
+  // Get machine setup for default values
+  const { data: setups, error: setupError } = await supabase
+    .from('lap_former_machine_setup')
+    .select('*')
+
+  if (setupError) throw setupError
+
+  const setupMap = {}
+  setups?.forEach(s => {
+    setupMap[s.machine_id] = s
+  })
+
+  // Default values for Lap Former
+  const defaultStoppage = 0  // Lap Former default stoppage
+  const totalTime = 510
+  const defaultWorkTime = totalTime - defaultStoppage
+  const defaultUti = Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100
+
+  // Create detail records for new machines
+  const details = newMachines.map(machine => {
+    const setup = setupMap[machine.id] || {}
+    const speed = machine.speed || setup.speed || 90
+    const hankConstant = setup.hank_constant || 0.0082
+    const stdEffiFactor = setup.std_efficiency_factor || 0.85
+    const delivery = setup.delivery || 1
+    const divisor = setup.divisor_constant || 1693
+    
+    const stdProdn = (speed / divisor / hankConstant) * totalTime * stdEffiFactor * delivery
+    const expProdn = stdProdn * (defaultWorkTime / totalTime)
+    
+    return {
+      header_id: headerId,
+      machine_id: machine.id,
+      prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+      act_hank: 0,
+      act_prodn: 0,
+      std_prodn: Math.round(stdProdn * 100) / 100,
+      exp_prodn: Math.round(expProdn * 100) / 100,
+      effi_percent: 0,
+      uti_percent: defaultUti,
+      waste: setup.default_waste || 0.85,
+      waste_percent: 0,
+      run_time: totalTime,
+      work_time: defaultWorkTime,
+      total_stoppage_mins: defaultStoppage,
+      session_no: 1
+    }
+  })
+
+  const { data, error } = await supabase
+    .from('lap_former_production_detail')
+    .insert(details)
+    .select()
+
+  if (error) throw error
+
+  // Initialize stoppage entries for each new detail
+  const stoppageEntries = data.map(detail => ({
+    production_detail_id: detail.id,
+    stoppage1_id: null,
+    stoppage1_time: 0,
+    stoppage2_id: null,
+    stoppage2_time: 0,
+    total_stoppage_time: 0
+  }))
+
+  await supabase
+    .from('lap_former_stoppage_entry')
+    .insert(stoppageEntries)
+
+  return { added: data.length, machines: newMachines.map(m => m.machine_no) }
 }
 
 // Update production detail
@@ -381,14 +484,14 @@ export async function getLapFormerStoppageEntries(headerId) {
     .from('lap_former_stoppage_entry')
     .select(`
       *,
-      production_detail:lap_former_production_detail(
+      production_detail:lap_former_production_detail!inner(
         id,
         machine_id,
         effi_percent,
         act_hank,
         act_prodn,
         session_no,
-        machine:lap_former_machines(id, machine_no, speed)
+        machine:lap_former_machines!inner(id, machine_no, speed, is_active)
       ),
       stoppage1:stoppage_details!stoppage1_id(id, stoppage_name, short_code),
       stoppage2:stoppage_details!stoppage2_id(id, stoppage_name, short_code),
@@ -399,11 +502,15 @@ export async function getLapFormerStoppageEntries(headerId) {
 
   if (error) throw error
 
-  // Filter to only include entries for this header
+  // Filter to only include entries for this header with active machines
   const { data: details } = await supabase
     .from('lap_former_production_detail')
-    .select('id')
+    .select(`
+      id,
+      machine:lap_former_machines!inner(is_active)
+    `)
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)
 
   const detailIds = details?.map(d => d.id) || []
   return data?.filter(s => detailIds.includes(s.production_detail_id)) || []
@@ -490,7 +597,7 @@ export async function applyLapFormerFullStoppage(headerId, stoppageId, stoppageT
     const setup = setupMap[machineId]
     const machineSpeed = prodDetail.machine?.speed ?? setup?.speed ?? 90
     
-    // Calculate new total stoppage
+    // Calculate new total stoppage (all 4 stoppages)
     const currentStoppage = s
     const newTotalStoppage = 
       (slot === 1 ? stoppageTime : currentStoppage.stoppage1_time || 0) +
@@ -507,6 +614,9 @@ export async function applyLapFormerFullStoppage(headerId, stoppageId, stoppageT
       setup,
       machineSpeed
     )
+    
+    // Also update total_stoppage_mins
+    calculated.total_stoppage_mins = newTotalStoppage
     
     return updateLapFormerDetail(prodDetail.id, calculated)
   })
@@ -574,10 +684,12 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
     // Speed from machine table (source of truth)
     const machineSpeed = prodDetail.machine?.speed ?? setup?.speed ?? 90
     
-    // Calculate new total stoppage (Lap Former only has 2 stoppage slots)
+    // Calculate new total stoppage (all 4 stoppage slots)
     const newTotalStoppage = 
       (slot === 1 ? stoppageTime : stoppageEntry.stoppage1_time || 0) +
-      (slot === 2 ? stoppageTime : stoppageEntry.stoppage2_time || 0)
+      (slot === 2 ? stoppageTime : stoppageEntry.stoppage2_time || 0) +
+      (slot === 3 ? stoppageTime : stoppageEntry.stoppage3_time || 0) +
+      (slot === 4 ? stoppageTime : stoppageEntry.stoppage4_time || 0)
     
     // Recalculate with machine speed
     const calculated = calculateLapFormerValues(
@@ -588,6 +700,9 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
       setup,
       machineSpeed  // Pass machine speed explicitly
     )
+    
+    // Also update total_stoppage_mins
+    calculated.total_stoppage_mins = newTotalStoppage
     
     return updateLapFormerDetail(prodDetail.id, calculated)
   })

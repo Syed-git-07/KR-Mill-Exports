@@ -39,13 +39,19 @@ export default function LapFormerProductionTab({ headerId, totalTime = 510, onRe
       
       // Recalculate display values based on current stoppage times
       const recalculatedDetails = (details || []).map(row => {
-        const stoppageTime = row.stoppage?.[0]?.total_stoppage_time ?? (totalTime - (row.work_time || totalTime))
+        // Get total stoppage from stoppage entry (array access like Carding)
+        // Priority: stoppage entry > DB stored value > 0
+        const totalStoppageMins = row.stoppage?.[0]?.total_stoppage_time ?? (totalTime - (row.work_time || totalTime))
         const setup = setupMap[row.machine_id]
         // Speed priority: machine.speed > setup.speed
         const machineSpeed = row.machine?.speed ?? setup?.speed ?? 90
         
+        // Use DB work_time if available and valid, otherwise calculate
+        const workTime = row.work_time && row.work_time < totalTime 
+          ? row.work_time 
+          : totalTime - totalStoppageMins
+          
         if (setup) {
-          const workTime = row.stoppage?.[0] ? (totalTime - stoppageTime) : (row.work_time || totalTime)
           // LAP FORMER uses Hank constant 0.0082 (NOT 0.14)
           const hankConstant = setup.hank_constant || 0.0082
           const stdEffiFactor = setup.std_efficiency_factor || 0.85
@@ -69,8 +75,9 @@ export default function LapFormerProductionTab({ headerId, totalTime = 510, onRe
             effi_percent: Math.round(effiPercent * 100) / 100,
             uti_percent: Math.round(utiPercent * 100) / 100,
             waste_percent: Math.round(wastePercent * 100) / 100,
-            work_time: workTime,
-            run_time: totalTime
+            work_time: workTime,  // Running Time = 510 - Stoppage
+            run_time: totalTime,   // Total Time = 510 (fixed)
+            total_stoppage_mins: totalStoppageMins  // Store for display
           }
         }
         return row
@@ -89,7 +96,7 @@ export default function LapFormerProductionTab({ headerId, totalTime = 510, onRe
     loadData()
   }, [loadData])
 
-  // Handle input change
+  // Handle input change with dynamic recalculation
   const handleInputChange = (rowId, field, value) => {
     const numValue = parseFloat(value) || 0
     
@@ -101,59 +108,60 @@ export default function LapFormerProductionTab({ headerId, totalTime = 510, onRe
       }
     }))
 
-    // Update production data for display
+    // Update production data for display with dynamic recalculation
     setProductionData(prev => prev.map(row => {
       if (row.id === rowId) {
         const updatedRow = { ...row, [field]: numValue }
         
-        const stoppageTime = row.stoppage?.[0]?.total_stoppage_time || 0
         const setup = machineSetups[row.machine_id]
         const machineSpeed = row.machine?.speed ?? setup?.speed ?? 90
         
-        // Recalculate based on which field changed
-        if (['act_hank', 'act_prodn', 'exp_prodn', 'waste', 'run_time', 'work_time'].includes(field)) {
-          const actHank = field === 'act_hank' ? numValue : row.act_hank
-          const actProdn = field === 'act_prodn' ? numValue : row.act_prodn
-          const waste = field === 'waste' ? numValue : row.waste
-          const runTime = field === 'run_time' ? numValue : row.run_time
-          const workTime = field === 'work_time' ? numValue : row.work_time
-          
-          // If work_time changes, recalculate exp_prodn from std_prodn
-          let expProdn = field === 'exp_prodn' ? numValue : row.exp_prodn
-          if (field === 'work_time') {
-            // LAP FORMER Hank = 0.0082
-            const hankConstant = setup?.hank_constant || 0.0082
-            const stdEffiFactor = setup?.std_efficiency_factor || 0.85
-            const delivery = setup?.delivery || 1
-            const divisor = setup?.divisor_constant || 1693
-            const stdProdn = (machineSpeed / divisor / hankConstant) * totalTime * stdEffiFactor * delivery
-            expProdn = stdProdn * (workTime / totalTime)
-          }
-          
-          // Calculate efficiency
-          const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
-          
-          // Calculate UTI
-          const utiPercent = totalTime > 0 ? (workTime / totalTime) * 100 : 0
-          
-          // Calculate Waste%
-          const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
-          
-          return { 
-            ...updatedRow, 
-            act_hank: actHank,
-            act_prodn: actProdn,
-            exp_prodn: Math.round(expProdn * 100) / 100,
-            waste: waste,
-            run_time: runTime,
-            work_time: workTime,
-            effi_percent: Math.round(effiPercent * 100) / 100,
-            uti_percent: Math.round(utiPercent * 100) / 100,
-            waste_percent: Math.round(wastePercent * 100) / 100
-          }
-        }
+        // LAP FORMER constants
+        const hankConstant = setup?.hank_constant || 0.0082
+        const stdEffiFactor = setup?.std_efficiency_factor || 0.85
+        const delivery = setup?.delivery || 1
+        const divisor = setup?.divisor_constant || 1693
         
-        return updatedRow
+        // Get current or updated values
+        const actHank = field === 'act_hank' ? numValue : row.act_hank
+        const actProdn = field === 'act_prodn' ? numValue : row.act_prodn
+        const waste = field === 'waste' ? numValue : row.waste
+        
+        // Use existing work_time from the row (already calculated from stoppage)
+        const workTime = row.work_time || totalTime
+        
+        // Std Prodn = (Speed / 1693 / Hank) × Total Time × Std Effi × Delivery
+        const stdProdn = (machineSpeed / divisor / hankConstant) * totalTime * stdEffiFactor * delivery
+        
+        // Exp Prodn = Std Prodn × (Work Time / Total Time)
+        const expProdn = stdProdn * (workTime / totalTime)
+        
+        // Act Effi % = Actual Prodn / Exp Prodn × 100
+        const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
+        
+        // UTI % = Work Time / Total Time × 100
+        const utiPercent = totalTime > 0 ? (workTime / totalTime) * 100 : 0
+        
+        // Waste % = Waste / Actual Prodn × 100
+        const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
+        
+        // Total stoppage mins from row
+        const totalStoppageMins = row.total_stoppage_mins || (totalTime - workTime)
+        
+        return { 
+          ...updatedRow, 
+          act_hank: actHank,
+          act_prodn: actProdn,
+          std_prodn: Math.round(stdProdn * 100) / 100,
+          exp_prodn: Math.round(expProdn * 100) / 100,
+          waste: waste,
+          run_time: totalTime,  // Total Time = 510 (fixed)
+          work_time: workTime,   // Running Time = 510 - Stoppage
+          total_stoppage_mins: totalStoppageMins,
+          effi_percent: Math.round(effiPercent * 100) / 100,
+          uti_percent: Math.round(utiPercent * 100) / 100,
+          waste_percent: Math.round(wastePercent * 100) / 100
+        }
       }
       return row
     }))
@@ -283,24 +291,25 @@ export default function LapFormerProductionTab({ headerId, totalTime = 510, onRe
         </div>
       </div>
 
-      {/* Production Grid */}
+      {/* Production Grid - Layout matches Carding Entry */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
           <table className="w-full border-collapse text-sm">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Emp.Name</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Emp.Name</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28">Mixing</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Act.Hank</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Act.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20">Exp.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Act.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">UTI</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">UTI%</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Waste</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Waste%</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">RunTime</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 bg-blue-700">RunTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 bg-blue-700">WorkTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 bg-orange-600">TotStop</th>
               </tr>
             </thead>
             <tbody>
@@ -374,21 +383,17 @@ export default function LapFormerProductionTab({ headerId, totalTime = 510, onRe
                   <td className="border border-gray-300 px-2 py-1 text-right">
                     {row.waste_percent?.toFixed(2)}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.run_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  {/* RunTime = Total Time (510) - Fixed display only */}
+                  <td className="border border-gray-300 px-2 py-1 text-center bg-blue-50 font-medium">
+                    {row.run_time || 510}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.work_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'work_time', e.target.value)}
-                      className="h-6 text-xs text-left w-full border-gray-300"
-                    />
+                  {/* WorkTime = 510 - Stoppage (Running Time) - Calculated display only */}
+                  <td className="border border-gray-300 px-2 py-1 text-center bg-blue-50 font-medium">
+                    {row.work_time || 510}
+                  </td>
+                  {/* Total Stoppage Mins - Display only (from Stoppage Entry) */}
+                  <td className="border border-gray-300 px-2 py-1 text-center bg-orange-50 font-medium text-orange-700">
+                    {row.total_stoppage_mins ?? row.stoppage?.[0]?.total_stoppage_time ?? 0}
                   </td>
                 </tr>
               ))}

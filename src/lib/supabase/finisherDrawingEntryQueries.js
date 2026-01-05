@@ -19,13 +19,12 @@ import { supabase } from '../supabase';
 // FINISHER DRAWING MACHINE QUERIES
 // ============================================
 
-// Get all finisher drawing machines (FD4-FD10 only as per VB6)
+// Get all finisher drawing machines (all active FD machines)
 export async function getFinisherDrawingMachines() {
   const { data, error } = await supabase
     .from('drawing_finisher_machines')
     .select('*')
     .eq('is_active', true)
-    .in('machine_no', ['FD4', 'FD5', 'FD6', 'FD7', 'FD8', 'FD9', 'FD10'])
     .order('mc_id', { ascending: true });
 
   if (error) throw error;
@@ -38,7 +37,6 @@ export async function getActiveFinisherDrawingMachines() {
     .from('drawing_finisher_machines')
     .select('*')
     .eq('is_active', true)
-    .in('machine_no', ['FD4', 'FD5', 'FD6', 'FD7', 'FD8', 'FD9', 'FD10'])
     .order('mc_id', { ascending: true });
 
   if (error) throw error;
@@ -142,7 +140,7 @@ export async function getFinisherDrawingProductionWithSetup(headerId) {
     .from('finisher_drawing_production_detail')
     .select(`
       *,
-      machine:drawing_finisher_machines(id, machine_no, description, prodn_mixing, mc_id, speed),
+      machine:drawing_finisher_machines!inner(id, machine_no, description, prodn_mixing, mc_id, speed, is_active),
       stoppage:finisher_drawing_stoppage_entry!production_detail_id(
         id,
         stoppage1_id,
@@ -160,7 +158,8 @@ export async function getFinisherDrawingProductionWithSetup(headerId) {
         stoppage4:stoppage_details!stoppage4_id(id, stoppage_name, short_code)
       )
     `)
-    .eq('header_id', headerId);
+    .eq('header_id', headerId)
+    .eq('machine.is_active', true);
 
   if (error) throw error;
   
@@ -179,7 +178,6 @@ export async function initializeFinisherDrawingDetails(headerId) {
     .from('drawing_finisher_machines')
     .select('id, machine_no, prodn_mixing, speed')
     .eq('is_active', true)
-    .in('machine_no', ['FD4', 'FD5', 'FD6', 'FD7', 'FD8', 'FD9', 'FD10'])
     .order('mc_id');
 
   if (machineError) throw machineError;
@@ -265,6 +263,111 @@ export async function initializeFinisherDrawingDetails(headerId) {
   return data;
 }
 
+// Sync new machines to existing header (for machines added after header was created)
+export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
+  // Get all active finisher drawing machines
+  const { data: machines, error: machineError } = await supabase
+    .from('drawing_finisher_machines')
+    .select('id, machine_no, prodn_mixing, speed')
+    .eq('is_active', true)
+    .order('mc_id');
+
+  if (machineError) throw machineError;
+
+  // Get existing production details for this header
+  const { data: existingDetails, error: detailError } = await supabase
+    .from('finisher_drawing_production_detail')
+    .select('machine_id')
+    .eq('header_id', headerId);
+
+  if (detailError) throw detailError;
+
+  const existingMachineIds = existingDetails?.map(d => d.machine_id) || [];
+
+  // Find machines that don't have entries
+  const newMachines = machines?.filter(m => !existingMachineIds.includes(m.id)) || [];
+
+  if (newMachines.length === 0) {
+    return { added: 0, machines: [] };
+  }
+
+  // Get machine setup for default values
+  const { data: setups, error: setupError } = await supabase
+    .from('finisher_drawing_machine_setup')
+    .select('*');
+
+  if (setupError) throw setupError;
+
+  const setupMap = {};
+  setups?.forEach(s => {
+    setupMap[s.machine_id] = s;
+  });
+
+  // Default values for Finisher Drawing
+  const defaultStoppage = 0;
+  const totalTime = 510;
+  const defaultWorkTime = totalTime - defaultStoppage;
+  const defaultUti = Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100;
+
+  // Create detail records for new machines
+  const details = newMachines.map(machine => {
+    const setup = setupMap[machine.id] || {};
+    const speed = machine.speed || setup.speed || 350;
+    const hankConstant = setup.hank_constant || 0.14;
+    const stdEffiFactor = setup.std_efficiency_factor || 0.90;
+    const delivery = setup.delivery || 1;
+    const divisor = setup.divisor_constant || 1693;
+    
+    // Calculate Std Prodn
+    const stdProdn = (speed / divisor / hankConstant) * totalTime * stdEffiFactor * delivery;
+    
+    return {
+      header_id: headerId,
+      machine_id: machine.id,
+      prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+      act_hank: 0,
+      act_prodn: 0,
+      std_prodn: Math.round(stdProdn * 100) / 100,
+      exp_prodn: Math.round(stdProdn * 100) / 100,
+      effi_percent: 0,
+      uti_percent: defaultUti,
+      waste: setup.default_waste || 0.41,
+      waste_percent: 0,
+      run_time: totalTime,
+      work_time: defaultWorkTime,
+      total_stoppage_mins: defaultStoppage,
+      session_no: 1
+    };
+  });
+
+  const { data, error } = await supabase
+    .from('finisher_drawing_production_detail')
+    .insert(details)
+    .select();
+
+  if (error) throw error;
+
+  // Initialize stoppage entries for each new detail
+  const stoppageEntries = data.map(detail => ({
+    production_detail_id: detail.id,
+    stoppage1_id: null,
+    stoppage1_time: 0,
+    stoppage2_id: null,
+    stoppage2_time: 0,
+    stoppage3_id: null,
+    stoppage3_time: 0,
+    stoppage4_id: null,
+    stoppage4_time: 0,
+    total_stoppage_time: 0
+  }));
+
+  await supabase
+    .from('finisher_drawing_stoppage_entry')
+    .insert(stoppageEntries);
+
+  return { added: data.length, machines: newMachines.map(m => m.machine_no) };
+}
+
 // Update production detail
 export async function updateFinisherDrawingDetail(id, updates) {
   // Remove any fields that shouldn't be updated
@@ -317,7 +420,7 @@ export async function getFinisherDrawingStoppageEntries(headerId) {
         act_hank,
         act_prodn,
         session_no,
-        machine:drawing_finisher_machines(id, machine_no, speed)
+        machine:drawing_finisher_machines(id, machine_no, speed, is_active)
       ),
       stoppage1:stoppage_details!stoppage1_id(id, stoppage_name, short_code),
       stoppage2:stoppage_details!stoppage2_id(id, stoppage_name, short_code),
@@ -328,14 +431,19 @@ export async function getFinisherDrawingStoppageEntries(headerId) {
 
   if (error) throw error;
 
-  // Filter to only include entries for this header
+  // Filter to only include entries for this header with active machines
   const { data: details } = await supabase
     .from('finisher_drawing_production_detail')
     .select('id')
     .eq('header_id', headerId);
 
   const detailIds = details?.map(d => d.id) || [];
-  return data?.filter(s => detailIds.includes(s.production_detail_id)) || [];
+  
+  // Filter by header and active machines
+  return data?.filter(s => 
+    detailIds.includes(s.production_detail_id) && 
+    s.production_detail?.machine?.is_active !== false
+  ) || [];
 }
 
 // Update stoppage entry
@@ -559,26 +667,27 @@ export async function applyFinisherDrawingPartialStoppage(headerId, fromMachineN
 // FINISHER DRAWING MACHINE SETUP QUERIES
 // ============================================
 
-// Get all machine setups with machine info (FD4-FD10 only)
+// Get all machine setups with machine info (all active machines)
 export async function getFinisherDrawingMachineSetups() {
-  // First get the machine IDs for FD4-FD10
+  // Get all active finisher drawing machines
   const { data: machines, error: machineError } = await supabase
     .from('drawing_finisher_machines')
     .select('id')
-    .eq('is_active', true)
-    .in('machine_no', ['FD4', 'FD5', 'FD6', 'FD7', 'FD8', 'FD9', 'FD10']);
+    .eq('is_active', true);
 
   if (machineError) throw machineError;
   
   const machineIds = machines?.map(m => m.id) || [];
   
+  if (machineIds.length === 0) return [];
+  
   const { data, error } = await supabase
     .from('finisher_drawing_machine_setup')
     .select(`
       *,
-      machine:drawing_finisher_machines(id, machine_no, description, make_name, prodn_mixing, speed)
+      machine:drawing_finisher_machines!inner(id, machine_no, description, make_name, prodn_mixing, speed, is_active)
     `)
-    .in('machine_id', machineIds)
+    .eq('machine.is_active', true)
     .order('machine_id');
 
   if (error) throw error;
@@ -947,6 +1056,46 @@ export async function copyFinisherDrawingFromYesterday(targetDate, targetShift, 
 
 // Add new finisher drawing machine
 export async function addFinisherDrawingMachine(machineData) {
+  if (!machineData.machine_no) {
+    throw new Error('Machine number is required');
+  }
+
+  // Check if machine already exists (including inactive)
+  const { data: existingMachine, error: checkError } = await supabase
+    .from('drawing_finisher_machines')
+    .select('*')
+    .eq('machine_no', machineData.machine_no.toUpperCase())
+    .single();
+
+  if (checkError && checkError.code !== 'PGRST116') {
+    throw checkError;
+  }
+
+  // If machine exists but is inactive, reactivate it
+  if (existingMachine) {
+    if (existingMachine.is_active) {
+      throw new Error(`Machine ${machineData.machine_no} already exists`);
+    }
+
+    // Reactivate the machine with updated data
+    const { data: reactivatedMachine, error: reactivateError } = await supabase
+      .from('drawing_finisher_machines')
+      .update({
+        is_active: true,
+        description: machineData.description || existingMachine.description,
+        make_name: machineData.make_name || existingMachine.make_name,
+        prodn_mixing: machineData.prodn_mixing || existingMachine.prodn_mixing,
+        speed: machineData.speed || existingMachine.speed
+      })
+      .eq('id', existingMachine.id)
+      .select()
+      .single();
+
+    if (reactivateError) throw reactivateError;
+    
+    return { machine: reactivatedMachine, reactivated: true };
+  }
+
   // Get the max mc_id to generate next one
   const { data: maxMachine } = await supabase
     .from('drawing_finisher_machines')
@@ -956,15 +1105,15 @@ export async function addFinisherDrawingMachine(machineData) {
     .single();
 
   const nextMcId = (maxMachine?.mc_id || 0) + 1;
-  const nextMachineNo = machineData.machine_no || `FD${nextMcId}`;
+  const machineNo = machineData.machine_no.toUpperCase();
 
   // Insert new machine
   const { data: newMachine, error: machineError } = await supabase
     .from('drawing_finisher_machines')
     .insert([{
-      machine_no: nextMachineNo,
+      machine_no: machineNo,
       mc_id: nextMcId,
-      description: machineData.description || `Finisher Drawing Machine ${nextMcId}`,
+      description: machineData.description || `Finisher Drawing Machine ${machineNo}`,
       make_name: machineData.make_name || 'LMW',
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
       speed: machineData.speed || 350,
@@ -1006,7 +1155,7 @@ export async function addFinisherDrawingMachine(machineData) {
 
   if (setupError) throw setupError;
 
-  return { machine: newMachine, setup: newSetup };
+  return { machine: newMachine, setup: newSetup, reactivated: false };
 }
 
 // Remove (deactivate) finisher drawing machine

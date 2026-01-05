@@ -97,10 +97,11 @@ export async function getCardingProductionWithSetup(headerId) {
     .from('carding_production_detail')
     .select(`
       *,
-      machine:carding_machines(id, machine_no, description, prodn_mixing, mc_id),
-      stoppage:carding_stoppage_entry(*)
+      machine:carding_machines!inner(id, machine_no, description, prodn_mixing, mc_id, is_active),
+      stoppage:carding_stoppage_entry(id, total_stoppage_time, stoppage1_time, stoppage2_time, stoppage3_time, stoppage4_time)
     `)
     .eq('header_id', headerId)
+    .eq('machine.is_active', true)  // Only show active machines
 
   if (error) throw error
   
@@ -137,6 +138,12 @@ export async function initializeProductionDetails(headerId) {
   })
 
   // Create detail records for each machine
+  // According to formula: RunTime = 510 (default), WorkTime = 510 - StoppageTime
+  const defaultStoppage = 135 // Default stoppage time
+  const totalTime = 510
+  const defaultWorkTime = totalTime - defaultStoppage // 510 - 135 = 375
+  const defaultUti = Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100 // 73.53%
+  
   const details = machines.map(machine => {
     const setup = setupMap[machine.id] || {}
     return {
@@ -148,11 +155,12 @@ export async function initializeProductionDetails(headerId) {
       std_prodn: setup.std_prodn || 295.22,
       exp_prodn: 0,
       effi_percent: 0,
-      uti_percent: 0,
+      uti_percent: defaultUti,
       waste: setup.default_waste || 0.34,
       waste_percent: 0,
-      run_time: 510,
-      work_time: (setup.shift_time || 510) - (setup.default_stoppage || 135),
+      run_time: totalTime, // Default 510 mins
+      work_time: defaultWorkTime, // 510 - stoppage (375 by default)
+      total_stoppage_mins: defaultStoppage, // Store total stoppage mins
       session_no: 1
     }
   })
@@ -176,6 +184,96 @@ export async function initializeProductionDetails(headerId) {
     .insert(stoppageEntries)
 
   return data
+}
+
+// Sync newly added machines to an existing production header
+// This function adds production details for machines that don't have entries yet
+export async function syncNewMachinesToHeader(headerId) {
+  // Get all active carding machines
+  const { data: machines, error: machineError } = await supabase
+    .from('carding_machines')
+    .select('id, machine_no, prodn_mixing')
+    .eq('is_active', true)
+    .order('mc_id')
+
+  if (machineError) throw machineError
+
+  // Get existing production details for this header
+  const { data: existingDetails, error: detailError } = await supabase
+    .from('carding_production_detail')
+    .select('machine_id')
+    .eq('header_id', headerId)
+
+  if (detailError) throw detailError
+
+  const existingMachineIds = existingDetails?.map(d => d.machine_id) || []
+
+  // Find machines that don't have entries
+  const newMachines = machines?.filter(m => !existingMachineIds.includes(m.id)) || []
+
+  if (newMachines.length === 0) {
+    return { added: 0, machines: [] }
+  }
+
+  // Get machine setup for default values
+  const { data: setups, error: setupError } = await supabase
+    .from('carding_machine_setup')
+    .select('*')
+
+  if (setupError) throw setupError
+
+  const setupMap = {}
+  setups?.forEach(s => {
+    setupMap[s.machine_id] = s
+  })
+
+  // Default values
+  const defaultStoppage = 135
+  const totalTime = 510
+  const defaultWorkTime = totalTime - defaultStoppage
+  const defaultUti = Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100
+
+  // Create detail records for new machines
+  const details = newMachines.map(machine => {
+    const setup = setupMap[machine.id] || {}
+    return {
+      header_id: headerId,
+      machine_id: machine.id,
+      count_mixing: machine.prodn_mixing || '64COMBED GOLD',
+      act_hank: 0,
+      act_prodn: 0,
+      std_prodn: setup.std_prodn || 295.22,
+      exp_prodn: 0,
+      effi_percent: 0,
+      uti_percent: defaultUti,
+      waste: setup.default_waste || 0.34,
+      waste_percent: 0,
+      run_time: totalTime,
+      work_time: defaultWorkTime,
+      total_stoppage_mins: defaultStoppage,
+      session_no: 1
+    }
+  })
+
+  const { data, error } = await supabase
+    .from('carding_production_detail')
+    .insert(details)
+    .select()
+
+  if (error) throw error
+
+  // Initialize stoppage entries for each new detail
+  const stoppageEntries = data.map(detail => ({
+    production_detail_id: detail.id,
+    stoppage1_time: 135,
+    total_stoppage_time: 135
+  }))
+
+  await supabase
+    .from('carding_stoppage_entry')
+    .insert(stoppageEntries)
+
+  return { added: data.length, machines: newMachines.map(m => m.machine_no) }
 }
 
 // Update production detail
@@ -211,8 +309,25 @@ export async function bulkUpdateProductionDetails(updates) {
 // CARDING STOPPAGE ENTRY QUERIES
 // ============================================
 
-// Get stoppage entries for a header
+// Get stoppage entries for a header (only active machines)
 export async function getCardingStoppageEntries(headerId) {
+  // First get all production details for this header with active machines
+  const { data: details, error: detailError } = await supabase
+    .from('carding_production_detail')
+    .select(`
+      id,
+      machine:carding_machines!inner(id, machine_no, is_active)
+    `)
+    .eq('header_id', headerId)
+    .eq('machine.is_active', true)
+
+  if (detailError) throw detailError
+
+  const detailIds = details?.map(d => d.id) || []
+  
+  if (detailIds.length === 0) return []
+
+  // Get stoppage entries for active machines only
   const { data, error } = await supabase
     .from('carding_stoppage_entry')
     .select(`
@@ -222,26 +337,24 @@ export async function getCardingStoppageEntries(headerId) {
         machine_id,
         effi_percent,
         session_no,
-        machine:carding_machines(id, machine_no)
+        machine:carding_machines(id, machine_no, is_active)
       ),
       stoppage1:stoppage_details!stoppage1_id(id, stoppage_name, short_code),
       stoppage2:stoppage_details!stoppage2_id(id, stoppage_name, short_code),
       stoppage3:stoppage_details!stoppage3_id(id, stoppage_name, short_code),
       stoppage4:stoppage_details!stoppage4_id(id, stoppage_name, short_code)
     `)
+    .in('production_detail_id', detailIds)
     .order('production_detail_id')
 
   if (error) throw error
-
-  // Filter to only include entries for this header
-  // We need to join through production_detail
-  const { data: details } = await supabase
-    .from('carding_production_detail')
-    .select('id')
-    .eq('header_id', headerId)
-
-  const detailIds = details?.map(d => d.id) || []
-  return data?.filter(s => detailIds.includes(s.production_detail_id)) || []
+  
+  // Sort by natural machine number order
+  return data?.sort((a, b) => {
+    const aNum = parseInt(a.production_detail?.machine?.machine_no?.replace(/\D/g, '') || '0')
+    const bNum = parseInt(b.production_detail?.machine?.machine_no?.replace(/\D/g, '') || '0')
+    return aNum - bNum
+  }) || []
 }
 
 // Update stoppage entry
@@ -280,10 +393,25 @@ export async function updateStoppageEntry(id, updates) {
       total_stoppage_time: total
     })
     .eq('id', id)
-    .select()
+    .select('*, production_detail_id')
     .single()
 
   if (error) throw error
+
+  // Also update the total_stoppage_mins and work_time in carding_production_detail
+  const totalTime = 510
+  const workTime = totalTime - total
+  const utiPercent = Math.round((workTime / totalTime) * 100 * 100) / 100
+
+  await supabase
+    .from('carding_production_detail')
+    .update({
+      total_stoppage_mins: total,
+      work_time: workTime,
+      uti_percent: utiPercent
+    })
+    .eq('id', data.production_detail_id)
+
   return data
 }
 
@@ -354,14 +482,15 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 // CARDING MACHINE SETUP QUERIES
 // ============================================
 
-// Get all machine setups with machine info
+// Get all machine setups with machine info (only active machines)
 export async function getCardingMachineSetups() {
   const { data, error } = await supabase
     .from('carding_machine_setup')
     .select(`
       *,
-      machine:carding_machines(id, machine_no, description, make_name, prodn_mixing)
+      machine:carding_machines!inner(id, machine_no, description, make_name, prodn_mixing, is_active)
     `)
+    .eq('machine.is_active', true)
     .order('machine_id')
 
   if (error) throw error
@@ -431,7 +560,12 @@ export async function getSupervisors() {
 // CALCULATION HELPERS
 // ============================================
 
-// Calculate production values based on formula
+// Calculate production values based on formula from carding-formula.md
+// STEP-1: WorkTime = TotalTime(510) - StoppageTime
+// STEP-2: Std Prodn = (Speed / 1693 / Hank) × TotalTime × StdEffi
+// STEP-3: Exp Prodn = Std Prodn × WorkTime / TotalTime
+// STEP-4: Effi% = ActProdn / ExpProdn × 100
+// STEP-5: UTI% = WorkTime / TotalTime × 100
 export function calculateProductionValues(actHank, actProdn, totalTime, stoppageTime, setup) {
   const speed = setup?.speed || 130
   const hankConstant = setup?.hank_constant || 0.13
@@ -439,23 +573,25 @@ export function calculateProductionValues(actHank, actProdn, totalTime, stoppage
   const divisor = setup?.divisor_constant || 1693
   const waste = setup?.default_waste || 0.34
 
-  // Run Time = Total Time - Stoppage Time
-  const runTime = totalTime - stoppageTime
-  const workTime = runTime
+  // WorkTime = TotalTime - StoppageTime (this is the actual run time)
+  const workTime = totalTime - stoppageTime
+  
+  // RunTime defaults to TotalTime (510), represents available shift time
+  const runTime = totalTime
 
-  // Std Prodn = (Speed / 1693 / 0.13) × Total Time × 0.98
+  // Std Prodn = (Speed / 1693 / Hank) × TotalTime × StdEffi
   const stdProdn = (speed / divisor / hankConstant) * totalTime * stdEffiFactor
 
-  // Exp Prodn = Std Prodn × Run Time / Total Time
-  const expProdn = stdProdn * runTime / totalTime
+  // Exp Prodn = Std Prodn × WorkTime / TotalTime (time-adjusted target)
+  const expProdn = stdProdn * workTime / totalTime
 
-  // Effi% = Act Prodn / Exp Prodn × 100
+  // Effi% = ActProdn / ExpProdn × 100 (Performance %)
   const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
 
-  // UTI% = Run Time / Total Time × 100
-  const utiPercent = (runTime / totalTime) * 100
+  // UTI% = WorkTime / TotalTime × 100 (Utilization based on actual working time)
+  const utiPercent = (workTime / totalTime) * 100
 
-  // Waste% = Waste / Act Prodn × 100
+  // Waste% = Waste / ActProdn × 100
   const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
 
   return {
@@ -465,8 +601,9 @@ export function calculateProductionValues(actHank, actProdn, totalTime, stoppage
     uti_percent: Math.round(utiPercent * 100) / 100,
     waste,
     waste_percent: Math.round(wastePercent * 100) / 100,
-    run_time: totalTime,
-    work_time: workTime
+    run_time: runTime, // TotalTime (510)
+    work_time: workTime, // TotalTime - StoppageTime
+    total_stoppage_mins: stoppageTime // Store total stoppage for reference
   }
 }
 
@@ -488,7 +625,38 @@ export async function getCardingMachines() {
 
 // Add new carding machine
 export async function addCardingMachine(machineData) {
-  // Get the max mc_id to generate next one
+  // Check if machine_no already exists (might be inactive)
+  if (machineData.machine_no) {
+    const { data: existingMachine } = await supabase
+      .from('carding_machines')
+      .select('id, is_active')
+      .eq('machine_no', machineData.machine_no)
+      .single()
+    
+    if (existingMachine) {
+      if (!existingMachine.is_active) {
+        // Reactivate the existing machine
+        const { data: reactivated, error: reactivateError } = await supabase
+          .from('carding_machines')
+          .update({
+            is_active: true,
+            description: machineData.description || machineData.machine_no,
+            make_name: machineData.make_name || 'LMW',
+            prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD'
+          })
+          .eq('id', existingMachine.id)
+          .select()
+          .single()
+        
+        if (reactivateError) throw new Error(`Failed to reactivate machine: ${reactivateError.message}`)
+        return { machine: reactivated, setup: null, reactivated: true }
+      } else {
+        throw new Error(`Machine ${machineData.machine_no} already exists and is active`)
+      }
+    }
+  }
+
+  // Get the max mc_id to generate next one (include inactive machines)
   const { data: maxMachine } = await supabase
     .from('carding_machines')
     .select('mc_id, machine_no')
@@ -497,13 +665,13 @@ export async function addCardingMachine(machineData) {
     .single()
 
   const nextMcId = (maxMachine?.mc_id || 0) + 1
-  const nextMachineNo = `CA${nextMcId}`
+  const nextMachineNo = machineData.machine_no || `CA${nextMcId}`
 
   // Insert new machine
   const { data: newMachine, error: machineError } = await supabase
     .from('carding_machines')
     .insert([{
-      machine_no: machineData.machine_no || nextMachineNo,
+      machine_no: nextMachineNo,
       mc_id: nextMcId,
       description: machineData.description || `Carding Machine ${nextMcId}`,
       make_name: machineData.make_name || 'LMW',
@@ -513,7 +681,7 @@ export async function addCardingMachine(machineData) {
     .select()
     .single()
 
-  if (machineError) throw machineError
+  if (machineError) throw new Error(`Failed to add machine: ${machineError.message}`)
 
   // Create machine setup for the new machine
   const { data: newSetup, error: setupError } = await supabase
@@ -532,7 +700,7 @@ export async function addCardingMachine(machineData) {
     .select()
     .single()
 
-  if (setupError) throw setupError
+  if (setupError) throw new Error(`Failed to create machine setup: ${setupError.message}`)
 
   return { machine: newMachine, setup: newSetup }
 }

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Loader2, Save } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Loader2, Save, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -11,23 +11,25 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 import {
+  getSimplexStoppageEntries,
   updateSimplexStoppageEntry,
   applySimplexFullStoppage,
   applySimplexPartialStoppage,
-  getSimplexStoppageReasons
+  getSimplexStoppageReasons,
+  getSimplexMachines
 } from '@/lib/supabase/simplexEntryQueries'
 
 export default function SimplexStoppageTab({
-  stoppageData,
-  productionHeader,
+  headerId,
   totalTime = 510,
-  machines = [],
-  onDataRefresh
+  onRefresh
 }) {
-  const [localData, setLocalData] = useState([])
-  const [editedRows, setEditedRows] = useState({})
-  const [isSaving, setIsSaving] = useState(false)
+  const [stoppageData, setStoppageData] = useState([])
   const [stoppageReasons, setStoppageReasons] = useState([])
+  const [machines, setMachines] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [editedRows, setEditedRows] = useState({})
 
   // Full Stoppage State
   const [fullStoppage, setFullStoppage] = useState({
@@ -45,41 +47,61 @@ export default function SimplexStoppageTab({
     toMachine: ''
   })
 
-  // Initialize local data
-  useEffect(() => {
-    setLocalData(stoppageData)
-    setEditedRows({})
-  }, [stoppageData])
-
-  // Load stoppage reasons
-  useEffect(() => {
-    loadStoppageReasons()
-  }, [])
-
-  const loadStoppageReasons = async () => {
+  // Load data
+  const loadData = useCallback(async () => {
+    if (!headerId) return
+    
+    setIsLoading(true)
     try {
-      const data = await getSimplexStoppageReasons()
-      setStoppageReasons(data || [])
+      const [stoppages, reasons, machineList] = await Promise.all([
+        getSimplexStoppageEntries(headerId),
+        getSimplexStoppageReasons(),
+        getSimplexMachines()
+      ])
+      
+      // Sort by natural machine number order (1, 2, 3... 10)
+      const sortedStoppages = stoppages?.sort((a, b) => {
+        const aNum = parseInt(a.production_detail?.machine?.machine_no || '0')
+        const bNum = parseInt(b.production_detail?.machine?.machine_no || '0')
+        return aNum - bNum
+      }) || []
+      
+      // Sort machines list for dropdowns
+      const sortedMachines = machineList?.sort((a, b) => {
+        const aNum = parseInt(a.machine_no || '0')
+        const bNum = parseInt(b.machine_no || '0')
+        return aNum - bNum
+      }) || []
+      
+      setStoppageData(sortedStoppages)
+      setStoppageReasons(reasons || [])
+      setMachines(sortedMachines)
     } catch (error) {
-      console.error('Error loading stoppage reasons:', error)
+      console.error('Error loading stoppage data:', error)
+      toast.error('Failed to load stoppage data')
+    } finally {
+      setIsLoading(false)
     }
-  }
+  }, [headerId])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // Handle stoppage reason change
   const handleStoppageReasonChange = (rowId, field, value) => {
     // Handle "none" option to clear the stoppage
     const actualValue = value === 'none' ? null : value
     
-    setLocalData(prev => prev.map(row => {
+    setStoppageData(prev => prev.map(row => {
       if (row.id !== rowId) return row
       
       // Clear the relationship object and set the new ID
-      // This ensures the Select displays the new value immediately
       const fieldBase = field.replace('_id', '') // e.g., 'stoppage1'
       return { 
         ...row, 
         [field]: actualValue,
-        [fieldBase]: actualValue ? { id: actualValue } : null // Update relation object too
+        [fieldBase]: actualValue ? { id: actualValue } : null
       }
     }))
     setEditedRows(prev => ({ ...prev, [rowId]: true }))
@@ -88,7 +110,7 @@ export default function SimplexStoppageTab({
   // Handle time change
   const handleTimeChange = (rowId, field, value) => {
     const numValue = parseInt(value) || 0
-    setLocalData(prev => prev.map(row => {
+    setStoppageData(prev => prev.map(row => {
       if (row.id !== rowId) return row
       
       const updatedRow = { ...row, [field]: numValue }
@@ -116,7 +138,7 @@ export default function SimplexStoppageTab({
 
     setIsSaving(true)
     try {
-      const rowsToSave = localData.filter(row => editedRows[row.id])
+      const rowsToSave = stoppageData.filter(row => editedRows[row.id])
       
       for (const row of rowsToSave) {
         await updateSimplexStoppageEntry(row.id, {
@@ -134,9 +156,8 @@ export default function SimplexStoppageTab({
       toast.success(`${rowsToSave.length} row(s) saved successfully`)
       setEditedRows({})
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error saving stoppage data:', error)
       toast.error('Failed to save changes')
@@ -152,7 +173,7 @@ export default function SimplexStoppageTab({
       return
     }
 
-    if (!productionHeader?.id) {
+    if (!headerId) {
       toast.error('No production header found')
       return
     }
@@ -160,7 +181,7 @@ export default function SimplexStoppageTab({
     setIsSaving(true)
     try {
       await applySimplexFullStoppage(
-        productionHeader.id,
+        headerId,
         fullStoppage.reason,
         parseInt(fullStoppage.time) || 0,
         parseInt(fullStoppage.slot)
@@ -169,9 +190,8 @@ export default function SimplexStoppageTab({
       toast.success('Full stoppage applied to all machines')
       setFullStoppage({ slot: '1', reason: '', time: '' })
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error applying full stoppage:', error)
       toast.error('Failed to apply stoppage')
@@ -192,7 +212,7 @@ export default function SimplexStoppageTab({
       return
     }
 
-    if (!productionHeader?.id) {
+    if (!headerId) {
       toast.error('No production header found')
       return
     }
@@ -200,7 +220,7 @@ export default function SimplexStoppageTab({
     setIsSaving(true)
     try {
       await applySimplexPartialStoppage(
-        productionHeader.id,
+        headerId,
         partialStoppage.fromMachine,
         partialStoppage.toMachine,
         partialStoppage.reason,
@@ -211,9 +231,8 @@ export default function SimplexStoppageTab({
       toast.success(`Partial stoppage applied to machines ${partialStoppage.fromMachine} - ${partialStoppage.toMachine}`)
       setPartialStoppage({ slot: '1', reason: '', time: '', fromMachine: '', toMachine: '' })
       
-      if (onDataRefresh) {
-        await onDataRefresh()
-      }
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error applying partial stoppage:', error)
       toast.error('Failed to apply stoppage')
@@ -222,29 +241,40 @@ export default function SimplexStoppageTab({
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <span className="ml-2">Loading stoppage data...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Action Bar */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">
-          {Object.keys(editedRows).length > 0 && (
-            <span className="text-yellow-600 font-medium">
-              {Object.keys(editedRows).length} unsaved change(s)
-            </span>
-          )}
+        <div className="text-sm text-gray-500">
+          {stoppageData.length} machines | Shift Time: {totalTime} mins
         </div>
-        <Button 
-          size="sm" 
-          onClick={handleSave}
-          disabled={isSaving || Object.keys(editedRows).length === 0}
-        >
-          {isSaving ? (
-            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4 mr-1" />
-          )}
-          Save Changes
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={loadData}>
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Refresh
+          </Button>
+          <Button 
+            size="sm" 
+            onClick={handleSave}
+            disabled={isSaving || Object.keys(editedRows).length === 0}
+          >
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save Changes
+          </Button>
+        </div>
       </div>
 
       {/* Stoppage Grid */}
@@ -257,20 +287,18 @@ export default function SimplexStoppageTab({
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Session</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">ActEffi</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14">R.Time</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 1</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Stoppage 1</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time1</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 2</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Stoppage 2</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time2</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 3</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Stoppage 3</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time3</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 4</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40">Stoppage 4</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time4</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 bg-red-700">Tot.Stop</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 bg-blue-700">WorkTime</th>
               </tr>
             </thead>
             <tbody>
-              {localData.map((row, index) => (
+              {stoppageData.map((row, index) => (
                 <tr 
                   key={row.id}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
@@ -282,7 +310,7 @@ export default function SimplexStoppageTab({
                     {row.production_detail?.session_no || 1}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right">
-                    {row.production_detail?.act_effi_percent?.toFixed(2)}
+                    {row.production_detail?.act_effi_percent?.toFixed(2) || '0.00'}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right">
                     {totalTime}
@@ -292,7 +320,7 @@ export default function SimplexStoppageTab({
                       value={row.stoppage1_id || row.stoppage1?.id || ''}
                       onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage1_id', value)}
                     >
-                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
+                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
                         <SelectValue placeholder="" />
                       </SelectTrigger>
                       <SelectContent>
@@ -320,7 +348,7 @@ export default function SimplexStoppageTab({
                       value={row.stoppage2_id || row.stoppage2?.id || ''}
                       onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage2_id', value)}
                     >
-                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
+                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
                         <SelectValue placeholder="" />
                       </SelectTrigger>
                       <SelectContent>
@@ -348,7 +376,7 @@ export default function SimplexStoppageTab({
                       value={row.stoppage3_id || row.stoppage3?.id || ''}
                       onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage3_id', value)}
                     >
-                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
+                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
                         <SelectValue placeholder="" />
                       </SelectTrigger>
                       <SelectContent>
@@ -376,7 +404,7 @@ export default function SimplexStoppageTab({
                       value={row.stoppage4_id || row.stoppage4?.id || ''}
                       onValueChange={(value) => handleStoppageReasonChange(row.id, 'stoppage4_id', value)}
                     >
-                      <SelectTrigger className="h-6 text-xs w-32 border-gray-300">
+                      <SelectTrigger className="h-6 text-xs w-36 border-gray-300">
                         <SelectValue placeholder="" />
                       </SelectTrigger>
                       <SelectContent>
@@ -398,14 +426,6 @@ export default function SimplexStoppageTab({
                       onChange={(e) => handleTimeChange(row.id, 'stoppage4_time', e.target.value)}
                       className="h-6 text-xs text-right w-14 border-gray-300"
                     />
-                  </td>
-                  {/* Total Stoppage Time */}
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-red-600 bg-red-50">
-                    {row.total_stoppage_time || 0}
-                  </td>
-                  {/* Work Time (R.Time - TotalStoppage) */}
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-600 bg-blue-50">
-                    {totalTime - (row.total_stoppage_time || 0)}
                   </td>
                 </tr>
               ))}

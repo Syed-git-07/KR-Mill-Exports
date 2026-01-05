@@ -23,7 +23,8 @@ import {
   getBreakerDrawingMachines,
   getBreakerDrawingMachineSetups,
   updateBreakerDrawingDetail,
-  calculateBreakerDrawingValues
+  calculateBreakerDrawingValues,
+  syncNewMachinesToBreakerDrawingHeader
 } from '@/lib/supabase/breakerDrawingQueries'
 
 export default function BreakerDrawingStoppageTab({ headerId, totalTime = 510, onRefresh }) {
@@ -57,6 +58,9 @@ export default function BreakerDrawingStoppageTab({ headerId, totalTime = 510, o
     
     setIsLoading(true)
     try {
+      // Sync any newly added machines to this header first
+      await syncNewMachinesToBreakerDrawingHeader(headerId)
+      
       const [stoppages, reasons, machineList, setups] = await Promise.all([
         getBreakerDrawingStoppageEntries(headerId),
         getBreakerDrawingStoppageReasons(),
