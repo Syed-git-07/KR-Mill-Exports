@@ -8,6 +8,74 @@ const SHOW_DELAY_MS = 120
 const MIN_VISIBLE_MS = 400
 const NAVIGATION_TIMEOUT_MS = 15000
 
+function isPageNavigationFetch(input, init) {
+  // 1. Get method
+  let method = 'GET'
+  if (init && init.method) {
+    method = init.method
+  } else if (input && typeof input === 'object' && input.method) {
+    method = input.method
+  }
+  if (method.toUpperCase() !== 'GET') {
+    return false
+  }
+
+  // Helper to get header value case-insensitively
+  const getHeader = (name) => {
+    const lowerName = name.toLowerCase()
+    
+    // Check in init.headers first
+    if (init && init.headers) {
+      if (typeof init.headers.get === 'function') {
+        return init.headers.get(lowerName)
+      } else if (Array.isArray(init.headers)) {
+        const found = init.headers.find(([key]) => key.toLowerCase() === lowerName)
+        if (found) return found[1]
+      } else if (typeof init.headers === 'object') {
+        const foundKey = Object.keys(init.headers).find(key => key.toLowerCase() === lowerName)
+        if (foundKey) return init.headers[foundKey]
+      }
+    }
+    
+    // Check in Request object if input is a Request
+    if (input && typeof input === 'object' && input.headers) {
+      if (typeof input.headers.get === 'function') {
+        return input.headers.get(lowerName)
+      } else if (Array.isArray(input.headers)) {
+        const found = input.headers.find(([key]) => key.toLowerCase() === lowerName)
+        if (found) return found[1]
+      } else if (typeof input.headers === 'object') {
+        const foundKey = Object.keys(input.headers).find(key => key.toLowerCase() === lowerName)
+        if (foundKey) return input.headers[foundKey]
+      }
+    }
+    
+    return null
+  }
+
+  // 2. Filter out prefetches (background fetch for links in viewport)
+  const isPrefetch = 
+    getHeader('x-nextjs-prefetch') === '1' || 
+    getHeader('next-router-prefetch') === '1' ||
+    String(getHeader('purpose')).toLowerCase() === 'prefetch'
+
+  if (isPrefetch) {
+    return false
+  }
+
+  // 3. Filter out Server Actions (POST requests, but check header to be safe)
+  if (getHeader('next-action')) {
+    return false
+  }
+
+  // 4. Must be a Next.js App Router Page Navigation fetch.
+  // Next.js App Router GET page navigation requests will have the "Rsc" header.
+  // (And are not prefetches, which we filtered out above).
+  const isRsc = getHeader('rsc') === '1' || getHeader('next-router-state-tree')
+
+  return !!isRsc
+}
+
 export default function GlobalRequestLoader() {
   const pathname = usePathname()
   const pendingRequests = useRef(0)
@@ -45,13 +113,19 @@ export default function GlobalRequestLoader() {
   useEffect(() => {
     const originalFetch = window.fetch
     window.fetch = async (...args) => {
-      pendingRequests.current += 1
-      showSoon()
+      const [input, init] = args
+      const isNav = isPageNavigationFetch(input, init)
+      if (isNav) {
+        pendingRequests.current += 1
+        showSoon()
+      }
       try {
         return await originalFetch(...args)
       } finally {
-        pendingRequests.current = Math.max(0, pendingRequests.current - 1)
-        hideWhenFinished()
+        if (isNav) {
+          pendingRequests.current = Math.max(0, pendingRequests.current - 1)
+          hideWhenFinished()
+        }
       }
     }
     return () => { window.fetch = originalFetch }
