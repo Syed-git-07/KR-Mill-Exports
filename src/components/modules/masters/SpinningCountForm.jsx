@@ -22,7 +22,7 @@ const spinningCountSchema = z.object({
   autoconer_active: z.boolean().optional(),
   sitra_conv_value: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
   cone_weight: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
-  effi_actual_prodn: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
+  act_effi: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
   tpi: z.string().max(50).nullable().optional(),
   speed: z.string().max(50).nullable().optional(),
   speed_autoconer: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
@@ -30,7 +30,8 @@ const spinningCountSchema = z.object({
   waste_percent: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
   doff_loss: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
   auto_effi: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
-  hok_cons: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val)))
+  hok_cons: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
+  sliver_hank: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val)))
 })
 
 export default function SpinningCountForm({ initialData, onSubmit }) {
@@ -42,7 +43,10 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
     formState: { errors, isSubmitting }
   } = useForm({
     resolver: zodResolver(spinningCountSchema),
-    defaultValues: initialData || {
+    defaultValues: initialData ? {
+      ...initialData,
+      act_effi: initialData.effi_actual_prodn ?? ''
+    } : {
       count_name: '',
       short_desc: '',
       act_count: '',
@@ -56,7 +60,7 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       autoconer_active: false,
       sitra_conv_value: '',
       cone_weight: '',
-      effi_actual_prodn: '',
+      act_effi: '',
       tpi: '',
       speed: '',
       speed_autoconer: '',
@@ -64,7 +68,8 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       waste_percent: '',
       doff_loss: '',
       auto_effi: '',
-      hok_cons: ''
+      hok_cons: '',
+      sliver_hank: ''
     }
   })
 
@@ -89,7 +94,7 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       autoconer_active: Boolean(data.autoconer_active),
       sitra_conv_value: data.sitra_conv_value ? Number(data.sitra_conv_value) : null,
       cone_weight: data.cone_weight ? Number(data.cone_weight) : null,
-      effi_actual_prodn: data.effi_actual_prodn ? Number(data.effi_actual_prodn) : null,
+      effi_actual_prodn: data.act_effi !== null && data.act_effi !== undefined && data.act_effi !== '' ? Number(data.act_effi) : null,
       tpi: data.tpi || null,
       speed: data.speed || null,
       speed_autoconer: data.speed_autoconer ? Number(data.speed_autoconer) : null,
@@ -97,7 +102,8 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       waste_percent: data.waste_percent ? Number(data.waste_percent) : null,
       doff_loss: data.doff_loss ? Number(data.doff_loss) : null,
       auto_effi: data.auto_effi ? Number(data.auto_effi) : null,
-      hok_cons: data.hok_cons ? Number(data.hok_cons) : null
+      hok_cons: data.hok_cons ? Number(data.hok_cons) : null,
+      sliver_hank: data.sliver_hank ? Number(data.sliver_hank) : null
     }
     
     console.log('Transformed data:', transformedData)
@@ -180,8 +186,8 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
           </div>
 
           <div>
-            <Label htmlFor="effi_actual_prodn">Effi. for Actual Prodn.</Label>
-            <Input id="effi_actual_prodn" type="number" step="0.01" {...register('effi_actual_prodn')} placeholder="0.00" />
+            <Label htmlFor="act_effi">Act Effi</Label>
+            <Input id="act_effi" type="number" step="0.01" {...register('act_effi')} placeholder="0.00" />
           </div>
 
           <div>
@@ -222,6 +228,12 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
           <div>
             <Label htmlFor="hok_cons">H.O.K Cons.</Label>
             <Input id="hok_cons" type="number" step="0.01" {...register('hok_cons')} placeholder="0.00" />
+          </div>
+
+          <div>
+            <Label htmlFor="sliver_hank">Sliver Hank</Label>
+            <Input id="sliver_hank" type="number" step="0.0001" {...register('sliver_hank')} placeholder="e.g. 0.1300" />
+            <p className="text-xs text-blue-600 mt-1">Used as default Sliver Hank in Carding Machine &amp; Setup</p>
           </div>
         </div>
       </div>

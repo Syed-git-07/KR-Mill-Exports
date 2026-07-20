@@ -8,12 +8,12 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import TWCEntryForm from '@/components/modules/masters/TWCEntryForm';
 import {
-  getTWCEntries,
-  createTWCEntry,
-  updateTWCEntry,
-  deleteTWCEntry,
-  searchTWCEntries
-} from '@/lib/supabase/twcEntryQueries';
+  getTWCEntriesAction,
+  createTWCEntryAction,
+  updateTWCEntryAction,
+  deleteTWCEntryAction,
+  searchTWCEntriesAction
+} from '@/app/actions/twc-entry';
 import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -50,15 +50,20 @@ export default function TWCEntryMaster() {
   const loadEntries = async () => {
     try {
       setLoading(true);
-      const data = await getTWCEntries();
+      const result = await getTWCEntriesAction();
+      
+      if (!result.success) {
+        toast.error(result.error || 'Failed to load TWC entries');
+        return;
+      }
       
       // Format data for VB6-style display
-      const formattedData = data.map(entry => ({
+      const formattedData = result.data.map(entry => ({
         ...entry,
         entry_id: entry.entry_id || entry.id,
         sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
         countname: entry.spinning_counts?.count_name || 'N/A',
-        twc_display: entry.twc_value?.toFixed(2) || '0.00',
+        twc_display: entry.twc_value ? Number(entry.twc_value).toFixed(2) : '0.00',
       }));
       
       setEntries(formattedData);
@@ -77,18 +82,23 @@ export default function TWCEntryMaster() {
     }
     
     try {
-      const data = await searchTWCEntries(field, condition, value);
+      const result = await searchTWCEntriesAction(field, condition, value);
       
-      const formattedData = data.map(entry => ({
+      if (!result.success) {
+        toast.error(result.error || 'Search failed');
+        return;
+      }
+      
+      const formattedData = result.data.map(entry => ({
         ...entry,
         entry_id: entry.entry_id || entry.id,
         sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
         countname: entry.spinning_counts?.count_name || 'N/A',
-        twc_display: entry.twc_value?.toFixed(2) || '0.00',
+        twc_display: entry.twc_value ? Number(entry.twc_value).toFixed(2) : '0.00',
       }));
       
       setEntries(formattedData);
-      toast.success(`Found ${data.length} result(s)`);
+      toast.success(`Found ${result.data.length} result(s)`);
     } catch (err) {
       console.error('Search error:', err);
       toast.error('Search failed: ' + err.message);
@@ -157,8 +167,13 @@ export default function TWCEntryMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteTWCEntry(row.id)));
-        toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
+        const results = await Promise.all(selectedRows.map(row => deleteTWCEntryAction(row.id)));
+        const failed = results.filter(r => !r.success);
+        if (failed.length > 0) {
+          toast.error(`Failed to delete ${failed.length} entry(ies)`);
+        } else {
+          toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
+        }
         setSelectedRows([]);
         setIsSelectMode(false);
         loadEntries();
@@ -172,7 +187,11 @@ export default function TWCEntryMaster() {
       }
 
       try {
-        await deleteTWCEntry(selectedRow.id);
+        const result = await deleteTWCEntryAction(selectedRow.id);
+        if (!result.success) {
+          toast.error(result.error || 'Failed to delete entry');
+          return;
+        }
         toast.success('Entry deleted successfully');
         setSelectedRow(null);
         setIsModalOpen(false);
@@ -188,13 +207,19 @@ export default function TWCEntryMaster() {
   const handleSave = async (formData) => {
     setIsLoading(true);
     try {
+      let result;
       if (isEditing && editingEntry) {
-        await updateTWCEntry(editingEntry.id, formData);
-        toast.success('Entry updated successfully');
+        result = await updateTWCEntryAction(editingEntry.id, formData);
       } else {
-        await createTWCEntry(formData);
-        toast.success('Entry created successfully');
+        result = await createTWCEntryAction(formData);
       }
+      
+      if (!result.success) {
+        toast.error(result.error || 'Failed to save entry');
+        return;
+      }
+      
+      toast.success(isEditing ? 'Entry updated successfully' : 'Entry created successfully');
       setIsModalOpen(false);
       setEditingEntry(null);
       setSelectedRow(null);

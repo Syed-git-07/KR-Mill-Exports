@@ -15,8 +15,8 @@ export default function PreparatoryEntryPage() {
       color: "blue"
     },
     {
-      title: "Breaker Drawing Entry",
-      description: "Drawing breaker production entry (BD1-BD4)",
+      title: "Breaker Drawing Machine Entry",
+      description: "Breaker drawing machine production entry (BD1-BD4)",
       href: "/preparatory-entry/breaker-drawing",
       icon: Layers,
       status: "Ready",
@@ -57,7 +57,6 @@ export default function PreparatoryEntryPage() {
   ]
 
   const readyModules = entryModules.filter(m => m.status === "Ready")
-  const comingSoonModules = entryModules.filter(m => m.status === "Coming Soon")
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -101,33 +100,7 @@ export default function PreparatoryEntryPage() {
         </div>
       </div>
 
-      {/* Coming Soon Modules */}
-      <div className="space-y-4 mt-8">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-gray-500">Coming Soon</h2>
-          <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-            {comingSoonModules.length} Planned
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {comingSoonModules.map((module) => {
-            const Icon = module.icon
-            return (
-              <Card key={module.href} className="opacity-60 h-full">
-                <CardHeader className="flex flex-row items-center gap-4">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <Icon className="h-6 w-6 text-gray-400" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg text-gray-500">{module.title}</CardTitle>
-                    <CardDescription>{module.description}</CardDescription>
-                  </div>
-                </CardHeader>
-              </Card>
-            )
-          })}
-        </div>
-      </div>
+
     </div>
   )
 }

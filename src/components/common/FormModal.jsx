@@ -21,11 +21,42 @@ export default function FormModal({
   onDelete,
   saveLabel = "Update",
   isLoading = false,
-  showDelete = false
+  showDelete = false,
+  deleteLabel = "Delete",
+  deleteIsDanger = false,
+  onSecondaryAction,
+  secondaryActionLabel = "Action",
+  secondaryActionClassName = "border-orange-500 text-orange-600 hover:bg-orange-50",
+  formId,
 }) {
+  const handleSave = () => {
+    if (formId) {
+      const form = document.getElementById(formId)
+      if (form) {
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit()
+          return
+        }
+
+        const submitButton = form.querySelector('button[type="submit"], input[type="submit"]')
+        if (submitButton) {
+          submitButton.click()
+          return
+        }
+
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+        return
+      }
+    }
+
+    if (onSave) {
+      onSave()
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-white border border-gray-200 max-w-2xl">
+      <DialogContent className="bg-white border border-gray-200 max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold">{title}</DialogTitle>
           {description && (
@@ -35,21 +66,35 @@ export default function FormModal({
           )}
         </DialogHeader>
         
-        <div className="py-4">
+        <div className="py-4 overflow-y-auto">
           {children}
         </div>
         
-        <DialogFooter className="flex justify-between">
-          {showDelete && onDelete && (
-            <Button 
+        <DialogFooter className="flex justify-between sticky bottom-0 bg-white pt-4 border-t">
+          <div className="flex gap-2">
+          {onSecondaryAction && (
+            <Button
               variant="outline"
-              onClick={onDelete}
+              onClick={onSecondaryAction}
               disabled={isLoading}
-              className="border-red-600 text-red-600 hover:bg-red-50"
+              className={secondaryActionClassName}
             >
-              Delete
+              {secondaryActionLabel}
             </Button>
           )}
+          {showDelete && onDelete && (
+            <Button 
+              variant={deleteIsDanger ? "default" : "outline"}
+              onClick={onDelete}
+              disabled={isLoading}
+              className={deleteIsDanger
+                ? "bg-red-600 hover:bg-red-700 text-white"
+                : "border-red-600 text-red-600 hover:bg-red-50"}
+            >
+              {deleteLabel}
+            </Button>
+          )}
+          </div>
           <div className="flex gap-2 ml-auto">
             <Button 
               variant="outline" 
@@ -60,7 +105,9 @@ export default function FormModal({
               Cancel
             </Button>
             <Button 
-              onClick={onSave}
+              type={formId ? 'submit' : 'button'}
+              form={formId || undefined}
+              onClick={handleSave}
               className="bg-blue-600 hover:bg-blue-700 text-white"
               disabled={isLoading}
             >

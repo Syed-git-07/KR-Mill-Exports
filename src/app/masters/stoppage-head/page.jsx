@@ -8,12 +8,12 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import StoppageHeadForm from '@/components/modules/masters/StoppageHeadForm';
 import {
-  getStoppageHeads,
-  createStoppageHead,
-  updateStoppageHead,
-  deleteStoppageHead,
-  searchStoppageHeads
-} from '@/lib/supabase/stoppageHeadQueries';
+  getStoppageHeadsAction,
+  createStoppageHeadAction,
+  updateStoppageHeadAction,
+  deleteStoppageHeadAction,
+  searchStoppageHeadsAction
+} from '@/app/actions/stoppage-head';
 import { Plus, Trash2 } from 'lucide-react';
 
 export default function StoppageHeadMaster() {
@@ -39,8 +39,12 @@ export default function StoppageHeadMaster() {
 
   const loadStoppageHeads = async () => {
     try {
-      const data = await getStoppageHeads();
-      setStoppageHeads(data);
+      const result = await getStoppageHeadsAction();
+      if (result.success) {
+        setStoppageHeads(result.data);
+      } else {
+        toast.error('Failed to load stoppage heads: ' + result.error);
+      }
     } catch (error) {
       toast.error('Failed to load stoppage heads: ' + error.message);
     }
@@ -48,9 +52,13 @@ export default function StoppageHeadMaster() {
 
   const handleSearch = async (field, condition, value) => {
     try {
-      const data = await searchStoppageHeads(field, condition, value);
-      setStoppageHeads(data);
-      toast.success(`Found ${data.length} stoppage head(s)`);
+      const result = await searchStoppageHeadsAction(field, condition, value);
+      if (result.success) {
+        setStoppageHeads(result.data);
+        toast.success(`Found ${result.data.length} stoppage head(s)`);
+      } else {
+        toast.error('Search failed: ' + result.error);
+      }
     } catch (error) {
       toast.error('Search failed: ' + error.message);
     }
@@ -76,15 +84,26 @@ export default function StoppageHeadMaster() {
     try {
       setIsLoading(true);
       if (isEditing && selectedStoppageHead) {
-        await updateStoppageHead(selectedStoppageHead.id, data);
-        toast.success('Stoppage head updated successfully');
+        const result = await updateStoppageHeadAction(selectedStoppageHead.id, data);
+        if (result.success) {
+          toast.success('Stoppage head updated successfully');
+          setIsModalOpen(false);
+          setSelectedStoppageHead(null);
+          loadStoppageHeads();
+        } else {
+          toast.error('Failed to update: ' + result.error);
+        }
       } else {
-        await createStoppageHead(data);
-        toast.success('Stoppage head created successfully');
+        const result = await createStoppageHeadAction(data);
+        if (result.success) {
+          toast.success('Stoppage head created successfully');
+          setIsModalOpen(false);
+          setSelectedStoppageHead(null);
+          loadStoppageHeads();
+        } else {
+          toast.error('Failed to create: ' + result.error);
+        }
       }
-      setIsModalOpen(false);
-      setSelectedStoppageHead(null);
-      loadStoppageHeads();
     } catch (error) {
       toast.error('Failed to save: ' + error.message);
     } finally {
@@ -100,7 +119,7 @@ export default function StoppageHeadMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteStoppageHead(row.id)));
+        await Promise.all(selectedRows.map(row => deleteStoppageHeadAction(row.id)));
         toast.success(`${selectedRows.length} stoppage head(s) deleted successfully`);
         setSelectedRows([]);
         setIsSelectMode(false);
@@ -115,11 +134,15 @@ export default function StoppageHeadMaster() {
       }
 
       try {
-        await deleteStoppageHead(selectedStoppageHead.id);
-        toast.success('Stoppage head deleted successfully');
-        setSelectedStoppageHead(null);
-        setIsModalOpen(false);
-        loadStoppageHeads();
+        const result = await deleteStoppageHeadAction(selectedStoppageHead.id);
+        if (result.success) {
+          toast.success('Stoppage head deleted successfully');
+          setSelectedStoppageHead(null);
+          setIsModalOpen(false);
+          loadStoppageHeads();
+        } else {
+          toast.error('Failed to delete stoppage head: ' + result.error);
+        }
       } catch (error) {
         toast.error('Failed to delete stoppage head: ' + error.message);
       }

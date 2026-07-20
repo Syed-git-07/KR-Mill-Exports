@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -20,23 +20,126 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Save, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
+import EnterSelect from '@/components/ui/enter-select'
+import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  getBreakerDrawingMachineSetups,
-  updateBreakerDrawingMachineSetup,
-  addBreakerDrawingMachine,
-  removeBreakerDrawingMachine,
-  updateBreakerDrawingMachineMixing,
-  bulkUpdateBreakerDrawingMachineMixing,
-  getMixingOptions
-} from '@/lib/supabase/breakerDrawingQueries'
+  getBreakerDrawingMachineSetupsAction,
+  updateMachineSetupAction,
+  addBreakerDrawingMachineAction,
+  removeBreakerDrawingMachineAction,
+  updateBreakerDrawingMachineMixingAction,
+  bulkUpdateBreakerDrawingMachineMixingAction,
+  getMixingOptionsAction
+} from '@/app/actions/breaker-drawing-entry'
+import { lookupDrawingBreakerMachineByNoAction } from '@/app/actions/drawing-breaker'
+import { NumberInput } from '@/components/ui/number-input'
+import { BREAKER_DRAWING_FORMULA_FALLBACK, resolveBreakerDrawingFormulaInputs } from '@/lib/breakerDrawingFormulaFallback'
 
-export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
+// Helper to convert Prisma Decimal to number
+const toNumber = (value) => {
+  if (value === null || value === undefined) return 0
+  if (typeof value === 'number') return value
+  if (typeof value === 'object' && typeof value.toNumber === 'function') {
+    return value.toNumber()
+  }
+  return parseFloat(value) || 0
+}
+
+// Helper to format number for display
+const formatNumber = (value, decimals = 2) => {
+  const num = toNumber(value)
+  return num.toFixed(decimals)
+}
+
+const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineSetupTab({
+  shift = 1,
+  totalTime = 0,
+  onRefresh,
+  sharedDraftEdits,
+  onSharedDraftEditsChange
+}, ref) {
   const [setupData, setSetupData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [editedRows, setEditedRows] = useState({})
+  const [localEditedRows, setLocalEditedRows] = useState({})
+  const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
+  const editedRowsRef = useRef({})
+
+  const setEditedRows = useCallback((updater) => {
+    if (onSharedDraftEditsChange) {
+      const prev = editedRowsRef.current || {}
+      const next = typeof updater === 'function' ? updater(prev) : (updater || {})
+      if (next === prev) return
+      editedRowsRef.current = next
+      onSharedDraftEditsChange(next)
+      return
+    }
+    setLocalEditedRows(prev => (typeof updater === 'function' ? updater(prev) : (updater || {})))
+  }, [onSharedDraftEditsChange])
+
+  useEffect(() => {
+    editedRowsRef.current = editedRows
+  }, [editedRows])
+
+  const tableRef = useRef(null)
+  const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
+    const targetRow = rowIndex + delta
+    if (targetRow < 0 || !tableRef.current) return
+    const targetInput = tableRef.current.querySelector(
+      `input[data-row="${targetRow}"][data-col="${colName}"]`
+    )
+    if (targetInput) { targetInput.focus(); targetInput.select(); return }
+    const targetAuto = tableRef.current.querySelector(
+      `[data-autocomplete][data-row="${targetRow}"][data-col="${colName}"]`
+    )
+    if (targetAuto) {
+      const inp = targetAuto.querySelector('input')
+      if (inp) { inp.focus(); inp.select() } else { targetAuto.click() }
+    }
+  }, [])
+  const focusNextRow = useCallback((rowIndex, colName) => focusRowByDelta(rowIndex, 1, colName), [focusRowByDelta])
+  const handleEnterNavigation = useCallback((e, rowIndex, colName) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); focusRowByDelta(rowIndex, 1, colName) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusRowByDelta(rowIndex, -1, colName) }
+  }, [focusRowByDelta])
+
+  // Lookup machine from master by machine_no
+  const handleMachineNoLookup = async (machineNo) => {
+    const val = String(machineNo || '').trim()
+    if (!val) return
+    const toastId = toast.loading(`Looking up machine ${val}…`)
+    const result = await lookupDrawingBreakerMachineByNoAction(val)
+    if (!result.success) {
+      toast.error(result.error || 'Lookup failed', { id: toastId })
+      return
+    }
+    if (!result.data) {
+      toast.error(`Machine ${val} not found in master`, { id: toastId })
+      return
+    }
+    const d = result.data
+    setNewMachine(prev => ({
+      ...prev,
+      machine_no: d.machine_no ?? prev.machine_no,
+      description: d.description || prev.description,
+      make_name: d.make_name || prev.make_name,
+      model: d.model || prev.model,
+      installed_date: d.installed_date ? String(d.installed_date).split('T')[0] : prev.installed_date,
+      prodn_mixing: d.prodn_mixing || prev.prodn_mixing,
+      speed: d.speed != null ? parseFloat(d.speed) : prev.speed,
+      // Use existing setup's hank_constant if available (deactivated machine), else sliver_hank from master
+      hank_constant: d.setup_hank_constant != null ? parseFloat(d.setup_hank_constant) : (d.sliver_hank != null ? parseFloat(d.sliver_hank) : prev.hank_constant),
+      std_efficiency_factor: d.std_efficiency_factor != null ? parseFloat(d.std_efficiency_factor) : prev.std_efficiency_factor,
+      delivery: d.delivery != null ? parseFloat(d.delivery) : prev.delivery,
+    }))
+    if (d.has_setup) {
+      toast.info(`Machine ${val} found – it will be reactivated with existing setup`, { id: toastId })
+    } else {
+      toast.success(`Machine ${val} details filled`, { id: toastId })
+    }
+  }
+
   const [selectedRows, setSelectedRows] = useState([])
   const [mixingOptions, setMixingOptions] = useState([])
 
@@ -49,13 +152,15 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
   const [newMachine, setNewMachine] = useState({
     machine_no: '',
     description: '',
-    make_name: 'LMW',
-    prodn_mixing: '64COMBED GOLD',
-    speed: 750,
-    shift_time: 510,
-    hank_constant: 0.14,
-    std_efficiency_factor: 0.85,
-    delivery: 1
+    make_name: '',
+    model: '',
+    installed_date: '',
+    prodn_mixing: '',
+    speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed,
+    shift_time: totalTime,
+    hank_constant: BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant,
+    std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
+    delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery
   })
 
   // Mixing change form
@@ -66,17 +171,26 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [setups, mixings] = await Promise.all([
-        getBreakerDrawingMachineSetups(),
-        getMixingOptions()
+      const [setupsRes, mixingsRes] = await Promise.all([
+        getBreakerDrawingMachineSetupsAction(),
+        getMixingOptionsAction()
       ])
+      
+      const setups = setupsRes?.data || []
+      const mixings = mixingsRes?.data || []
+      
       // Sort by natural machine number order (BD1, BD2, BD3, BD4)
       const sortedSetups = setups?.sort((a, b) => {
         const aNum = parseInt(a.machine?.machine_no?.replace(/\D/g, '') || '0')
         const bNum = parseInt(b.machine?.machine_no?.replace(/\D/g, '') || '0')
         return aNum - bNum
       }) || []
-      setSetupData(sortedSetups)
+      const drafts = editedRowsRef.current || {}
+      const mergedSetups = sortedSetups.map(row => {
+        const draft = drafts[row.id] || drafts[String(row.id)]
+        return draft ? { ...row, ...draft } : row
+      })
+      setSetupData(mergedSetups)
       setMixingOptions(mixings || [])
     } catch (error) {
       console.error('Error loading machine setups:', error)
@@ -92,33 +206,39 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
+    const baseRow = setupData.find(row => row.id === rowId)
+    const machineId = baseRow?.machine_id ?? baseRow?.machine?.id
     const numValue = parseFloat(value) || 0
     
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
+        ...(machineId ? { machine_id: machineId } : {}),
         [field]: numValue
       }
     }))
 
     // Update display data and recalculate std_prodn
-    // Formula: Std Prodn = Speed / 1693 / Hank × Total Time × Std Effi × Delivery
+    // Formula: Std Prodn = Speed / Divisor / Hank × Total Time × Std Effi × Delivery
     setSetupData(prev => prev.map(row => {
       if (row.id === rowId) {
         const updatedRow = { ...row, [field]: numValue }
         
         // Recalculate std_prodn when relevant fields change
-        if (['speed', 'hank_constant', 'std_efficiency_factor', 'shift_time', 'divisor_constant', 'delivery'].includes(field)) {
-          const speed = field === 'speed' ? numValue : row.speed
-          const hankConstant = field === 'hank_constant' ? numValue : row.hank_constant
-          const stdEffi = field === 'std_efficiency_factor' ? numValue : row.std_efficiency_factor
-          const shiftTime = field === 'shift_time' ? numValue : row.shift_time
-          const divisor = field === 'divisor_constant' ? numValue : row.divisor_constant
-          const delivery = field === 'delivery' ? numValue : row.delivery
+        if (['speed', 'hank_constant', 'std_efficiency_factor', 'divisor_constant', 'delivery'].includes(field)) {
+          const mergedSetup = {
+            ...row,
+            speed: field === 'speed' ? numValue : toNumber(row.speed),
+            hank_constant: field === 'hank_constant' ? numValue : toNumber(row.hank_constant),
+            std_efficiency_factor: field === 'std_efficiency_factor' ? numValue : toNumber(row.std_efficiency_factor),
+            divisor_constant: field === 'divisor_constant' ? numValue : toNumber(row.divisor_constant),
+            delivery: field === 'delivery' ? numValue : toNumber(row.delivery)
+          }
+          const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(mergedSetup, mergedSetup.speed)
           
-          // Std Prodn = Speed / 1693 / Hank × Time × Std Effi × Delivery
-          updatedRow.std_prodn = (speed / divisor / hankConstant) * shiftTime * stdEffi * delivery
+          // Std Prodn = Speed / Divisor / Hank × Time × Std Effi × Delivery (use totalTime from shift)
+          updatedRow.std_prodn = (speed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor * delivery
         }
         
         return updatedRow
@@ -128,31 +248,68 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
   }
 
   // Save changes
-  const handleSave = async () => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     if (Object.keys(editedRows).length === 0) {
-      toast.info('No changes to save')
-      return
+      if (!suppressNoChangesToast) {
+        toast.info('No changes to save')
+      }
+      return { success: true, saved: 0 }
     }
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
-        updateBreakerDrawingMachineSetup(rowId, changes)
+      const currentEdits = editedRowsRef.current || editedRows || {}
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => 
+        updateMachineSetupAction(rowId, changes)
       )
 
       await Promise.all(updatePromises)
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
-      toast.success('Machine setups saved successfully')
+      if (!suppressSuccessToast) {
+        toast.success('Machine setups saved successfully')
+      }
       
       await loadData()
-      onRefresh?.()
+      if (!skipParentRefresh) {
+        onRefresh?.()
+      }
+      return { success: true, saved: savedCount }
     } catch (error) {
       console.error('Error saving machine setups:', error)
       toast.error('Failed to save machine setups')
+      return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
     }
   }
+
+  const handleRefreshClick = async () => {
+    if (Object.keys(editedRowsRef.current || editedRows || {}).length > 0) {
+      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      if (!shouldDiscard) return
+    }
+    setEditedRows({})
+    await loadData()
+  }
+
+  const discardChanges = async () => {
+    setEditedRows({})
+    await loadData()
+    return { success: true }
+  }
+
+  const confirmDiscardLocalEdits = () => {
+    if (Object.keys(editedRowsRef.current || editedRows || {}).length === 0) return true
+    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+  }
+
+  useImperativeHandle(ref, () => ({
+    saveChanges: handleSave,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
+    isSaving: () => isSaving,
+    discardChanges
+  }), [handleSave, editedRows, isSaving, discardChanges])
 
   // Toggle row selection
   const handleRowSelect = (machineId) => {
@@ -174,21 +331,29 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
 
   // Add new machine
   const handleAddMachine = async () => {
+    if (!confirmDiscardLocalEdits()) return
+
     setIsSaving(true)
     try {
-      const result = await addBreakerDrawingMachine(newMachine)
+      const response = await addBreakerDrawingMachineAction(newMachine)
+      if (!response?.success) {
+        throw new Error(response?.error || 'Failed to add machine')
+      }
+      const result = response.data
       toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
         description: '',
-        make_name: 'LMW',
-        prodn_mixing: '64COMBED GOLD',
-        speed: 750,
-        shift_time: 510,
-        hank_constant: 0.14,
-        std_efficiency_factor: 0.85,
-        delivery: 1
+        make_name: '',
+        model: '',
+        installed_date: '',
+        prodn_mixing: '',
+        speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed,
+        shift_time: totalTime,
+        hank_constant: BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant,
+        std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
+        delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery
       })
       await loadData()
       onRefresh?.()
@@ -202,6 +367,8 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
 
   // Remove machine
   const handleRemoveMachine = async () => {
+    if (!confirmDiscardLocalEdits()) return
+
     if (selectedRows.length === 0) {
       toast.warning('Please select at least one machine')
       return
@@ -210,7 +377,7 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
     setIsSaving(true)
     try {
       const removePromises = selectedRows.map(machineId => 
-        removeBreakerDrawingMachine(machineId)
+        removeBreakerDrawingMachineAction(machineId)
       )
       await Promise.all(removePromises)
       toast.success(`${selectedRows.length} machine(s) removed`)
@@ -228,6 +395,8 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
 
   // Change mixing for selected machines
   const handleChangeMixing = async () => {
+    if (!confirmDiscardLocalEdits()) return
+
     const mixingValue = newMixing === 'custom' ? customMixing : newMixing
     
     if (!mixingValue) {
@@ -242,7 +411,7 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
 
     setIsSaving(true)
     try {
-      await bulkUpdateBreakerDrawingMachineMixing(selectedRows, mixingValue)
+      await bulkUpdateBreakerDrawingMachineMixingAction(selectedRows, mixingValue)
       toast.success(`Mixing updated for ${selectedRows.length} machine(s)`)
       setShowMixingChangeDialog(false)
       setNewMixing('')
@@ -273,50 +442,43 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
           {setupData.length} machines configured
+          {Object.keys(editedRows).length > 0 && (
+            <span className="ml-4 text-orange-600 font-medium">
+              Unsaved changes: {Object.keys(editedRows).length}
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadData}>
+          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
             <RefreshCw className="h-4 w-4 mr-1" />
             Refresh
-          </Button>
-          <Button 
-            size="sm" 
-            onClick={handleSave}
-            disabled={isSaving || Object.keys(editedRows).length === 0}
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 mr-1" />
-            )}
-            Save Changes
           </Button>
         </div>
       </div>
 
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
-        <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-          <table className="w-full border-collapse text-sm">
+        <div className="overflow-x-auto max-h-100 overflow-y-auto">
+          <table ref={tableRef} className="w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
-                <th className="border border-gray-300 px-2 py-2 w-10">
+                <th className="border border-gray-300 px-2 py-2 w-10 whitespace-nowrap">
                   <Checkbox
                     checked={selectedRows.length === setupData.length && setupData.length > 0}
                     onCheckedChange={handleSelectAll}
                     className="border-white"
                   />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24">Make</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28">Mixing</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20">Shift Time</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24">Std.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Speed</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Std.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Sl.Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Delivery</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16 whitespace-nowrap">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Make</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-56 whitespace-nowrap">Mixing</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Shift Time</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Std.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Speed</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Std.Effi</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Sl.Hank</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Delivery</th>
               </tr>
             </thead>
             <tbody>
@@ -331,61 +493,71 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
                       onCheckedChange={() => handleRowSelect(row.machine?.id)}
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700">
+                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
                     {row.machine?.machine_no}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1">
-                    {row.machine?.make_name || 'LMW'}
+                  <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">
+                    {row.machine?.make_name || ''}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1">
-                    {row.machine?.prodn_mixing || '64COMBED GOLD'}
+                  <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">
+                    {row.machine?.prodn_mixing || ''}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">
+                  <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     1
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.shift_time || 510}
-                      onChange={(e) => handleInputChange(row.id, 'shift_time', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap">
+                    {totalTime}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-700">
-                    {row.std_prodn?.toFixed(2)}
+                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-700 tabular-nums whitespace-nowrap">
+                    {formatNumber(row.std_prodn)}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
+                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="speed">
+                    <NumberInput
                       type="number"
-                      value={row.speed || 750}
+                      value={toNumber(row.speed) || BREAKER_DRAWING_FORMULA_FALLBACK.speed}
                       onChange={(e) => handleInputChange(row.id, 'speed', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                      data-row={index}
+                      data-col="speed"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'speed')}
+                      zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
+                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="std_eff">
+                    <NumberInput
                       type="number"
-                      step="1"
-                      value={Math.round((row.std_efficiency_factor || 0.85) * 100)}
-                      onChange={(e) => handleInputChange(row.id, 'std_efficiency_factor', parseFloat(e.target.value) / 100)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
-                    />
-                  </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
+                      value={toNumber(row.std_efficiency_factor ?? BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor)}
+                      onChange={(e) => handleInputChange(row.id, 'std_efficiency_factor', e.target.value)}
+                      data-row={index}
+                      data-col="std_eff"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'std_eff')}
                       step="0.01"
-                      value={row.hank_constant || 0.14}
-                      onChange={(e) => handleInputChange(row.id, 'hank_constant', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                      zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
+                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="hank">
+                    <NumberInput
                       type="number"
-                      value={row.delivery || 1}
+                      value={toNumber(row.hank_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant}
+                      onChange={(e) => handleInputChange(row.id, 'hank_constant', e.target.value)}
+                      data-row={index}
+                      data-col="hank"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'hank')}
+                      zeroAsEmpty
+                    />
+                  </td>
+                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="delivery">
+                    <NumberInput
+                      type="number"
+                      value={toNumber(row.delivery) || 1}
                       onChange={(e) => handleInputChange(row.id, 'delivery', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                      data-row={index}
+                      data-col="delivery"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'delivery')}
+                      zeroAsEmpty
                     />
                   </td>
                 </tr>
@@ -440,15 +612,11 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
         </span>
       </div>
 
-      {/* Formula Reference */}
-      <div className="p-3 bg-gray-100 rounded text-xs text-gray-600">
-        <strong>Formula:</strong> Std Prodn = (Speed / 1693 / Sliver Hank) × Shift Time × (Std. Effi. / 100) × Delivery
-        <br />
-        <strong>Example:</strong> BD1: (450 / 1693 / 0.14) × 510 × 0.85 × 2 = 1646.06 kg
-      </div>
-
       {/* Add Machine Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(open) => {
+        setShowAddDialog(open)
+        if (!open) setNewMachine({ machine_no: '', description: '', make_name: '', prodn_mixing: '', speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed, shift_time: totalTime, hank_constant: BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor, delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery })
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Add New Machine</DialogTitle>
@@ -457,11 +625,18 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
           <div className="space-y-5 py-2">
             <div className="grid grid-cols-2 gap-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No (optional)</Label>
+                <Label className="text-sm font-medium mb-2 block">Machine No *</Label>
                 <Input
                   value={newMachine.machine_no}
                   onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
-                  placeholder="Auto-generated"
+                  onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleMachineNoLookup(e.currentTarget.value)
+                    }
+                  }}
+                  placeholder="e.g. BD1, BD2"
                   className="h-10 text-sm"
                 />
               </div>
@@ -483,61 +658,79 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
                 className="h-10 text-sm"
               />
             </div>
+            <div className="grid grid-cols-2 gap-5">
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Model</Label>
+                <Input
+                  value={newMachine.model}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, model: e.target.value }))}
+                  placeholder="e.g. DO/6"
+                  className="h-10 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Installed Date</Label>
+                <Input
+                  type="date"
+                  value={newMachine.installed_date}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, installed_date: e.target.value }))}
+                  className="h-10 text-sm"
+                />
+              </div>
+            </div>
             <div>
-              <Label className="text-sm font-medium mb-2 block">Count / Mixing</Label>
-              <Input
+              <Label className="text-sm font-medium mb-2 block">Count / Mixing (Select from Spinning Count)</Label>
+              <EnterSelect
                 value={newMachine.prodn_mixing}
-                onChange={(e) => setNewMachine(prev => ({ ...prev, prodn_mixing: e.target.value }))}
+                options={mixingOptions.map(c => ({ value: c, label: c }))}
+                onChange={(v) => setNewMachine(prev => ({ ...prev, prodn_mixing: v }))}
+                searchable
                 className="h-10 text-sm"
               />
             </div>
             <div className="grid grid-cols-2 gap-5">
               <div>
                 <Label className="text-sm font-medium mb-2 block">Speed</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   value={newMachine.speed}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, speed: parseFloat(e.target.value) || 750 }))}
+                  onChange={(v) => setNewMachine(prev => ({ ...prev, speed: v }))}
                   className="h-10 text-sm"
+                  zeroAsEmpty
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium mb-2 block">Shift Time</Label>
-                <Input
-                  type="number"
-                  value={newMachine.shift_time}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, shift_time: parseInt(e.target.value) || 510 }))}
+                <Label className="text-sm font-medium mb-2 block">Sliver Hank</Label>
+                <NumberInput
+                  value={newMachine.hank_constant}
+                  onChange={(v) => setNewMachine(prev => ({ ...prev, hank_constant: v }))}
                   className="h-10 text-sm"
+                  zeroAsEmpty
+                  step="0.01"
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-5">
+            <div className="grid grid-cols-2 gap-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Sliver Hank</Label>
-                <Input
-                  type="number"
+                <Label className="text-sm font-medium mb-2 block">Std. Efficiency (Factor)</Label>
+                <NumberInput
+                  value={newMachine.std_efficiency_factor}
+                  onChange={(v) => setNewMachine(prev => ({ ...prev, std_efficiency_factor: Number(v) || BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor }))}
+                  className="h-10 text-sm"
+                  zeroAsEmpty
                   step="0.01"
-                  value={newMachine.hank_constant}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, hank_constant: parseFloat(e.target.value) || 0.14 }))}
-                  className="h-10 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Std. Efficiency (%)</Label>
-                <Input
-                  type="number"
-                  value={(newMachine.std_efficiency_factor * 100).toFixed(0)}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, std_efficiency_factor: (parseFloat(e.target.value) || 85) / 100 }))}
-                  className="h-10 text-sm"
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
                 />
               </div>
               <div>
                 <Label className="text-sm font-medium mb-2 block">Delivery</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   value={newMachine.delivery}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, delivery: parseInt(e.target.value) || 1 }))}
+                  onChange={(v) => setNewMachine(prev => ({ ...prev, delivery: v }))}
                   className="h-10 text-sm"
+                  zeroAsEmpty
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
                 />
               </div>
             </div>
@@ -562,19 +755,13 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
           <div className="space-y-5 py-2">
             <div>
               <Label className="text-sm font-medium mb-2 block">Select Existing Count</Label>
-              <Select
+              <EnterSelect
                 value={newMixing}
-                onValueChange={(value) => { setNewMixing(value); setCustomMixing(''); }}
-              >
-                <SelectTrigger className="h-10 text-sm">
-                  <SelectValue placeholder="Choose existing count..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {mixingOptions.map(count => (
-                    <SelectItem key={count} value={count}>{count}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={mixingOptions.map(c => ({ value: c, label: c }))}
+                onChange={(v) => { setNewMixing(v); setCustomMixing(''); }}
+                searchable
+                className="h-10 text-sm"
+              />
             </div>
             <div className="text-center text-sm text-gray-500 font-medium">- OR -</div>
             <div>
@@ -627,4 +814,6 @@ export default function BreakerDrawingMachineSetupTab({ onRefresh }) {
       </Dialog>
     </div>
   )
-}
+})
+
+export default BreakerDrawingMachineSetupTab

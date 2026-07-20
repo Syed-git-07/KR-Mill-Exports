@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getStoppageDetails, createStoppageDetail, updateStoppageDetail, deleteStoppageDetail, searchStoppageDetails } from '@/lib/supabase/stoppageDetailQueries'
+import { getStoppageDetailsAction, createStoppageDetailAction, updateStoppageDetailAction, deleteStoppageDetailAction, searchStoppageDetailsAction } from '@/app/actions/stoppage-detail'
 import SearchFilter from '@/components/common/SearchFilter'
 import DataGrid from '@/components/common/DataGrid'
 import FormModal from '@/components/common/FormModal'
@@ -36,8 +36,12 @@ export default function StoppageDetailPage() {
 
   const loadStoppageDetails = async () => {
     try {
-      const data = await getStoppageDetails()
-      setStoppageDetails(data)
+      const result = await getStoppageDetailsAction()
+      if (result.success) {
+        setStoppageDetails(result.data)
+      } else {
+        toast.error('Failed to load stoppage details: ' + result.error)
+      }
     } catch (error) {
       toast.error('Failed to load stoppage details: ' + error.message)
     }
@@ -50,9 +54,13 @@ export default function StoppageDetailPage() {
     }
     
     try {
-      const data = await searchStoppageDetails(field, condition, value)
-      setStoppageDetails(data)
-      toast.success(`Found ${data.length} result(s)`)
+      const result = await searchStoppageDetailsAction(field, condition, value)
+      if (result.success) {
+        setStoppageDetails(result.data)
+        toast.success(`Found ${result.data.length} result(s)`)
+      } else {
+        toast.error('Search failed: ' + result.error)
+      }
     } catch (error) {
       toast.error('Search failed: ' + error.message)
     }
@@ -80,7 +88,7 @@ export default function StoppageDetailPage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteStoppageDetail(row.id)))
+        await Promise.all(selectedRows.map(row => deleteStoppageDetailAction(row.id)))
         toast.success(`${selectedRows.length} stoppage detail(s) deleted successfully`)
         setSelectedRows([])
         setIsSelectMode(false)
@@ -95,11 +103,15 @@ export default function StoppageDetailPage() {
       }
 
       try {
-        await deleteStoppageDetail(selectedStoppageDetail.id)
-        toast.success('Stoppage detail deleted successfully')
-        setSelectedStoppageDetail(null)
-        setIsModalOpen(false)
-        loadStoppageDetails()
+        const result = await deleteStoppageDetailAction(selectedStoppageDetail.id)
+        if (result.success) {
+          toast.success('Stoppage detail deleted successfully')
+          setSelectedStoppageDetail(null)
+          setIsModalOpen(false)
+          loadStoppageDetails()
+        } else {
+          toast.error('Failed to delete stoppage detail: ' + result.error)
+        }
       } catch (error) {
         toast.error('Failed to delete stoppage detail: ' + error.message)
       }
@@ -112,11 +124,21 @@ export default function StoppageDetailPage() {
     try {
       setIsLoading(true)
       if (isEditing && selectedStoppageDetail) {
-        await updateStoppageDetail(selectedStoppageDetail.id, formData)
-        toast.success('Stoppage detail updated successfully')
+        const result = await updateStoppageDetailAction(selectedStoppageDetail.id, formData)
+        if (result.success) {
+          toast.success('Stoppage detail updated successfully')
+        } else {
+          toast.error('Failed to update stoppage detail: ' + result.error)
+          return
+        }
       } else {
-        await createStoppageDetail(formData)
-        toast.success('Stoppage detail created successfully')
+        const result = await createStoppageDetailAction(formData)
+        if (result.success) {
+          toast.success('Stoppage detail created successfully')
+        } else {
+          toast.error('Failed to create stoppage detail: ' + result.error)
+          return
+        }
       }
       setIsModalOpen(false)
       setSelectedStoppageDetail(null)

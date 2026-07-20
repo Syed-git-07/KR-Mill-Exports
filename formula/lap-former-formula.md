@@ -9,8 +9,8 @@
 
 ## 1️⃣ FINAL FORMULAS (LAP FORMER – AS CONFIRMED)
 
-> **Act Hank & Act Prodn are fetched from EL Measure**
-> Everything else is calculated.
+> **Act Hank is fetched from EL Measure**
+> **Act Prodn is calculated dynamically from Act Hank using Constst**.
 
 ### Constants
 
@@ -23,6 +23,10 @@
 ### 🔹 Formula Set (Final)
 
 ```text
+Constst = (1 / 2.20456 / Hank) × Delivery
+
+Act Prodn (Kg) = Constst × Act Hank
+
 Run Time = Total Time − Total Stoppage
 Work Time = Run Time
 
@@ -49,8 +53,8 @@ Run Time / Total Time × 100
 ### From EL Measure
 
 * **Act Hank** = **28.36**
-* **Act Prodn** = **1568.85 kg**
 * **Waste** = **0.85 kg**
+* **Act Prodn** = **Calculated (Constst × Act Hank)**
 
 ### Machine Setup (from Machine Setup tab)
 
@@ -95,7 +99,21 @@ UTI = 41.18 %
 
 ---
 
-### 🔹 Step 3: Standard Production (Std Prodn)
+### 🔹 Step 3: Constst & Actual Production (Act Prodn)
+
+```text
+Constst = (1 / 2.20456 / Hank) × Delivery
+Constst = (1 / 2.20456 / 0.0082) × 1
+Constst = 55.43
+
+Act Prodn = Constst × Act Hank
+Act Prodn = 55.43 × 28.36
+Act Prodn ≈ 1571.99 kg
+```
+
+---
+
+### 🔹 Step 4: Standard Production (Std Prodn)
 
 ```text
 Std Prodn =
@@ -123,7 +141,7 @@ Step-by-step:
 
 ---
 
-### 🔹 Step 4: Expected Production (Exp Prodn)
+### 🔹 Step 5: Expected Production (Exp Prodn)
 
 ```text
 Exp Prodn = Std Prodn × (Run Time / Total Time)
@@ -136,7 +154,7 @@ Exp Prodn = 1542.94 kg
 
 ---
 
-### 🔹 Step 5: Actual Efficiency (Act Effi %)
+### 🔹 Step 6: Actual Efficiency (Act Effi %)
 
 ```text
 Act Effi = Actual Prodn / Exp Prodn × 100
@@ -148,7 +166,7 @@ Act Effi = 101.68 %
 
 ---
 
-### 🔹 Step 6: Waste %
+### 🔹 Step 7: Waste %
 
 ```text
 Waste % = 0.85 / 1568.85 × 100

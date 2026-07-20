@@ -14,10 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { getStoppageHeads, getDepartments } from '@/lib/supabase/stoppageDetailQueries'
+import { getStoppageHeadsAction, getDepartmentsAction } from '@/app/actions/stoppage-detail'
 
 const stoppageDetailSchema = z.object({
-  code: z.number().optional(),
+  code: z.union([z.number(), z.string()]).optional().transform((val) => {
+    if (val === '' || val === null || val === undefined) return undefined;
+    const parsed = typeof val === 'number' ? val : parseInt(String(val), 10);
+    return isNaN(parsed) ? undefined : parsed;
+  }),
   stoppage_name: z.string().min(1, 'Stoppage name is required'),
   description: z.string().nullable().optional(),
   short_code: z.string().max(10).nullable().optional(),
@@ -55,12 +59,18 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
 
   const loadDropdownData = async () => {
     try {
-      const [headsData, deptsData] = await Promise.all([
-        getStoppageHeads(),
-        getDepartments()
+      const [headsResult, deptsResult] = await Promise.all([
+        getStoppageHeadsAction(),
+        getDepartmentsAction()
       ])
-      setStoppageHeads(headsData)
-      setDepartments(deptsData)
+      
+      if (headsResult.success) {
+        setStoppageHeads(headsResult.data)
+      }
+      
+      if (deptsResult.success) {
+        setDepartments(deptsResult.data)
+      }
     } catch (error) {
       console.error('Failed to load dropdown data:', error)
     }
@@ -68,12 +78,24 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
 
   const departmentId = watch('department_id')
   const stoppageHeadId = watch('stoppage_head_id')
+  const stoppageName = watch('stoppage_name')
+  const shortCode = watch('short_code')
+
+  // Auto-generate full_stoppage_name from stoppage_name and short_code
+  useEffect(() => {
+    const name = stoppageName?.trim() || ''
+    const code = shortCode?.trim() || ''
+    
+    if (name || code) {
+      const fullName = code ? `${name} ${code}`.trim() : name
+      setValue('full_stoppage_name', fullName)
+    }
+  }, [stoppageName, shortCode, setValue])
 
   const handleFormSubmit = (data) => {
-    // Convert empty strings to null
+    // Convert empty strings to null - code is already transformed by zod
     const formattedData = {
       ...data,
-      code: data.code ? parseInt(data.code) : undefined,
       description: data.description?.trim() || null,
       short_code: data.short_code?.trim() || null,
       full_stoppage_name: data.full_stoppage_name?.trim() || null,
@@ -193,13 +215,15 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
           )}
         </div>
 
-        {/* Full Stoppage Name - Full Width */}
+        {/* Full Stoppage Name - Full Width (Auto-generated) */}
         <div className="flex flex-col gap-2 col-span-2">
-          <Label htmlFor="full_stoppage_name">Full Stoppage Name</Label>
+          <Label htmlFor="full_stoppage_name">Full Stoppage Name (Auto-generated)</Label>
           <Input
             id="full_stoppage_name"
             {...register('full_stoppage_name')}
-            placeholder="Enter complete stoppage description"
+            placeholder="Auto-generated from Stoppage Name + Short Code"
+            readOnly
+            className="bg-gray-100"
           />
           {errors.full_stoppage_name && (
             <p className="text-sm text-red-500">{errors.full_stoppage_name.message}</p>

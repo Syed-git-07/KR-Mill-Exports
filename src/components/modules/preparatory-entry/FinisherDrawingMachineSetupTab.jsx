@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -13,48 +13,80 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Loader2, Save, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
+import { NumberInput } from '@/components/ui/number-input'
+import EnterSelect from '@/components/ui/enter-select'
+import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  getFinisherDrawingMachineSetups,
-  updateFinisherDrawingMachineSetup,
-  getFinisherDrawingMachines,
-  addFinisherDrawingMachine,
-  removeFinisherDrawingMachine,
-  bulkUpdateFinisherDrawingMachineMixing,
-  getFinisherDrawingMixingOptions
-} from '@/lib/supabase/finisherDrawingEntryQueries'
+  getFinisherDrawingMachineSetupsAction,
+  updateFinisherDrawingMachineSetupAction,
+  addFinisherDrawingMachineAction,
+  removeFinisherDrawingMachineAction,
+  bulkUpdateFinisherDrawingMachineMixingAction,
+  getFinisherDrawingMixingOptionsAction,
+  getSpinningCountOptionsAction,
+  lookupFinisherDrawingMachineByNoAction
+} from '@/app/actions/finisher-drawing-entry'
+import {
+  FINISHER_DRAWING_FORMULA_FALLBACK,
+  resolveFinisherDrawingFormulaInputs,
+  calculateFinisherDrawingStdProdn,
+} from '@/lib/finisherDrawingFormulaFallback'
 
-export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
+const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachineSetupTab({
+  shift = 1,
+  totalTime = 0,
+  onRefresh,
+  sharedDraftEdits,
+  onSharedDraftEditsChange
+}, ref) {
   const [setupData, setSetupData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [editedRows, setEditedRows] = useState({})
+  const [localEditedRows, setLocalEditedRows] = useState({})
+  const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const [selectedRows, setSelectedRows] = useState([])
   const [mixingOptions, setMixingOptions] = useState([])
+  const [spinningCountOptions, setSpinningCountOptions] = useState([])
+  const editedRowsRef = useRef({})
+  const lastLoadKeyRef = useRef('')
+
+  const setEditedRows = useCallback((updater) => {
+    if (onSharedDraftEditsChange) {
+      const prev = editedRowsRef.current || {}
+      const next = typeof updater === 'function' ? updater(prev) : (updater || {})
+      if (next === prev) {
+        return
+      }
+      editedRowsRef.current = next
+      onSharedDraftEditsChange(next)
+      return
+    }
+    setLocalEditedRows(prev => (typeof updater === 'function' ? updater(prev) : (updater || {})))
+  }, [onSharedDraftEditsChange])
+
+  useEffect(() => {
+    editedRowsRef.current = editedRows
+  }, [editedRows])
 
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showMixingChangeDialog, setShowMixingChangeDialog] = useState(false)
   const [showRemoveDialog, setShowRemoveDialog] = useState(false)
 
-  // New machine form - Finisher Drawing specific defaults (Hank=0.14, Std Effi=0.90)
+  // New machine form seeded from centralized fallback defaults.
   const [newMachine, setNewMachine] = useState({
     machine_no: '',
     description: '',
-    make_name: 'LMW',
-    prodn_mixing: '64COMBED GOLD',
-    speed: 350,
-    shift_time: 510,
-    hank_constant: 0.14,
-    std_efficiency_factor: 0.90,
+    make_name: '',
+    model: '',
+    installed_date: '',
+    prodn_mixing: '',
+    speed: FINISHER_DRAWING_FORMULA_FALLBACK.speed,
+    prodn_effi: 90,
+    shift_time: totalTime,
+    hank_constant: FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant,
+    std_efficiency_factor: FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
     delivery: 1
   })
 
@@ -62,37 +94,112 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
   const [newMixing, setNewMixing] = useState('')
   const [customMixing, setCustomMixing] = useState('')
 
+  // Lookup machine from master by machine_no (auto-fill Add dialog)
+  const handleMachineNoLookup = async (machineNo) => {
+    const val = String(machineNo || '').trim()
+    if (!val) return
+    const toastId = toast.loading(`Looking up machine ${val}…`)
+    const result = await lookupFinisherDrawingMachineByNoAction(val)
+    if (!result.success) {
+      toast.error(result.error || 'Lookup failed', { id: toastId })
+      return
+    }
+    if (!result.data) {
+      toast.error(`Machine ${val} not found in master`, { id: toastId })
+      return
+    }
+    const d = result.data
+    setNewMachine(prev => ({
+      ...prev,
+      machine_no: d.machine_no ?? prev.machine_no,
+      description: d.description || prev.description,
+      make_name: d.make_name || prev.make_name,
+      model: d.model || prev.model,
+      installed_date: d.installed_date ? String(d.installed_date).split('T')[0] : prev.installed_date,
+      prodn_mixing: d.prodn_mixing || prev.prodn_mixing,
+      speed: d.speed != null ? parseFloat(d.speed) : prev.speed,
+      prodn_effi: d.prodn_efficiency != null
+        ? parseFloat(d.prodn_efficiency)
+        : (d.std_efficiency_factor != null ? parseFloat(d.std_efficiency_factor) * 100 : prev.prodn_effi),
+      std_efficiency_factor: d.std_efficiency_factor != null
+        ? parseFloat(d.std_efficiency_factor)
+        : (d.prodn_efficiency != null ? parseFloat(d.prodn_efficiency) / 100 : prev.std_efficiency_factor),
+    }))
+    if (d.has_setup) {
+      toast.info(`Machine ${val} found — it will be reactivated with existing setup`, { id: toastId })
+    } else {
+      toast.success(`Machine ${val} details filled`, { id: toastId })
+    }
+  }
+
+  const mergeServerRowsWithDrafts = useCallback((rows) => {
+    const drafts = editedRowsRef.current || {}
+    const rowIds = new Set((rows || []).map(row => String(row.id)))
+
+    setEditedRows(prev => {
+      const next = {}
+      for (const [id, value] of Object.entries(prev)) {
+        if (rowIds.has(String(id))) {
+          next[id] = value
+        }
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next
+    })
+
+    return (rows || []).map(row => {
+      const draft = drafts[row.id] || drafts[String(row.id)]
+      if (!draft) return row
+      return { ...row, ...draft }
+    })
+  }, [setEditedRows])
+
   // Load machine setups
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ force = false } = {}) => {
+    const loadKey = `${shift}|${totalTime}`
+    if (!force && lastLoadKeyRef.current === loadKey) {
+      return
+    }
+    lastLoadKeyRef.current = loadKey
     setIsLoading(true)
     try {
-      const [setups, machineList, mixings] = await Promise.all([
-        getFinisherDrawingMachineSetups(),
-        getFinisherDrawingMachines(),
-        getFinisherDrawingMixingOptions()
+      const [setupsResult, mixingsResult, countsResult] = await Promise.all([
+        getFinisherDrawingMachineSetupsAction(shift),
+        getFinisherDrawingMixingOptionsAction(),
+        getSpinningCountOptionsAction()
       ])
       
-      // Merge setup data with machine info for display
-      const mergedData = (machineList || [])
-        .filter(m => m.is_active !== false)
-        .map(machine => {
-          const setup = (setups || []).find(s => s.machine_id === machine.id)
+      const setups = setupsResult.success ? setupsResult.data : []
+      const mixings = mixingsResult.success ? mixingsResult.data : []
+      const counts = countsResult.success ? countsResult.data : []
+      
+      // Spinning-style behavior: show only machines that have setup rows
+      const mergedData = (setups || [])
+        .map(setup => {
+          const shiftTime = setup.shift_time || totalTime
+          const formula = resolveFinisherDrawingFormulaInputs(setup, setup.machine?.speed || setup.speed)
+          const speed = formula.speed
+          const hankConstant = formula.hankConstant
+          const stdEffi = formula.stdEfficiencyFactor
+          const divisor = formula.divisorConstant
+          const delivery = formula.delivery
+          const stdProdn = Math.round(calculateStdProdn(speed, hankConstant, stdEffi, delivery, divisor, shiftTime) * 100) / 100
+
           return {
-            id: setup?.id || `new-${machine.id}`,
-            machine_id: machine.id,
-            machine_no: machine.machine_no,
-            description: machine.description || `Finisher Drawing Machine ${machine.machine_no}`,
-            make_name: machine.make_name || 'LMW',
-            mixing: machine.prodn_mixing || '64COMBED GOLD',
-            speed: machine.speed || setup?.speed || 350,
-            std_prodn: setup?.std_prodn || 677.79,
-            std_efficiency_factor: setup?.std_efficiency_factor || 0.90,
-            hank_constant: setup?.hank_constant || 0.14,
-            divisor_constant: setup?.divisor_constant || 1693,
-            delivery: setup?.delivery || 1,
-            shift_time: setup?.shift_time || 510,
-            is_active: machine.is_active ?? true,
-            isNewSetup: !setup
+          id: setup.id,
+          machine_id: setup.machine_id,
+          machine_no: setup.machine?.machine_no,
+          description: setup.machine?.description || `Finisher Drawing Machine ${setup.machine?.machine_no}`,
+          make_name: setup.machine?.make_name || '',
+          mixing: setup.machine?.prodn_mixing || setup.prodn_mixing || '',
+          speed,
+          std_prodn: stdProdn,
+          std_efficiency_factor: stdEffi,
+          hank_constant: hankConstant,
+          divisor_constant: divisor,
+          delivery,
+          shift_time: shiftTime,
+          is_active: setup.machine?.is_active ?? true,
+          isNewSetup: false
           }
         })
         .sort((a, b) => {
@@ -101,43 +208,59 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
           return aNum - bNum
         })
       
-      setSetupData(mergedData)
+      const mergedRows = mergeServerRowsWithDrafts(mergedData)
+      setSetupData(mergedRows)
       setMixingOptions(mixings || [])
+      setSpinningCountOptions(counts || [])
     } catch (error) {
+      lastLoadKeyRef.current = ''
       console.error('Error loading machine setups:', error)
       toast.error('Failed to load machine setups')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [shift, totalTime, mergeServerRowsWithDrafts])
+
+  useEffect(() => {
+    setNewMachine(prev => ({ ...prev, shift_time: totalTime }))
+  }, [totalTime])
 
   useEffect(() => {
     loadData()
   }, [loadData])
 
-  // Calculate Std Prodn - FINISHER DRAWING Formula
-  const calculateStdProdn = (speed, hankConstant, stdEffiFactor, delivery, divisor = 1693, shiftTime = 510) => {
-    // FINISHER DRAWING Formula: StdProdn = Speed / 1693 / Hank × TotalTime × StdEffi × Delivery
-    // = 350 / 1693 / 0.14 × 510 × 0.90 × 1 = 677.79
-    if (!speed || !hankConstant) return 0
-    return (speed / divisor / hankConstant) * shiftTime * stdEffiFactor * delivery
+  const calculateStdProdn = (speed, hankConstant, stdEffiFactor, delivery, divisor, shiftTime) => {
+    return calculateFinisherDrawingStdProdn(
+      {
+        speed,
+        hank_constant: hankConstant,
+        std_efficiency_factor: stdEffiFactor,
+        delivery,
+        divisor_constant: divisor,
+      },
+      shiftTime,
+      speed
+    )
   }
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
+    const baseRow = setupData.find(row => String(row.id) === String(rowId))
+    const machineId = baseRow?.machine_id
     const numValue = parseFloat(value) || 0
     
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
+        ...(machineId ? { machine_id: machineId } : {}),
         [field]: numValue
       }
     }))
 
     // Update display data and recalculate std_prodn
     setSetupData(prev => prev.map(row => {
-      if (row.id === rowId) {
+      if (String(row.id) === String(rowId)) {
         const updatedRow = { ...row, [field]: numValue }
         
         // Recalculate std_prodn when relevant fields change
@@ -159,34 +282,91 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
   }
 
   // Save changes
-  const handleSave = async () => {
-    if (Object.keys(editedRows).length === 0) {
-      toast.info('No changes to save')
-      return
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const pendingEdits = editedRowsRef.current || editedRows || {}
+
+    if (Object.keys(pendingEdits).length === 0) {
+      if (!suppressNoChangesToast) {
+        toast.info('No changes to save')
+      }
+      return { success: true, saved: 0 }
     }
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
-        const row = setupData.find(r => r.id === rowId)
-        if (!row) return null
+      const resolvedUpdates = Object.entries(pendingEdits).map(([rowId, changes]) => {
+        const row = setupData.find(
+          r => String(r.id) === String(rowId) || String(r.machine_id) === String(rowId)
+        )
+        if (!row) {
+          return { rowId, changes, row: null }
+        }
+        return { rowId, changes, row }
+      })
 
-        return updateFinisherDrawingMachineSetup(row.machine_id, changes)
-      }).filter(Boolean)
+      const unresolvedEdits = resolvedUpdates.filter(item => !item.row)
+      if (unresolvedEdits.length > 0) {
+        throw new Error(`Unable to map ${unresolvedEdits.length} machine setup edit(s) to table rows. Please refresh and try again.`)
+      }
 
-      await Promise.all(updatePromises)
+      const updatePromises = resolvedUpdates.map(({ row, changes }) =>
+        updateFinisherDrawingMachineSetupAction(row.machine_id, changes)
+      )
+
+      if (updatePromises.length === 0) {
+        throw new Error('No machine setup updates were prepared for saving.')
+      }
+
+      const updateResults = await Promise.all(updatePromises)
+      const failedUpdates = updateResults.filter(result => !result?.success)
+      if (failedUpdates.length > 0) {
+        const firstError = failedUpdates[0]?.error || 'Unknown error while saving machine setup changes'
+        throw new Error(firstError)
+      }
+
+      const savedCount = updateResults.length
       setEditedRows({})
-      toast.success('Machine setups saved successfully')
+      if (!suppressSuccessToast) {
+        toast.success('Machine setups saved successfully')
+      }
       
-      await loadData()
-      onRefresh?.()
+      await loadData({ force: true })
+      if (!skipParentRefresh) {
+        await onRefresh?.()
+      }
+      return { success: true, saved: savedCount }
     } catch (error) {
-      console.error('Error saving machine setups:', error)
-      toast.error('Failed to save machine setups')
+      toast.error(error?.message || 'Failed to save machine setups')
+      return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
     }
   }
+
+  const confirmDiscardLocalEdits = () => {
+    if (Object.keys(editedRowsRef.current || editedRows || {}).length === 0) return true
+    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+  }
+
+  const handleRefreshClick = async () => {
+    if (!confirmDiscardLocalEdits()) return
+    setEditedRows({})
+    await loadData({ force: true })
+  }
+
+  const discardChanges = async () => {
+    setEditedRows({})
+    await loadData({ force: true })
+    return { success: true }
+  }
+
+  useImperativeHandle(ref, () => ({
+    saveChanges: handleSave,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
+    isSaving: () => isSaving,
+    discardChanges,
+    refreshData: () => loadData({ force: true })
+  }), [handleSave, editedRows, isSaving, discardChanges, loadData])
 
   // Toggle row selection
   const handleRowSelect = (machineId) => {
@@ -215,32 +395,43 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
 
     setIsSaving(true)
     try {
-      const result = await addFinisherDrawingMachine({
+      const result = await addFinisherDrawingMachineAction({
         machine_no: newMachine.machine_no,
         description: newMachine.description || `Finisher Drawing Machine ${newMachine.machine_no}`,
+        shift,
         make_name: newMachine.make_name,
+        model: newMachine.model,
+        installed_date: newMachine.installed_date || null,
         prodn_mixing: newMachine.prodn_mixing,
         speed: newMachine.speed,
+        prodn_effi: newMachine.prodn_effi,
         shift_time: newMachine.shift_time,
         hank_constant: newMachine.hank_constant,
         std_efficiency_factor: newMachine.std_efficiency_factor,
         delivery: newMachine.delivery
       })
-      toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
-      setShowAddDialog(false)
-      setNewMachine({
-        machine_no: '',
-        description: '',
-        make_name: 'LMW',
-        prodn_mixing: '64COMBED GOLD',
-        speed: 350,
-        shift_time: 510,
-        hank_constant: 0.14,
-        std_efficiency_factor: 0.90,
-        delivery: 1
-      })
-      await loadData()
-      onRefresh?.()
+      if (result.success) {
+        toast.success(result.data.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+        setShowAddDialog(false)
+        setNewMachine({
+          machine_no: '',
+          description: '',
+          make_name: '',
+          model: '',
+          installed_date: '',
+          prodn_mixing: '',
+          speed: FINISHER_DRAWING_FORMULA_FALLBACK.speed,
+          prodn_effi: 90,
+          shift_time: totalTime,
+          hank_constant: FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant,
+          std_efficiency_factor: FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
+          delivery: 1
+        })
+        await loadData({ force: true })
+        onRefresh?.()
+      } else {
+        throw new Error(result.error)
+      }
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -259,13 +450,13 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
     setIsSaving(true)
     try {
       const removePromises = selectedRows.map(machineId => 
-        removeFinisherDrawingMachine(machineId)
+        removeFinisherDrawingMachineAction(machineId)
       )
       await Promise.all(removePromises)
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
+      await loadData({ force: true })
       onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
@@ -277,7 +468,7 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
 
   // Change count/mixing for selected machines
   const handleChangeMixing = async () => {
-    const mixingValue = newMixing === 'custom' ? customMixing : newMixing
+    const mixingValue = customMixing || newMixing
     
     if (!mixingValue) {
       toast.warning('Please select or enter a mixing value')
@@ -291,14 +482,18 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
 
     setIsSaving(true)
     try {
-      await bulkUpdateFinisherDrawingMachineMixing(selectedRows, mixingValue)
-      toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
-      setShowMixingChangeDialog(false)
-      setNewMixing('')
-      setCustomMixing('')
-      setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      const result = await bulkUpdateFinisherDrawingMachineMixingAction(selectedRows, mixingValue)
+      if (result.success) {
+        toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
+        setShowMixingChangeDialog(false)
+        setNewMixing('')
+        setCustomMixing('')
+        setSelectedRows([])
+        await loadData({ force: true })
+        onRefresh?.()
+      } else {
+        throw new Error(result.error)
+      }
     } catch (error) {
       console.error('Error updating mixing:', error)
       toast.error('Failed to update mixing')
@@ -322,32 +517,24 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
           {setupData.length} machines configured
+          {Object.keys(editedRows).length > 0 && (
+            <span className="ml-4 text-orange-600 font-medium">
+              Unsaved changes: {Object.keys(editedRows).length}
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadData}>
+          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
             <RefreshCw className="h-4 w-4 mr-1" />
             Refresh
-          </Button>
-          <Button 
-            size="sm" 
-            onClick={handleSave}
-            disabled={isSaving || Object.keys(editedRows).length === 0}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 mr-1" />
-            )}
-            Save Changes
           </Button>
         </div>
       </div>
 
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
-        <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-          <table className="w-full border-collapse text-sm">
+        <div className="overflow-x-auto max-h-100 overflow-y-auto">
+          <table className="w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 w-10">
@@ -357,15 +544,16 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                     className="border-white"
                   />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-36">Description</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">Make</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-28">Mixing</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Speed</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Std.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Std.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20">TYPE</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-44 whitespace-nowrap">Description</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Make</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-56 whitespace-nowrap">Mixing</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Speed</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Std.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Std.Effi</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Hank</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Shift Time</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">TYPE</th>
               </tr>
             </thead>
             <tbody>
@@ -380,31 +568,42 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
                       onCheckedChange={() => handleRowSelect(row.machine_id)}
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700">
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700 whitespace-nowrap">
                     {row.machine_no}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center text-xs">
+                  <td className="border border-gray-300 px-2 py-1 text-left whitespace-nowrap overflow-hidden text-ellipsis" title={row.description || `Finisher Drawing Machine ${row.machine_no}`}>
                     {row.description || `Finisher Drawing Machine ${row.machine_no}`}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">
-                    {row.make_name || 'LMW'}
+                  <td className="border border-gray-300 px-2 py-1 text-left whitespace-nowrap">
+                    {row.make_name || ''}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center text-xs">
+                  <td className="border border-gray-300 px-2 py-1 text-left whitespace-nowrap overflow-hidden text-ellipsis" title={row.mixing}>
                     {row.mixing}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">
-                    {row.speed || 350}
+                  <td className="border border-gray-300 px-0 py-0">
+                    <NumberInput
+                      type="number"
+                      value={row.speed ?? ''}
+                      onChange={(e) => handleInputChange(row.id, 'speed', e.target.value)}
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-sm tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      zeroAsEmpty
+                    />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center font-medium">
-                    {row.std_prodn?.toFixed(2) || '677.79'}
+                  <td className="border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap">
+                    {Number(row.std_prodn || 0).toFixed(2)}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">
-                    {row.std_efficiency_factor ? Math.round(row.std_efficiency_factor * 100) : 90}%
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {row.std_efficiency_factor
+                      ? Math.round(Number(row.std_efficiency_factor) * 100)
+                      : Math.round(FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor * 100)}%
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">
-                    {row.hank_constant || 0.14}
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {Number(row.hank_constant || FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant)}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center text-xs">
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {row.shift_time || totalTime}
+                  </td>
+                  <td className="border border-gray-300 px-2 py-1 text-center text-xs whitespace-nowrap">
                     FINISHER
                   </td>
                 </tr>
@@ -442,84 +641,140 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
         </Button>
       </div>
 
-      {/* Formula Reference */}
-      <div className="text-xs text-gray-500 p-2 bg-blue-50 rounded border border-blue-200">
-        <strong>Finisher Drawing Machine Setup (Hank=0.14, Std Effi=90%, Speed=350):</strong> Std Prodn = Speed / 1693 / Hank × ShiftTime × StdEffi × Delivery = 350 / 1693 / 0.14 × 510 × 0.90 × 1 = 677.79 kg
-      </div>
-
       {/* Add Machine Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog
+        open={showAddDialog}
+        onOpenChange={(open) => {
+          setShowAddDialog(open)
+          if (!open) {
+            setNewMachine({
+              machine_no: '',
+              description: '',
+              make_name: '',
+              model: '',
+              installed_date: '',
+              prodn_mixing: '',
+              speed: FINISHER_DRAWING_FORMULA_FALLBACK.speed,
+              prodn_effi: 90,
+              shift_time: totalTime,
+              hank_constant: FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant,
+              std_efficiency_factor: FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
+              delivery: 1
+            })
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add New Machine</DialogTitle>
             <DialogDescription>
               Add a new Finisher Drawing machine to the system.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-5 py-2">
+            <div className="grid grid-cols-2 gap-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No.</Label>
+                <Label className="text-sm font-medium mb-2 block">Machine No *</Label>
                 <Input
-                  placeholder="e.g., FD11"
+                  placeholder="e.g. FD11"
                   value={newMachine.machine_no}
                   onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value.toUpperCase() }))}
+                  onBlur={(e) => handleMachineNoLookup(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleMachineNoLookup(e.target.value) } }}
+                  className="h-10 text-sm"
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium mb-2 block">Make</Label>
-                <Select
+                <Label className="text-sm font-medium mb-2 block">Make Name</Label>
+                <Input
                   value={newMachine.make_name}
-                  onValueChange={(value) => setNewMachine(prev => ({ ...prev, make_name: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LMW">LMW</SelectItem>
-                    <SelectItem value="RIETER">RIETER</SelectItem>
-                    <SelectItem value="LAKSHMI">LAKSHMI</SelectItem>
-                    <SelectItem value="TRUTZSCHLER">TRUTZSCHLER</SelectItem>
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, make_name: e.target.value }))}
+                  className="h-10 text-sm"
+                />
               </div>
             </div>
             <div>
               <Label className="text-sm font-medium mb-2 block">Description</Label>
               <Input
-                placeholder="e.g., Finisher Drawing Machine 11"
+                placeholder="Enter machine description"
                 value={newMachine.description}
                 onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
+                className="h-10 text-sm"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Speed (m/min)</Label>
+                <Label className="text-sm font-medium mb-2 block">Model</Label>
                 <Input
-                  type="number"
-                  value={newMachine.speed}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, speed: parseInt(e.target.value) || 350 }))}
+                  value={newMachine.model}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, model: e.target.value }))}
+                  placeholder="e.g. DO/6"
+                  className="h-10 text-sm"
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium mb-2 block">Mixing</Label>
+                <Label className="text-sm font-medium mb-2 block">Installed Date</Label>
                 <Input
-                  value={newMachine.prodn_mixing}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, prodn_mixing: e.target.value }))}
+                  type="date"
+                  value={newMachine.installed_date}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, installed_date: e.target.value }))}
+                  className="h-10 text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Count / Mixing</Label>
+              <EnterSelect
+                value={newMachine.prodn_mixing}
+                options={[
+                  ...spinningCountOptions.map(c => ({ value: c.count_name, label: c.count_name })),
+                  ...mixingOptions.map(m => ({ value: m, label: m }))
+                ]}
+                onChange={(v) => setNewMachine(prev => ({ ...prev, prodn_mixing: v }))}
+                searchable
+                className="h-10 text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-5">
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Speed (m/min)</Label>
+                <NumberInput
+                  value={newMachine.speed}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, speed: e.target.value }))}
+                  className="h-10 text-sm"
+                  zeroAsEmpty
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Std. Efficiency (%)</Label>
+                <NumberInput
+                  value={newMachine.prodn_effi}
+                  onChange={(e) => {
+                    const effi = Number(e.target.value) || 0
+                    setNewMachine(prev => ({
+                      ...prev,
+                      prodn_effi: effi,
+                      std_efficiency_factor: effi / 100
+                    }))
+                  }}
+                  className="h-10 text-sm"
+                  zeroAsEmpty
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
                 />
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+          <DialogFooter className="gap-3">
+            <Button variant="outline" onClick={() => setShowAddDialog(false)} className="h-10 px-6">
               Cancel
             </Button>
             <Button 
               onClick={handleAddMachine}
               disabled={isSaving}
+              className="h-10 px-6 bg-blue-600 hover:bg-blue-700"
             >
               {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              <Plus className="h-4 w-4 mr-1" />
               Add Machine
             </Button>
           </DialogFooter>
@@ -537,32 +792,26 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label className="text-sm font-medium mb-2 block">Select Mixing</Label>
-              <Select
+              <Label className="text-sm font-medium mb-2 block">Select Spinning Count / Mixing</Label>
+              <EnterSelect
                 value={newMixing}
-                onValueChange={setNewMixing}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select mixing" />
-                </SelectTrigger>
-                <SelectContent>
-                  {mixingOptions.map(m => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
-                  ))}
-                  <SelectItem value="custom">Custom...</SelectItem>
-                </SelectContent>
-              </Select>
+                options={[
+                  ...spinningCountOptions.map(c => ({ value: c.count_name, label: c.count_name })),
+                  ...mixingOptions.map(m => ({ value: m, label: m }))
+                ]}
+                onChange={(v) => { setNewMixing(v); setCustomMixing(''); }}
+                searchable
+              />
             </div>
-            {newMixing === 'custom' && (
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Custom Mixing</Label>
-                <Input
-                  placeholder="Enter custom mixing"
-                  value={customMixing}
-                  onChange={(e) => setCustomMixing(e.target.value)}
-                />
-              </div>
-            )}
+            <div className="text-center text-sm text-gray-500 font-medium">- OR -</div>
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Custom Mixing</Label>
+              <Input
+                placeholder="Enter custom mixing"
+                value={customMixing}
+                onChange={(e) => { setCustomMixing(e.target.value); setNewMixing(''); }}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowMixingChangeDialog(false)}>
@@ -607,4 +856,6 @@ export default function FinisherDrawingMachineSetupTab({ onRefresh }) {
       </Dialog>
     </div>
   )
-}
+})
+
+export default FinisherDrawingMachineSetupTab

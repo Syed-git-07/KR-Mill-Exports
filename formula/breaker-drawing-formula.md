@@ -16,6 +16,10 @@ No assumptions, no corrections beyond what you approved.
 ### 🔹 Breaker Drawing – Final Agreed Logic
 
 ```text
+Constst = (1 / 2.20456 / Hank) × Delivery
+
+Act Prodn (Kg) = Constst × Act Hank
+
 Std Prodn (Kg) =
 Speed / 1693 / Hank × Total Time × Std Effi × Delivery
 
@@ -57,7 +61,6 @@ Total Time (510) - displayed in grid as "Run Time"
 ### Production (from EL Measure)
 
 * **Act Hank** = 133.36
-* **Actual Prodn** = 864.20 kg
 * **Waste** = 0.85 kg
 
 ### Time
@@ -99,6 +102,22 @@ UTI = 52.94 %
 ## 🔹 Step 3: Standard Production (Std Prodn)
 
 ```text
+Constst = (1 / 2.20456 / Hank) × Delivery
+Constst = (1 / 2.20456 / 0.14) × 2
+Constst = 6.4813
+
+Act Prodn = Constst × Act Hank
+Act Prodn = 6.4813 × 133.36
+Act Prodn = 864.20 kg
+```
+
+✅ **Act Prodn = 864.20 kg**
+
+---
+
+## 🔹 Step 4: Standard Production (Std Prodn)
+
+```text
 Std Prodn =
 Speed / 1693 / Hank × Total Time × Std Effi × Delivery
 ```
@@ -124,7 +143,7 @@ Step-by-step:
 
 ---
 
-## 🔹 Step 4: Expected Production (Exp Prodn)
+## 🔹 Step 5: Expected Production (Exp Prodn)
 
 ```text
 Exp Prodn = Std Prodn × (Run Time / Total Time)
@@ -140,7 +159,7 @@ Exp Prodn = 871.44 kg
 
 ---
 
-## 🔹 Step 5: Actual Efficiency (Act.Effi %)
+## 🔹 Step 6: Actual Efficiency (Act.Effi %)
 
 ```text
 Act Effi % = Actual Prodn / Exp Prodn × 100
@@ -155,7 +174,7 @@ Act Effi = 99.17 %
 
 ---
 
-## 🔹 Step 6: Waste %
+## 🔹 Step 7: Waste %
 
 ```text
 Waste % = Waste / Actual Prodn × 100

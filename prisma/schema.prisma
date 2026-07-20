@@ -1,0 +1,934 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model shift_config {
+  id              String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  department_code String    @db.VarChar(50)
+  shift           Int
+  shift_name      String?   @default("Day") @db.VarChar(50)
+  shift_time      Int       @default(510)
+  start_time      DateTime? @db.Time(0)
+  end_time        DateTime? @db.Time(0)
+  is_active       Boolean?  @default(true)
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @updatedAt @db.DateTime(0)
+
+  @@unique([department_code, shift], name: "uk_dept_shift", map: "uk_dept_shift")
+}
+
+model autoconer_machine_setup {
+  id         String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id String    @db.Char(36)
+  entry_date DateTime  @default(dbgenerated("'2026-04-01'")) @db.Date
+  shift      Int       @default(1)
+  count_name String?   @db.VarChar(100)
+  count_id   String?   @db.Char(36)
+  act_count  Decimal?  @default(69.50) @db.Decimal(10, 2)
+  session_no Int?      @default(1)
+  run_time   Int?      @default(510)
+  created_at DateTime? @default(now()) @db.DateTime(0)
+  updated_at DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_autoconer_machine_setup_date")
+}
+
+model autoconer_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String    @db.Text
+  make_name         String    @default("MURT") @db.VarChar(255)
+  act_effi          Int?      @default(0)
+  is_active         Boolean?  @default(true)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  mc_id             Int?
+  group_id          Int?      @default(1)
+  model             String?   @db.Text
+  from_drum         Int?
+  to_drum           Int?
+  no_of_drums       Int?      @default(0)
+  speed             Int?
+  count             String?   @db.Text
+  installed_date    DateTime? @db.Date
+  direct_prod_entry Boolean?  @default(false)
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+}
+
+model autoconer_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  emp_name            String?   @db.VarChar(100)
+  count_name          String?   @db.VarChar(100)
+  count_id            String?   @db.Char(36)
+  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  prodn_effi          Decimal?  @default(0.00) @db.Decimal(5, 2)
+  red_light           Decimal?  @default(0.00) @db.Decimal(5, 2)
+  idle_drum           Int?      @default(0)
+  idle_reason         String?   @db.Text
+  waste_kg            Decimal?  @db.Decimal(10, 4)
+  waste_percent       Decimal?  @db.Decimal(5, 2)
+  total_stoppage_mins Int?      @default(0)
+  work_time           Int?      @default(510)
+  run_time            Int?      @default(510)
+  session_no          Int?      @default(1)
+  is_verified         Boolean?  @default(false)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model autoconer_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model autoconer_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  run_time             Int?      @default(510)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  is_full_stoppage     Boolean?  @default(false)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model breaker_drawing_machine_setup {
+  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id            String    @db.Char(36)
+  speed                 Int?      @default(750)
+  hank_constant         Decimal?  @default(0.1400) @db.Decimal(10, 4)
+  std_efficiency_factor Decimal?  @default(0.8500) @db.Decimal(5, 4)
+  default_waste         Decimal?  @default(0.8500) @db.Decimal(10, 4)
+  std_prodn             Decimal?  @default(1371.72) @db.Decimal(10, 2)
+  shift_time            Int?      @default(510)
+  default_stoppage      Int?      @default(0)
+  divisor_constant      Int?      @default(1693)
+  delivery              Int?      @default(1)
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+}
+
+model breaker_drawing_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  employee_name       String?   @db.VarChar(100)
+  prodn_mixing        String?   @db.VarChar(100)
+  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
+  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  std_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
+  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
+  waste               Decimal?  @default(0.8500) @db.Decimal(10, 4)
+  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
+  run_time            Int?      @default(510)
+  work_time           Int?      @default(510)
+  session_no          Int?      @default(1)
+  is_verified         Boolean?  @default(false)
+  verified_at         DateTime? @db.DateTime(0)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  total_stoppage_mins Int?      @default(0)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model breaker_drawing_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model breaker_drawing_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  is_full_stoppage     Boolean?  @default(false)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model carding_machine_setup {
+  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id            String    @db.Char(36)
+  entry_date            DateTime  @default(dbgenerated("'2026-04-01'")) @db.Date
+  shift                 Int       @default(1)
+  speed                 Decimal?  @default(130.00) @db.Decimal(10, 2)
+  hank_constant         Decimal?  @default(0.1300) @db.Decimal(10, 4)
+  std_efficiency_factor Decimal?  @default(0.9800) @db.Decimal(5, 4)
+  default_waste         Decimal?  @default(0.3400) @db.Decimal(10, 4)
+  std_prodn             Decimal?  @default(295.22) @db.Decimal(10, 2)
+  shift_time            Int?      @default(510)
+  default_stoppage      Int?      @default(135)
+  divisor_constant      Int?      @default(1693)
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_carding_machine_setup_date")
+}
+
+model carding_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String?   @db.Text
+  make_name         String?   @db.Text
+  mc_id             Int?
+  model             String?   @db.Text
+  prodn_mixing      String?   @db.Text
+  speed             Int?
+  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active         Boolean?  @default(true)
+  direct_hank_entry Boolean?  @default(false)
+  direct_kgs_entry  Boolean?  @default(false)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+  hank_constant     Decimal?  @db.Decimal(10, 4)
+  sort_order        Int       @default(0)
+}
+
+model carding_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  employee_name       String?   @db.VarChar(100)
+  count_mixing        String?   @db.VarChar(100)
+  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
+  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  std_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
+  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
+  waste               Decimal?  @default(0.3400) @db.Decimal(10, 4)
+  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
+  run_time            Int?      @default(375)
+  work_time           Int?      @default(375)
+  session_no          Int?      @default(1)
+  is_verified         Boolean?  @default(false)
+  verified_at         DateTime? @db.DateTime(0)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  total_stoppage_mins Int?      @default(135)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model carding_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model carding_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  is_full_stoppage     Boolean?  @default(false)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model comber_machine_setup {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id    String    @db.Char(36)
+  prodn_mixing  String?   @db.VarChar(100)
+  session_no    Int?      @default(1)
+  cc_time       Int?      @default(0)
+  sl_hank       Decimal?  @default(0.1400) @db.Decimal(10, 4)
+  mc_effi       Decimal?  @default(93.00) @db.Decimal(5, 2)
+  shift_time    Int?      @default(510)
+  default_waste Decimal?  @default(0.9600) @db.Decimal(10, 4)
+  constant      Decimal?  @default(3.2400) @db.Decimal(10, 4)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  description   String?   @db.Text
+}
+
+model comber_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String?   @db.Text
+  make_name         String?   @db.Text
+  mc_id             Int?
+  model             String?   @db.Text
+  prodn_mixing      String?   @db.Text
+  speed             Int?
+  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  mc_effi           Decimal?  @default(0.00) @db.Decimal(5, 2)
+  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active         Boolean?  @default(true)
+  direct_hank_entry Boolean?  @default(false)
+  direct_kgs_entry  Boolean?  @default(false)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+  sort_order        Int       @default(0)
+  sliver_hank       Decimal?  @db.Decimal(10, 4)
+}
+
+model comber_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  employee_name       String?   @db.VarChar(100)
+  prodn_mixing        String?   @db.VarChar(100)
+  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
+  run_hrs             Decimal?  @default(0.00) @db.Decimal(5, 2)
+  run_min             Int?      @default(0)
+  waste               Decimal?  @default(0.9600) @db.Decimal(10, 4)
+  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
+  act_effi_percent    Decimal?  @default(0.00) @db.Decimal(10, 2)
+  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
+  std_hrs             Decimal?  @default(0.00) @db.Decimal(10, 2)
+  work_time           Int?      @default(510)
+  session_no          Int?      @default(1)
+  is_verified         Boolean?  @default(false)
+  verified_at         DateTime? @db.DateTime(0)
+  is_locked           Boolean?  @default(false)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  total_stoppage_mins Int?      @default(0)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model comber_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model comber_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  is_full_stoppage     Boolean?  @default(false)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model departments {
+  id         String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  dept_name  String    @db.Text
+  sl_no      Int
+  hok        Decimal   @default(0.00) @db.Decimal(10, 2)
+  is_active  Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.DateTime(0)
+  updated_at DateTime? @default(now()) @db.DateTime(0)
+  code       Int?
+}
+
+model drawing_breaker_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String?   @db.Text
+  make_name         String?   @db.Text
+  mc_id             Int?
+  model             String?   @db.Text
+  prodn_mixing      String?   @db.Text
+  speed             Int?
+  delivery          Int?
+  sliver_hank       Decimal?  @db.Decimal(10, 4)
+  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active         Boolean?  @default(true)
+  direct_hank_entry Boolean?  @default(false)
+  direct_kgs_entry  Boolean?  @default(false)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+  sort_order        Int       @default(0)
+}
+
+model drawing_finisher_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String?   @db.Text
+  make_name         String?   @db.Text
+  mc_id             Int?
+  model             String?   @db.Text
+  prodn_mixing      String?   @db.Text
+  speed             Int?
+  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active         Boolean?  @default(true)
+  direct_hank_entry Boolean?  @default(false)
+  direct_kgs_entry  Boolean?  @default(false)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+  sort_order        Int       @default(0)
+}
+
+model finisher_drawing_machine_setup {
+  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id            String    @db.Char(36)
+  speed                 Int?      @default(350)
+  hank_constant         Decimal?  @default(0.1400) @db.Decimal(10, 4)
+  std_efficiency_factor Decimal?  @default(0.9000) @db.Decimal(5, 4)
+  default_waste         Decimal?  @db.Decimal(10, 4)
+  std_prodn             Decimal?  @default(677.79) @db.Decimal(10, 2)
+  shift_time            Int?      @default(510)
+  default_stoppage      Int?      @default(0)
+  divisor_constant      Int?      @default(1693)
+  delivery              Int?      @default(1)
+  make_name             String?   @db.VarChar(50)
+  machine_type          String?   @default("FINISHER") @db.VarChar(20)
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+  prodn_mixing          String?   @db.VarChar(100)
+}
+
+model finisher_drawing_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  employee_name       String?   @db.VarChar(100)
+  prodn_mixing        String?   @db.VarChar(100)
+  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
+  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  std_prodn           Decimal?  @default(677.79) @db.Decimal(10, 2)
+  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
+  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
+  waste               Decimal?  @db.Decimal(10, 4)
+  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
+  run_time            Int?      @default(510)
+  work_time           Int?      @default(510)
+  session_no          Int?      @default(1)
+  is_locked           Boolean?  @default(false)
+  remarks             String?   @db.Text
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  total_stoppage_mins Int?      @default(0)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model finisher_drawing_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model finisher_drawing_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  is_full_stoppage     Boolean?  @default(false)
+}
+
+model hok_strength_detail {
+  id            Int       @id
+  hok_id        Int
+  department_id String    @db.Char(36)
+  shift1        Decimal?  @default(0.0) @db.Decimal(10, 1)
+  shift2        Decimal?  @default(0.0) @db.Decimal(10, 1)
+  shift3        Decimal?  @default(0.0) @db.Decimal(10, 1)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model hok_strength_head {
+  hok_id       Int       @id @default(autoincrement())
+  date         DateTime? @db.Date
+  total_shift1 Decimal?  @default(0.00) @db.Decimal(10, 2)
+  total_shift2 Decimal?  @default(0.00) @db.Decimal(10, 2)
+  total_shift3 Decimal?  @default(0.00) @db.Decimal(10, 2)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+}
+
+model lap_former_machine_setup {
+  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id            String    @db.Char(36)
+  speed                 Int?      @default(90)
+  hank_constant         Decimal?  @default(0.0082) @db.Decimal(10, 4)
+  std_efficiency_factor Decimal?  @default(0.8500) @db.Decimal(5, 4)
+  default_waste         Decimal?  @default(0.8500) @db.Decimal(10, 4)
+  std_prodn             Decimal?  @default(2810.35) @db.Decimal(10, 2)
+  shift_time            Int?      @default(510)
+  default_stoppage      Int?      @default(0)
+  divisor_constant      Int?      @default(1693)
+  delivery              Int?      @default(1)
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+}
+
+model lap_former_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String?   @db.Text
+  make_name         String?   @db.Text
+  mc_id             Int?
+  model             String?   @db.Text
+  prodn_mixing      String?   @db.Text
+  speed             Int?
+  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active         Boolean?  @default(true)
+  direct_hank_entry Boolean?  @default(false)
+  direct_kgs_entry  Boolean?  @default(false)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+  sort_order        Int?      @default(0)
+}
+
+model lap_former_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  employee_name       String?   @db.VarChar(100)
+  prodn_mixing        String?   @db.VarChar(100)
+  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
+  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  std_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
+  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
+  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
+  waste               Decimal?  @default(0.8500) @db.Decimal(10, 4)
+  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
+  run_time            Int?      @default(510)
+  work_time           Int?      @default(510)
+  session_no          Int?      @default(1)
+  is_verified         Boolean?  @default(false)
+  verified_at         DateTime? @db.DateTime(0)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  total_stoppage_mins Int?      @default(0)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model lap_former_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model lap_former_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  is_full_stoppage     Boolean?  @default(false)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model simplex_machine_setup {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id    String    @db.Char(36)
+  prodn_mixing  String?   @db.VarChar(50)
+  session_no    Int?      @default(1)
+  cc_time       Int?      @default(0)
+  sl_hank       Decimal?  @default(1.4000) @db.Decimal(10, 4)
+  mc_effi       Decimal?  @default(92.00) @db.Decimal(5, 2)
+  tpi           Decimal?  @default(1.73) @db.Decimal(5, 2)
+  spindles      Int?      @default(140)
+  shift_time    Int?      @default(510)
+  default_waste Decimal?  @default(0.9000) @db.Decimal(10, 4)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model simplex_machines {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no        String    @db.Text
+  description       String?   @db.Text
+  make_name         String?   @db.Text
+  mc_id             Int?
+  model             String?   @db.Text
+  prodn_mixing      String?   @db.Text
+  speed             Int?
+  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  mc_effi           Decimal?  @default(0.00) @db.Decimal(5, 2)
+  tpi               Decimal?  @default(0.00) @db.Decimal(5, 2)
+  no_of_spindles    Int?      @default(0)
+  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  activated_at      DateTime? @db.Date
+  deactivated_at    DateTime? @db.Date
+  sort_order        Int?      @default(0)
+  is_active         Boolean?  @default(true)
+  direct_hank_entry Boolean?  @default(false)
+  direct_kgs_entry  Boolean?  @default(false)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+}
+
+model simplex_production_detail {
+  id               String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id        String    @db.Char(36)
+  machine_id       String    @db.Char(36)
+  employee_name    String?   @db.VarChar(100)
+  prodn_mixing     String?   @db.VarChar(50)
+  run_hrs          Decimal?  @db.Decimal(5, 2)
+  run_min          Int?
+  idle_spindles    Int?      @default(0)
+  waste            Decimal?  @default(0.9000) @db.Decimal(10, 4)
+  act_prodn        Decimal?  @db.Decimal(10, 2)
+  waste_percent    Decimal?  @db.Decimal(5, 2)
+  act_effi_percent Decimal?  @db.Decimal(5, 2)
+  uti_percent      Decimal?  @db.Decimal(5, 2)
+  std_hrs          Decimal?  @db.Decimal(10, 2)
+  work_time        Int?      @default(510)
+  run_time         Int?      @default(510)
+  session_no       Int?      @default(1)
+  is_locked        Boolean?  @default(false)
+  remarks          String?   @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model simplex_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model simplex_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model spinning_counts {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  count_name        String    @db.VarChar(100)
+  short_desc        String?   @db.VarChar(50)
+  act_count         Decimal   @db.Decimal(6, 2)
+  mixing_name       String?   @db.VarChar(100)
+  fibre             String?   @db.VarChar(50)
+  conv_40s_value    Decimal?  @db.Decimal(10, 2)
+  ukg               Decimal?  @db.Decimal(10, 2)
+  effi_exp_hank     Decimal?  @db.Decimal(5, 2)
+  effi_exp_prodn    Decimal?  @db.Decimal(5, 2)
+  is_running_now    Boolean?  @default(false)
+  autoconer_active  Boolean?  @default(false)
+  sitra_conv_value  Decimal?  @db.Decimal(10, 2)
+  cone_weight       Decimal?  @db.Decimal(10, 3)
+  effi_actual_prodn Decimal?  @db.Decimal(5, 2)
+  tpi               String?   @db.VarChar(50)
+  speed             String?   @db.VarChar(50)
+  speed_autoconer   Decimal?  @db.Decimal(10, 2)
+  tw_con            String?   @db.VarChar(50)
+  waste_percent     Decimal?  @db.Decimal(5, 2)
+  doff_loss         Decimal?  @db.Decimal(5, 2)
+  auto_effi         Decimal?  @db.Decimal(5, 2)
+  hok_cons          Decimal?  @db.Decimal(10, 2)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  is_active         Boolean?  @default(true)
+  sliver_hank       Decimal?  @db.Decimal(10, 4)
+}
+
+model spinning_machine_setup {
+  id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id         String    @db.Char(36)
+  entry_date         DateTime  @default(dbgenerated("'2026-04-01'")) @db.Date
+  shift              Int       @default(1)
+  count_name         String?   @db.VarChar(100)
+  act_count          Decimal?  @default(69.50) @db.Decimal(10, 2)
+  tpi                Decimal?  @default(13.00) @db.Decimal(5, 2)
+  allocated_spindles Int?      @default(1104)
+  tw_con             Int?      @default(4)
+  doff_loss          Decimal?  @default(0.70) @db.Decimal(5, 2)
+  c_waste_percent    Decimal?  @default(0.90) @db.Decimal(5, 2)
+  speed              Int?
+  session_no         Int?      @default(1)
+  run_time           Int?      @default(510)
+  efficiency         Decimal?  @default(0.985) @db.Decimal(5, 3)
+  conversion_factor  Decimal?  @default(2.20456) @db.Decimal(10, 5)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_spinning_machine_setup_date")
+}
+
+model spinning_machines {
+  id                          String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                  String    @db.Text
+  sort_order                  Int?      @default(0)
+  description                 String    @db.Text
+  make_name                   String    @default("LMW") @db.VarChar(255)
+  allocated_spindles          Int       @default(1104)
+  is_active                   Boolean?  @default(true)
+  remarks                     String?   @db.Text
+  created_at                  DateTime? @default(now()) @db.DateTime(0)
+  updated_at                  DateTime? @default(now()) @db.DateTime(0)
+  frame_no                    Int?
+  mc_id                       String?   @default("225") @db.VarChar(255)
+  model                       String?   @db.Text
+  group_no                    Int?      @default(0)
+  installed_date              DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
+  production_kgs_manual_entry Boolean?  @default(false)
+  direct_hank_entry           Boolean?  @default(true)
+  activated_at                DateTime? @db.Date
+  deactivated_at              DateTime? @db.Date
+}
+
+model spinning_production_detail {
+  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id           String    @db.Char(36)
+  machine_id          String    @db.Char(36)
+  count_name          String?   @db.VarChar(100)
+  act_hank            Decimal?  @db.Decimal(10, 2)
+  act_prodn           Decimal?  @db.Decimal(10, 2)
+  waste               Decimal?  @db.Decimal(10, 4)
+  waste_percent       Decimal?  @db.Decimal(5, 2)
+  gps                 Decimal?  @db.Decimal(10, 2)
+  worked_spindles     Decimal?  @db.Decimal(10, 2)
+  stopped_spindles    Decimal?  @db.Decimal(10, 2)
+  exp_gps             Decimal?  @db.Decimal(10, 2)
+  total_stoppage_mins Int?      @default(0)
+  session_no          Int?      @default(1)
+  is_verified         Boolean?  @default(false)
+  verified_at         DateTime? @db.DateTime(0)
+  is_locked           Boolean?  @default(false)
+  remarks             String?   @db.Text
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  sider1_name         String?   @db.VarChar(100)
+  sider2_name         String?   @db.VarChar(100)
+  work_time           Int?      @default(500)
+  run_time            Int?      @default(510)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model spinning_production_header {
+  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
+  entry_date    DateTime  @db.Date
+  shift         Int
+  supervisor_id String?   @db.Char(36)
+  maisitry_id   String?   @db.Char(36)
+  total_time    Int?      @default(510)
+  remarks       String?   @db.Text
+  is_locked     Boolean?  @default(false)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+}
+
+model spinning_stoppage_entry {
+  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id String    @db.Char(36)
+  run_time             Int?      @default(510)
+  stoppage1_id         String?   @db.Char(36)
+  stoppage1_time       Int?      @default(0)
+  stoppage2_id         String?   @db.Char(36)
+  stoppage2_time       Int?      @default(0)
+  stoppage3_id         String?   @db.Char(36)
+  stoppage3_time       Int?      @default(0)
+  stoppage4_id         String?   @db.Char(36)
+  stoppage4_time       Int?      @default(0)
+  total_stoppage_time  Int?      @default(0)
+  is_full_stoppage     Boolean?  @default(false)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+}
+
+model stoppage_details {
+  id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  stoppage_head_id   String?   @db.Char(36)
+  code               Int
+  description        String    @db.Text
+  is_active          Boolean?  @default(true)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  stoppage_name      String    @default("") @db.VarChar(255)
+  short_code         String?   @db.VarChar(10)
+  full_stoppage_name String?   @db.Text
+  department_id      String?   @db.Char(36)
+}
+
+model stoppage_heads {
+  id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  stoppage_head_name String    @db.Text
+  is_active          Boolean?  @default(true)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  code               Int?
+  description        String?   @db.Text
+}
+
+model supervisors {
+  id              String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  supervisor_name String    @db.Text
+  department_id   String?   @db.Char(36)
+  is_active       Boolean?  @default(true)
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+  code            Int       @default(1)
+}
+
+model employee_master {
+  id          String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  emp_name    String    @unique(map: "emp_name") @db.VarChar(100)
+  emp_code    String?   @db.VarChar(50)
+  doj         DateTime? @db.Date
+  department  String?   @db.VarChar(100)
+  designation String?   @db.VarChar(100)
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  updated_at  DateTime? @default(now()) @updatedAt @db.DateTime(0)
+
+  @@index([emp_name], map: "idx_emp_name")
+  @@index([is_active], map: "idx_is_active")
+  @@index([emp_name, is_active], map: "idx_emp_name_active")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tpi_entries {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_date        DateTime  @db.Date
+  spinning_count_id String?   @db.Char(36)
+  tpi_value         Decimal   @db.Decimal(10, 2)
+  machine_id        String?   @db.Char(36)
+  shift             String?   @db.Text
+  remarks           String?   @db.Text
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  entry_id          Int       @default(1)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model twc_entries {
+  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_date        DateTime  @db.Date
+  spinning_count_id String?   @db.Char(36)
+  twc_value         Decimal   @db.Decimal(10, 2)
+  machine_id        String?   @db.Char(36)
+  shift             String?   @db.Text
+  remarks           String?   @db.Text
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  entry_id          Int       @default(1)
+}

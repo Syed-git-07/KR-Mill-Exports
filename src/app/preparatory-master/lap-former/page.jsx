@@ -8,23 +8,25 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import LapFormerForm from '@/components/modules/preparatory-master/LapFormerForm';
 import {
-  getLapFormerMachines,
-  createLapFormerMachine,
-  updateLapFormerMachine,
-  deleteLapFormerMachine,
-  searchLapFormerMachines
-} from '@/lib/supabase/lapFormerQueries';
-import { Plus, Trash2 } from 'lucide-react';
+  getLapFormerMachinesAction,
+  createLapFormerMachineAction,
+  updateLapFormerMachineAction,
+  deleteLapFormerMachineAction,
+  searchLapFormerMachinesAction,
+  getLapFormerCountOptionsAction
+} from '@/app/actions/lap-former';
+import { Plus, Trash2, PowerOff } from 'lucide-react';
 
 export default function LapFormerPage() {
   const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMachine, setSelectedMachine] = useState(null);
+  const [selectedRowId, setSelectedRowId] = useState(null);
   const [selectedRows, setSelectedRows] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [editingMachine, setEditingMachine] = useState(null);
+  const [countOptions, setCountOptions] = useState([]);
 
   // VB6 search fields: Mcno
   const searchFields = [
@@ -37,7 +39,7 @@ export default function LapFormerPage() {
   // VB6 Grid columns: McNo, ProdnMixing Name, Description, Make, Speed (5 columns)
   const columns = [
     { key: 'machine_no', label: 'McNo', width: '80px' },
-    { key: 'prodn_mixing', label: 'ProdnMixing Name', width: '150px' },
+    { key: 'prodn_mixing', label: 'Count Name', width: '150px' },
     { key: 'description', label: 'Description', width: '130px' },
     { key: 'make_name', label: 'Make', width: '80px' },
     { key: 'speed', label: 'Speed', width: '80px' }
@@ -45,15 +47,22 @@ export default function LapFormerPage() {
 
   useEffect(() => {
     loadMachines();
+    getLapFormerCountOptionsAction().then(result => {
+      if (result.success) setCountOptions(result.data || []);
+    });
   }, []);
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const data = await getLapFormerMachines();
+      const result = await getLapFormerMachinesAction();
+      
+      if (!result.success) {
+        throw new Error(result.error);
+      }
       
       // Format data for display
-      const formattedData = data.map(machine => ({
+      const formattedData = result.data.map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',
@@ -76,9 +85,13 @@ export default function LapFormerPage() {
     }
     
     try {
-      const data = await searchLapFormerMachines(field, condition, value);
+      const result = await searchLapFormerMachinesAction(field, condition, value);
       
-      const formattedData = data.map(machine => ({
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      
+      const formattedData = result.data.map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',
@@ -86,7 +99,7 @@ export default function LapFormerPage() {
       }));
       
       setMachines(formattedData);
-      toast.success(`Found ${data.length} result(s)`);
+      toast.success(`Found ${result.data.length} result(s)`);
     } catch (err) {
       console.error('Search error:', err);
       toast.error('Search failed: ' + err.message);
@@ -98,57 +111,104 @@ export default function LapFormerPage() {
   };
 
   const handleRowClick = (machine) => {
-    setSelectedMachine(machine);
+    setSelectedRowId(machine.id);
+  };
+
+  const openEditForm = (machine) => {
+    setEditingMachine(machine);
+    setSelectedRowId(machine.id);
+    setIsModalOpen(true);
   };
 
   const handleAdd = () => {
-    setSelectedMachine(null);
-    setIsEditing(false);
+    setEditingMachine(null);
     setIsModalOpen(true);
   };
 
-  const handleEdit = () => {
-    if (!selectedMachine) {
-      toast.error('Please select a machine to edit');
-      return;
-    }
-    setIsEditing(true);
-    setIsModalOpen(true);
-  };
-
-  const handleDelete = async () => {
+  const handleDeactivate = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} machine(s)?`)) {
+      const activeRows = selectedRows.filter(r => r.is_active);
+      if (activeRows.length === 0) {
+        toast.info('All selected machines are already inactive');
         return;
       }
-
+      if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
       try {
-        await Promise.all(selectedRows.map(row => deleteLapFormerMachine(row.id)));
-        toast.success(`${selectedRows.length} machine(s) deleted successfully`);
+        await Promise.all(activeRows.map(row => updateLapFormerMachineAction(row.id, { is_active: false })));
+        toast.success(`${activeRows.length} machine(s) deactivated`);
         setSelectedRows([]);
         setIsSelectMode(false);
         loadMachines();
       } catch (error) {
-        toast.error('Failed to delete machines: ' + error.message);
+        toast.error('Failed to deactivate: ' + error.message);
       }
-    } else if (!isSelectMode && selectedMachine) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedMachine.machine_no}"?`)) {
+    } else {
+      const targetId = editingMachine?.id || selectedRowId;
+      if (!targetId) {
+        toast.warning('Please select a machine to deactivate');
+        return;
+      }
+      const machine = machines.find(m => m.id === targetId) || editingMachine;
+      if (!machine?.is_active) {
+        toast.info('Machine is already inactive');
+        return;
+      }
+      const machineName = machine?.machine_no || 'this machine';
+      if (!confirm(`Deactivate machine "${machineName}"?\n\nIt will be hidden from new production entries.`)) return;
+      try {
+        const result = await updateLapFormerMachineAction(targetId, { is_active: false });
+        if (result.success) {
+          toast.success('Machine deactivated');
+          setIsModalOpen(false);
+          setEditingMachine(null);
+          setSelectedRowId(null);
+          loadMachines();
+        } else {
+          toast.error('Failed to deactivate: ' + result.error);
+        }
+      } catch (error) {
+        toast.error('Failed to deactivate: ' + error.message);
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (isSelectMode && selectedRows.length > 0) {
+      if (!confirm(`Permanently remove ${selectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        await deleteLapFormerMachine(selectedMachine.id);
-        toast.success('Machine deleted successfully');
-        setSelectedMachine(null);
-        setIsModalOpen(false);
+        await Promise.all(selectedRows.map(row => deleteLapFormerMachineAction(row.id)));
+        toast.success(`${selectedRows.length} machine(s) permanently removed`);
+        setSelectedRows([]);
+        setIsSelectMode(false);
         loadMachines();
       } catch (error) {
-        toast.error('Failed to delete machine: ' + error.message);
+        toast.error('Failed to remove machines: ' + error.message);
+      }
+    } else if (!isSelectMode && selectedRowId) {
+      const machine = machines.find(m => m.id === selectedRowId);
+      const machineName = machine?.machine_no || 'this machine';
+      if (!confirm(`Permanently remove machine "${machineName}"?\n\nThis cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        const result = await deleteLapFormerMachineAction(selectedRowId);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+        toast.success('Machine permanently removed');
+        setSelectedRowId(null);
+        setIsModalOpen(false);
+        setEditingMachine(null);
+        loadMachines();
+      } catch (error) {
+        toast.error('Failed to remove machine: ' + error.message);
       }
     } else {
-      toast.error('Please select machine(s) to delete');
+      toast.error('Please select machine(s) to remove');
     }
   };
 
@@ -179,18 +239,25 @@ export default function LapFormerPage() {
   const handleSave = async (formData) => {
     setIsLoading(true);
     try {
-      if (isEditing && selectedMachine) {
-        await updateLapFormerMachine(selectedMachine.id, formData);
+      let result;
+      if (editingMachine) {
+        result = await updateLapFormerMachineAction(editingMachine.id, formData);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
         toast.success('Machine updated successfully');
       } else {
-        await createLapFormerMachine(formData);
+        result = await createLapFormerMachineAction(formData);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
         toast.success('Machine created successfully');
       }
       setIsModalOpen(false);
-      setSelectedMachine(null);
+      setEditingMachine(null);
       loadMachines();
     } catch (error) {
-      toast.error(`Failed to ${isEditing ? 'update' : 'create'} machine: ` + error.message);
+      toast.error(`Failed to ${editingMachine ? 'update' : 'create'} machine: ` + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -216,14 +283,27 @@ export default function LapFormerPage() {
           >
             <span className="text-xs sm:text-sm">{isSelectMode ? 'Cancel' : 'Select'}</span>
           </Button>
-          <Button 
-            onClick={handleDelete} 
+          <Button
+            onClick={handleDeactivate}
             variant="outline"
-            className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedMachine}
+            className="border-orange-500 text-orange-600 hover:bg-orange-50 flex-1 sm:flex-none"
+            disabled={
+              isSelectMode
+                ? selectedRows.filter(r => r.is_active).length === 0
+                : !selectedRowId || !machines.find(m => m.id === selectedRowId)?.is_active
+            }
+          >
+            <PowerOff className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Deactivate</span>
+            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.filter(r => r.is_active).length > 0 && ` (${selectedRows.filter(r => r.is_active).length})`}</span>
+          </Button>
+          <Button
+            onClick={handleDelete}
+            className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none"
+            disabled={isSelectMode ? selectedRows.length === 0 : !selectedRowId}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -250,16 +330,20 @@ export default function LapFormerPage() {
           columns={columns}
           data={machines}
           onRowClick={handleRowClick}
-          selectedRow={selectedMachine}
+          selectedRow={machines.find(m => m.id === selectedRowId)}
           showCheckbox={isSelectMode}
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
+          getRowClassName={(row) =>
+            !row.is_active
+              ? '!bg-red-100 hover:!bg-red-200 text-red-700'
+              : '!bg-white hover:!bg-yellow-100'
+          }
+          onRowDoubleClick={openEditForm}
           onContextMenu={(row, e) => {
             e.preventDefault();
-            setSelectedMachine(row);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            openEditForm(row);
           }}
         />
       )}
@@ -268,9 +352,8 @@ export default function LapFormerPage() {
       {!loading && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span>Total Records: {machines.length}</span>
-          {selectedMachine && (
-            <span>Selected: {selectedMachine.machine_no} - {selectedMachine.description}</span>
-          )}
+          <span className="text-green-700">Active: {machines.filter(m => m.is_active).length}</span>
+          <span className="text-red-600">Inactive: {machines.filter(m => !m.is_active).length}</span>
         </div>
       )}
 
@@ -279,7 +362,7 @@ export default function LapFormerPage() {
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         title="Lap Former M/C Master"
-        description={isEditing ? "Modify machine make details" : "Add new machine make details"}
+        description={editingMachine ? "Modify machine make details" : "Add new machine make details"}
         onSave={() => {
           const form = document.querySelector('form');
           if (form) {
@@ -288,17 +371,22 @@ export default function LapFormerPage() {
         }}
         onCancel={() => {
           setIsModalOpen(false);
-          setSelectedMachine(null);
+          setEditingMachine(null);
         }}
-        onDelete={isEditing ? handleDelete : null}
-        showDelete={isEditing}
+        onDelete={editingMachine ? handleDelete : null}
+        showDelete={editingMachine}
+        deleteLabel="Remove Permanently"
+        deleteIsDanger={true}
+        onSecondaryAction={editingMachine?.is_active ? handleDeactivate : null}
+        secondaryActionLabel="Deactivate"
         isLoading={isLoading}
-        saveLabel={isEditing ? "Update" : "Create"}
+        saveLabel={editingMachine ? "Update" : "Create"}
       >
         <LapFormerForm
-          initialData={isEditing ? selectedMachine : null}
+          initialData={editingMachine}
           onSubmit={handleSave}
           isLoading={isLoading}
+          countOptions={countOptions}
         />
       </FormModal>
     </div>

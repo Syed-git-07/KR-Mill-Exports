@@ -8,7 +8,7 @@ import { Cog, Layers, Settings, Wind, Box, Factory, Ribbon, Database } from 'luc
 export default function PreparatoryMasterPage() {
   const preparatoryModules = [
     {
-      title: "Carding Machine Master",
+      title: "Carding Machine",
       description: "Manage carding machine details (CA1-CA22)",
       href: "/preparatory-master/carding-machine",
       icon: Cog,
@@ -16,8 +16,8 @@ export default function PreparatoryMasterPage() {
       color: "blue"
     },
     {
-      title: "Drawing Breaker Machine",
-      description: "Drawing breaker machine configuration (BD1-BD11)",
+      title: "Breaker Drawing Machine",
+      description: "Breaker drawing machine configuration (BD1-BD11)",
       href: "/preparatory-master/drawing-breaker",
       icon: Layers,
       status: "Ready",
@@ -32,18 +32,10 @@ export default function PreparatoryMasterPage() {
       color: "blue"
     },
     {
-      title: "Drawing Finisher Machine",
-      description: "Drawing finisher machine details (FD1-FD5)",
+      title: "Finisher Drawing Machine",
+      description: "Finisher drawing machine details (FD1-FD5)",
       href: "/preparatory-master/drawing-finisher",
       icon: Layers,
-      status: "Ready",
-      color: "blue"
-    },
-    {
-      title: "Simplex Machine",
-      description: "Simplex/Speed frame machine (1-10) with TPI & Spindles",
-      href: "/preparatory-master/simplex",
-      icon: Wind,
       status: "Ready",
       color: "blue"
     },
@@ -60,6 +52,14 @@ export default function PreparatoryMasterPage() {
       description: "Lap former machine details (LF1-LF3)",
       href: "/preparatory-master/lap-former",
       icon: Factory,
+      status: "Ready",
+      color: "blue"
+    },
+    {
+      title: "Simplex Machine",
+      description: "Simplex/Speed frame machine (1-10) with TPI & Spindles",
+      href: "/preparatory-master/simplex",
+      icon: Wind,
       status: "Ready",
       color: "blue"
     },
@@ -90,7 +90,6 @@ export default function PreparatoryMasterPage() {
   ]
 
   const readyModules = preparatoryModules.filter(m => m.status === "Ready")
-  const comingSoonModules = preparatoryModules.filter(m => m.status === "Coming Soon")
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -139,63 +138,7 @@ export default function PreparatoryMasterPage() {
         </div>
       </div>
 
-      {/* Coming Soon Modules */}
-      <div className="space-y-4 pt-6">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold">Coming Soon</h2>
-          <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-            {comingSoonModules.length} Modules
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {comingSoonModules.map((module) => {
-            const Icon = module.icon
-            return (
-              <Card key={module.title} className="opacity-60 border-2 border-gray-200">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="p-2 bg-gray-100 rounded-lg">
-                      <Icon className="w-6 h-6 text-gray-500" />
-                    </div>
-                    <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-                      Coming Soon
-                    </span>
-                  </div>
-                  <CardTitle className="text-lg mt-4">{module.title}</CardTitle>
-                  <CardDescription>{module.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button disabled variant="outline" className="w-full">
-                    Under Development
-                  </Button>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      </div>
 
-      {/* Process Flow Info */}
-      <div className="mt-8 p-6 bg-amber-50 border-2 border-amber-200 rounded-lg">
-        <h3 className="text-lg font-semibold mb-3 text-amber-900">Preparatory Process Flow</h3>
-        <p className="text-sm text-amber-800 mb-4">
-          Blow Room → Carding → Drawing Breaker → Lap Former → Comber → Drawing Finisher → Simplex → Spinning
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="text-center p-4 bg-white rounded-lg">
-            <div className="text-3xl font-bold text-blue-600">{preparatoryModules.length}</div>
-            <div className="text-sm text-gray-600">Total Modules</div>
-          </div>
-          <div className="text-center p-4 bg-white rounded-lg">
-            <div className="text-3xl font-bold text-green-600">{readyModules.length}</div>
-            <div className="text-sm text-gray-600">Ready to Use</div>
-          </div>
-          <div className="text-center p-4 bg-white rounded-lg">
-            <div className="text-3xl font-bold text-gray-600">{comingSoonModules.length}</div>
-            <div className="text-sm text-gray-600">In Development</div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

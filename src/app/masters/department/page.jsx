@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getDepartments, createDepartment, updateDepartment, deleteDepartment, searchDepartments } from '@/lib/supabase/queries'
+import { getDepartmentsAction, createDepartmentAction, updateDepartmentAction, deleteDepartmentAction, searchDepartmentsAction } from '@/app/actions/department'
 import SearchFilter from '@/components/common/SearchFilter'
 import DataGrid from '@/components/common/DataGrid'
 import FormModal from '@/components/common/FormModal'
@@ -25,8 +25,12 @@ export default function DepartmentPage() {
 
   const loadDepartments = async () => {
     try {
-      const data = await getDepartments()
-      setDepartments(data)
+      const result = await getDepartmentsAction()
+      if (result.success) {
+        setDepartments(result.data)
+      } else {
+        toast.error('Failed to load departments: ' + result.error)
+      }
     } catch (error) {
       toast.error('Failed to load departments: ' + error.message)
     }
@@ -39,9 +43,13 @@ export default function DepartmentPage() {
     }
     
     try {
-      const data = await searchDepartments(field, condition, value)
-      setDepartments(data)
-      toast.success(`Found ${data.length} result(s)`)
+      const result = await searchDepartmentsAction(field, condition, value)
+      if (result.success) {
+        setDepartments(result.data)
+        toast.success(`Found ${result.data.length} result(s)`)
+      } else {
+        toast.error('Search failed: ' + result.error)
+      }
     } catch (error) {
       toast.error('Search failed: ' + error.message)
     }
@@ -78,7 +86,7 @@ export default function DepartmentPage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteDepartment(row.id)))
+        await Promise.all(selectedRows.map(row => deleteDepartmentAction(row.id)))
         toast.success(`${selectedRows.length} department(s) deleted successfully`)
         setSelectedRows([])
         setIsSelectMode(false)
@@ -93,11 +101,15 @@ export default function DepartmentPage() {
       }
 
       try {
-        await deleteDepartment(selectedDepartment.id)
-        toast.success('Department deleted successfully')
-        setSelectedDepartment(null)
-        setIsModalOpen(false)
-        loadDepartments()
+        const result = await deleteDepartmentAction(selectedDepartment.id)
+        if (result.success) {
+          toast.success('Department deleted successfully')
+          setSelectedDepartment(null)
+          setIsModalOpen(false)
+          loadDepartments()
+        } else {
+          toast.error('Failed to delete department: ' + result.error)
+        }
       } catch (error) {
         toast.error('Failed to delete department: ' + error.message)
       }
@@ -134,15 +146,26 @@ export default function DepartmentPage() {
     setIsLoading(true)
     try {
       if (isEditing && selectedDepartment) {
-        await updateDepartment(selectedDepartment.id, formData)
-        toast.success('Department updated successfully')
+        const result = await updateDepartmentAction(selectedDepartment.id, formData)
+        if (result.success) {
+          toast.success('Department updated successfully')
+          setIsModalOpen(false)
+          setSelectedDepartment(null)
+          loadDepartments()
+        } else {
+          toast.error('Failed to update department: ' + result.error)
+        }
       } else {
-        await createDepartment(formData)
-        toast.success('Department created successfully')
+        const result = await createDepartmentAction(formData)
+        if (result.success) {
+          toast.success('Department created successfully')
+          setIsModalOpen(false)
+          setSelectedDepartment(null)
+          loadDepartments()
+        } else {
+          toast.error('Failed to create department: ' + result.error)
+        }
       }
-      setIsModalOpen(false)
-      setSelectedDepartment(null)
-      loadDepartments()
     } catch (error) {
       toast.error(`Failed to ${isEditing ? 'update' : 'create'} department: ` + error.message)
     } finally {

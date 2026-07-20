@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Cog, Settings, Layers, Wind, Box, Ribbon, Database, Factory } from 'lucide-react'
+import { Home, Cog, Settings, Layers, Wind, Factory } from 'lucide-react'
 
 export default function PreparatorySidebar() {
   const pathname = usePathname()
@@ -14,7 +14,7 @@ export default function PreparatorySidebar() {
       icon: Cog
     },
     {
-      title: "Drawing Breaker",
+      title: "Breaker Drawing Machine",
       href: "/preparatory-master/drawing-breaker",
       icon: Layers
     },
@@ -24,19 +24,9 @@ export default function PreparatorySidebar() {
       icon: Settings
     },
     {
-      title: "Drawing Finisher",
+      title: "Finisher Drawing",
       href: "/preparatory-master/drawing-finisher",
       icon: Layers
-    },
-    {
-      title: "Simplex Machine",
-      href: "/preparatory-master/simplex",
-      icon: Wind
-    },
-    {
-      title: "Manual Winding",
-      href: "/preparatory-master/manual-winding",
-      icon: Box
     },
     {
       title: "Lap Former",
@@ -44,18 +34,8 @@ export default function PreparatorySidebar() {
       icon: Factory
     },
     {
-      title: "RibbonLab Machine",
-      href: "/preparatory-master/ribbonlab",
-      icon: Ribbon
-    },
-    {
-      title: "SliverLab Machine",
-      href: "/preparatory-master/sliverlab",
-      icon: Database
-    },
-    {
-      title: "Blow Room",
-      href: "/preparatory-master/blow-room",
+      title: "Simplex Machine",
+      href: "/preparatory-master/simplex",
       icon: Wind
     }
   ]

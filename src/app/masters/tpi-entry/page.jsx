@@ -8,12 +8,12 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import TPIEntryForm from '@/components/modules/masters/TPIEntryForm';
 import {
-  getTPIEntries,
-  createTPIEntry,
-  updateTPIEntry,
-  deleteTPIEntry,
-  searchTPIEntries
-} from '@/lib/supabase/tpiEntryQueries';
+  getTPIEntriesAction,
+  createTPIEntryAction,
+  updateTPIEntryAction,
+  deleteTPIEntryAction,
+  searchTPIEntriesAction
+} from '@/app/actions/tpi-entry';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -50,18 +50,22 @@ export default function TPIEntryMaster() {
   const loadEntries = async () => {
     try {
       setLoading(true);
-      const data = await getTPIEntries();
+      const result = await getTPIEntriesAction();
       
-      // Format data for VB6-style display
-      const formattedData = data.map(entry => ({
-        ...entry,
-        entry_id: entry.entry_id || entry.id,
-        sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
-        countname: entry.spinning_counts?.count_name || 'N/A',
-        tpi_display: entry.tpi_value?.toFixed(2) || '0.00',
-      }));
-      
-      setEntries(formattedData);
+      if (result.success) {
+        // Format data for VB6-style display
+        const formattedData = result.data.map(entry => ({
+          ...entry,
+          entry_id: entry.entry_id || entry.id,
+          sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
+          countname: entry.spinning_counts?.count_name || 'N/A',
+          tpi_display: entry.tpi_value ? Number(entry.tpi_value).toFixed(2) : '0.00',
+        }));
+        
+        setEntries(formattedData);
+      } else {
+        toast.error('Failed to load TPI entries: ' + result.error);
+      }
     } catch (err) {
       console.error('Error loading TPI entries:', err);
       toast.error('Failed to load TPI entries: ' + err.message);
@@ -77,18 +81,22 @@ export default function TPIEntryMaster() {
     }
     
     try {
-      const data = await searchTPIEntries(field, condition, value);
+      const result = await searchTPIEntriesAction(field, condition, value);
       
-      const formattedData = data.map(entry => ({
-        ...entry,
-        entry_id: entry.entry_id || entry.id,
-        sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
-        countname: entry.spinning_counts?.count_name || 'N/A',
-        tpi_display: entry.tpi_value?.toFixed(2) || '0.00',
-      }));
-      
-      setEntries(formattedData);
-      toast.success(`Found ${data.length} result(s)`);
+      if (result.success) {
+        const formattedData = result.data.map(entry => ({
+          ...entry,
+          entry_id: entry.entry_id || entry.id,
+          sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
+          countname: entry.spinning_counts?.count_name || 'N/A',
+          tpi_display: entry.tpi_value ? Number(entry.tpi_value).toFixed(2) : '0.00',
+        }));
+        
+        setEntries(formattedData);
+        toast.success(`Found ${result.data.length} result(s)`);
+      } else {
+        toast.error('Search failed: ' + result.error);
+      }
     } catch (err) {
       console.error('Search error:', err);
       toast.error('Search failed: ' + err.message);
@@ -157,7 +165,7 @@ export default function TPIEntryMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteTPIEntry(row.id)));
+        await Promise.all(selectedRows.map(row => deleteTPIEntryAction(row.id)));
         toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
         setSelectedRows([]);
         setIsSelectMode(false);
@@ -172,11 +180,15 @@ export default function TPIEntryMaster() {
       }
 
       try {
-        await deleteTPIEntry(selectedRow.id);
-        toast.success('Entry deleted successfully');
-        setSelectedRow(null);
-        setIsModalOpen(false);
-        loadEntries();
+        const result = await deleteTPIEntryAction(selectedRow.id);
+        if (result.success) {
+          toast.success('Entry deleted successfully');
+          setSelectedRow(null);
+          setIsModalOpen(false);
+          loadEntries();
+        } else {
+          toast.error('Failed to delete entry: ' + result.error);
+        }
       } catch (error) {
         toast.error('Failed to delete entry: ' + error.message);
       }
@@ -189,11 +201,21 @@ export default function TPIEntryMaster() {
     setIsLoading(true);
     try {
       if (isEditing && editingEntry) {
-        await updateTPIEntry(editingEntry.id, formData);
-        toast.success('Entry updated successfully');
+        const result = await updateTPIEntryAction(editingEntry.id, formData);
+        if (result.success) {
+          toast.success('Entry updated successfully');
+        } else {
+          toast.error('Failed to update entry: ' + result.error);
+          return;
+        }
       } else {
-        await createTPIEntry(formData);
-        toast.success('Entry created successfully');
+        const result = await createTPIEntryAction(formData);
+        if (result.success) {
+          toast.success('Entry created successfully');
+        } else {
+          toast.error('Failed to create entry: ' + result.error);
+          return;
+        }
       }
       setIsModalOpen(false);
       setEditingEntry(null);

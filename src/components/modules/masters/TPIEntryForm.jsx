@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { getCountsForDropdown } from '@/lib/supabase/tpiEntryQueries';
+import { getCountsForDropdownAction } from '@/app/actions/tpi-entry';
 import { format } from 'date-fns';
 
 // VB6 Form: Date, Count (dropdown), TPI
@@ -46,8 +46,12 @@ export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
 
   const loadCounts = async () => {
     try {
-      const data = await getCountsForDropdown();
-      setCounts(data);
+      const result = await getCountsForDropdownAction();
+      if (result.success) {
+        setCounts(result.data);
+      } else {
+        console.error('Error loading counts:', result.error);
+      }
     } catch (error) {
       console.error('Error loading counts:', error);
     }

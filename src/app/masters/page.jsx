@@ -131,42 +131,6 @@ export default function MastersPage() {
         </div>
       </div>
 
-      {/* Coming Soon Modules */}
-      <div className="space-y-4 pt-6">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold">Coming Soon</h2>
-          <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-            {comingSoonModules.length} Modules
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {comingSoonModules.map((module) => {
-            const Icon = module.icon
-            return (
-              <Card key={module.title} className="opacity-60 border-2 border-gray-200">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="p-2 bg-gray-100 rounded-lg">
-                      <Icon className="w-6 h-6 text-gray-500" />
-                    </div>
-                    <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-                      Coming Soon
-                    </span>
-                  </div>
-                  <CardTitle className="text-lg mt-4">{module.title}</CardTitle>
-                  <CardDescription>{module.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button disabled variant="outline" className="w-full">
-                    Under Development
-                  </Button>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      </div>
-
       {/* Summary Stats */}
       <div className="mt-8 p-6 bg-blue-50 border-2 border-blue-200 rounded-lg">
         <h3 className="text-lg font-semibold mb-3 text-blue-900">Module Summary</h3>

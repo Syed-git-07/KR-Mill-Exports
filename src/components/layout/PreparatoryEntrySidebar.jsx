@@ -14,7 +14,7 @@ export default function PreparatoryEntrySidebar() {
       icon: Cog
     },
     {
-      title: "Breaker Drawing",
+      title: "Breaker Drawing Machine Entry",
       href: "/preparatory-entry/breaker-drawing",
       icon: Layers
     },
@@ -56,7 +56,7 @@ export default function PreparatoryEntrySidebar() {
         <nav className="space-y-1">
           {entryModules.map((module) => {
             const Icon = module.icon
-            const isActive = pathname === module.href
+            const isActive = pathname === module.href || pathname.startsWith(module.href + '/')
             
             return (
               <Link

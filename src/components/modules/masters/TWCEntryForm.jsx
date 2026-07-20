@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { getCountsForDropdown } from '@/lib/supabase/twcEntryQueries';
+import { getCountsForDropdownAction } from '@/app/actions/twc-entry';
 import { format } from 'date-fns';
 
 // VB6 Form: Date, Count (dropdown), TWC
@@ -23,6 +23,17 @@ const twcEntrySchema = z.object({
 export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
   const [counts, setCounts] = useState([]);
   const [selectedCount, setSelectedCount] = useState(initialData?.spinning_count_id || '');
+  const [selectedShift, setSelectedShift] = useState(initialData?.shift || '');
+
+  // Format initial date for date input
+  const formatDateForInput = (date) => {
+    if (!date) return format(new Date(), 'yyyy-MM-dd');
+    try {
+      return format(new Date(date), 'yyyy-MM-dd');
+    } catch {
+      return format(new Date(), 'yyyy-MM-dd');
+    }
+  };
 
   const {
     register,
@@ -31,12 +42,12 @@ export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(twcEntrySchema),
-    defaultValues: initialData || {
-      entry_date: format(new Date(), 'yyyy-MM-dd'),
-      spinning_count_id: '',
-      twc_value: 0,
-      shift: '',
-      remarks: '',
+    defaultValues: {
+      entry_date: initialData?.entry_date ? formatDateForInput(initialData.entry_date) : format(new Date(), 'yyyy-MM-dd'),
+      spinning_count_id: initialData?.spinning_count_id || '',
+      twc_value: initialData?.twc_value || 0,
+      shift: initialData?.shift || '',
+      remarks: initialData?.remarks || '',
     },
   });
 
@@ -46,8 +57,12 @@ export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
 
   const loadCounts = async () => {
     try {
-      const data = await getCountsForDropdown();
-      setCounts(data);
+      const result = await getCountsForDropdownAction();
+      if (result.success) {
+        setCounts(result.data);
+      } else {
+        console.error('Error loading counts:', result.error);
+      }
     } catch (error) {
       console.error('Error loading counts:', error);
     }
@@ -56,6 +71,11 @@ export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
   const handleCountChange = (value) => {
     setSelectedCount(value);
     setValue('spinning_count_id', value);
+  };
+
+  const handleShiftChange = (value) => {
+    setSelectedShift(value);
+    setValue('shift', value);
   };
 
   const onFormSubmit = async (data) => {
@@ -119,7 +139,7 @@ export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
       {/* Shift */}
       <div className="space-y-2">
         <Label htmlFor="shift">Shift</Label>
-        <Select onValueChange={(value) => setValue('shift', value)} defaultValue={initialData?.shift || ''}>
+        <Select value={selectedShift} onValueChange={handleShiftChange}>
           <SelectTrigger>
             <SelectValue placeholder="Select shift (optional)" />
           </SelectTrigger>

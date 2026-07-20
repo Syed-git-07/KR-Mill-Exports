@@ -121,7 +121,7 @@ This deduction ensures production calculation accounts for non-working spindles.
 * Speed = **960**
 * TPI = **1.73**
 * Hank = **1.4**
-* Run Time = **432**
+* Run Time = ****432
 * Total Spindles = **140**
 * Idle Spindles = **0**
 * **Active Spindles = 140 - 0 = 140**

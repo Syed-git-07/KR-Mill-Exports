@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,20 +6,24 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useEffect } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { Search, X } from 'lucide-react';
 
-// VB6 Form Fields: M/C No., M/c ID, Description, Make Name, Model, 
-// ProdnMixing, Speed, Prodn Effi., McEffi (NEW), Installed Date, IsActive, 
-// Direct Hank Entry, Direct Kgs Entry
+// Helper function to format date for input
+const formatDateForInput = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const formSchema = z.object({
   machine_no: z.string()
     .min(1, 'Machine No. is required')
     .max(20, 'Machine No. must be 20 characters or less'),
-  mc_id: z.string()
-    .max(20, 'M/c ID must be 20 characters or less')
-    .optional()
-    .or(z.literal('')),
   description: z.string()
     .min(1, 'Description is required')
     .max(100, 'Description must be 100 characters or less'),
@@ -39,14 +43,13 @@ const formSchema = z.object({
     .min(0, 'Speed must be 0 or greater')
     .optional()
     .or(z.literal('')),
-  prodn_effi: z.coerce.number()
-    .min(0, 'Prodn Efficiency must be 0 or greater')
-    .max(100, 'Prodn Efficiency must be 100 or less')
+  sliver_hank: z.coerce.number()
+    .min(0, 'Sliver Hank must be 0 or greater')
     .optional()
     .or(z.literal('')),
-  mc_effi: z.coerce.number()  // NEW: Machine Efficiency (unique to Comber)
-    .min(0, 'M/C Efficiency must be 0 or greater')
-    .max(100, 'M/C Efficiency must be 100 or less')
+  mc_effi: z.coerce.number()
+    .min(0, 'Std Efficiency must be 0 or greater')
+    .max(100, 'Std Efficiency must be 100 or less')
     .optional()
     .or(z.literal('')),
   installed_date: z.string()
@@ -57,20 +60,25 @@ const formSchema = z.object({
   direct_kgs_entry: z.boolean().default(false),
 });
 
-export default function ComberMachineForm({ initialData, onSubmit, isLoading }) {
+export default function ComberMachineForm({ initialData, onSubmit, isLoading, countOptions = [] }) {
+  const [countSearch, setCountSearch] = useState('');
+  const [showCountDrop, setShowCountDrop] = useState(false);
+  const [activeCountIndex, setActiveCountIndex] = useState(-1);
+  const countRef = useRef(null);
+  const dropdownRef = useRef(null);
+
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       machine_no: initialData?.machine_no || '',
-      mc_id: initialData?.mc_id != null ? String(initialData.mc_id) : '',
       description: initialData?.description || '',
       make_name: initialData?.make_name || '',
       model: initialData?.model || '',
       prodn_mixing: initialData?.prodn_mixing || '',
       speed: initialData?.speed || '',
-      prodn_effi: initialData?.prodn_efficiency || '',
-      mc_effi: initialData?.mc_effi || '',  // NEW: Machine Efficiency
-      installed_date: initialData?.installed_date || '',
+      sliver_hank: initialData?.sliver_hank || '',
+      mc_effi: initialData?.mc_effi || '',
+      installed_date: formatDateForInput(initialData?.installed_date),
       is_active: initialData?.is_active ?? true,
       direct_hank_entry: initialData?.direct_hank_entry ?? false,
       direct_kgs_entry: initialData?.direct_kgs_entry ?? false,
@@ -79,56 +87,138 @@ export default function ComberMachineForm({ initialData, onSubmit, isLoading }) 
 
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = form;
 
-  // Watch boolean values for Checkbox components
   const isActive = watch('is_active');
   const directHankEntry = watch('direct_hank_entry');
   const directKgsEntry = watch('direct_kgs_entry');
+
+  const handleMachineNoBlur = (e) => {
+    const val = e.target.value.trim().toUpperCase();
+    if (!val || initialData) return;
+    const num = parseInt(val.replace(/\D/g, '') || '0');
+    if (num && !watch('description')) {
+      setValue('description', `COMBER${num}`);
+    }
+  };
 
   useEffect(() => {
     if (initialData) {
       reset({
         machine_no: initialData.machine_no || '',
-        mc_id: initialData.mc_id != null ? String(initialData.mc_id) : '',
         description: initialData.description || '',
         make_name: initialData.make_name || '',
         model: initialData.model || '',
         prodn_mixing: initialData.prodn_mixing || '',
         speed: initialData.speed || '',
-        prodn_effi: initialData.prodn_efficiency || '',
-        mc_effi: initialData.mc_effi || '',  // NEW: Machine Efficiency
-        installed_date: initialData.installed_date || '',
+        sliver_hank: initialData.sliver_hank || '',
+        mc_effi: initialData.mc_effi || '',
+        installed_date: formatDateForInput(initialData.installed_date),
         is_active: initialData.is_active ?? true,
         direct_hank_entry: initialData.direct_hank_entry ?? false,
         direct_kgs_entry: initialData.direct_kgs_entry ?? false,
       });
+      setCountSearch(initialData.prodn_mixing || '');
     } else {
       reset({
         machine_no: '',
-        mc_id: '',
         description: '',
         make_name: '',
         model: '',
         prodn_mixing: '',
         speed: '',
-        prodn_effi: '',
-        mc_effi: '',  // NEW: Machine Efficiency
+        sliver_hank: '',
+        mc_effi: '',
         installed_date: '',
         is_active: true,
         direct_hank_entry: false,
         direct_kgs_entry: false,
       });
+      setCountSearch('');
     }
   }, [initialData, reset]);
 
+  // Close count dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (countRef.current && !countRef.current.contains(e.target)) {
+        setShowCountDrop(false);
+        setActiveCountIndex(-1);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (dropdownRef.current && activeCountIndex >= 0) {
+      const items = dropdownRef.current.querySelectorAll('[data-count-item]');
+      if (items[activeCountIndex]) items[activeCountIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeCountIndex]);
+
+  const filteredCounts = countSearch.trim()
+    ? countOptions.filter(c => c.count_name?.toLowerCase().includes(countSearch.toLowerCase()))
+    : countOptions;
+
+  const handleCountSelect = (option) => {
+    setValue('prodn_mixing', option.count_name);
+    setCountSearch(option.count_name);
+    setShowCountDrop(false);
+    setActiveCountIndex(-1);
+    if (option.sliver_hank != null) {
+      setValue('sliver_hank', parseFloat(option.sliver_hank));
+    }
+  };
+
+  const handleCountInputChange = (e) => {
+    setCountSearch(e.target.value);
+    setValue('prodn_mixing', e.target.value);
+    setShowCountDrop(true);
+    setActiveCountIndex(-1);
+  };
+
+  const handleClearCount = () => {
+    setValue('prodn_mixing', '');
+    setValue('sliver_hank', '');
+    setCountSearch('');
+    setActiveCountIndex(-1);
+  };
+
+  const handleCountKeyDown = (e) => {
+    const visible = filteredCounts.slice(0, 40);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!showCountDrop) setShowCountDrop(true);
+      setActiveCountIndex(i => Math.min(i + 1, visible.length - 1));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveCountIndex(i => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === 'Enter') {
+      if (showCountDrop && activeCountIndex >= 0 && visible[activeCountIndex]) {
+        e.preventDefault();
+        handleCountSelect(visible[activeCountIndex]);
+        return;
+      }
+      setShowCountDrop(false);
+      setActiveCountIndex(-1);
+    }
+    if (e.key === 'Escape') {
+      setShowCountDrop(false);
+      setActiveCountIndex(-1);
+    }
+  };
+
   const handleFormSubmit = (data) => {
-    // Clean up the data - convert empty strings to null for numeric fields
     const cleanedData = {
       ...data,
       speed: data.speed === '' ? null : Number(data.speed),
-      prodn_effi: data.prodn_effi === '' ? null : Number(data.prodn_effi),
-      mc_effi: data.mc_effi === '' ? null : Number(data.mc_effi),  // NEW: Machine Efficiency
+      sliver_hank: data.sliver_hank === '' ? null : Number(data.sliver_hank),
+      mc_effi: data.mc_effi === '' ? null : Number(data.mc_effi),
       installed_date: data.installed_date || null,
-      mc_id: data.mc_id ? Number(data.mc_id) : null,
       make_name: data.make_name || null,
       model: data.model || null,
       prodn_mixing: data.prodn_mixing || null,
@@ -138,33 +228,20 @@ export default function ComberMachineForm({ initialData, onSubmit, isLoading }) 
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-      {/* Row 1: Machine No, M/c ID, Description */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Row 1: Machine No, Description */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="machine_no">M/C No. <span className="text-red-500">*</span></Label>
           <Input
             id="machine_no"
             placeholder="Enter machine number"
             {...register('machine_no')}
+            onBlur={handleMachineNoBlur}
             className={errors.machine_no ? 'border-red-500' : ''}
             disabled={isLoading}
           />
           {errors.machine_no && (
             <p className="text-xs text-red-500">{errors.machine_no.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="mc_id">M/c ID</Label>
-          <Input
-            id="mc_id"
-            placeholder="Enter M/c ID"
-            {...register('mc_id')}
-            className={errors.mc_id ? 'border-red-500' : ''}
-            disabled={isLoading}
-          />
-          {errors.mc_id && (
-            <p className="text-xs text-red-500">{errors.mc_id.message}</p>
           )}
         </div>
 
@@ -183,7 +260,7 @@ export default function ComberMachineForm({ initialData, onSubmit, isLoading }) 
         </div>
       </div>
 
-      {/* Row 2: Make Name, Model, Prodn Mixing */}
+      {/* Row 2: Make Name, Model, Prodn Mixing (Count) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="make_name">Make Name</Label>
@@ -213,23 +290,55 @@ export default function ComberMachineForm({ initialData, onSubmit, isLoading }) 
           )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="prodn_mixing">Prodn Mixing</Label>
-          <Input
-            id="prodn_mixing"
-            placeholder="Enter production mixing"
-            {...register('prodn_mixing')}
-            className={errors.prodn_mixing ? 'border-red-500' : ''}
-            disabled={isLoading}
-          />
+        <div className="space-y-2" ref={countRef}>
+          <Label htmlFor="count_search">Count Name</Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <input
+              id="count_search"
+              type="text"
+              value={countSearch}
+              onChange={handleCountInputChange}
+              onFocus={() => setShowCountDrop(true)}
+              onKeyDown={handleCountKeyDown}
+              placeholder="Search count..."
+              disabled={isLoading}
+              autoComplete="off"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm pl-8 pr-8 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+            />
+            {countSearch && (
+              <button
+                type="button"
+                onClick={handleClearCount}
+                className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            {showCountDrop && filteredCounts.length > 0 && (
+              <div ref={dropdownRef} className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                {filteredCounts.slice(0, 40).map((opt, idx) => (
+                  <div
+                    key={opt.id}
+                    data-count-item=""
+                    className={`px-3 py-1.5 text-sm cursor-pointer ${idx === activeCountIndex ? 'bg-blue-100 text-blue-900' : 'hover:bg-blue-50'}`}
+                    onMouseDown={() => handleCountSelect(opt)}
+                    onMouseEnter={() => setActiveCountIndex(idx)}
+                  >
+                    {opt.count_name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {errors.prodn_mixing && (
             <p className="text-xs text-red-500">{errors.prodn_mixing.message}</p>
           )}
         </div>
       </div>
 
-      {/* Row 3: Speed, Prodn Effi, M/C Effi (NEW), Installed Date */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      {/* Row 3a: Speed, Sliver Hank */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="speed">Speed</Label>
           <Input
@@ -246,26 +355,30 @@ export default function ComberMachineForm({ initialData, onSubmit, isLoading }) 
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="prodn_effi">Prodn Effi. (%)</Label>
+          <Label htmlFor="sliver_hank">Sliver Hank</Label>
           <Input
-            id="prodn_effi"
+            id="sliver_hank"
             type="number"
-            placeholder="Enter production efficiency"
-            {...register('prodn_effi')}
-            className={errors.prodn_effi ? 'border-red-500' : ''}
+            step="0.0001"
+            placeholder="e.g. 0.1400"
+            {...register('sliver_hank')}
+            className={errors.sliver_hank ? 'border-red-500' : ''}
             disabled={isLoading}
           />
-          {errors.prodn_effi && (
-            <p className="text-xs text-red-500">{errors.prodn_effi.message}</p>
+          {errors.sliver_hank && (
+            <p className="text-xs text-red-500">{errors.sliver_hank.message}</p>
           )}
         </div>
+      </div>
 
+      {/* Row 3b: Std Effi %, Installed Date */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="mc_effi">M/C Effi. (%)</Label>
+          <Label htmlFor="mc_effi">Std Effi %</Label>
           <Input
             id="mc_effi"
             type="number"
-            placeholder="Enter M/C efficiency"
+            placeholder="Enter std efficiency"
             {...register('mc_effi')}
             className={errors.mc_effi ? 'border-red-500' : ''}
             disabled={isLoading}

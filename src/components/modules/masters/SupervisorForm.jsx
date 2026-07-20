@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getDepartmentsForDropdown } from '@/lib/supabase/supervisorQueries';
+import { getDepartmentsAction } from '@/app/actions/supervisor';
 
 const supervisorSchema = z.object({
   supervisor_name: z.string().min(2, 'Supervisor name must be at least 2 characters'),
@@ -47,8 +47,13 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
 
   const loadDepartments = async () => {
     try {
-      const data = await getDepartmentsForDropdown();
-      setDepartments(data);
+      const result = await getDepartmentsAction();
+      if (result.success) {
+        console.log('Departments loaded:', result.data);
+        setDepartments(result.data);
+      } else {
+        console.error('Failed to load departments:', result.error);
+      }
     } catch (err) {
       console.error('Error loading departments:', err);
     }

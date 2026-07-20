@@ -1,0 +1,134 @@
+# Autoconer Count-wise Production Report
+
+## Company
+**Kayaar Exports Private Limited**
+
+---
+
+## Report Title Format
+```
+Autoconer Production Report From [DD-MM-YYYY] To [DD-MM-YYYY]
+```
+
+---
+
+## Visual Layout (from Smart Spin Lite)
+
+```
+                    Kayaar Exports Private Limited
+         Autoconer Production Report From  05-05-2025 To 05-05-2025
+
+                       +----------+----------+
+                       |  68 CS   |  Total   |
+         +-------------+----------+----------+
+         |  05-May-25  |  8065.00 |  8065.00 |
+         +-------------+----------+----------+
+         |   Total     |  8065.00 |  8065.00 |
+         +-------------+----------+----------+
+
+         AM(P)              GM               M.D
+```
+
+---
+
+## Report Structure
+
+### Columns
+| Column       | Description                                                                                       |
+|--------------|---------------------------------------------------------------------------------------------------|
+| *(blank)*    | Date (e.g., 05-May-25)                                                                            |
+| *[Count Name]* | One column per distinct count (e.g., 68 CS). Dynamic — depends on counts active in date range.  |
+| Total        | Sum of production across all counts for that date                                                 |
+
+### Rows
+| Row Type | Description                                                                                        |
+|----------|----------------------------------------------------------------------------------------------------|
+| Date row | One row per date. Each cell = sum of `act_prodn` for all machines & shifts running that count.    |
+| **Total**| Grand total row at the bottom. Sum of each count column across all dates.                          |
+
+---
+
+## Data Source
+
+### Tables Used
+| Table                            | Role                                    |
+|----------------------------------|-----------------------------------------|
+| `autoconer_production_header`    | Provides `entry_date`, `shift`          |
+| `autoconer_production_detail`    | Provides `count_name`, `act_prodn`      |
+
+### Relationship
+```
+autoconer_production_header.id  <-->  autoconer_production_detail.header_id
+```
+
+### SQL Query
+```sql
+SELECT
+  DATE_FORMAT(h.entry_date, '%d-%b-%y') AS date_display,
+  h.entry_date                           AS raw_date,
+  d.count_name,
+  ROUND(SUM(d.act_prodn), 2)             AS production
+FROM autoconer_production_header h
+JOIN autoconer_production_detail d ON d.header_id = h.id
+WHERE h.entry_date BETWEEN :fromDate AND :toDate
+  AND d.count_name IS NOT NULL
+  AND d.count_name != ''
+GROUP BY h.entry_date, d.count_name
+ORDER BY h.entry_date ASC, d.count_name ASC;
+```
+
+---
+
+## Report Data Model (JavaScript)
+
+```js
+{
+  dateRange: { from: '05-May-25', to: '05-May-25' },
+  uniqueCounts: ['68 CS'],           // dynamic — one entry per distinct count
+  reportData: [
+    {
+      dateDisplay: '05-May-25',      // formatted date label
+      rawDate: '2025-05-05',
+      counts: { '68 CS': 8065.00 },  // keyed by count_name
+      rowTotal: 8065.00
+    }
+  ],
+  grandTotal: {
+    counts: { '68 CS': 8065.00 },
+    rowTotal: 8065.00
+  }
+}
+```
+
+---
+
+## Route
+```
+/reports/autoconer/count-wise-production
+```
+
+---
+
+## PDF Output
+- **Orientation**: Portrait (A4) for few counts; Landscape for many count columns
+- **Header**: Company name (bold, centered) ? Report title ? Date range
+- **Table**: Dynamic count columns, date rows, grand total row (shaded)
+- **Footer**: `AM(P)` &nbsp;&nbsp; `GM` &nbsp;&nbsp; `M.D` on each page
+
+---
+
+## Key Differences vs Spinning Shift-Count Report
+| Feature                  | Autoconer Count-wise | Spinning Shift-Count  |
+|--------------------------|----------------------|-----------------------|
+| Shift breakdown          | No (all shifts summed) | Yes (per shift row) |
+| Date total row           | Yes                  | Yes                   |
+| Grand total              | Yes                  | Yes                   |
+| Count source             | `autoconer_production_detail.count_name` | `spinning_production_detail.count_name` |
+
+---
+
+## Notes
+- **No shift breakdown** — all 3 shifts of a date are summed into one date row
+- `count_name` stored in `autoconer_production_detail` (not in `autoconer_machines`)
+- Currently only one count active: **68 CS** (68 COMBED STAR)
+- Total production on 05-May-2025 = **8065.00 kg**

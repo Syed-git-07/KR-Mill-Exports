@@ -3,49 +3,35 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
+import FormModal from '@/components/common/FormModal';
 import HOKStrengthForm from '@/components/modules/masters/HOKStrengthForm';
 import {
-  getHOKEntries,
-  createBulkHOKEntries,
-  updateHOKEntry,
-  deleteHOKEntry,
-  searchHOKEntries,
-} from '@/lib/supabase/hokStrengthQueries';
+  getHOKEntriesAction,
+  createBulkHOKEntriesAction,
+  updateHOKEntryAction,
+  deleteHOKEntryAction,
+  searchHOKEntriesAction,
+} from '@/app/actions/hok-strength';
 
 export default function HOKStrengthPage() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
-  const [searchField, setSearchField] = useState('hok_id');
-  const [searchOperator, setSearchOperator] = useState('Equal');
-  const [searchValue, setSearchValue] = useState('');
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const searchFields = ['hok_id', 'date'];
 
   const columns = [
-    { key: 'hok_id', label: 'id' },
-    { 
-      key: 'date', 
-      label: 'date',
-      render: (value) => format(new Date(value), 'dd-MMM-yy')
-    }
+    { key: 'hok_id', label: 'ID', width: '100px' },
+    { key: 'formatted_date', label: 'Date', width: 'auto' }
   ];
 
   useEffect(() => {
@@ -55,8 +41,20 @@ export default function HOKStrengthPage() {
   const loadEntries = async () => {
     try {
       setLoading(true);
-      const data = await getHOKEntries();
-      setEntries(data);
+      const result = await getHOKEntriesAction();
+      
+      if (!result.success) {
+        toast.error(result.error || 'Failed to load HOK Strength entries');
+        return;
+      }
+      
+      // Format date for display and add id for DataGrid compatibility
+      const formattedData = result.data.map(entry => ({
+        ...entry,
+        id: entry.hok_id, // Add id for DataGrid row selection
+        formatted_date: format(new Date(entry.date), 'dd-MMM-yyyy')
+      }));
+      setEntries(formattedData);
     } catch (error) {
       toast.error('Failed to load HOK Strength entries');
       console.error(error);
@@ -65,20 +63,31 @@ export default function HOKStrengthPage() {
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchValue.trim()) {
+  const handleSearch = async (field, condition, value) => {
+    if (!value || !value.trim()) {
       loadEntries();
       return;
     }
 
     try {
-      const results = await searchHOKEntries({
-        field: searchField,
-        operator: searchOperator,
-        value: searchValue,
+      const result = await searchHOKEntriesAction({
+        field: field,
+        operator: condition,
+        value: value,
       });
-      setEntries(results);
-      toast.success(`Found ${results.length} entries`);
+      
+      if (!result.success) {
+        toast.error(result.error || 'Search failed');
+        return;
+      }
+      
+      const formattedData = result.data.map(entry => ({
+        ...entry,
+        id: entry.hok_id, // Add id for DataGrid row selection
+        formatted_date: format(new Date(entry.date), 'dd-MMM-yyyy')
+      }));
+      setEntries(formattedData);
+      toast.success(`Found ${result.data.length} entries`);
     } catch (error) {
       toast.error('Search failed');
       console.error(error);
@@ -86,169 +95,206 @@ export default function HOKStrengthPage() {
   };
 
   const handleShowAll = () => {
-    setSearchValue('');
     loadEntries();
     toast.success('Showing all entries');
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
+  const handleRowClick = (entry) => {
+    setSelectedEntry(entry);
   };
 
   const handleCreate = () => {
     setEditingEntry(null);
-    setDialogOpen(true);
+    setIsEditing(false);
+    setIsModalOpen(true);
   };
 
-  const handleEdit = (entry) => {
-    setEditingEntry(entry);
-    setDialogOpen(true);
-  };
-
-  const handleDelete = async (entry) => {
-    if (!confirm(`Delete HOK entry for ${format(new Date(entry.date), 'dd/MM/yyyy')}?`)) return;
-
-    try {
-      await deleteHOKEntry(entry.hok_id);
-      toast.success('Entry deleted successfully');
-      loadEntries();
-    } catch (error) {
-      toast.error('Failed to delete entry');
-      console.error(error);
+  const handleDelete = async () => {
+    if (isSelectMode && selectedRows.length > 0) {
+      if (!confirm(`Delete ${selectedRows.length} HOK entries?`)) return;
+      try {
+        const results = await Promise.all(selectedRows.map(row => deleteHOKEntryAction(row.hok_id)));
+        const failed = results.filter(r => !r.success);
+        if (failed.length > 0) {
+          toast.error(`Failed to delete ${failed.length} entry(ies)`);
+        } else {
+          toast.success(`${selectedRows.length} entries deleted successfully`);
+        }
+        setSelectedRows([]);
+        setIsSelectMode(false);
+        loadEntries();
+      } catch (error) {
+        toast.error('Failed to delete entries');
+        console.error(error);
+      }
+    } else if (!isSelectMode && selectedEntry) {
+      if (!confirm(`Delete HOK entry for ${selectedEntry.formatted_date}?`)) return;
+      try {
+        const result = await deleteHOKEntryAction(selectedEntry.hok_id);
+        if (!result.success) {
+          toast.error(result.error || 'Failed to delete entry');
+          return;
+        }
+        toast.success('Entry deleted successfully');
+        setSelectedEntry(null);
+        loadEntries();
+      } catch (error) {
+        toast.error('Failed to delete entry');
+        console.error(error);
+      }
+    } else {
+      toast.error('Please select entry(s) to delete');
     }
+  };
+
+  const handleSelectRow = (row) => {
+    setSelectedRows(prev => {
+      const exists = prev.some(r => r.id === row.id);
+      if (exists) {
+        return prev.filter(r => r.id !== row.id);
+      } else {
+        return [...prev, row];
+      }
+    });
+  };
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedRows([...entries]);
+    } else {
+      setSelectedRows([]);
+    }
+  };
+
+  const toggleSelectMode = () => {
+    setIsSelectMode(!isSelectMode);
+    setSelectedRows([]);
   };
 
   const handleSubmit = async (formData) => {
     try {
-      if (editingEntry) {
-        // Update existing entry
-        await updateHOKEntry(editingEntry.hok_id, formData);
-        toast.success('HOK Strength entry updated successfully');
+      let result;
+      if (isEditing && editingEntry) {
+        result = await updateHOKEntryAction(editingEntry.hok_id, formData);
       } else {
-        // Create new entry
-        await createBulkHOKEntries(formData);
-        toast.success('HOK Strength entry created successfully');
+        result = await createBulkHOKEntriesAction(formData);
       }
-      setDialogOpen(false);
+      
+      if (!result.success) {
+        toast.error(result.error || (isEditing ? 'Failed to update entry' : 'Failed to create entry'));
+        return;
+      }
+      
+      toast.success(isEditing ? 'HOK Strength entry updated successfully' : 'HOK Strength entry created successfully');
+      setIsModalOpen(false);
       setEditingEntry(null);
+      setIsEditing(false);
       loadEntries();
     } catch (error) {
-      toast.error(editingEntry ? 'Failed to update entry' : 'Failed to create entry');
+      toast.error(isEditing ? 'Failed to update entry' : 'Failed to create entry');
       console.error(error);
     }
   };
 
-  const handleDialogClose = (open) => {
-    setDialogOpen(open);
-    if (!open) {
-      // Reset state when dialog closes
-      setEditingEntry(null);
-    }
-  };
-
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="container mx-auto p-3 sm:p-6 space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">HOK Strength Master</h1>
-          <p className="text-gray-600 mt-1">Manage HOK values by department and shift</p>
+          <h1 className="text-xl sm:text-2xl font-bold">HOK Strength Master</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Manage HOK values by department and shift</p>
         </div>
-        <Button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" />
-          New Entry
-        </Button>
-      </div>
-
-      {/* Search Section */}
-      <div className="bg-white p-4 rounded-lg shadow space-y-4">
-        <h2 className="font-semibold text-lg">Search Entries</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="space-y-2">
-            <Label>Field</Label>
-            <Select value={searchField} onValueChange={setSearchField}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="hok_id">id</SelectItem>
-                <SelectItem value="date">date</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Operator</Label>
-            <Select value={searchOperator} onValueChange={setSearchOperator}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Equal">Equal</SelectItem>
-                <SelectItem value="Not Equal">Not Equal</SelectItem>
-                <SelectItem value="Greater">Greater Than</SelectItem>
-                <SelectItem value="Less">Less Than</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Value</Label>
-            <Input
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Search value..."
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="invisible">Action</Label>
-            <div className="flex gap-2">
-              <Button onClick={handleSearch} className="flex-1 bg-blue-600 hover:bg-blue-700">
-                <Search className="w-4 h-4 mr-2" />
-                Search
-              </Button>
-              <Button onClick={handleShowAll} variant="outline" className="flex-1">
-                Show All
-              </Button>
-            </div>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
+            <Plus className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">New Entry</span>
+          </Button>
+          <Button 
+            onClick={toggleSelectMode} 
+            variant={isSelectMode ? "default" : "outline"}
+            className={`flex-1 sm:flex-none ${isSelectMode ? "bg-blue-600 text-white hover:bg-blue-700" : "border-blue-600 text-blue-600 hover:bg-blue-50"}`}
+          >
+            <span className="text-xs sm:text-sm">{isSelectMode ? 'Cancel' : 'Select'}</span>
+          </Button>
+          <Button 
+            onClick={handleDelete} 
+            variant="outline"
+            className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
+            disabled={isSelectMode ? selectedRows.length === 0 : !selectedEntry}
+          >
+            <Trash2 className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Delete</span>
+            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+          </Button>
         </div>
       </div>
 
-      {/* Data Grid */}
-      <DataGrid
-        columns={columns}
-        data={entries}
-        loading={loading}
-        onContextMenu={(row, e) => {
-          e.preventDefault();
-          handleEdit(row);
-        }}
-        emptyMessage="No HOK Strength entries found. Click 'New Entry' to create one."
+      {/* Search Filter */}
+      <SearchFilter
+        fields={searchFields}
+        onSearch={handleSearch}
+        onShowAll={handleShowAll}
       />
 
-      {/* Form Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingEntry ? 'To Modify the HOK Strength Head' : 'HOK Strength Head'}
-            </DialogTitle>
-          </DialogHeader>
-          <HOKStrengthForm 
-            initialData={editingEntry} 
-            onSubmit={handleSubmit}
-            onCancel={() => {
-              setDialogOpen(false);
-              setEditingEntry(null);
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* Data Grid */}
+      {loading ? (
+        <div className="text-center py-8 text-muted-foreground">Loading entries...</div>
+      ) : (
+        <DataGrid
+          columns={columns}
+          data={entries}
+          onRowClick={handleRowClick}
+          selectedRow={selectedEntry}
+          showCheckbox={isSelectMode}
+          selectedRows={selectedRows}
+          onSelectRow={handleSelectRow}
+          onSelectAll={handleSelectAll}
+          onContextMenu={(row, e) => {
+            e.preventDefault();
+            setSelectedEntry(row);
+            setEditingEntry(row);
+            setIsEditing(true);
+            setIsModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Stats */}
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <span>Total Records: {entries.length}</span>
+      </div>
+
+      {/* Form Modal */}
+      <FormModal
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        title="HOK Strength Master"
+        description={isEditing ? 'To Modify the HOK Strength Head' : 'Add new HOK Strength entry'}
+        onSave={() => {
+          const form = document.querySelector('form');
+          if (form) {
+            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+          }
+        }}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setEditingEntry(null);
+          setIsEditing(false);
+        }}
+        onDelete={isEditing ? handleDelete : null}
+        showDelete={isEditing}
+        saveLabel={isEditing ? 'Update' : 'Save'}
+      >
+        <HOKStrengthForm
+          initialData={editingEntry}
+          onSubmit={handleSubmit}
+          onCancel={() => {
+            setIsModalOpen(false);
+            setEditingEntry(null);
+            setIsEditing(false);
+          }}
+        />
+      </FormModal>
     </div>
   );
 }

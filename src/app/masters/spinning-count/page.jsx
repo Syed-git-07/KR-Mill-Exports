@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getSpinningCounts, createSpinningCount, updateSpinningCount, deleteSpinningCount, searchSpinningCounts } from '@/lib/supabase/spinningCountQueries'
+import { getSpinningCountsAction, createSpinningCountAction, updateSpinningCountAction, deleteSpinningCountAction, searchSpinningCountsAction } from '@/app/actions/spinning-count'
 import SearchFilter from '@/components/common/SearchFilter'
 import DataGrid from '@/components/common/DataGrid'
 import FormModal from '@/components/common/FormModal'
@@ -26,13 +26,17 @@ export default function SpinningCountPage() {
   const loadSpinningCounts = async () => {
     try {
       console.log('Loading spinning counts...')
-      const data = await getSpinningCounts()
-      console.log('Spinning counts loaded:', data?.length, 'records')
-      console.log('Sample data:', data?.slice(0, 2))
-      setSpinningCounts(data)
-      if (!data || data.length === 0) {
-        console.warn('No data returned from database')
-        toast.error('No spinning count records found. Please check database.')
+      const result = await getSpinningCountsAction()
+      if (result.success) {
+        console.log('Spinning counts loaded:', result.data?.length, 'records')
+        console.log('Sample data:', result.data?.slice(0, 2))
+        setSpinningCounts(result.data)
+        if (!result.data || result.data.length === 0) {
+          console.warn('No data returned from database')
+          toast.error('No spinning count records found. Please check database.')
+        }
+      } else {
+        toast.error('Failed to load spinning counts: ' + result.error)
       }
     } catch (error) {
       console.error('Failed to load spinning counts:', error)
@@ -48,9 +52,13 @@ export default function SpinningCountPage() {
     }
     
     try {
-      const data = await searchSpinningCounts(field, condition, value)
-      setSpinningCounts(data)
-      toast.success(`Found ${data.length} result(s)`)
+      const result = await searchSpinningCountsAction(field, condition, value)
+      if (result.success) {
+        setSpinningCounts(result.data)
+        toast.success(`Found ${result.data.length} result(s)`)
+      } else {
+        toast.error('Search failed: ' + result.error)
+      }
     } catch (error) {
       toast.error('Search failed: ' + error.message)
     }
@@ -78,7 +86,7 @@ export default function SpinningCountPage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteSpinningCount(row.id)))
+        await Promise.all(selectedRows.map(row => deleteSpinningCountAction(row.id)))
         toast.success(`${selectedRows.length} spinning count(s) deleted successfully`)
         setSelectedRows([])
         setIsSelectMode(false)
@@ -93,11 +101,15 @@ export default function SpinningCountPage() {
       }
 
       try {
-        await deleteSpinningCount(selectedSpinningCount.id)
-        toast.success('Spinning count deleted successfully')
-        setSelectedSpinningCount(null)
-        setIsModalOpen(false)
-        loadSpinningCounts()
+        const result = await deleteSpinningCountAction(selectedSpinningCount.id)
+        if (result.success) {
+          toast.success('Spinning count deleted successfully')
+          setSelectedSpinningCount(null)
+          setIsModalOpen(false)
+          loadSpinningCounts()
+        } else {
+          toast.error('Failed to delete spinning count: ' + result.error)
+        }
       } catch (error) {
         toast.error('Failed to delete spinning count: ' + error.message)
       }
@@ -134,11 +146,21 @@ export default function SpinningCountPage() {
     setIsLoading(true)
     try {
       if (isEditing && selectedSpinningCount) {
-        await updateSpinningCount(selectedSpinningCount.id, formData)
-        toast.success('Spinning count updated successfully')
+        const result = await updateSpinningCountAction(selectedSpinningCount.id, formData)
+        if (result.success) {
+          toast.success('Spinning count updated successfully')
+        } else {
+          toast.error('Failed to update spinning count: ' + result.error)
+          return
+        }
       } else {
-        await createSpinningCount(formData)
-        toast.success('Spinning count created successfully')
+        const result = await createSpinningCountAction(formData)
+        if (result.success) {
+          toast.success('Spinning count created successfully')
+        } else {
+          toast.error('Failed to create spinning count: ' + result.error)
+          return
+        }
       }
       setIsModalOpen(false)
       setSelectedSpinningCount(null)

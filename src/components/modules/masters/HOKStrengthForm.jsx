@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { getDepartmentsForDropdown, getHOKEntryById } from '@/lib/supabase/hokStrengthQueries';
+import { getDepartmentsForDropdownAction, getHOKEntryByIdAction } from '@/app/actions/hok-strength';
 
 const hokStrengthSchema = z.object({
   date: z.string().min(1, 'Date is required'),
@@ -23,10 +23,8 @@ const hokStrengthSchema = z.object({
 export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   const [departments, setDepartments] = useState([]);
   const [gridData, setGridData] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(
-    initialData?.date || format(new Date(), 'yyyy-MM-dd')
-  );
-  const [hokId, setHokId] = useState(initialData?.hok_id || null);
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [hokId, setHokId] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const {
@@ -42,15 +40,22 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   });
 
   useEffect(() => {
+    console.log('🔵 HOKStrengthForm mounted/updated with initialData:', initialData);
     loadDepartmentsAndData();
-  }, [initialData]);
+  }, [initialData?.hok_id]); // Only re-run when hok_id changes
 
   const loadDepartmentsAndData = async () => {
     try {
       setLoading(true);
       console.log('🔵 HOKStrengthForm - Loading data, initialData:', initialData);
       
-      const deptData = await getDepartmentsForDropdown();
+      const deptResult = await getDepartmentsForDropdownAction();
+      if (!deptResult.success) {
+        console.error('Error loading departments:', deptResult.error);
+        return;
+      }
+      
+      const deptData = deptResult.data;
       console.log('🔵 Loaded', deptData.length, 'departments:', deptData.map(d => d.dept_name));
       setDepartments(deptData);
       
@@ -66,30 +71,48 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
       // If editing, load the edit data
       if (initialData?.hok_id) {
         console.log('🟡 EDIT MODE - Loading data for HOK ID:', initialData.hok_id);
-        const editData = await getHOKEntryById(initialData.hok_id);
+        const editResult = await getHOKEntryByIdAction(initialData.hok_id);
+        
+        if (!editResult.success) {
+          console.error('Error loading HOK entry:', editResult.error);
+          setGridData(initialGrid);
+          return;
+        }
+        
+        const editData = editResult.data;
         console.log('🟡 Loaded edit data - Header:', editData.header);
         console.log('🟡 Loaded edit data - Details:', editData.details);
         
         if (editData) {
           setHokId(editData.header.hok_id);
-          setSelectedDate(editData.header.date);
+          // Format date for date input (yyyy-MM-dd)
+          const formattedDate = format(new Date(editData.header.date), 'yyyy-MM-dd');
+          setSelectedDate(formattedDate);
           
           // Populate grid with existing detail values
           const populatedGrid = initialGrid.map(row => {
             const detail = editData.details.find(d => d.department_id === row.department_id);
             if (detail) {
-              console.log('  ✓ Found data for', row.dept_name, ':', detail);
+              console.log('  ✓ Found data for', row.dept_name, ':', {
+                shift1: detail.shift1,
+                shift2: detail.shift2,
+                shift3: detail.shift3,
+                shift1_type: typeof detail.shift1,
+                shift2_type: typeof detail.shift2,
+                shift3_type: typeof detail.shift3
+              });
               return {
                 ...row,
-                shift1: detail.shift1 || 0,
-                shift2: detail.shift2 || 0,
-                shift3: detail.shift3 || 0,
+                shift1: Number(detail.shift1) || 0,
+                shift2: Number(detail.shift2) || 0,
+                shift3: Number(detail.shift3) || 0,
               };
             }
             console.log('  ⚠ No data for', row.dept_name);
             return row;
           });
           console.log('🟢 Grid populated with', populatedGrid.length, 'rows');
+          console.log('🟢 First row sample:', populatedGrid[0]);
           setGridData(populatedGrid);
         }
       } else {
@@ -184,7 +207,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                       onChange={(e) =>
                         handleGridChange(row.department_id, 'shift1', e.target.value)
                       }
-                      className="w-full text-center"
+                      className="w-full text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </td>
                   <td className="px-4 py-2 border-r border-gray-200">
@@ -195,7 +218,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                       onChange={(e) =>
                         handleGridChange(row.department_id, 'shift2', e.target.value)
                       }
-                      className="w-full text-center"
+                      className="w-full text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </td>
                   <td className="px-4 py-2">
@@ -206,7 +229,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                       onChange={(e) =>
                         handleGridChange(row.department_id, 'shift3', e.target.value)
                       }
-                      className="w-full text-center"
+                      className="w-full text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </td>
                 </tr>
@@ -229,23 +252,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Submit Buttons */}
-      <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-        )}
-        <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700">
-          {isSubmitting ? 'Saving...' : hokId ? 'Update' : 'Save'}
-        </Button>
       </div>
     </form>
   );

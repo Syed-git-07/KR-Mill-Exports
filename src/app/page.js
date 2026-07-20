@@ -26,11 +26,18 @@ export default function Home() {
       status: "Ready"
     },
     {
+      title: "Post Preparatory Entry",
+      description: "Daily production entry for Spinning (Ring Frame) and other post-preparatory machines",
+      href: "/post-preparatory",
+      icon: "🧵",
+      status: "Ready"
+    },
+    {
       title: "Reports",
       description: "Production reports and analytics",
       href: "/reports",
       icon: "📈",
-      status: "Coming Soon"
+      status: "Ready"
     }
   ];
 
@@ -66,15 +73,6 @@ export default function Home() {
             </CardContent>
           </Card>
         ))}
-      </div>
-
-      <div className="mt-8 p-4 border rounded-lg bg-blue-50 border-blue-200">
-        <h2 className="text-lg font-semibold mb-2 text-blue-900">Getting Started</h2>
-        <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
-          <li>Configure your Supabase credentials in <code className="bg-white px-1 rounded">.env.local</code></li>
-          <li>Set up the database schema from <code className="bg-white px-1 rounded">supabase-setup.sql</code></li>
-          <li>Start with Department Master module to test the system</li>
-        </ol>
       </div>
     </div>
   );

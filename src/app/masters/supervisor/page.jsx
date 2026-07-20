@@ -3,19 +3,18 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import SupervisorForm from '@/components/modules/masters/SupervisorForm';
 import {
-  getSupervisors,
-  createSupervisor,
-  updateSupervisor,
-  deleteSupervisor,
-  searchSupervisors
-} from '@/lib/supabase/supervisorQueries';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+  getSupervisorsAction,
+  createSupervisorAction,
+  updateSupervisorAction,
+  deleteSupervisorAction,
+  searchSupervisorsAction
+} from '@/app/actions/supervisor';
+import { Plus, Trash2 } from 'lucide-react';
 
 export default function SupervisorMaster() {
   const [supervisors, setSupervisors] = useState([]);
@@ -25,8 +24,10 @@ export default function SupervisorMaster() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingSupervisor, setEditingSupervisor] = useState(null);
   const [selectedSupervisor, setSelectedSupervisor] = useState(null);
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
 
-  const searchFields = [{ label: 'Code', value: 'code' }, { label: 'Name', value: 'supervisor_name' }, { label: 'Department', value: 'department_name' }];
+  const searchFields = ['code', 'supervisor_name', 'department_name'];
 
   const columns = [
     { key: 'code', label: 'Code', width: '100px' },
@@ -41,15 +42,20 @@ export default function SupervisorMaster() {
   const loadSupervisors = async () => {
     try {
       setLoading(true);
-      const data = await getSupervisors();
+      const result = await getSupervisorsAction();
       
-      const formattedData = data.map(supervisor => ({
-        ...supervisor,
-        department_name: supervisor.departments?.dept_name || '-'
-      }));
-      
-      setSupervisors(formattedData);
-      setError(null);
+      if (result.success) {
+        const formattedData = result.data.map(supervisor => ({
+          ...supervisor,
+          department_name: supervisor.dept_name || '-'
+        }));
+        
+        setSupervisors(formattedData);
+        setError(null);
+      } else {
+        setError('Failed to load supervisors: ' + result.error);
+        toast.error('Failed to load supervisors');
+      }
     } catch (err) {
       console.error('Error loading supervisors:', err);
       setError('Failed to load supervisors. Please check your database connection.');
@@ -62,15 +68,19 @@ export default function SupervisorMaster() {
   const handleSearch = async (field, condition, value) => {
     try {
       setLoading(true);
-      const data = await searchSupervisors(field, condition, value);
+      const result = await searchSupervisorsAction(field, condition, value);
       
-      const formattedData = data.map(supervisor => ({
-        ...supervisor,
-        department_name: supervisor.departments?.dept_name || '-'
-      }));
-      
-      setSupervisors(formattedData);
-      toast.success(`Found ${data.length} supervisor(s)`);
+      if (result.success) {
+        const formattedData = result.data.map(supervisor => ({
+          ...supervisor,
+          department_name: supervisor.dept_name || '-'
+        }));
+        
+        setSupervisors(formattedData);
+        toast.success(`Found ${result.data.length} supervisor(s)`);
+      } else {
+        toast.error('Search failed: ' + result.error);
+      }
     } catch (err) {
       console.error('Error searching supervisors:', err);
       toast.error('Search failed');
@@ -94,43 +104,88 @@ export default function SupervisorMaster() {
     setIsModalOpen(true);
   };
 
-  const handleEdit = () => {
-    if (!selectedSupervisor) {
-      toast.error('Please select a supervisor to edit');
-      return;
-    }
-    setEditingSupervisor(selectedSupervisor);
-    setIsEditing(true);
-    setIsModalOpen(true);
-  };
-
   const handleDelete = async () => {
-    if (!selectedSupervisor) {
-      toast.error('Please select a supervisor to delete');
-      return;
-    }
+    if (isSelectMode && selectedRows.length > 0) {
+      // Bulk delete
+      if (!confirm(`Are you sure you want to delete ${selectedRows.length} supervisor(s)?`)) {
+        return;
+      }
 
-    if (confirm(`Are you sure you want to delete supervisor "${selectedSupervisor.supervisor_name}"?`)) {
       try {
-        await deleteSupervisor(selectedSupervisor.id);
-        toast.success('Supervisor deleted successfully');
-        setSelectedSupervisor(null);
+        await Promise.all(selectedRows.map(row => deleteSupervisorAction(row.id)));
+        toast.success(`${selectedRows.length} supervisor(s) deleted successfully`);
+        setSelectedRows([]);
+        setIsSelectMode(false);
         loadSupervisors();
+      } catch (error) {
+        toast.error('Failed to delete supervisors: ' + error.message);
+      }
+    } else if (!isSelectMode && selectedSupervisor) {
+      // Single delete
+      if (!confirm(`Are you sure you want to delete supervisor "${selectedSupervisor.supervisor_name}"?`)) {
+        return;
+      }
+
+      try {
+        const result = await deleteSupervisorAction(selectedSupervisor.id);
+        if (result.success) {
+          toast.success('Supervisor deleted successfully');
+          setSelectedSupervisor(null);
+          loadSupervisors();
+        } else {
+          toast.error('Failed to delete supervisor: ' + result.error);
+        }
       } catch (err) {
         console.error('Error deleting supervisor:', err);
         toast.error('Failed to delete supervisor');
       }
+    } else {
+      toast.error('Please select supervisor(s) to delete');
     }
+  };
+
+  const handleSelectRow = (row) => {
+    setSelectedRows(prev => {
+      const exists = prev.some(r => r.id === row.id);
+      if (exists) {
+        return prev.filter(r => r.id !== row.id);
+      } else {
+        return [...prev, row];
+      }
+    });
+  };
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedRows([...supervisors]);
+    } else {
+      setSelectedRows([]);
+    }
+  };
+
+  const toggleSelectMode = () => {
+    setIsSelectMode(!isSelectMode);
+    setSelectedRows([]);
   };
 
   const handleSave = async (supervisorData) => {
     try {
       if (isEditing && editingSupervisor) {
-        await updateSupervisor(editingSupervisor.id, supervisorData);
-        toast.success('Supervisor updated successfully');
+        const result = await updateSupervisorAction(editingSupervisor.id, supervisorData);
+        if (result.success) {
+          toast.success('Supervisor updated successfully');
+        } else {
+          toast.error('Failed to update supervisor: ' + result.error);
+          return;
+        }
       } else {
-        await createSupervisor(supervisorData);
-        toast.success('Supervisor created successfully');
+        const result = await createSupervisorAction(supervisorData);
+        if (result.success) {
+          toast.success('Supervisor created successfully');
+        } else {
+          toast.error('Failed to create supervisor: ' + result.error);
+          return;
+        }
       }
       setIsModalOpen(false);
       setIsEditing(false);
@@ -144,80 +199,83 @@ export default function SupervisorMaster() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <Card>
-        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700">
-          <CardTitle className="text-white text-xl">Supervisor Master</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6 space-y-4">
-          <SearchFilter
-            fields={searchFields}
-            onSearch={handleSearch}
-            onShowAll={handleShowAll}
-          />
+    <div className="container mx-auto p-3 sm:p-6 space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold">Supervisor Master</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Manage supervisor information</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
+            <Plus className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">New</span>
+          </Button>
+          <Button 
+            onClick={toggleSelectMode} 
+            variant={isSelectMode ? "default" : "outline"}
+            className={`flex-1 sm:flex-none ${isSelectMode ? "bg-blue-600 text-white hover:bg-blue-700" : "border-blue-600 text-blue-600 hover:bg-blue-50"}`}
+          >
+            <span className="text-xs sm:text-sm">{isSelectMode ? 'Cancel' : 'Select'}</span>
+          </Button>
+          <Button 
+            onClick={handleDelete} 
+            variant="outline"
+            className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
+            disabled={isSelectMode ? selectedRows.length === 0 : !selectedSupervisor}
+          >
+            <Trash2 className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Delete</span>
+            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+          </Button>
+        </div>
+      </div>
 
-          <div className="flex gap-2">
-            <Button
-              onClick={handleAdd}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add New
-            </Button>
-            <Button
-              onClick={handleEdit}
-              variant="outline"
-              disabled={!selectedSupervisor}
-            >
-              <Pencil className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
-            <Button
-              onClick={handleDelete}
-              variant="outline"
-              disabled={!selectedSupervisor}
-              className="text-red-600 hover:text-red-700"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete
-            </Button>
-          </div>
+      {/* Search Filter */}
+      <SearchFilter
+        fields={searchFields}
+        onSearch={handleSearch}
+        onShowAll={handleShowAll}
+      />
 
-          {loading ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Loading supervisors...
-            </div>
-          ) : error ? (
-            <div className="text-center py-8 text-red-500">
-              {error}
-            </div>
-          ) : supervisors.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No supervisors found. Click "New" to add your first supervisor.
-            </div>
-          ) : (
-            <DataGrid
-              columns={columns}
-              data={supervisors}
-              onRowClick={handleRowClick}
-              selectedRow={selectedSupervisor}
-              onContextMenu={(row, e) => {
-                e.preventDefault();
-                setSelectedSupervisor(row);
-                setEditingSupervisor(row);
-                setIsEditing(true);
-                setIsModalOpen(true);
-              }}
-            />
-          )}
+      {/* Data Grid */}
+      {loading ? (
+        <div className="text-center py-8 text-muted-foreground">
+          Loading supervisors...
+        </div>
+      ) : error ? (
+        <div className="text-center py-8 text-red-500">
+          {error}
+        </div>
+      ) : supervisors.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          No supervisors found. Click "New" to add your first supervisor.
+        </div>
+      ) : (
+        <DataGrid
+          columns={columns}
+          data={supervisors}
+          onRowClick={handleRowClick}
+          selectedRow={selectedSupervisor}
+          showCheckbox={isSelectMode}
+          selectedRows={selectedRows}
+          onSelectRow={handleSelectRow}
+          onSelectAll={handleSelectAll}
+          onContextMenu={(row, e) => {
+            e.preventDefault();
+            setSelectedSupervisor(row);
+            setEditingSupervisor(row);
+            setIsEditing(true);
+            setIsModalOpen(true);
+          }}
+        />
+      )}
 
-          {!loading && !error && (
-            <div className="text-sm text-muted-foreground">
-              Total Supervisors: {supervisors.length}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {!loading && !error && (
+        <div className="text-sm text-muted-foreground">
+          Total Supervisors: {supervisors.length}
+        </div>
+      )}
 
       <FormModal
         open={isModalOpen}

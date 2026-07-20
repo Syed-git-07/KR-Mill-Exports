@@ -8,13 +8,14 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import SimplexMachineForm from '@/components/modules/preparatory-master/SimplexMachineForm';
 import {
-  getSimplexMachines,
-  createSimplexMachine,
-  updateSimplexMachine,
-  deleteSimplexMachine,
-  searchSimplexMachines
-} from '@/lib/supabase/simplexMachineQueries';
-import { Plus, Trash2 } from 'lucide-react';
+  getSimplexMachinesAction,
+  createSimplexMachineAction,
+  updateSimplexMachineAction,
+  deleteSimplexMachineAction,
+  searchSimplexMachinesAction,
+  getSimplexCountOptionsAction
+} from '@/app/actions/simplex-machine';
+import { Plus, Trash2, PowerOff } from 'lucide-react';
 
 export default function SimplexMachinePage() {
   const [machines, setMachines] = useState([]);
@@ -25,6 +26,7 @@ export default function SimplexMachinePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [countOptions, setCountOptions] = useState([]);
 
   // VB6 search fields: Mcno
   const searchFields = [
@@ -41,27 +43,43 @@ export default function SimplexMachinePage() {
     { key: 'description', label: 'Description', width: '100px' },
     { key: 'make_name', label: 'Make', width: '60px' },
     { key: 'speed', label: 'Speed', width: '60px' },
-    { key: 'mc_effi', label: 'MCEffi', width: '60px' },
+    { key: 'prodn_efficiency', label: 'Stf Effi', width: '70px' },
     { key: 'tpi', label: 'TPI', width: '50px' },
     { key: 'no_of_spindles', label: 'NoofSpl', width: '70px' }
   ];
 
   useEffect(() => {
     loadMachines();
+    loadCountOptions();
   }, []);
+
+  const loadCountOptions = async () => {
+    try {
+      const result = await getSimplexCountOptionsAction();
+      if (result.success) {
+        setCountOptions(result.data || []);
+      }
+    } catch (err) {
+      console.error('Error loading simplex count options:', err);
+    }
+  };
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const data = await getSimplexMachines();
+      const result = await getSimplexMachinesAction();
+      
+      if (!result.success) {
+        throw new Error(result.error);
+      }
       
       // Format data for display
-      const formattedData = data.map(machine => ({
+      const formattedData = result.data.map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',
         speed: machine.speed || 0,
-        mc_effi: machine.mc_effi || 0,
+        prodn_efficiency: machine.prodn_efficiency || 0,
         tpi: machine.tpi || 0,
         no_of_spindles: machine.no_of_spindles || 0
       }));
@@ -82,20 +100,24 @@ export default function SimplexMachinePage() {
     }
     
     try {
-      const data = await searchSimplexMachines(field, condition, value);
+      const result = await searchSimplexMachinesAction(field, condition, value);
       
-      const formattedData = data.map(machine => ({
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      
+      const formattedData = result.data.map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',
         speed: machine.speed || 0,
-        mc_effi: machine.mc_effi || 0,
+        prodn_efficiency: machine.prodn_efficiency || 0,
         tpi: machine.tpi || 0,
         no_of_spindles: machine.no_of_spindles || 0
       }));
       
       setMachines(formattedData);
-      toast.success(`Found ${data.length} result(s)`);
+      toast.success(`Found ${result.data.length} result(s)`);
     } catch (err) {
       console.error('Search error:', err);
       toast.error('Search failed: ' + err.message);
@@ -127,37 +149,87 @@ export default function SimplexMachinePage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} machine(s)?`)) {
+      // Bulk permanent delete
+      if (!confirm(`Permanently remove ${selectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteSimplexMachine(row.id)));
-        toast.success(`${selectedRows.length} machine(s) deleted successfully`);
+        await Promise.all(selectedRows.map(row => deleteSimplexMachineAction(row.id)));
+        toast.success(`${selectedRows.length} machine(s) permanently removed`);
         setSelectedRows([]);
         setIsSelectMode(false);
         loadMachines();
       } catch (error) {
-        toast.error('Failed to delete machines: ' + error.message);
+        toast.error('Failed to remove machines: ' + error.message);
       }
     } else if (!isSelectMode && selectedMachine) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedMachine.machine_no}"?`)) {
+      // Single permanent delete
+      if (!confirm(`Permanently remove machine "${selectedMachine.machine_no}"?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        await deleteSimplexMachine(selectedMachine.id);
-        toast.success('Machine deleted successfully');
+        const result = await deleteSimplexMachineAction(selectedMachine.id);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+        toast.success('Machine permanently removed');
         setSelectedMachine(null);
         setIsModalOpen(false);
         loadMachines();
       } catch (error) {
-        toast.error('Failed to delete machine: ' + error.message);
+        toast.error('Failed to remove machine: ' + error.message);
       }
     } else {
-      toast.error('Please select machine(s) to delete');
+      toast.error('Please select machine(s) to remove');
+    }
+  };
+
+  const handleDeactivate = async () => {
+    if (isSelectMode && selectedRows.length > 0) {
+      const activeRows = selectedRows.filter(r => r.is_active);
+      if (activeRows.length === 0) {
+        toast.info('All selected machines are already inactive');
+        return;
+      }
+
+      if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
+
+      try {
+        await Promise.all(activeRows.map(row => updateSimplexMachineAction(row.id, { is_active: false })));
+        toast.success(`${activeRows.length} machine(s) deactivated`);
+        setSelectedRows([]);
+        setIsSelectMode(false);
+        loadMachines();
+      } catch (error) {
+        toast.error('Failed to deactivate: ' + error.message);
+      }
+    } else {
+      if (!selectedMachine) {
+        toast.warning('Please select a machine to deactivate');
+        return;
+      }
+
+      if (!selectedMachine.is_active) {
+        toast.info('Machine is already inactive');
+        return;
+      }
+
+      if (!confirm(`Deactivate machine "${selectedMachine.machine_no}"?\n\nIt will be hidden from new production entries.`)) return;
+
+      try {
+        const result = await updateSimplexMachineAction(selectedMachine.id, { is_active: false });
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+        toast.success('Machine deactivated');
+        setIsModalOpen(false);
+        setSelectedMachine(null);
+        loadMachines();
+      } catch (error) {
+        toast.error('Failed to deactivate: ' + error.message);
+      }
     }
   };
 
@@ -188,11 +260,18 @@ export default function SimplexMachinePage() {
   const handleSave = async (formData) => {
     setIsLoading(true);
     try {
+      let result;
       if (isEditing && selectedMachine) {
-        await updateSimplexMachine(selectedMachine.id, formData);
+        result = await updateSimplexMachineAction(selectedMachine.id, formData);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
         toast.success('Machine updated successfully');
       } else {
-        await createSimplexMachine(formData);
+        result = await createSimplexMachineAction(formData);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
         toast.success('Machine created successfully');
       }
       setIsModalOpen(false);
@@ -226,13 +305,26 @@ export default function SimplexMachinePage() {
             <span className="text-xs sm:text-sm">{isSelectMode ? 'Cancel' : 'Select'}</span>
           </Button>
           <Button 
+            onClick={handleDeactivate}
+            variant="outline"
+            className="border-orange-500 text-orange-600 hover:bg-orange-50 flex-1 sm:flex-none"
+            disabled={isSelectMode
+              ? selectedRows.filter(r => r.is_active).length === 0
+              : !selectedMachine || !selectedMachine.is_active
+            }
+          >
+            <PowerOff className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Deactivate</span>
+            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.filter(r => r.is_active).length > 0 && ` (${selectedRows.filter(r => r.is_active).length})`}</span>
+          </Button>
+          <Button 
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
             disabled={isSelectMode ? selectedRows.length === 0 : !selectedMachine}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -264,6 +356,16 @@ export default function SimplexMachinePage() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
+          getRowClassName={(row) =>
+            !row.is_active
+              ? '!bg-red-100 hover:!bg-red-200 text-red-700'
+              : '!bg-white hover:!bg-yellow-100'
+          }
+          onRowDoubleClick={(row) => {
+            setSelectedMachine(row);
+            setIsEditing(true);
+            setIsModalOpen(true);
+          }}
           onContextMenu={(row, e) => {
             e.preventDefault();
             setSelectedMachine(row);
@@ -277,6 +379,8 @@ export default function SimplexMachinePage() {
       {!loading && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span>Total Records: {machines.length}</span>
+          <span className="text-green-700">Active: {machines.filter(m => m.is_active).length}</span>
+          <span className="text-red-600">Inactive: {machines.filter(m => !m.is_active).length}</span>
           {selectedMachine && (
             <span>Selected: {selectedMachine.machine_no} - {selectedMachine.description}</span>
           )}
@@ -301,6 +405,10 @@ export default function SimplexMachinePage() {
         }}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}
+        deleteLabel="Remove Permanently"
+        deleteIsDanger={true}
+        onSecondaryAction={isEditing && selectedMachine?.is_active ? handleDeactivate : null}
+        secondaryActionLabel="Deactivate"
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >
@@ -308,6 +416,7 @@ export default function SimplexMachinePage() {
           initialData={isEditing ? selectedMachine : null}
           onSubmit={handleSave}
           isLoading={isLoading}
+          countOptions={countOptions}
         />
       </FormModal>
     </div>

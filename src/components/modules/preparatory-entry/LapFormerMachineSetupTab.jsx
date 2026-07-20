@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -20,114 +20,257 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Save, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
+import EnterSelect from '@/components/ui/enter-select'
+import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  getLapFormerMachineSetups,
-  updateLapFormerMachineSetup,
-  getLapFormerMachines,
-  addLapFormerMachine,
-  removeLapFormerMachine,
-  bulkUpdateLapFormerMachineMixing,
-  getLapFormerMixingOptions
-} from '@/lib/supabase/lapFormerQueries'
+  getLapFormerMachineSetupsAction,
+  updateLapFormerMachineSetupAction,
+  addLapFormerMachineAction,
+  removeLapFormerMachineAction,
+  bulkUpdateLapFormerMachineMixingAction,
+  getLapFormerMixingOptionsAction,
+  getSpinningCountOptionsAction,
+  lookupLapFormerMachineByNoAction
+} from '@/app/actions/lapFormerEntryActions'
+import { NumberInput } from '@/components/ui/number-input'
+import {
+  LAP_FORMER_FORMULA_FALLBACK,
+  calculateLapFormerStdProdn,
+  resolveLapFormerFormulaInputs,
+} from '@/lib/lapFormerFormulaFallback'
+import { resolveLapFormerShiftFallbackTime } from '@/lib/lapFormerShiftFallback'
 
-export default function LapFormerMachineSetupTab({ onRefresh }) {
+const getLapFormerDescription = (machineNo) => {
+  const value = String(machineNo || '').trim().toUpperCase()
+  if (!value) return ''
+
+  const match = value.match(/^LF\s*0*(\d+)$/i)
+  if (match) {
+    return `LAPFORMER${parseInt(match[1], 10)}`
+  }
+
+  return value
+}
+
+const normalizeDraftKey = (value) => String(value ?? '').trim().toLowerCase()
+
+const findDraftByKeys = (drafts, ...keys) => {
+  if (!drafts) return undefined
+
+  for (const key of keys) {
+    if (key === undefined || key === null) continue
+    if (drafts[key] !== undefined) return drafts[key]
+    const asString = String(key)
+    if (drafts[asString] !== undefined) return drafts[asString]
+  }
+
+  const normalizedKeys = new Set(
+    keys
+      .filter(key => key !== undefined && key !== null)
+      .map(key => normalizeDraftKey(key))
+      .filter(Boolean)
+  )
+
+  if (normalizedKeys.size === 0) return undefined
+
+  for (const [draftKey, draftValue] of Object.entries(drafts)) {
+    if (normalizedKeys.has(normalizeDraftKey(draftKey))) {
+      return draftValue
+    }
+  }
+
+  return undefined
+}
+
+const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
+  shift = 1,
+  totalTime = resolveLapFormerShiftFallbackTime(shift),
+  onRefresh,
+  sharedDraftEdits,
+  onSharedDraftEditsChange
+}, ref) {
   const [setupData, setSetupData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [editedRows, setEditedRows] = useState({})
+  const [localEditedRows, setLocalEditedRows] = useState({})
+  const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
+  const editedRowsRef = useRef({})
+  const lastLoadKeyRef = useRef('')
   const [selectedRows, setSelectedRows] = useState([])
+
+  const setEditedRows = useCallback((updater) => {
+    if (onSharedDraftEditsChange) {
+      const prev = editedRowsRef.current || {}
+      const next = typeof updater === 'function' ? updater(prev) : (updater || {})
+      if (next === prev) {
+        return
+      }
+      editedRowsRef.current = next
+      onSharedDraftEditsChange(next)
+      return
+    }
+    setLocalEditedRows(prev => (typeof updater === 'function' ? updater(prev) : (updater || {})))
+  }, [onSharedDraftEditsChange])
+
+  useEffect(() => {
+    editedRowsRef.current = editedRows
+  }, [editedRows])
+
+  const tableRef = useRef(null)
+  const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
+    const targetRow = rowIndex + delta
+    if (targetRow < 0 || !tableRef.current) return
+    const targetInput = tableRef.current.querySelector(
+      `input[data-row="${targetRow}"][data-col="${colName}"]`
+    )
+    if (targetInput) { targetInput.focus(); targetInput.select() }
+  }, [])
+  const focusNextRow = useCallback((rowIndex, colName) => focusRowByDelta(rowIndex, 1, colName), [focusRowByDelta])
+  const handleEnterNavigation = useCallback((e, rowIndex, colName) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); focusRowByDelta(rowIndex, 1, colName) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusRowByDelta(rowIndex, -1, colName) }
+  }, [focusRowByDelta])
   const [mixingOptions, setMixingOptions] = useState([])
+  const [spinningCounts, setSpinningCounts] = useState([])
 
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showMixingChangeDialog, setShowMixingChangeDialog] = useState(false)
   const [showRemoveDialog, setShowRemoveDialog] = useState(false)
 
-  // New machine form - Lap Former specific defaults (Hank=0.0082, NOT 0.14)
+  // New machine form - defaults come from centralized Lap Former formula fallback.
+  // shift_time uses totalTime from shift configuration
   const [newMachine, setNewMachine] = useState({
     machine_no: '',
-    make_name: 'LMW',
-    prodn_mixing: '64COMBED GOLD',
-    speed: 90,
-    shift_time: 510,
-    hank_constant: 0.0082,
-    std_efficiency_factor: 0.85,
-    delivery: 1
+    description: '',
+    make_name: '',
+    model: '',
+    installed_date: new Date().toISOString().split('T')[0],
+    prodn_mixing: '',
+    speed: LAP_FORMER_FORMULA_FALLBACK.speed,
+    prodn_effi: Math.round(LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor * 100),
+    is_active: true,
+    hank_constant: LAP_FORMER_FORMULA_FALLBACK.hankConstant,
+    std_efficiency_factor: LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor,
+    delivery: LAP_FORMER_FORMULA_FALLBACK.delivery
   })
 
   // Mixing change form
   const [newMixing, setNewMixing] = useState('')
   const [customMixing, setCustomMixing] = useState('')
 
+  const mergeServerRowsWithDrafts = useCallback((rows) => {
+    const drafts = editedRowsRef.current || {}
+    const rowIds = new Set((rows || []).map(row => String(row.id)))
+
+    setEditedRows(prev => {
+      const next = {}
+      for (const [id, value] of Object.entries(prev)) {
+        if (rowIds.has(String(id))) {
+          next[id] = value
+        }
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next
+    })
+
+    return (rows || []).map(row => {
+      const draft = findDraftByKeys(drafts, row.id, row.machine_id)
+      return draft ? { ...row, ...draft } : row
+    })
+  }, [setEditedRows])
+
   // Load machine setups
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ force = false } = {}) => {
+    const loadKey = `${shift}|${totalTime}`
+    if (!force && lastLoadKeyRef.current === loadKey) {
+      return
+    }
+    lastLoadKeyRef.current = loadKey
+
     setIsLoading(true)
     try {
-      const [setups, machineList, mixings] = await Promise.all([
-        getLapFormerMachineSetups(),
-        getLapFormerMachines(),
-        getLapFormerMixingOptions()
+      const [setupsResult, mixingsResult, spinningCountsResult] = await Promise.all([
+        getLapFormerMachineSetupsAction(),
+        getLapFormerMixingOptionsAction(),
+        getSpinningCountOptionsAction()
       ])
       
-      // Merge setup data with machine info for display
-      const mergedData = (machineList || [])
-        .filter(m => m.is_active !== false)
-        .map(machine => {
-          const setup = (setups || []).find(s => s.machine_id === machine.id)
-          return {
-            id: setup?.id || `new-${machine.id}`,
-            machine_id: machine.id,
-            machine_no: machine.machine_no,
-            make_name: machine.make_name || 'LMW',
-            mixing: machine.prodn_mixing || '64COMBED GOLD',
-            speed: machine.speed || setup?.speed || 90,
-            std_prodn: setup?.std_prodn || 0,
-            std_efficiency_factor: setup?.std_efficiency_factor || 0.85,
-            hank_constant: setup?.hank_constant || 0.0082,
-            divisor_constant: setup?.divisor_constant || 1693,
-            delivery: setup?.delivery || 1,
-            shift_time: setup?.shift_time || 510,
-            is_active: machine.is_active ?? true,
-            isNewSetup: !setup
-          }
-        })
+      if (!setupsResult.success) throw new Error(setupsResult.error)
+      if (!mixingsResult.success) throw new Error(mixingsResult.error)
+      // spinningCounts is optional, don't throw on error
+      
+      const setups = setupsResult.data
+      const mixings = mixingsResult.data
+      const counts = spinningCountsResult.success ? spinningCountsResult.data : []
+      
+      // Show only machines that already have setup entries.
+      const setupRows = (setups || [])
+        .map(setup => ({
+          id: setup.id,
+          machine_id: setup.machine_id,
+          machine_no: setup.machine?.machine_no,
+          make_name: setup.machine?.make_name || '',
+          mixing: setup.machine?.prodn_mixing || '',
+          speed: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).speed,
+          std_prodn: setup.std_prodn || 0,
+          std_efficiency_factor: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).stdEfficiencyFactor,
+          hank_constant: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).hankConstant,
+          divisor_constant: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).divisorConstant,
+          delivery: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).delivery,
+          shift_time: totalTime,
+          is_active: setup.machine?.is_active ?? true
+        }))
+        .filter(row => !!row.machine_id && !!row.machine_no)
         .sort((a, b) => {
           const aNum = parseInt(a.machine_no?.replace(/\D/g, '') || '0')
           const bNum = parseInt(b.machine_no?.replace(/\D/g, '') || '0')
           return aNum - bNum
         })
       
-      setSetupData(mergedData)
+      const mergedRows = mergeServerRowsWithDrafts(setupRows)
+      setSetupData(mergedRows)
       setMixingOptions(mixings || [])
+      setSpinningCounts(counts || [])
     } catch (error) {
+      lastLoadKeyRef.current = ''
       console.error('Error loading machine setups:', error)
       toast.error('Failed to load machine setups')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [shift, totalTime, mergeServerRowsWithDrafts])
 
   useEffect(() => {
     loadData()
   }, [loadData])
 
   // Calculate Std Prodn - LAP FORMER Formula
-  const calculateStdProdn = (speed, hankConstant, stdEffiFactor, delivery, divisor = 1693, shiftTime = 510) => {
-    // LAP FORMER Formula: StdProdn = Speed / 1693 / Hank × TotalTime × StdEffi × Delivery
-    if (!speed || !hankConstant) return 0
-    return (speed / divisor / hankConstant) * shiftTime * stdEffiFactor * delivery
+  const calculateStdProdn = (speed, hankConstant, stdEffiFactor, delivery, divisor = LAP_FORMER_FORMULA_FALLBACK.divisorConstant, shiftTime = totalTime) => {
+    return calculateLapFormerStdProdn(
+      {
+        speed,
+        hank_constant: hankConstant,
+        std_efficiency_factor: stdEffiFactor,
+        divisor_constant: divisor,
+        delivery,
+      },
+      shiftTime,
+      speed
+    )
   }
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
+    const baseRow = setupData.find(row => String(row.id) === String(rowId))
+    const machineId = baseRow?.machine_id
     const numValue = parseFloat(value) || 0
     
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
+        ...(machineId ? { machine_id: machineId } : {}),
         [field]: numValue
       }
     }))
@@ -138,15 +281,16 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
         const updatedRow = { ...row, [field]: numValue }
         
         // Recalculate std_prodn when relevant fields change
-        if (['speed', 'hank_constant', 'std_efficiency_factor', 'shift_time', 'divisor_constant', 'delivery'].includes(field)) {
+        // Note: shift_time is now shift-based (from props), not editable per machine
+        if (['speed', 'hank_constant', 'std_efficiency_factor', 'divisor_constant', 'delivery'].includes(field)) {
           const speed = field === 'speed' ? numValue : row.speed
           const hankConstant = field === 'hank_constant' ? numValue : row.hank_constant
           const stdEffi = field === 'std_efficiency_factor' ? numValue : row.std_efficiency_factor
-          const shiftTime = field === 'shift_time' ? numValue : row.shift_time
           const divisor = field === 'divisor_constant' ? numValue : row.divisor_constant
           const delivery = field === 'delivery' ? numValue : row.delivery
           
-          updatedRow.std_prodn = Math.round(calculateStdProdn(speed, hankConstant, stdEffi, delivery, divisor, shiftTime) * 100) / 100
+          // Use totalTime from props (shift-based)
+          updatedRow.std_prodn = Math.round(calculateStdProdn(speed, hankConstant, stdEffi, delivery, divisor, totalTime) * 100) / 100
         }
         
         return updatedRow
@@ -156,34 +300,89 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
   }
 
   // Save changes
-  const handleSave = async () => {
-    if (Object.keys(editedRows).length === 0) {
-      toast.info('No changes to save')
-      return
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const pendingEdits = editedRowsRef.current || editedRows || {}
+
+    if (Object.keys(pendingEdits).length === 0) {
+      if (!suppressNoChangesToast) {
+        toast.info('No changes to save')
+      }
+      return { success: true, saved: 0 }
     }
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
-        const row = setupData.find(r => r.id === rowId)
-        if (!row) return null
+      const resolvedUpdates = Object.entries(pendingEdits).map(([rowId, changes]) => {
+        const row = setupData.find(
+          r => String(r.id) === String(rowId) || String(r.machine_id) === String(rowId)
+        )
+        if (!row) {
+          return { rowId, changes, row: null }
+        }
+        return { rowId, changes, row }
+      })
 
-        return updateLapFormerMachineSetup(row.machine_id, changes)
-      }).filter(Boolean)
+      const unresolvedEdits = resolvedUpdates.filter(item => !item.row)
+      if (unresolvedEdits.length > 0) {
+        throw new Error(`Unable to map ${unresolvedEdits.length} machine setup edit(s) to table rows. Please refresh and try again.`)
+      }
 
-      await Promise.all(updatePromises)
-      setEditedRows({})
-      toast.success('Machine setups saved successfully')
+      const updatePromises = resolvedUpdates.map(({ row, changes }) =>
+        updateLapFormerMachineSetupAction(row.machine_id, changes)
+      )
+
+      if (updatePromises.length === 0) {
+        throw new Error('No machine setup updates were prepared for saving.')
+      }
+
+      const results = await Promise.all(updatePromises)
+      const failed = results.filter(r => !r?.success)
+      if (failed.length > 0) {
+        throw new Error(failed[0]?.error || 'Some setup updates failed')
+      }
       
-      await loadData()
-      onRefresh?.()
+      const savedCount = results.length
+      setEditedRows({})
+      if (!suppressSuccessToast) {
+        toast.success('Machine setups saved successfully')
+      }
+      
+      await loadData({ force: true })
+      if (!skipParentRefresh) {
+        onRefresh?.()
+      }
+      return { success: true, saved: savedCount }
     } catch (error) {
       console.error('Error saving machine setups:', error)
-      toast.error('Failed to save machine setups')
+      toast.error(error.message || 'Failed to save machine setups')
+      return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
     }
   }
+
+  const handleRefreshClick = async () => {
+    if (Object.keys(editedRows).length > 0) {
+      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      if (!shouldDiscard) return
+    }
+    setEditedRows({})
+    await loadData({ force: true })
+  }
+
+  const discardChanges = async () => {
+    setEditedRows({})
+    await loadData({ force: true })
+    return { success: true }
+  }
+
+  useImperativeHandle(ref, () => ({
+    saveChanges: handleSave,
+    getEditedCount: () => Object.keys(editedRows).length,
+    isSaving: () => isSaving,
+    discardChanges,
+    refreshData: () => loadData({ force: true })
+  }), [handleSave, editedRows, isSaving, discardChanges, loadData])
 
   // Toggle row selection
   const handleRowSelect = (machineId) => {
@@ -204,23 +403,86 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
   }
 
   // Add new machine
+  const handleMachineNoLookup = async (machineNo) => {
+    const val = String(machineNo || '').trim().toUpperCase()
+    if (!val) return
+
+    const toastId = toast.loading(`Looking up machine #${val}...`)
+    const result = await lookupLapFormerMachineByNoAction(val)
+    if (!result.success) {
+      toast.error(result.error || 'Lookup failed', { id: toastId })
+      return
+    }
+    if (!result.data) {
+      toast.error(`Machine #${val} not found in master`, { id: toastId })
+      return
+    }
+
+    const d = result.data
+    setNewMachine(prev => ({
+      ...prev,
+      machine_no: d.machine_no ?? prev.machine_no,
+      description: getLapFormerDescription(d.machine_no || d.description || prev.description),
+      make_name: d.make_name || prev.make_name,
+      model: d.model || prev.model,
+      installed_date: d.installed_date
+        ? String(d.installed_date).split('T')[0]
+        : prev.installed_date,
+      prodn_mixing: d.prodn_mixing || prev.prodn_mixing,
+      ...(d.speed != null && { speed: Number(d.speed) }),
+      ...(d.prodn_efficiency != null && { prodn_effi: Number(d.prodn_efficiency) }),
+      ...(d.hank_constant != null && { hank_constant: Number(d.hank_constant) }),
+      ...(d.std_efficiency_factor != null && { std_efficiency_factor: Number(d.std_efficiency_factor) }),
+      ...(d.delivery != null && { delivery: Number(d.delivery) })
+    }))
+
+    if (d.has_setup) {
+      toast.info(`Machine #${val} found - it will be reactivated with existing setup`, { id: toastId })
+    } else {
+      toast.success(`Machine #${val} details filled`, { id: toastId })
+    }
+  }
+
   const handleAddMachine = async () => {
+    if (!newMachine.is_active) {
+      toast.warning('Machine must be active to add from setup')
+      return
+    }
+
     setIsSaving(true)
     try {
-      await addLapFormerMachine(newMachine)
+      await addLapFormerMachineAction({
+        machine_no: newMachine.machine_no,
+        description: newMachine.description,
+        make_name: newMachine.make_name,
+        model: newMachine.model,
+        installed_date: newMachine.installed_date,
+        prodn_mixing: newMachine.prodn_mixing,
+        speed: newMachine.speed,
+        prodn_effi: newMachine.prodn_effi,
+        hank_constant: LAP_FORMER_FORMULA_FALLBACK.hankConstant,
+        std_efficiency_factor: (Number(newMachine.prodn_effi) || Math.round(LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor * 100)) / 100,
+        delivery: LAP_FORMER_FORMULA_FALLBACK.delivery,
+        shift_time: totalTime
+      })
       toast.success('New machine added successfully')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
-        make_name: 'LMW',
-        prodn_mixing: '64COMBED GOLD',
-        speed: 90,
-        shift_time: 510,
-        hank_constant: 0.0082,
-        std_efficiency_factor: 0.85,
-        delivery: 1
+        description: '',
+        make_name: '',
+        model: '',
+        installed_date: new Date().toISOString().split('T')[0],
+        prodn_mixing: '',
+        speed: LAP_FORMER_FORMULA_FALLBACK.speed,
+        prodn_effi: Math.round(LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor * 100),
+        is_active: true,
+        hank_constant: LAP_FORMER_FORMULA_FALLBACK.hankConstant,
+        std_efficiency_factor: LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor,
+        delivery: LAP_FORMER_FORMULA_FALLBACK.delivery
       })
-      await loadData()
+      setEditedRows({})
+      await loadData({ force: true })
       onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
@@ -240,13 +502,14 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
     setIsSaving(true)
     try {
       const removePromises = selectedRows.map(machineId => 
-        removeLapFormerMachine(machineId)
+        removeLapFormerMachineAction(machineId)
       )
       await Promise.all(removePromises)
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
+      setEditedRows({})
+      await loadData({ force: true })
       onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
@@ -258,7 +521,8 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
 
   // Change count/mixing for selected machines
   const handleChangeMixing = async () => {
-    const mixingValue = newMixing === 'custom' ? customMixing : newMixing
+    // Use customMixing if entered, otherwise use selected newMixing
+    const mixingValue = customMixing || newMixing
     
     if (!mixingValue) {
       toast.warning('Please select or enter a mixing value')
@@ -272,13 +536,14 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
 
     setIsSaving(true)
     try {
-      await bulkUpdateLapFormerMachineMixing(selectedRows, mixingValue)
+      await bulkUpdateLapFormerMachineMixingAction(selectedRows, mixingValue)
       toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
       setShowMixingChangeDialog(false)
       setNewMixing('')
       setCustomMixing('')
       setSelectedRows([])
-      await loadData()
+      setEditedRows({})
+      await loadData({ force: true })
       onRefresh?.()
     } catch (error) {
       console.error('Error updating mixing:', error)
@@ -303,32 +568,24 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
           {setupData.length} machines configured
+          {Object.keys(editedRows).length > 0 && (
+            <span className="ml-4 text-orange-600 font-medium">
+              Unsaved changes: {Object.keys(editedRows).length}
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadData}>
+          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
             <RefreshCw className="h-4 w-4 mr-1" />
             Refresh
-          </Button>
-          <Button 
-            size="sm" 
-            onClick={handleSave}
-            disabled={isSaving || Object.keys(editedRows).length === 0}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 mr-1" />
-            )}
-            Save Changes
           </Button>
         </div>
       </div>
 
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
-        <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
-          <table className="w-full border-collapse text-sm">
+        <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
+          <table className="w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 w-10">
@@ -338,19 +595,19 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
                     className="border-white"
                   />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16">Mc.No.</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24">Make</th>
-                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28">Mixing</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20">Shift Time</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24">Std.Prodn</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Speed</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Std.Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Sl.Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">Delivery</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16 whitespace-nowrap">Mc.No.</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Make</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40 whitespace-nowrap">Mixing</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Shift Time</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Std.Prodn</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Speed</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Std.Effi</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Sl.Hank</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Delivery</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={tableRef}>
               {setupData.map((row, index) => (
                 <tr 
                   key={row.id}
@@ -362,61 +619,67 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
                       onCheckedChange={() => handleRowSelect(row.machine_id)}
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700">
+                  <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
                     {row.machine_no}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1">
-                    {row.make_name || 'LMW'}
+                  <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
+                    {row.make_name || ''}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1">
-                    {row.mixing || '64COMBED GOLD'}
+                  <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
+                    {row.mixing || ''}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">
+                  <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     1
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.shift_time || 510}
-                      onChange={(e) => handleInputChange(row.id, 'shift_time', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
-                    />
+                  {/* Shift Time - readonly, from shift configuration */}
+                  <td className="border border-gray-300 px-2 py-1 text-right text-gray-600 tabular-nums whitespace-nowrap">
+                    {totalTime}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-700">
-                    {row.std_prodn?.toFixed(2)}
+                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-700 tabular-nums whitespace-nowrap">
+                    {Number(row.std_prodn || 0).toFixed(2)}
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.speed || 90}
+                  <td className="border border-gray-300 px-0 py-0">
+                    <NumberInput
+                      value={row.speed ?? ''}
                       onChange={(e) => handleInputChange(row.id, 'speed', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      data-row={index}
+                      data-col="speed"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'speed')}
+                      zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="1"
-                      value={Math.round((row.std_efficiency_factor || 0.85) * 100)}
-                      onChange={(e) => handleInputChange(row.id, 'std_efficiency_factor', parseFloat(e.target.value) / 100)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                  <td className="border border-gray-300 px-0 py-0">
+                    <NumberInput
+                      value={row.std_efficiency_factor ?? ''}
+                      onChange={(e) => handleInputChange(row.id, 'std_efficiency_factor', e.target.value)}
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      data-row={index}
+                      data-col="std_efficiency_factor"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'std_efficiency_factor')}
+                      zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      step="0.0001"
-                      value={row.hank_constant || 0.0082}
+                  <td className="border border-gray-300 px-0 py-0">
+                    <NumberInput
+                      value={row.hank_constant ?? ''}
                       onChange={(e) => handleInputChange(row.id, 'hank_constant', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      data-row={index}
+                      data-col="hank_constant"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'hank_constant')}
+                      zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-1 py-1">
-                    <Input
-                      type="number"
-                      value={row.delivery || 1}
+                  <td className="border border-gray-300 px-0 py-0">
+                    <NumberInput
+                      value={row.delivery ?? ''}
                       onChange={(e) => handleInputChange(row.id, 'delivery', e.target.value)}
-                      className="h-6 text-xs text-right w-full border-gray-300"
+                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
+                      data-row={index}
+                      data-col="delivery"
+                      onKeyDown={(e) => handleEnterNavigation(e, index, 'delivery')}
+                      zeroAsEmpty
                     />
                   </td>
                 </tr>
@@ -471,15 +734,6 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
         </span>
       </div>
 
-      {/* Formula Reference */}
-      <div className="p-3 bg-gray-100 rounded text-xs text-gray-600">
-        <strong>Formula:</strong> Std Prodn = (Speed / 1693 / Sliver Hank) × Shift Time × (Std. Effi. / 100) × Delivery
-        <br />
-        <strong>Example:</strong> LF1: (120 / 1693 / 0.0082) × 510 × 0.85 × 1 = 3747.14 kg
-        <br />
-        <strong>Note:</strong> Lap Former uses Hank = <span className="text-red-600 font-bold">0.0082</span> (NOT 0.14 like Breaker Drawing)
-      </div>
-
       {/* Add Machine Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-lg">
@@ -487,84 +741,128 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
             <DialogTitle className="text-lg font-semibold">Add New Machine</DialogTitle>
             <DialogDescription className="text-sm">Enter details for the new Lap Former machine</DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 py-2">
-            <div className="grid grid-cols-2 gap-5">
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No (optional)</Label>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Machine No</Label>
                 <Input
                   value={newMachine.machine_no}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
-                  placeholder="Auto-generated (LF4, LF5...)"
+                  onChange={(e) => {
+                    const machineNo = e.target.value.toUpperCase()
+                    setNewMachine(prev => ({
+                      ...prev,
+                      machine_no: machineNo,
+                      description: getLapFormerDescription(machineNo)
+                    }))
+                  }}
+                  onBlur={(e) => handleMachineNoLookup(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleMachineNoLookup(newMachine.machine_no)
+                    }
+                  }}
+                  placeholder="e.g. LF3"
                   className="h-10 text-sm"
                 />
               </div>
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Make Name</Label>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Description</Label>
+                <Input
+                  value={newMachine.description}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Auto-filled from machine no"
+                  className="h-10 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Make Name</Label>
                 <Input
                   value={newMachine.make_name}
                   onChange={(e) => setNewMachine(prev => ({ ...prev, make_name: e.target.value }))}
                   className="h-10 text-sm"
                 />
               </div>
-            </div>
-            <div>
-              <Label className="text-sm font-medium mb-2 block">Count / Mixing</Label>
-              <Input
-                value={newMachine.prodn_mixing}
-                onChange={(e) => setNewMachine(prev => ({ ...prev, prodn_mixing: e.target.value }))}
-                className="h-10 text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-5">
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Speed</Label>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Model</Label>
                 <Input
-                  type="number"
+                  value={newMachine.model || ''}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, model: e.target.value }))}
+                  className="h-10 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Count</Label>
+                {spinningCounts.length > 0 ? (
+                  <EnterSelect
+                    value={newMachine.prodn_mixing}
+                    options={spinningCounts.map(count => ({
+                      value: count.count_name,
+                      label: count.count_name
+                    }))}
+                    onChange={(v) => setNewMachine(prev => ({ ...prev, prodn_mixing: v }))}
+                    searchable
+                    className="h-10 text-sm"
+                  />
+                ) : (
+                  <Input
+                    value={newMachine.prodn_mixing}
+                    onChange={(e) => setNewMachine(prev => ({ ...prev, prodn_mixing: e.target.value }))}
+                    className="h-10 text-sm"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Speed</Label>
+                <NumberInput
                   value={newMachine.speed}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, speed: parseFloat(e.target.value) || 90 }))}
+                  onChange={(v) => setNewMachine(prev => ({ ...prev, speed: v }))}
                   className="h-10 text-sm"
+                  zeroAsEmpty
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
                 />
               </div>
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Shift Time</Label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Std Efi %</Label>
+                <NumberInput
+                  value={newMachine.prodn_effi}
+                  onChange={(v) => setNewMachine(prev => ({ ...prev, prodn_effi: Number(v) || 0 }))}
+                  className="h-10 text-sm"
+                  zeroAsEmpty
+                  onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault() }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Installed Date</Label>
                 <Input
-                  type="number"
-                  value={newMachine.shift_time}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, shift_time: parseInt(e.target.value) || 510 }))}
+                  type="date"
+                  value={newMachine.installed_date || ''}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, installed_date: e.target.value }))}
                   className="h-10 text-sm"
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-5">
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Sliver Hank</Label>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  value={newMachine.hank_constant}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, hank_constant: parseFloat(e.target.value) || 0.0082 }))}
-                  className="h-10 text-sm"
-                />
-                <span className="text-xs text-red-500">Default: 0.0082</span>
-              </div>
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Std. Efficiency (%)</Label>
-                <Input
-                  type="number"
-                  value={(newMachine.std_efficiency_factor * 100).toFixed(0)}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, std_efficiency_factor: (parseFloat(e.target.value) || 85) / 100 }))}
-                  className="h-10 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Delivery</Label>
-                <Input
-                  type="number"
-                  value={newMachine.delivery}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, delivery: parseInt(e.target.value) || 1 }))}
-                  className="h-10 text-sm"
-                />
-              </div>
+
+            <div className="flex items-center space-x-2 p-3 border rounded-lg max-w-xs">
+              <Checkbox
+                id="lapformer-setup-is-active"
+                checked={!!newMachine.is_active}
+                onCheckedChange={(checked) => setNewMachine(prev => ({ ...prev, is_active: !!checked }))}
+              />
+              <Label htmlFor="lapformer-setup-is-active" className="text-sm font-medium cursor-pointer">Is Active</Label>
             </div>
           </div>
           <DialogFooter className="gap-3">
@@ -587,19 +885,13 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
           <div className="space-y-5 py-2">
             <div>
               <Label className="text-sm font-medium mb-2 block">Select Existing Count</Label>
-              <Select
+              <EnterSelect
                 value={newMixing}
-                onValueChange={(value) => { setNewMixing(value); setCustomMixing(''); }}
-              >
-                <SelectTrigger className="h-10 text-sm">
-                  <SelectValue placeholder="Choose existing count..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {mixingOptions.map(count => (
-                    <SelectItem key={count} value={count}>{count}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={spinningCounts.map(count => ({ value: count.count_name, label: count.count_name }))}
+                onChange={(v) => { setNewMixing(v); setCustomMixing(''); }}
+                searchable
+                className="h-10 text-sm"
+              />
             </div>
             <div className="text-center text-sm text-gray-500 font-medium">- OR -</div>
             <div>
@@ -652,4 +944,6 @@ export default function LapFormerMachineSetupTab({ onRefresh }) {
       </Dialog>
     </div>
   )
-}
+})
+
+export default LapFormerMachineSetupTab
