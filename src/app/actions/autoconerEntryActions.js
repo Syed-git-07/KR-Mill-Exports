@@ -3,6 +3,7 @@
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/autoconerEntryQueries'
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -51,6 +52,7 @@ export async function getAutoconerProductionByDateShiftAction(date, shift) {
 
 export async function getOrCreateAutoconerHeaderAction(date, shift, supervisorId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateAutoconerHeader(date, shift, supervisorId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

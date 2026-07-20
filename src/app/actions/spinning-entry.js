@@ -3,6 +3,7 @@
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/spinningEntryQueries'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -48,6 +49,7 @@ export async function getSpinningProductionByDateShiftAction(date, shift) {
 
 export async function getOrCreateSpinningHeaderAction(date, shift, supervisorId, maisitryId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateSpinningHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

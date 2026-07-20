@@ -2,6 +2,7 @@
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/lapFormerQueries'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -39,6 +40,7 @@ export async function getLapFormerProductionByDateShiftAction(date, shift) {
 
 export async function getOrCreateLapFormerHeaderAction(date, shift, supervisorId, maisitryId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateLapFormerHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

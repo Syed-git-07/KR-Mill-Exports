@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Calendar } from "@/components/ui/calendar"
+import Calendar from '@/components/common/HolidayAwareCalendar'
 import { CalendarIcon, Loader2, Save, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"

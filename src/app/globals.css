@@ -3,6 +3,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes route-loading-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(350%); }
+}
+
+.route-loading-bar { animation: route-loading-slide 1.15s ease-in-out infinite; }
+
+@keyframes loading-panel-enter {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.loading-panel { animation: loading-panel-enter .22s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loading-bar { animation: none; width: 100%; opacity: .65; }
+  .loading-panel { animation: none; }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -2,6 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import GlobalRequestLoader from "@/components/common/GlobalRequestLoader";
 import "@/lib/utils/suppressHydrationWarnings";
 
 const geistSans = Geist({
@@ -31,6 +32,7 @@ export default function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <GlobalRequestLoader />
         <div className="min-h-screen bg-gray-50">
           <header className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4 shadow-lg">
             <div className="container mx-auto flex items-center gap-3">

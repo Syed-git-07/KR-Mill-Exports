@@ -1,5 +1,5 @@
-import HolidayListManagement from '@/components/modules/post-preparatory/HolidayListManagement'
+import { redirect } from 'next/navigation'
 
 export default function HolidayListPage() {
-  return <HolidayListManagement />
+  redirect('/holiday-list')
 }

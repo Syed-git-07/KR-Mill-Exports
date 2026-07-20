@@ -3,6 +3,7 @@
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/finisherDrawingEntryQueries'
 import { resolveFinisherDrawingShiftFallbackTime } from '@/lib/finisherDrawingShiftFallback'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -32,6 +33,7 @@ export async function getFinisherDrawingProductionByDateShiftAction(date, shift)
 
 export async function getOrCreateFinisherDrawingHeaderAction(date, shift, supervisorId, maisitryId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateFinisherDrawingHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

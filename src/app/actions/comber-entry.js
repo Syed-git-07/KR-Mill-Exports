@@ -3,6 +3,7 @@
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/comberEntryQueries'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -60,6 +61,7 @@ export async function getComberProductionByDateShiftAction(date, shift) {
 
 export async function getOrCreateComberProductionHeaderAction(date, shift, supervisorId, maisitryId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateComberProductionHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

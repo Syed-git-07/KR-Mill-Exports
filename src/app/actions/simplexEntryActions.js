@@ -3,6 +3,7 @@
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/simplexEntryQueries'
 import { resolveSimplexShiftFallbackTime } from '@/lib/simplexFormulaFallback'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -57,6 +58,7 @@ export async function getSimplexProductionByDateShiftAction(date, shift) {
 
 export async function getOrCreateSimplexProductionHeaderAction(date, shift, supervisorId, maisitryId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateSimplexProductionHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

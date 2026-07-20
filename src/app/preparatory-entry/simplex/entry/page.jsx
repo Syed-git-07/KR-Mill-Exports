@@ -7,7 +7,7 @@ import { CalendarIcon, Copy, Loader2, Save, RefreshCw, ArrowLeft } from 'lucide-
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
+import Calendar from '@/components/common/HolidayAwareCalendar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'

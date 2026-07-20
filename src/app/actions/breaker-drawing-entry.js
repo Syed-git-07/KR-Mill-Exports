@@ -2,6 +2,7 @@
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/breakerDrawingQueries'
+import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -39,6 +40,7 @@ export async function getBreakerDrawingProductionByDateShiftAction(date, shift) 
 
 export async function getOrCreateBreakerDrawingHeaderAction(date, shift, supervisorId, maisitryId) {
   try {
+    await assertWorkingDate(date)
     const data = await queries.getOrCreateBreakerDrawingHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {

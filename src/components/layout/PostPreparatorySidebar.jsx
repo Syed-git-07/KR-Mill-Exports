@@ -17,11 +17,6 @@ export default function PostPreparatorySidebar() {
       title: "Spinning Entry",
       href: "/post-preparatory/spinning",
       icon: CircleDot
-    },
-    {
-      title: "Holiday List Management",
-      href: "/post-preparatory/holiday-list",
-      icon: FileText
     }
   ]
 

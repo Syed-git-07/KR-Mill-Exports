@@ -26,6 +26,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Calendar } from '@/components/ui/calendar'
+import HolidayAwareCalendar from '@/components/common/HolidayAwareCalendar'
 import { CalendarIcon, Loader2, ChevronLeft, ChevronRight, Search, ListFilter, Plus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -110,20 +111,22 @@ export default function DateShiftListPage({
   }, [])
 
   useEffect(() => {
-    if (isAddDialogOpen && (moduleName === 'Spinning' || moduleName === 'Autoconer')) {
-      loadHolidayDates()
-    }
-  }, [isAddDialogOpen, moduleName, loadHolidayDates])
+    loadHolidayDates()
+  }, [loadHolidayDates])
 
   const isDateAHoliday = useCallback((date) => {
-    if (moduleName !== 'Spinning' && moduleName !== 'Autoconer') return false
     if (!date) return false
     const dateStr = format(date, 'yyyy-MM-dd')
     return holidaysList.some(h => {
       const hdStr = h.date ? String(h.date).split('T')[0] : ''
       return dateStr === hdStr
     })
-  }, [moduleName, holidaysList])
+  }, [holidaysList])
+
+  const getHolidayForDate = useCallback((dateValue) => {
+    const dateStr = dateValue instanceof Date ? format(dateValue, 'yyyy-MM-dd') : String(dateValue || '').split('T')[0]
+    return holidaysList.find((holiday) => String(holiday.date || '').split('T')[0] === dateStr)
+  }, [holidaysList])
 
   // Fetch data
   const loadData = useCallback(async () => {
@@ -236,6 +239,11 @@ export default function DateShiftListPage({
   }
 
   const navigateToEntry = (entry) => {
+    const holiday = getHolidayForDate(entry.entry_date)
+    if (holiday) {
+      toast.error(`${format(new Date(`${entry.entry_date}T00:00:00`), 'dd-MMM-yyyy')} is a holiday: ${holiday.description || 'Holiday'}. Production work is not allowed.`)
+      return
+    }
     const params = new URLSearchParams({
       date: entry.entry_date,
       shift: String(entry.shift),
@@ -377,13 +385,16 @@ export default function DateShiftListPage({
                   paginatedEntries.map((entry, idx) => {
                     const isSelected = idx === selectedIndex
                     const isFirstOfDate = idx === 0 || entry.entry_date !== paginatedEntries[idx - 1]?.entry_date
+                    const holiday = getHolidayForDate(entry.entry_date)
 
                     return (
                       <div
                         key={`${entry.entry_date}-${entry.shift}`}
                         className={cn(
                           'grid grid-cols-[2fr_1fr_1fr] px-4 py-2 text-sm cursor-pointer border-b border-gray-100 transition-colors',
-                          isSelected
+                          holiday
+                            ? 'bg-red-100 text-red-700 cursor-not-allowed hover:bg-red-200'
+                            : isSelected
                             ? 'bg-blue-500 text-white'
                             : entry.hasData
                               ? 'bg-orange-50 hover:bg-blue-100'
@@ -392,10 +403,11 @@ export default function DateShiftListPage({
                         )}
                         onClick={() => handleRowClick(entry, idx)}
                         onDoubleClick={() => handleRowDoubleClick(entry)}
+                        title={holiday ? `Holiday: ${holiday.description || 'Production work is not allowed'}` : undefined}
                       >
                         <div className={cn(
                           'font-medium',
-                          isSelected ? 'text-white' : 'text-gray-800'
+                          holiday ? 'text-red-700 line-through' : isSelected ? 'text-white' : 'text-gray-800'
                         )}>
                           {format(new Date(entry.entry_date + 'T00:00:00'), 'dd-MMM-yy')}
                         </div>
@@ -654,14 +666,10 @@ export default function DateShiftListPage({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
+                  <HolidayAwareCalendar
                     mode="single"
                     selected={newEntryDate}
                     onSelect={(d) => d && setNewEntryDate(d)}
-                    disabled={isDateAHoliday}
-                    classNames={{
-                      disabled: "text-red-500 bg-red-50 line-through cursor-not-allowed opacity-75 font-semibold hover:bg-red-50 hover:text-red-500"
-                    }}
                     initialFocus
                   />
                 </PopoverContent>
@@ -691,23 +699,18 @@ export default function DateShiftListPage({
               onClick={() => {
                 const formattedDate = format(newEntryDate, 'yyyy-MM-dd')
                 const exists = entries.some(e => e.entry_date === formattedDate && String(e.shift) === String(newEntryShift))
+                const matchingHoliday = getHolidayForDate(formattedDate)
+
+                if (matchingHoliday) {
+                  toast.error(`Cannot add entry. ${format(newEntryDate, 'dd-MMM-yyyy')} is a holiday: ${matchingHoliday.description || 'Holiday'}`)
+                  return
+                }
                 
                 if (exists) {
                   toast.warning(`Entry for ${format(newEntryDate, 'dd-MMM-yyyy')} Shift ${newEntryShift} already exists. Opening it.`)
                   navigateToEntry({ entry_date: formattedDate, shift: parseInt(newEntryShift) })
                   setIsAddDialogOpen(false)
                 } else {
-                  if (moduleName === 'Spinning' || moduleName === 'Autoconer') {
-                    const matchingHoliday = holidaysList.find(h => {
-                      const hdStr = h.date ? String(h.date).split('T')[0] : ''
-                      return formattedDate === hdStr
-                    })
-                    if (matchingHoliday) {
-                      toast.error(`Cannot add entry. ${format(newEntryDate, 'dd-MMM-yyyy')} is a holiday: ${matchingHoliday.description || 'Holiday'}`)
-                      return
-                    }
-                  }
-
                   navigateToEntry({ entry_date: formattedDate, shift: parseInt(newEntryShift) })
                   setIsAddDialogOpen(false)
                 }

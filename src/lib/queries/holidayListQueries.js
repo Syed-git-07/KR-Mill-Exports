@@ -655,9 +655,12 @@ export async function isHoliday(dateString) {
   try {
     const formattedDate = normalizeDateForSQL(dateString)
     const [result] = await prisma.$queryRaw`
-      SELECT id, description, type
-      FROM holidays
-      WHERE date = ${formattedDate}
+      SELECT h.id, h.description, h.type
+      FROM holidays h
+      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      WHERE h.date = ${formattedDate}
+        AND hl.status = 'Active'
+        AND h.date BETWEEN hl.startDate AND hl.endDate
       LIMIT 1
     `
     return result || null
@@ -666,7 +669,7 @@ export async function isHoliday(dateString) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const sql = `SELECT id, description, type FROM \`${schemaName}\`.holidays WHERE date = '${normalizeDateForSQL(dateString)}' LIMIT 1`
+          const sql = `SELECT h.id, h.description, h.type FROM \`${schemaName}\`.holidays h INNER JOIN \`${schemaName}\`.holiday_lists hl ON hl.id = h.holidayListId WHERE h.date = '${normalizeDateForSQL(dateString)}' AND hl.status = 'Active' AND h.date BETWEEN hl.startDate AND hl.endDate LIMIT 1`
           const [result] = await prisma.$queryRawUnsafe(sql)
           return result || null
         }
@@ -682,8 +685,11 @@ export async function isHoliday(dateString) {
 export async function getAllHolidayDates() {
   try {
     const holidays = await prisma.$queryRaw`
-      SELECT date
-      FROM holidays
+      SELECT h.date
+      FROM holidays h
+      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      WHERE hl.status = 'Active'
+        AND h.date BETWEEN hl.startDate AND hl.endDate
     `
     return (holidays || []).map(h => h.date)
   } catch (error) {
@@ -691,7 +697,7 @@ export async function getAllHolidayDates() {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const sql = `SELECT date FROM \`${schemaName}\`.holidays`
+          const sql = `SELECT h.date FROM \`${schemaName}\`.holidays h INNER JOIN \`${schemaName}\`.holiday_lists hl ON hl.id = h.holidayListId WHERE hl.status = 'Active' AND h.date BETWEEN hl.startDate AND hl.endDate`
           const holidays = await prisma.$queryRawUnsafe(sql)
           return (holidays || []).map(h => h.date)
         }
