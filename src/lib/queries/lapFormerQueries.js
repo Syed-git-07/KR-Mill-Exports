@@ -6,6 +6,7 @@ import {
   getLapFormerActProdnConstant,
   resolveLapFormerFormulaInputs,
 } from '../lapFormerFormulaFallback';
+import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 
 function compareLapFormerMachines(a, b) {
   const sortA = a?.sort_order ?? 9999;
@@ -807,7 +808,7 @@ export async function applyLapFormerFullStoppage(headerId, stoppageId, stoppageT
   const stoppages = await getLapFormerStoppageEntries(headerId);
   
   // Get machine setups for recalculation
-  const setups = await getLapFormerMachineSetups();
+  const setups = await getLapFormerMachineSetups(headerId);
   const setupMap = {};
   setups?.forEach(s => {
     setupMap[s.machine_id] = s;
@@ -903,7 +904,7 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
     const totalTime = Number(header?.total_time) || await getLapFormerShiftTime(header?.shift || 1);
 
     // Get machine setups for recalculation (speed already merged from machine table)
-    const setups = await getLapFormerMachineSetups();
+    const setups = await getLapFormerMachineSetups(headerId);
     const setupMap = {};
     setups?.forEach(s => {
       setupMap[s.machine_id] = s;
@@ -1099,8 +1100,11 @@ export async function getLapFormerMachineSetups(headerId = null) {
   ]);
 
   const machineIds = machines.map(m => m.id);
-  const data = await prisma.lap_former_machine_setup.findMany({
-    where: { machine_id: { in: machineIds } }
+  const data = await getOrCreateDateScopedSetups({
+    setupModel: prisma.lap_former_machine_setup,
+    headerModel: prisma.lap_former_production_header,
+    headerId: validHeaderId,
+    machineIds
   });
 
   const machineMap = {};
@@ -1133,9 +1137,9 @@ export async function getLapFormerMachineSetups(headerId = null) {
 }
 
 // Update or create machine setup
-export async function updateLapFormerMachineSetup(machineId, updates) {
-  const existingSetup = await prisma.lap_former_machine_setup.findFirst({
-    where: { machine_id: machineId },
+export async function updateLapFormerMachineSetup(setupId, updates) {
+  const existingSetup = await prisma.lap_former_machine_setup.findUnique({
+    where: { id: setupId },
     select: {
       id: true,
       machine_id: true,
@@ -1147,17 +1151,15 @@ export async function updateLapFormerMachineSetup(machineId, updates) {
       delivery: true
     }
   });
+  if (!existingSetup) throw new Error(`Lap former setup ${setupId} not found`);
+  const machineId = existingSetup.machine_id;
 
   const speedWasUpdated = updates.speed !== undefined;
 
-  // If speed is being updated, store it in setup table and machine table
+  // Store speed only in this date/shift snapshot.
   if (speedWasUpdated) {
     const numSpeed = Number(updates.speed) || 0;
     updates.speed = numSpeed;
-    await prisma.lap_former_machines.update({
-      where: { id: machineId },
-      data: { speed: numSpeed }
-    }).catch(() => {});
   }
 
   // Recalculate std_prodn if any formula input changes
@@ -1208,24 +1210,8 @@ export async function updateLapFormerMachineSetup(machineId, updates) {
     ) / 100;
   }
 
-  if (!existingSetup) {
-    // Create new setup
-    const data = await prisma.lap_former_machine_setup.create({
-      data: { machine_id: machineId, ...updates }
-    });
-
-    const machine = await prisma.lap_former_machines.findUnique({
-      where: { id: machineId },
-      select: { id: true, machine_no: true, speed: true }
-    });
-
-    return { ...data, machine, speed: machine?.speed ?? data.speed };
-  }
-
   if (Object.keys(updates).length === 0) {
-    const data = await prisma.lap_former_machine_setup.findFirst({
-      where: { machine_id: machineId }
-    });
+    const data = await prisma.lap_former_machine_setup.findUnique({ where: { id: setupId } });
 
     const machine = await prisma.lap_former_machines.findUnique({
       where: { id: machineId },
@@ -1236,7 +1222,7 @@ export async function updateLapFormerMachineSetup(machineId, updates) {
   }
 
   const data = await prisma.lap_former_machine_setup.update({
-    where: { id: existingSetup.id },
+    where: { id: setupId },
     data: updates
   });
 

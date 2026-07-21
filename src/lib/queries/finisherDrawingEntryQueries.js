@@ -5,6 +5,7 @@ import {
   resolveFinisherDrawingFormulaInputs,
   calculateFinisherDrawingStdProdn,
 } from '../finisherDrawingFormulaFallback';
+import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -399,12 +400,12 @@ export async function initializeFinisherDrawingDetails(headerId) {
     })
 
     const machineIds = machines.map(m => m.id)
-    const setups = machineIds.length > 0
-      ? await prisma.finisher_drawing_machine_setup.findMany({
-          where: { machine_id: { in: machineIds } },
-          orderBy: { machine_id: 'asc' }
-        })
-      : []
+    const setups = await getOrCreateDateScopedSetups({
+      setupModel: prisma.finisher_drawing_machine_setup,
+      headerModel: prisma.finisher_drawing_production_header,
+      headerId,
+      machineIds
+    })
 
     const setupMap = {}
     setups?.forEach(s => {
@@ -497,11 +498,12 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     })
 
     const machineIds = machines.map(m => m.id)
-    const setups = machineIds.length > 0
-      ? await prisma.finisher_drawing_machine_setup.findMany({
-          where: { machine_id: { in: machineIds } }
-        })
-      : []
+    const setups = await getOrCreateDateScopedSetups({
+      setupModel: prisma.finisher_drawing_machine_setup,
+      headerModel: prisma.finisher_drawing_production_header,
+      headerId,
+      machineIds
+    })
 
     const setupMap = {}
     setups?.forEach(s => {
@@ -833,7 +835,7 @@ export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, sto
     }
     
     // Get machine setups for recalculation
-    const setups = await getFinisherDrawingMachineSetups()
+    const setups = await getFinisherDrawingMachineSetups(headerId)
     const setupMap = {}
     setups?.forEach(s => {
       setupMap[s.machine_id] = s
@@ -920,7 +922,7 @@ export async function applyFinisherDrawingPartialStoppage(headerId, fromMachineN
     const totalTime = header?.total_time || await getFinisherDrawingShiftTime(header?.shift || 1)
 
     // Get machine setups for recalculation
-    const setups = await getFinisherDrawingMachineSetups()
+    const setups = await getFinisherDrawingMachineSetups(headerId)
     const setupMap = {}
     setups?.forEach(s => {
       setupMap[s.machine_id] = s
@@ -1069,25 +1071,19 @@ export async function applyFinisherDrawingPartialStoppage(headerId, fromMachineN
 export async function getFinisherDrawingMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
-    const data = await prisma.finisher_drawing_machine_setup.findMany({
-      orderBy: { machine_id: 'asc' }
+    const machines = await prisma.drawing_finisher_machines.findMany({
+      where: { is_active: true },
+      select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
     })
-
-    const machineIds = [...new Set((data || []).map(s => s.machine_id).filter(Boolean))]
-    const [machines, headerDetails] = await Promise.all([
-      machineIds.length > 0
-        ? prisma.drawing_finisher_machines.findMany({
-            where: { id: { in: machineIds }, is_active: true },
-            select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
-          })
-        : Promise.resolve([]),
-      validHeaderId
-        ? prisma.finisher_drawing_production_detail.findMany({
-            where: { header_id: validHeaderId },
-            select: { machine_id: true, prodn_mixing: true }
-          })
-        : Promise.resolve([])
-    ])
+    const data = await getOrCreateDateScopedSetups({
+      setupModel: prisma.finisher_drawing_machine_setup,
+      headerModel: prisma.finisher_drawing_production_header,
+      headerId: validHeaderId,
+      machineIds: machines.map(machine => machine.id)
+    })
+    const headerDetails = validHeaderId
+      ? await prisma.finisher_drawing_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
+      : []
 
     const machineMap = {}
     if (Array.isArray(machines)) {
@@ -1119,7 +1115,7 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
 }
 
 // Update machine setup - accepts machine_id
-export async function updateFinisherDrawingMachineSetup(machineId, updates) {
+export async function updateFinisherDrawingMachineSetup(setupId, updates) {
   try {
     const hasSpeedUpdate = updates.speed != null
     const hasFormulaRuntimeUpdate = (
@@ -1131,12 +1127,11 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
       updates.divisor_constant != null
     )
 
-    // First check if setup exists for this machine
-    const existingSetup = await prisma.finisher_drawing_machine_setup.findFirst({
-      where: { machine_id: machineId },
-      orderBy: { updated_at: 'desc' },
+    const existingSetup = await prisma.finisher_drawing_machine_setup.findUnique({
+      where: { id: setupId },
       select: {
         id: true,
+        machine_id: true,
         speed: true,
         hank_constant: true,
         std_efficiency_factor: true,
@@ -1153,17 +1148,13 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
         throw new Error('Invalid speed value')
       }
       updates.speed = normalizedSpeed
-      await prisma.drawing_finisher_machines.update({
-        where: { id: machineId },
-        data: { speed: normalizedSpeed }
-      }).catch(() => {})
     }
 
     // Recalculate std_prodn if other params change
     if (hasFormulaRuntimeUpdate) {
       // Get current speed from machine table
       const machine = await prisma.drawing_finisher_machines.findUnique({
-        where: { id: machineId },
+        where: { id: existingSetup.machine_id },
         select: { speed: true }
       })
 
@@ -1195,35 +1186,13 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
       ) / 100
     }
 
-    if (!existingSetup) {
-      // Create new setup
-      const data = await prisma.finisher_drawing_machine_setup.create({
-        data: {
-          machine_id: machineId,
-          ...updates
-        }
-      })
-
-      const machine = await prisma.drawing_finisher_machines.findUnique({
-        where: { id: machineId },
-        select: {
-          id: true,
-          machine_no: true,
-          speed: true
-        }
-      })
-
-      return { ...data, machine: machine || null, speed: machine?.speed ?? data.speed }
-    }
+    if (!existingSetup) throw new Error(`Finisher drawing setup ${setupId} not found`)
 
     if (Object.keys(updates).length === 0) {
-      const data = await prisma.finisher_drawing_machine_setup.findFirst({
-        where: { machine_id: machineId },
-        orderBy: { updated_at: 'desc' }
-      })
+      const data = await prisma.finisher_drawing_machine_setup.findUnique({ where: { id: setupId } })
 
       const machine = await prisma.drawing_finisher_machines.findUnique({
-        where: { id: machineId },
+        where: { id: existingSetup.machine_id },
         select: {
           id: true,
           machine_no: true,
@@ -1235,7 +1204,7 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
     }
 
     const data = await prisma.finisher_drawing_machine_setup.update({
-      where: { id: existingSetup.id },
+      where: { id: setupId },
       data: {
         ...updates,
         updated_at: new Date()
@@ -1243,17 +1212,13 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
     })
 
     const machine = await prisma.drawing_finisher_machines.findUnique({
-      where: { id: machineId },
+      where: { id: existingSetup.machine_id },
       select: {
         id: true,
         machine_no: true,
         speed: true
       }
     })
-
-    if (hasFormulaRuntimeUpdate) {
-      await recalculateFinisherDrawingDetailsForMachine(machineId)
-    }
 
     return { ...data, machine: machine || null, speed: machine?.speed ?? data.speed }
   } catch (error) {

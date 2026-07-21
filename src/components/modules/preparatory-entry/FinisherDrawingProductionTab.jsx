@@ -284,7 +284,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
       const [detailsResult, setupsResult] = await Promise.all([
         getFinisherDrawingProductionDetailsAction(headerId),
-        getFinisherDrawingMachineSetupsAction()
+        getFinisherDrawingMachineSetupsAction(1, headerId)
       ])
       
       const details = detailsResult.success ? detailsResult.data : []

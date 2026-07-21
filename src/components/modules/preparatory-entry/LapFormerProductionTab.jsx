@@ -276,7 +276,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
     try {
       const [detailsResult, setupsResult] = await Promise.all([
         getLapFormerProductionWithSetupAction(headerId),
-        getLapFormerMachineSetupsAction()
+        getLapFormerMachineSetupsAction(headerId)
       ])
       
       if (!detailsResult.success) {

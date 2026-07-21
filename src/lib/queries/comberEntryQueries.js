@@ -6,6 +6,7 @@ import {
   calculateComberConstantFromSlHank,
   resolveComberFormulaInputs,
 } from '../comberFormulaFallback'
+import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 
 // ============================================
 // COMBER CONSTANTS
@@ -621,7 +622,7 @@ export async function updateComberStoppageEntry(id, updates) {
     const header = detail?.header_id
       ? await prisma.comber_production_header.findUnique({
           where: { id: detail.header_id },
-          select: { shift: true }
+          select: { shift: true, entry_date: true }
         })
       : null
 
@@ -629,7 +630,7 @@ export async function updateComberStoppageEntry(id, updates) {
     const totalTime = shiftConfig.totalTime
     const setup = detail?.machine_id
       ? await prisma.comber_machine_setup.findFirst({
-          where: { machine_id: detail.machine_id }
+          where: { machine_id: detail.machine_id, entry_date: header.entry_date, shift: header.shift }
         })
       : null
 
@@ -810,25 +811,19 @@ export async function applyComberPartialStoppage(headerId, fromMachineNo, toMach
 export async function getComberMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
-    const setups = await prisma.comber_machine_setup.findMany({
-      orderBy: { machine_id: 'asc' }
+    const machines = await prisma.comber_machines.findMany({
+      where: { is_active: true },
+      select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
     })
-
-    const machineIds = [...new Set((setups || []).map(s => s.machine_id).filter(Boolean))]
-    const [machines, headerDetails] = await Promise.all([
-      machineIds.length > 0
-        ? prisma.comber_machines.findMany({
-            where: { id: { in: machineIds }, is_active: true },
-            select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
-          })
-        : Promise.resolve([]),
-      validHeaderId
-        ? prisma.comber_production_detail.findMany({
-            where: { header_id: validHeaderId },
-            select: { machine_id: true, prodn_mixing: true }
-          })
-        : Promise.resolve([])
-    ])
+    const setups = await getOrCreateDateScopedSetups({
+      setupModel: prisma.comber_machine_setup,
+      headerModel: prisma.comber_production_header,
+      headerId: validHeaderId,
+      machineIds: machines.map(machine => machine.id)
+    })
+    const headerDetails = validHeaderId
+      ? await prisma.comber_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
+      : []
 
     const machineMap = {}
     if (Array.isArray(machines)) {
@@ -870,13 +865,6 @@ export async function updateComberMachineSetup(setupId, updates) {
       where: { id: setupId },
       select: { machine_id: true }
     })
-
-    if (updates.speed !== undefined && currentSetup?.machine_id) {
-      await prisma.comber_machines.update({
-        where: { id: currentSetup.machine_id },
-        data: { speed: Number(updates.speed) || 0 }
-      }).catch(() => {})
-    }
 
     const data = await prisma.comber_machine_setup.update({
       where: { id: setupId },

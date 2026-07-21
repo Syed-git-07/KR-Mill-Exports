@@ -216,7 +216,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
         getLapFormerStoppageEntriesAction(headerId),
         getLapFormerStoppageReasonsAction(),
         getLapFormerMachinesAction(),
-        getLapFormerMachineSetupsAction()
+        getLapFormerMachineSetupsAction(headerId)
       ])
       
       if (!stoppagesResult.success) throw new Error(stoppagesResult.error)

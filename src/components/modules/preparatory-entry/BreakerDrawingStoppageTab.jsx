@@ -293,7 +293,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
         getBreakerDrawingStoppageEntriesAction(headerId),
         getBreakerDrawingStoppageReasonsAction(),
         getBreakerDrawingMachinesAction(),
-        getBreakerDrawingMachineSetupsAction()
+        getBreakerDrawingMachineSetupsAction(shift, headerId)
       ])
       
       // Check for errors in responses

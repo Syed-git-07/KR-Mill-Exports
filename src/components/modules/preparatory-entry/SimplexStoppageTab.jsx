@@ -217,7 +217,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
         getSimplexStoppageEntriesAction(headerId),
         getSimplexStoppageReasonsAction(),
         getSimplexMachinesAction(),
-        getSimplexMachineSetupsAction()
+        getSimplexMachineSetupsAction(headerId)
       ])
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []

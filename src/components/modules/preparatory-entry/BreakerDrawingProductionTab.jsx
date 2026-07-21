@@ -227,7 +227,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
       const [detailsResult, setupsResult] = await Promise.all([
         getBreakerDrawingProductionWithSetupAction(headerId),
-        getBreakerDrawingMachineSetupsAction()
+        getBreakerDrawingMachineSetupsAction(1, headerId)
       ])
       
       const details = detailsResult?.data || []

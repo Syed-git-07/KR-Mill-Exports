@@ -206,7 +206,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     try {
       const [detailsResult, setupsResult] = await Promise.all([
         getSimplexProductionWithSetupAction(headerId),
-        getSimplexMachineSetupsAction()
+        getSimplexMachineSetupsAction(headerId)
       ])
       
       const setupMap = {}

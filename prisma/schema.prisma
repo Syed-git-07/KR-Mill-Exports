@@ -119,6 +119,8 @@ model autoconer_stoppage_entry {
 model breaker_drawing_machine_setup {
   id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id            String    @db.Char(36)
+  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                 Int       @default(1)
   speed                 Int?      @default(750)
   hank_constant         Decimal?  @default(0.1400) @db.Decimal(10, 4)
   std_efficiency_factor Decimal?  @default(0.8500) @db.Decimal(5, 4)
@@ -130,6 +132,8 @@ model breaker_drawing_machine_setup {
   delivery              Int?      @default(1)
   created_at            DateTime? @default(now()) @db.DateTime(0)
   updated_at            DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_breaker_setup_date")
 }
 
 model breaker_drawing_production_detail {
@@ -288,6 +292,8 @@ model carding_stoppage_entry {
 model comber_machine_setup {
   id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id    String    @db.Char(36)
+  entry_date    DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift         Int       @default(1)
   prodn_mixing  String?   @db.VarChar(100)
   session_no    Int?      @default(1)
   cc_time       Int?      @default(0)
@@ -299,6 +305,8 @@ model comber_machine_setup {
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
   description   String?   @db.Text
+
+  @@unique([machine_id, entry_date, shift], name: "idx_comber_setup_date")
 }
 
 model comber_machines {
@@ -439,6 +447,8 @@ model drawing_finisher_machines {
 model finisher_drawing_machine_setup {
   id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id            String    @db.Char(36)
+  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                 Int       @default(1)
   speed                 Int?      @default(350)
   hank_constant         Decimal?  @default(0.1400) @db.Decimal(10, 4)
   std_efficiency_factor Decimal?  @default(0.9000) @db.Decimal(5, 4)
@@ -453,6 +463,8 @@ model finisher_drawing_machine_setup {
   created_at            DateTime? @default(now()) @db.DateTime(0)
   updated_at            DateTime? @default(now()) @db.DateTime(0)
   prodn_mixing          String?   @db.VarChar(100)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_finisher_setup_date")
 }
 
 model finisher_drawing_production_detail {
@@ -535,6 +547,8 @@ model hok_strength_head {
 model lap_former_machine_setup {
   id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id            String    @db.Char(36)
+  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                 Int       @default(1)
   speed                 Int?      @default(90)
   hank_constant         Decimal?  @default(0.0082) @db.Decimal(10, 4)
   std_efficiency_factor Decimal?  @default(0.8500) @db.Decimal(5, 4)
@@ -546,6 +560,8 @@ model lap_former_machine_setup {
   delivery              Int?      @default(1)
   created_at            DateTime? @default(now()) @db.DateTime(0)
   updated_at            DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_lap_former_setup_date")
 }
 
 model lap_former_machines {
@@ -628,6 +644,8 @@ model lap_former_stoppage_entry {
 model simplex_machine_setup {
   id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id    String    @db.Char(36)
+  entry_date    DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift         Int       @default(1)
   prodn_mixing  String?   @db.VarChar(50)
   session_no    Int?      @default(1)
   cc_time       Int?      @default(0)
@@ -639,6 +657,8 @@ model simplex_machine_setup {
   default_waste Decimal?  @default(0.9000) @db.Decimal(10, 4)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([machine_id, entry_date, shift], name: "idx_simplex_setup_date")
 }
 
 model simplex_machines {

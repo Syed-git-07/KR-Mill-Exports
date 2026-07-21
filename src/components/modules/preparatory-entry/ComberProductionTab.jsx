@@ -229,7 +229,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
 
       const [detailsResult, setupsResult] = await Promise.all([
         getComberProductionWithSetupAction(headerId),
-        getComberMachineSetupsAction()
+        getComberMachineSetupsAction(headerId)
       ])
       
       if (!detailsResult.success || !setupsResult.success) {

@@ -311,7 +311,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       }
 
       const updatePromises = resolvedUpdates.map(({ row, changes }) =>
-        updateFinisherDrawingMachineSetupAction(row.machine_id, changes)
+        updateFinisherDrawingMachineSetupAction(row.id, changes)
       )
 
       if (updatePromises.length === 0) {

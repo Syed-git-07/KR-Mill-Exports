@@ -329,7 +329,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       }
 
       const updatePromises = resolvedUpdates.map(({ row, changes }) =>
-        updateLapFormerMachineSetupAction(row.machine_id, changes)
+        updateLapFormerMachineSetupAction(row.id, changes)
       )
 
       if (updatePromises.length === 0) {

@@ -282,7 +282,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
         getComberStoppageEntriesAction(headerId),
         getComberStoppageReasonsAction(),
         getComberMachinesAction(),
-        getComberMachineSetupsAction()
+        getComberMachineSetupsAction(headerId)
       ])
       
       if (!stoppagesResult.success || !reasonsResult.success || !machineListResult.success || !setupsResult.success) {
