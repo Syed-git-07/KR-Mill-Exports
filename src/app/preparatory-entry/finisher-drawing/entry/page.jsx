@@ -729,6 +729,7 @@ function FinisherDrawingEntryContent() {
               <TabsContent value="setup" className="m-0 data-[state=inactive]:hidden" forceMount>
                 <FinisherDrawingMachineSetupTab
                   ref={setupTabRef}
+                  headerId={headerId}
                   shift={parseInt(shift)}
                   totalTime={tabTotalTime}
                   onRefresh={handleRefresh}

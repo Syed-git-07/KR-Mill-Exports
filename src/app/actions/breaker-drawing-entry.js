@@ -147,9 +147,9 @@ export async function getBreakerDrawingStoppageReasonsAction() {
 // MACHINE SETUP ACTIONS
 // ============================================
 
-export async function getBreakerDrawingMachineSetupsAction(shift = 1) {
+export async function getBreakerDrawingMachineSetupsAction(shift = 1, headerId = null) {
   try {
-    const data = await queries.getBreakerDrawingMachineSetups()
+    const data = await queries.getBreakerDrawingMachineSetups(headerId)
     // Get shift-based time values (await async function)
     const shiftTime = await queries.getBreakerDrawingShiftTime(shift)
     
@@ -239,9 +239,9 @@ export async function getMixingOptionsAction() {
 }
 
 // Update machine mixing
-export async function updateBreakerDrawingMachineMixingAction(machineId, mixing) {
+export async function updateBreakerDrawingMachineMixingAction(machineId, mixing, headerId = null) {
   try {
-    const data = await queries.updateBreakerDrawingMachineMixing(machineId, mixing)
+    const data = await queries.updateBreakerDrawingMachineMixing(machineId, mixing, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }
@@ -249,9 +249,9 @@ export async function updateBreakerDrawingMachineMixingAction(machineId, mixing)
 }
 
 // Bulk update machine mixing
-export async function bulkUpdateBreakerDrawingMachineMixingAction(machineIds, mixing) {
+export async function bulkUpdateBreakerDrawingMachineMixingAction(machineIds, mixing, headerId = null) {
   try {
-    const data = await queries.bulkUpdateBreakerDrawingMachineMixing(machineIds, mixing)
+    const data = await queries.bulkUpdateBreakerDrawingMachineMixing(machineIds, mixing, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }

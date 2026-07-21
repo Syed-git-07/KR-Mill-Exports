@@ -962,40 +962,52 @@ export async function applySimplexPartialStoppage(headerId, fromMachineNo, toMac
 // ============================================
 
 // Get all machine setups with machine info (only active machines)
-export async function getSimplexMachineSetups() {
+export async function getSimplexMachineSetups(headerId = null) {
   try {
+    const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
     const setups = await prisma.simplex_machine_setup.findMany({
       orderBy: { machine_id: 'asc' }
     })
 
-    if (!setups || setups.length === 0) return []
-
-    const machineIds = setups.map(s => s.machine_id)
-    const machines = await prisma.simplex_machines.findMany({
-      where: {
-        id: { in: machineIds },
-        is_active: true
-      },
-      select: {
-        id: true,
-        machine_no: true,
-        description: true,
-        make_name: true,
-        prodn_mixing: true,
-        speed: true,
-        mc_effi: true,
-        tpi: true,
-        no_of_spindles: true,
-        is_active: true
-      }
-    })
+    const machineIds = [...new Set((setups || []).map(s => s.machine_id).filter(Boolean))]
+    const [machines, headerDetails] = await Promise.all([
+      machineIds.length > 0
+        ? prisma.simplex_machines.findMany({
+            where: { id: { in: machineIds }, is_active: true },
+            select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true }
+          })
+        : Promise.resolve([]),
+      validHeaderId
+        ? prisma.simplex_production_detail.findMany({
+            where: { header_id: validHeaderId },
+            select: { machine_id: true, prodn_mixing: true }
+          })
+        : Promise.resolve([])
+    ])
 
     const machineMap = {}
-    machines?.forEach(m => { machineMap[m.id] = m })
+    if (Array.isArray(machines)) {
+      machines.forEach(m => { machineMap[m.id] = m })
+    }
+
+    const mixingMap = {}
+    if (Array.isArray(headerDetails)) {
+      headerDetails.forEach(d => {
+        if (d.prodn_mixing) mixingMap[d.machine_id] = d.prodn_mixing
+      })
+    }
 
     return setups
       .filter(s => !!machineMap[s.machine_id])
-      .map(s => ({ ...s, machine: machineMap[s.machine_id] }))
+      .map(s => {
+        const machine = machineMap[s.machine_id]
+        const dateMixing = mixingMap[s.machine_id] ?? s.prodn_mixing ?? machine?.prodn_mixing
+        return {
+          ...s,
+          machine: machine ? { ...machine, prodn_mixing: dateMixing } : null,
+          prodn_mixing: dateMixing
+        }
+      })
   } catch (error) {
     throw error
   }
@@ -1025,44 +1037,17 @@ export async function updateSimplexMachineSetup(id, updates) {
       throw new Error(`Simplex machine setup ${id} not found`)
     }
 
-    const machineUpdates = {}
-
-    if (Object.prototype.hasOwnProperty.call(updates, 'speed')) {
-      const speed = parseInt(updates.speed, 10)
-      if (!Number.isNaN(speed)) machineUpdates.speed = speed
+    if (updates.speed !== undefined && currentSetup?.machine_id) {
+      await prisma.simplex_machines.update({
+        where: { id: currentSetup.machine_id },
+        data: { speed: Number(updates.speed) || 0 }
+      }).catch(() => {})
     }
 
-    if (Object.prototype.hasOwnProperty.call(updates, 'tpi')) {
-      const tpi = parseFloat(updates.tpi)
-      if (!Number.isNaN(tpi)) machineUpdates.tpi = tpi
-    }
-
-    if (Object.prototype.hasOwnProperty.call(updates, 'spindles')) {
-      const spindles = parseInt(updates.spindles, 10)
-      if (!Number.isNaN(spindles)) machineUpdates.no_of_spindles = spindles
-    }
-
-    if (Object.prototype.hasOwnProperty.call(updates, 'mc_effi')) {
-      const mcEffi = parseFloat(updates.mc_effi)
-      if (!Number.isNaN(mcEffi)) machineUpdates.mc_effi = mcEffi
-    }
-
-    const { speed: _speed, ...setupUpdates } = updates || {}
-
-    const [data] = await prisma.$transaction([
-      prisma.simplex_machine_setup.update({
-        where: { id },
-        data: setupUpdates
-      }),
-      ...(Object.keys(machineUpdates).length > 0
-        ? [
-            prisma.simplex_machines.update({
-              where: { id: currentSetup.machine_id },
-              data: machineUpdates
-            })
-          ]
-        : [])
-    ])
+    const data = await prisma.simplex_machine_setup.update({
+      where: { id },
+      data: updates
+    })
 
     return data
   } catch (error) {
@@ -1298,18 +1283,15 @@ export function calculateSimplexProductionValues(params) {
 // MACHINE SETUP UPDATE FUNCTIONS
 // ============================================
 
-// Bulk update machine count (updates both machines and setup tables)
-export async function bulkUpdateSimplexMachineCount(machineIds, countValue) {
+// Bulk update machine count on setup table and header details
+export async function bulkUpdateSimplexMachineCount(machineIds, countValue, headerId = null) {
   try {
-    // Update simplex_machines table
-    const machinePromises = machineIds.map(id => 
-      prisma.simplex_machines.update({
-        where: { id },
+    if (headerId && machineIds?.length > 0) {
+      await prisma.simplex_production_detail.updateMany({
+        where: { header_id: headerId, machine_id: { in: machineIds } },
         data: { prodn_mixing: countValue }
       })
-    )
-    
-    // Also update simplex_machine_setup table (this is where the displayed value comes from)
+    }
     const setupPromises = machineIds.map(id => 
       prisma.simplex_machine_setup.updateMany({
         where: { machine_id: id },
@@ -1317,22 +1299,8 @@ export async function bulkUpdateSimplexMachineCount(machineIds, countValue) {
       })
     )
     
-    // Also update existing production_detail records for consistency
-    const detailPromises = machineIds.map(id => 
-      prisma.simplex_production_detail.updateMany({
-        where: { machine_id: id },
-        data: { prodn_mixing: countValue }
-      })
-    )
-    
-    // Execute all updates
-    const [machines, setups, details] = await Promise.all([
-      Promise.all(machinePromises),
-      Promise.all(setupPromises),
-      Promise.all(detailPromises)
-    ])
-    
-    return machines
+    const setups = await Promise.all(setupPromises)
+    return setups
   } catch (error) {
     throw error
   }

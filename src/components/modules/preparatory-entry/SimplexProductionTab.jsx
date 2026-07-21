@@ -98,6 +98,9 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     const machine = row.machine || {}
     const base = draft ? { ...row, ...draft } : row
     const stoppageTime = (Array.isArray(base.stoppage) ? base.stoppage[0] : base.stoppage)?.total_stoppage_time ?? base.total_stoppage_mins ?? 0
+    if (!draft && base.act_prodn !== undefined && base.act_prodn !== null && Number(base.act_prodn) > 0) {
+      return base
+    }
 
     const runHrs = toNumber(base.run_hrs)
     const idleSpindles = parseInt(base.idle_spindles, 10) || 0

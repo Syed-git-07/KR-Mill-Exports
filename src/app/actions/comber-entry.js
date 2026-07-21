@@ -167,9 +167,9 @@ export async function syncNewMachinesToComberHeaderAction(headerId, shift = 1) {
 // MACHINE SETUP ACTIONS
 // ============================================
 
-export async function getComberMachineSetupsAction() {
+export async function getComberMachineSetupsAction(headerId = null) {
   try {
-    const data = await queries.getComberMachineSetups()
+    const data = await queries.getComberMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }
@@ -212,9 +212,9 @@ export async function updateComberMachineCountAction(machineId, newCount) {
   }
 }
 
-export async function bulkUpdateComberMachineCountAction(machineIds, newCount) {
+export async function bulkUpdateComberMachineCountAction(machineIds, newCount, headerId = null) {
   try {
-    const data = await queries.bulkUpdateComberMachineCount(machineIds, newCount)
+    const data = await queries.bulkUpdateComberMachineCount(machineIds, newCount, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }

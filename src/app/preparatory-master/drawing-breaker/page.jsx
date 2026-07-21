@@ -46,21 +46,25 @@ export default function DrawingBreakerPage() {
 
   useEffect(() => {
     loadMachines();
-    getDrawingBreakerCountOptionsAction().then(r => {
-      if (r.success) setCountOptions(r.data);
-    });
   }, []);
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const result = await getDrawingBreakerMachinesAction();
+      const [result, countRes] = await Promise.all([
+        getDrawingBreakerMachinesAction(),
+        getDrawingBreakerCountOptionsAction()
+      ]);
+      
+      if (countRes?.success) {
+        setCountOptions(countRes.data || []);
+      }
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
-      const formattedData = result.data.map(machine => ({
+      const formattedData = (result.data || []).map(machine => ({
         ...machine,
         mixing_display: machine.prodn_mixing || '-'
       }));

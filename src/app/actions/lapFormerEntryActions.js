@@ -184,9 +184,9 @@ export async function getLapFormerStoppageReasonsAction() {
 // MACHINE SETUP ACTIONS
 // ============================================
 
-export async function getLapFormerMachineSetupsAction() {
+export async function getLapFormerMachineSetupsAction(headerId = null) {
   try {
-    const data = await queries.getLapFormerMachineSetups()
+    const data = await queries.getLapFormerMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }
@@ -247,9 +247,9 @@ export async function removeLapFormerMachineAction(machineId) {
   }
 }
 
-export async function bulkUpdateLapFormerMachineMixingAction(machineIds, mixingValue) {
+export async function bulkUpdateLapFormerMachineMixingAction(machineIds, mixingValue, headerId = null) {
   try {
-    const data = await queries.bulkUpdateLapFormerMachineMixing(machineIds, mixingValue)
+    const data = await queries.bulkUpdateLapFormerMachineMixing(machineIds, mixingValue, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }

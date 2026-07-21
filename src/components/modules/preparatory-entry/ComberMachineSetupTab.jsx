@@ -32,6 +32,7 @@ import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { COMBER_FORMULA_FALLBACK } from '@/lib/comberFormulaFallback'
 
 const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
+  headerId = null,
   shift = 1,
   onRefresh,
   sharedDraftEdits,
@@ -160,7 +161,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     setIsLoading(true)
     try {
       const [setupsResult, countsResult] = await Promise.all([
-        getComberMachineSetupsAction(),
+        getComberMachineSetupsAction(headerId),
         getComberCountOptionsAction()
       ])
       
@@ -426,7 +427,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const result = await bulkUpdateComberMachineCountAction(selectedRows, countToSet)
+      const result = await bulkUpdateComberMachineCountAction(selectedRows, countToSet, headerId)
       if (!result.success) throw new Error(result.error)
       toast.success(`Count updated for ${selectedRows.length} machine(s)`)
       setShowCountChangeDialog(false)

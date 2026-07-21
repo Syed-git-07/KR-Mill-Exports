@@ -13,6 +13,7 @@ import DataGrid from '@/components/common/DataGrid'
 import FormModal from '@/components/common/FormModal'
 import HolidayListForm from '@/components/modules/post-preparatory/HolidayListForm'
 import HolidayForm from '@/components/modules/post-preparatory/HolidayForm'
+import ImportHolidaysModal from '@/components/modules/post-preparatory/ImportHolidaysModal'
 import {
   getHolidayListsAction,
   searchHolidayListsAction,
@@ -35,6 +36,7 @@ export default function HolidayListManagement() {
   const [isManageModalOpen, setIsManageModalOpen] = useState(false)
   const [holidays, setHolidays] = useState([])
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isEditingHoliday, setIsEditingHoliday] = useState(false)
   const [selectedHoliday, setSelectedHoliday] = useState(null)
   const [isSubmittingList, setIsSubmittingList] = useState(false)
@@ -400,7 +402,7 @@ export default function HolidayListManagement() {
                 <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-2" onClick={handleAddHoliday}>
                   <PlusCircle className="h-4 w-4" /> Add Holiday
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => toast.info('Import Holidays is a future enhancement')}>
+                <Button variant="outline" className="gap-2" onClick={() => setIsImportModalOpen(true)}>
                   <Download className="h-4 w-4" /> Import Holidays
                 </Button>
               </div>
@@ -441,6 +443,18 @@ export default function HolidayListManagement() {
           formId="holiday-form"
         />
       </FormModal>
+
+      <ImportHolidaysModal
+        open={isImportModalOpen}
+        onOpenChange={setIsImportModalOpen}
+        holidayList={selectedHolidayList}
+        existingHolidays={holidays}
+        onSuccess={() => {
+          if (selectedHolidayList?.id) {
+            loadHolidays(selectedHolidayList.id)
+          }
+        }}
+      />
     </div>
   )
 }

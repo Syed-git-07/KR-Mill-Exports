@@ -13,8 +13,7 @@
  *   autoconer_production_detail   →  count_name, act_prodn
  */
 
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const { prisma } = require('../../../../../lib/prisma')
 
 /**
  * Normalise a date string to local YYYY-MM-DD (avoids UTC-offset issues).
@@ -115,8 +114,6 @@ async function getAutoconerCountWiseProductionReport(fromDate, toDate = null) {
   } catch (error) {
     console.error('Error fetching autoconer count-wise production report:', error)
     throw error
-  } finally {
-    await prisma.$disconnect()
   }
 }
 

@@ -45,21 +45,25 @@ export default function CardingMachinePage() {
 
   useEffect(() => {
     loadMachines();
-    getCardingCountOptionsAction().then(r => {
-      if (r.success) setCountOptions(r.data);
-    });
   }, []);
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const result = await getCardingMachinesAction();
+      const [result, countRes] = await Promise.all([
+        getCardingMachinesAction(),
+        getCardingCountOptionsAction()
+      ]);
+      
+      if (countRes?.success) {
+        setCountOptions(countRes.data || []);
+      }
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
-      const formattedData = result.data.map(machine => ({
+      const formattedData = (result.data || []).map(machine => ({
         ...machine,
         mixing_display: machine.prodn_mixing || '-'
       }));

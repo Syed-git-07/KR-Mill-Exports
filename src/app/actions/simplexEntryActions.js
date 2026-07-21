@@ -186,9 +186,9 @@ export async function getSimplexStoppageReasonsAction() {
 // MACHINE SETUP ACTIONS
 // ============================================
 
-export async function getSimplexMachineSetupsAction() {
+export async function getSimplexMachineSetupsAction(headerId = null) {
   try {
-    const data = await queries.getSimplexMachineSetups()
+    const data = await queries.getSimplexMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }
@@ -291,9 +291,9 @@ export async function minutesToRunHoursAction(minutes) {
 // MACHINE MANAGEMENT ACTIONS
 // ============================================
 
-export async function bulkUpdateSimplexMachineCountAction(machineIds, countValue) {
+export async function bulkUpdateSimplexMachineCountAction(machineIds, countValue, headerId = null) {
   try {
-    const data = await queries.bulkUpdateSimplexMachineCount(machineIds, countValue)
+    const data = await queries.bulkUpdateSimplexMachineCount(machineIds, countValue, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }

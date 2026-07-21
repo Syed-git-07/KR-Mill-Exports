@@ -807,43 +807,51 @@ export async function applyComberPartialStoppage(headerId, fromMachineNo, toMach
 // ============================================
 
 // Get all machine setups with machine info
-export async function getComberMachineSetups() {
+export async function getComberMachineSetups(headerId = null) {
   try {
+    const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
     const setups = await prisma.comber_machine_setup.findMany({
       orderBy: { machine_id: 'asc' }
     })
 
     const machineIds = [...new Set((setups || []).map(s => s.machine_id).filter(Boolean))]
-    const machines = machineIds.length > 0
-      ? await prisma.comber_machines.findMany({
-          where: {
-            id: { in: machineIds },
-            is_active: true
-          },
-          select: {
-            id: true,
-            machine_no: true,
-            description: true,
-            mc_id: true,
-            make_name: true,
-            prodn_mixing: true,
-            speed: true,
-            mc_effi: true,
-            is_active: true
-          }
-        })
-      : []
+    const [machines, headerDetails] = await Promise.all([
+      machineIds.length > 0
+        ? prisma.comber_machines.findMany({
+            where: { id: { in: machineIds }, is_active: true },
+            select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
+          })
+        : Promise.resolve([]),
+      validHeaderId
+        ? prisma.comber_production_detail.findMany({
+            where: { header_id: validHeaderId },
+            select: { machine_id: true, prodn_mixing: true }
+          })
+        : Promise.resolve([])
+    ])
 
     const machineMap = {}
-    machines.forEach(m => {
-      machineMap[m.id] = m
-    })
+    if (Array.isArray(machines)) {
+      machines.forEach(m => { machineMap[m.id] = m })
+    }
+
+    const mixingMap = {}
+    if (Array.isArray(headerDetails)) {
+      headerDetails.forEach(d => {
+        if (d.prodn_mixing) mixingMap[d.machine_id] = d.prodn_mixing
+      })
+    }
 
     return (setups || [])
-      .map(setup => ({
-        ...setup,
-        machine: machineMap[setup.machine_id] || null
-      }))
+      .map(setup => {
+        const machine = machineMap[setup.machine_id] || null
+        const dateMixing = mixingMap[setup.machine_id] ?? setup.prodn_mixing ?? machine?.prodn_mixing
+        return {
+          ...setup,
+          machine: machine ? { ...machine, prodn_mixing: dateMixing } : null,
+          prodn_mixing: dateMixing
+        }
+      })
       .filter(setup => setup.machine)
   } catch (error) {
     throw error
@@ -856,6 +864,18 @@ export async function updateComberMachineSetup(setupId, updates) {
     // Recalculate constant if sl_hank changes
     if (updates.sl_hank !== undefined) {
       updates.constant = calculateComberConstantFromSlHank(updates.sl_hank)
+    }
+
+    const currentSetup = await prisma.comber_machine_setup.findUnique({
+      where: { id: setupId },
+      select: { machine_id: true }
+    })
+
+    if (updates.speed !== undefined && currentSetup?.machine_id) {
+      await prisma.comber_machines.update({
+        where: { id: currentSetup.machine_id },
+        data: { speed: Number(updates.speed) || 0 }
+      }).catch(() => {})
     }
 
     const data = await prisma.comber_machine_setup.update({
@@ -1074,28 +1094,7 @@ export async function getComberMachines() {
   }
 }
 
-// Bulk update machine count - updates both machine setup and all production details
-export async function bulkUpdateComberMachineCount(machineIds, newCount) {
-  try {
-    const promises = machineIds.map(machineId => 
-      prisma.comber_machine_setup.updateMany({
-        where: { machine_id: machineId },
-        data: { prodn_mixing: newCount }
-      })
-    )
-    await Promise.all(promises)
-    
-    // Also update all production details for these machines to sync mixing
-    await prisma.comber_production_detail.updateMany({
-      where: { machine_id: { in: machineIds } },
-      data: { prodn_mixing: newCount }
-    })
-    
-    return true
-  } catch (error) {
-    throw error
-  }
-}
+
 
 // Get comber stoppage reasons (filtered by COMBER department)
 export async function getComberStoppageReasons() {
@@ -1131,21 +1130,41 @@ export async function getComberStoppageReasons() {
 }
 
 // Update machine count (alias for updateComberMachineSetup for count/mixing)
-// Also updates all production details for the machine to sync mixing
-export async function updateComberMachineCount(machineId, newCount) {
+export async function updateComberMachineCount(machineId, newCount, headerId = null) {
   try {
+    if (headerId) {
+      await prisma.comber_production_detail.updateMany({
+        where: { header_id: headerId, machine_id: machineId },
+        data: { prodn_mixing: newCount }
+      })
+    }
     const data = await prisma.comber_machine_setup.updateMany({
       where: { machine_id: machineId },
       data: { prodn_mixing: newCount }
     })
-    
-    // Also update all production details for this machine to sync mixing
-    await prisma.comber_production_detail.updateMany({
-      where: { machine_id: machineId },
-      data: { prodn_mixing: newCount }
-    })
-    
     return data
+  } catch (error) {
+    throw error
+  }
+}
+
+// Bulk update machine count (alias for updateComberMachineSetup for count/mixing)
+export async function bulkUpdateComberMachineCount(machineIds, newCount, headerId = null) {
+  try {
+    if (headerId && machineIds?.length > 0) {
+      await prisma.comber_production_detail.updateMany({
+        where: { header_id: headerId, machine_id: { in: machineIds } },
+        data: { prodn_mixing: newCount }
+      })
+    }
+    const setupPromises = machineIds.map(id => 
+      prisma.comber_machine_setup.updateMany({
+        where: { machine_id: id },
+        data: { prodn_mixing: newCount }
+      })
+    )
+    const setups = await Promise.all(setupPromises)
+    return setups
   } catch (error) {
     throw error
   }

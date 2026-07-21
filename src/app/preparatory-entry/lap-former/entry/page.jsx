@@ -739,6 +739,7 @@ function LapFormerEntryContent() {
               <TabsContent value="setup" className="m-0 data-[state=inactive]:hidden" forceMount>
                 <LapFormerMachineSetupTab 
                   ref={setupTabRef}
+                  headerId={headerId}
                   shift={parseInt(shift)}
                   totalTime={shiftTime}
                   onRefresh={handleRefresh}

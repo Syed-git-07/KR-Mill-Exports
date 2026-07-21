@@ -21,14 +21,6 @@ export default function PostPreparatoryPage() {
       icon: CircleDot,
       status: "Ready",
       color: "green"
-    },
-    {
-      title: "Holiday List Management",
-      description: "Create and manage holiday calendars",
-      href: "/post-preparatory/holiday-list",
-      icon: FileText,
-      status: "Ready",
-      color: "green"
     }
   ]
 

@@ -38,7 +38,7 @@ const parseIntOr = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed
 }
 
-const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ totalTime = 510, onRefresh, sharedDraftEdits, onSharedDraftEditsChange }, ref) {
+const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ headerId = null, totalTime = 510, onRefresh, sharedDraftEdits, onSharedDraftEditsChange }, ref) {
   const [setupData, setSetupData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [localEditedRows, setLocalEditedRows] = useState({})
@@ -130,7 +130,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ tota
     setIsLoading(true)
     try {
       const [setupsResult, countsResult] = await Promise.all([
-        getSimplexMachineSetupsAction(),
+        getSimplexMachineSetupsAction(headerId),
         getSimplexCountOptionsAction()
       ])
       

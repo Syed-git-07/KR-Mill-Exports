@@ -126,11 +126,11 @@ export default function PreparatoryMasterPage() {
                   <CardDescription>{module.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Link href={module.href}>
-                    <Button className="bg-blue-600 hover:bg-blue-700 text-white w-full">
+                  <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white w-full">
+                    <Link href={module.href}>
                       Open Module
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 </CardContent>
               </Card>
             )

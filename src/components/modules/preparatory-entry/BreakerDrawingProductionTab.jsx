@@ -157,8 +157,24 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
     return (rows || []).map(row => {
       const draft = drafts[row.id] || drafts[String(row.id)]
+      const hasProductionDraft = !!draft
+      const stoppageTime = getEffectiveTotalStoppageMins(row)
+      const hasStoppageDraft = stoppageTime !== toNumber(row?.total_stoppage_mins ?? row?.stoppage?.[0]?.total_stoppage_time ?? 0)
+
+      const baseSetup = setupMap[row.machine_id]
+      const setupDraft = baseSetup ? (setupDraftEdits?.[baseSetup.id] || setupDraftEdits?.[String(baseSetup.id)] || setupDraftEdits?.[row.machine_id] || setupDraftEdits?.[String(row.machine_id)]) : null
+      const hasSetupDraft = !!setupDraft
+
       const mergedRow = draft ? { ...row, ...draft } : { ...row }
-      const stoppageTime = getEffectiveTotalStoppageMins(mergedRow)
+
+      // Preserve saved server calculations when no active drafts exist
+      if (!hasProductionDraft && !hasStoppageDraft && !hasSetupDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
+        return {
+          ...mergedRow,
+          total_stoppage_mins: stoppageTime,
+        }
+      }
+
       const setup = getEffectiveSetup(mergedRow.machine_id, setupMap)
       const machineSpeed = setup?.speed ?? mergedRow.machine?.speed ?? BREAKER_DRAWING_FORMULA_FALLBACK.speed
 

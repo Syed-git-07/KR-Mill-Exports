@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import EnterSelect from '@/components/ui/enter-select'
-import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
+import { Loader2, RefreshCw, Plus, Trash2, Edit, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getLapFormerMachineSetupsAction,
@@ -84,6 +84,7 @@ const findDraftByKeys = (drafts, ...keys) => {
 }
 
 const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
+  headerId = null,
   shift = 1,
   totalTime = resolveLapFormerShiftFallbackTime(shift),
   onRefresh,
@@ -191,7 +192,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     setIsLoading(true)
     try {
       const [setupsResult, mixingsResult, spinningCountsResult] = await Promise.all([
-        getLapFormerMachineSetupsAction(),
+        getLapFormerMachineSetupsAction(headerId),
         getLapFormerMixingOptionsAction(),
         getSpinningCountOptionsAction()
       ])
@@ -536,7 +537,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      await bulkUpdateLapFormerMachineMixingAction(selectedRows, mixingValue)
+      await bulkUpdateLapFormerMachineMixingAction(selectedRows, mixingValue, headerId)
       toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
       setShowMixingChangeDialog(false)
       setNewMixing('')
@@ -575,6 +576,12 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           )}
         </div>
         <div className="flex gap-2">
+          {Object.keys(editedRows).length > 0 && (
+            <Button size="sm" onClick={() => handleSave()} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+              Save Changes ({Object.keys(editedRows).length})
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleRefreshClick}>
             <RefreshCw className="h-4 w-4 mr-1" />
             Refresh

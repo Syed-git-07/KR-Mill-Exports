@@ -25,8 +25,7 @@
  *   stoppage_heads               →  stoppage_head_name, code
  */
 
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const { prisma } = require('../../../../../lib/prisma')
 
 function normalizeDateString(dateString) {
   const d = new Date(dateString)
@@ -234,8 +233,6 @@ async function getAutoconerStoppagePercentageReport(fromDate, toDate = null) {
   } catch (error) {
     console.error('Error fetching autoconer stoppage percentage report:', error)
     throw error
-  } finally {
-    await prisma.$disconnect()
   }
 }
 

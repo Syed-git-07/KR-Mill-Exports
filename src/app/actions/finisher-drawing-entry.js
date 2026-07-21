@@ -179,9 +179,9 @@ export async function applyFinisherDrawingPartialStoppageAction(headerId, fromMa
 // MACHINE SETUP ACTIONS
 // ============================================
 
-export async function getFinisherDrawingMachineSetupsAction(shift = 1) {
+export async function getFinisherDrawingMachineSetupsAction(shift = 1, headerId = null) {
   try {
-    const data = await queries.getFinisherDrawingMachineSetups()
+    const data = await queries.getFinisherDrawingMachineSetups(headerId)
     const shiftConfig = await queries.getFinisherDrawingShiftConfig(shift)
     const shiftTime = shiftConfig?.shiftTime || resolveFinisherDrawingShiftFallbackTime(shift)
 
@@ -250,9 +250,9 @@ export async function removeFinisherDrawingMachineAction(machineId) {
   }
 }
 
-export async function bulkUpdateFinisherDrawingMachineMixingAction(machineIds, mixingValue) {
+export async function bulkUpdateFinisherDrawingMachineMixingAction(machineIds, mixingValue, headerId = null) {
   try {
-    const data = await queries.bulkUpdateFinisherDrawingMachineMixing(machineIds, mixingValue)
+    const data = await queries.bulkUpdateFinisherDrawingMachineMixing(machineIds, mixingValue, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: error.message }

@@ -712,6 +712,7 @@ function ComberEntryContent() {
               <TabsContent value="setup" className="m-0 data-[state=inactive]:hidden" forceMount>
                 <ComberMachineSetupTab
                   ref={setupTabRef}
+                  headerId={headerId}
                   shift={parseInt(shift)}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.setup}

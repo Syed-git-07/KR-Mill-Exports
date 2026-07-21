@@ -47,20 +47,26 @@ export default function DrawingFinisherPage() {
 
   useEffect(() => {
     loadMachines();
-    getSpinningCountOptionsAction().then(r => { if (r.success) setCountOptions(r.data); });
   }, []);
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const result = await getDrawingFinisherMachinesAction();
+      const [result, countRes] = await Promise.all([
+        getDrawingFinisherMachinesAction(),
+        getSpinningCountOptionsAction()
+      ]);
+      
+      if (countRes?.success) {
+        setCountOptions(countRes.data || []);
+      }
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
       // Format data for display
-      const formattedData = result.data.map(machine => ({
+      const formattedData = (result.data || []).map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',

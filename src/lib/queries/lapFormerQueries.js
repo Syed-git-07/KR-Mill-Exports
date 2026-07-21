@@ -1075,19 +1075,28 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
 // ============================================
 
 // Get all machine setups with machine info
-export async function getLapFormerMachineSetups() {
-  const machines = await prisma.lap_former_machines.findMany({
-    where: { is_active: true },
-    select: {
-      id: true,
-      machine_no: true,
-      description: true,
-      make_name: true,
-      prodn_mixing: true,
-      speed: true,
-      sort_order: true
-    }
-  });
+export async function getLapFormerMachineSetups(headerId = null) {
+  const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
+  const [machines, headerDetails] = await Promise.all([
+    prisma.lap_former_machines.findMany({
+      where: { is_active: true },
+      select: {
+        id: true,
+        machine_no: true,
+        description: true,
+        make_name: true,
+        prodn_mixing: true,
+        speed: true,
+        sort_order: true
+      }
+    }),
+    validHeaderId
+      ? prisma.lap_former_production_detail.findMany({
+          where: { header_id: validHeaderId },
+          select: { machine_id: true, prodn_mixing: true }
+        })
+      : Promise.resolve([])
+  ]);
 
   const machineIds = machines.map(m => m.id);
   const data = await prisma.lap_former_machine_setup.findMany({
@@ -1095,14 +1104,28 @@ export async function getLapFormerMachineSetups() {
   });
 
   const machineMap = {};
-  machines.forEach(m => { machineMap[m.id] = m; });
+  if (Array.isArray(machines)) {
+    machines.forEach(m => { machineMap[m.id] = m; });
+  }
+
+  const mixingMap = {};
+  if (Array.isArray(headerDetails)) {
+    headerDetails.forEach(d => {
+      if (d.prodn_mixing) mixingMap[d.machine_id] = d.prodn_mixing;
+    });
+  }
 
   // Filter out any setups where machine is null, and sort by sort_order
-  const filteredData = data?.filter(setup => !!machineMap[setup.machine_id]).map(setup => ({
-    ...setup,
-    machine: machineMap[setup.machine_id],
-    speed: machineMap[setup.machine_id]?.speed ?? setup.speed
-  })) || [];
+  const filteredData = data?.filter(setup => !!machineMap[setup.machine_id]).map(setup => {
+    const machine = machineMap[setup.machine_id];
+    const dateMixing = mixingMap[setup.machine_id] ?? setup.prodn_mixing ?? machine?.prodn_mixing;
+    return {
+      ...setup,
+      machine: machine ? { ...machine, prodn_mixing: dateMixing } : null,
+      prodn_mixing: dateMixing,
+      speed: setup.speed ?? machine?.speed
+    };
+  }) || [];
   
   return filteredData.sort((a, b) => {
     return (a.machine?.sort_order || 0) - (b.machine?.sort_order || 0);
@@ -1127,11 +1150,14 @@ export async function updateLapFormerMachineSetup(machineId, updates) {
 
   const speedWasUpdated = updates.speed !== undefined;
 
-  // If speed is being updated, update it in the machine table
+  // If speed is being updated, store it in setup table and machine table
   if (speedWasUpdated) {
-    const machine = await updateLapFormerMachineSpeed(machineId, updates.speed);
-    // Persist the same speed in setup table to keep both sources aligned.
-    updates.speed = Number(machine?.speed ?? updates.speed) || 0;
+    const numSpeed = Number(updates.speed) || 0;
+    updates.speed = numSpeed;
+    await prisma.lap_former_machines.update({
+      where: { id: machineId },
+      data: { speed: numSpeed }
+    }).catch(() => {});
   }
 
   // Recalculate std_prodn if any formula input changes
@@ -1149,16 +1175,17 @@ export async function updateLapFormerMachineSetup(machineId, updates) {
       select: { speed: true }
     });
 
+    const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machine?.speed;
+
     const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(
       {
-        // Use latest machine speed after speed update so std_prodn persists correctly.
-        speed: machine?.speed ?? existingSetup?.speed,
+        speed: effectiveSpeed,
         hank_constant: updates.hank_constant ?? existingSetup?.hank_constant,
         std_efficiency_factor: updates.std_efficiency_factor ?? existingSetup?.std_efficiency_factor,
         divisor_constant: updates.divisor_constant ?? existingSetup?.divisor_constant,
         delivery: updates.delivery ?? existingSetup?.delivery,
       },
-      null
+      effectiveSpeed
     );
 
     const shiftTime =
@@ -1708,41 +1735,34 @@ export async function removeLapFormerMachine(machineId) {
   return data;
 }
 
-// Update machine mixing/count - updates both machine master and all production details
-export async function updateLapFormerMachineMixing(machineId, newMixing) {
-  // Update machine master table
-  const data = await prisma.lap_former_machines.update({
-    where: { id: machineId },
-    data: { prodn_mixing: newMixing }
-  });
-  
-  // Also update all production details for this machine to sync mixing
-  await prisma.lap_former_production_detail.updateMany({
+// Update machine mixing/count on setup table and header details
+export async function updateLapFormerMachineMixing(machineId, newMixing, headerId = null) {
+  if (headerId) {
+    await prisma.lap_former_production_detail.updateMany({
+      where: { header_id: headerId, machine_id: machineId },
+      data: { prodn_mixing: newMixing }
+    });
+  }
+  const data = await prisma.lap_former_machine_setup.updateMany({
     where: { machine_id: machineId },
     data: { prodn_mixing: newMixing }
   });
-  
   return data;
 }
 
-// Bulk update machine mixing/count - updates both machine master and all production details
-export async function bulkUpdateLapFormerMachineMixing(machineIds, newMixing) {
-  const promises = machineIds.map(id => 
-    prisma.lap_former_machines.update({
-      where: { id },
+// Bulk update machine mixing/count on setup table and header details
+export async function bulkUpdateLapFormerMachineMixing(machineIds, newMixing, headerId = null) {
+  if (headerId && machineIds?.length > 0) {
+    await prisma.lap_former_production_detail.updateMany({
+      where: { header_id: headerId, machine_id: { in: machineIds } },
       data: { prodn_mixing: newMixing }
-    })
-  );
-
-  const results = await Promise.all(promises);
-  
-  // Also update all production details for these machines to sync mixing
-  await prisma.lap_former_production_detail.updateMany({
+    });
+  }
+  const data = await prisma.lap_former_machine_setup.updateMany({
     where: { machine_id: { in: machineIds } },
     data: { prodn_mixing: newMixing }
   });
-  
-  return results;
+  return data;
 }
 
 // Get spinning count options for mixing dropdown

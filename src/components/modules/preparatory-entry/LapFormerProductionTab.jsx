@@ -151,9 +151,19 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
     if (!setup) return row
 
     const totalStoppageMins = getEffectiveTotalStoppageMins(row)
+    const productionDraft = findDraftByKeys(editedRowsRef.current, row.id)
+    const baseSetup = machineSetups[row.machine_id]
+    const setupDraft = baseSetup ? findDraftByKeys(setupDraftEdits, baseSetup.id, baseSetup.machine_id, row.machine_id) : null
+    const hasStoppageDraft = totalStoppageMins !== toNumber(row?.total_stoppage_mins ?? row?.stoppage?.[0]?.total_stoppage_time ?? 0)
+
+    if (!productionDraft && !setupDraft && !hasStoppageDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
+      return {
+        ...row,
+        total_stoppage_mins: totalStoppageMins
+      }
+    }
     const { speed: machineSpeed, hankConstant, stdEfficiencyFactor, delivery, divisorConstant } = resolveLapFormerFormulaInputs(setup, row.machine?.speed)
     const constst = calculateConstst(setup)
-    const productionDraft = findDraftByKeys(editedRowsRef.current, row.id)
 
     let actHank = toNumber(row.act_hank)
     let actProdn = (row.act_prodn !== null && row.act_prodn !== undefined)

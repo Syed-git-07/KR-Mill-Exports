@@ -14,6 +14,7 @@ import {
   deleteHoliday,
   isHoliday,
   getAllHolidayDates,
+  bulkCreateHolidays,
 } from '@/lib/queries/holidayListQueries'
 
 export async function getCompaniesAction() {
@@ -123,6 +124,15 @@ export async function getAllHolidayDatesAction() {
   try {
     const data = await getAllHolidayDates()
     return { success: true, data: serializeData(data || []) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+export async function bulkCreateHolidaysAction(holidayListId, records) {
+  try {
+    const insertedCount = await bulkCreateHolidays(holidayListId, records)
+    return { success: true, count: insertedCount }
   } catch (error) {
     return { success: false, error: error.message }
   }

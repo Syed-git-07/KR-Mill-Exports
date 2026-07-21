@@ -53,6 +53,7 @@ const formatNumber = (value, decimals = 2) => {
 }
 
 const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineSetupTab({
+  headerId = null,
   shift = 1,
   totalTime = 0,
   onRefresh,
@@ -172,7 +173,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     setIsLoading(true)
     try {
       const [setupsRes, mixingsRes] = await Promise.all([
-        getBreakerDrawingMachineSetupsAction(),
+        getBreakerDrawingMachineSetupsAction(shift, headerId),
         getMixingOptionsAction()
       ])
       
@@ -411,7 +412,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      await bulkUpdateBreakerDrawingMachineMixingAction(selectedRows, mixingValue)
+      await bulkUpdateBreakerDrawingMachineMixingAction(selectedRows, mixingValue, headerId)
       toast.success(`Mixing updated for ${selectedRows.length} machine(s)`)
       setShowMixingChangeDialog(false)
       setNewMixing('')

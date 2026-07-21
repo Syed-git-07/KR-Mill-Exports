@@ -10,8 +10,7 @@
  * Supports date range filtering (from_date to to_date)
  */
 
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const { prisma } = require('../../../../../lib/prisma')
 
 /**
  * Normalize date to local date string for MySQL DATE comparison
@@ -142,8 +141,6 @@ async function getSpinningShiftCountProductionReport(fromDate, toDate = null) {
   } catch (error) {
     console.error('Error fetching spinning shift count production report:', error)
     throw error
-  } finally {
-    await prisma.$disconnect()
   }
 }
 

@@ -47,22 +47,26 @@ export default function LapFormerPage() {
 
   useEffect(() => {
     loadMachines();
-    getLapFormerCountOptionsAction().then(result => {
-      if (result.success) setCountOptions(result.data || []);
-    });
   }, []);
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const result = await getLapFormerMachinesAction();
+      const [result, countRes] = await Promise.all([
+        getLapFormerMachinesAction(),
+        getLapFormerCountOptionsAction()
+      ]);
+      
+      if (countRes?.success) {
+        setCountOptions(countRes.data || []);
+      }
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
       // Format data for display
-      const formattedData = result.data.map(machine => ({
+      const formattedData = (result.data || []).map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',

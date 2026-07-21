@@ -713,6 +713,7 @@ function BreakerDrawingEntryContent() {
                 <BreakerDrawingMachineSetupTab 
                   ref={setupTabRef}
                   key={`setup-${refreshKey}`} 
+                  headerId={headerId}
                   shift={parseInt(shift)}
                   totalTime={shiftTime}
                   onRefresh={handleRefresh}

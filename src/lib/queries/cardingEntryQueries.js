@@ -1256,15 +1256,7 @@ export async function updateMachineSetup(identifier, updates, entryDate = null, 
       throw new Error(`Machine setup not found for identifier ${identifier}`)
     }
 
-    const { prodn_mixing, ...setupUpdates } = updates
-
-    // Update mixing in carding_machines if edited in the setup row
-    if (prodn_mixing !== undefined) {
-      await prisma.carding_machines.update({
-        where: { id: existing.machine_id },
-        data: { prodn_mixing }
-      })
-    }
+    const setupUpdates = { ...updates }
 
     const currentSetup = await prisma.carding_machine_setup.findUnique({
       where: { id: existing.id },

@@ -21,8 +21,7 @@
  * "Upto Date" = cumulative from 1st of the month to the selected date.
  */
 
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const { prisma } = require('../../../../../lib/prisma')
 
 function normalizeDateString(dateString) {
   const d = new Date(dateString)
@@ -246,8 +245,6 @@ async function getAutoconerAbstractReport(date) {
   } catch (error) {
     console.error('Error fetching autoconer abstract report:', error)
     return { success: false, message: error.message }
-  } finally {
-    await prisma.$disconnect()
   }
 }
 

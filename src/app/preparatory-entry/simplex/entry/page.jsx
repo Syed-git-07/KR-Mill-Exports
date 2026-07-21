@@ -722,6 +722,7 @@ function SimplexEntryContent() {
               <TabsContent value="setup" forceMount className={cn('m-0', activeTab !== 'setup' && 'hidden')}>
                 <SimplexMachineSetupTab 
                   ref={setupTabRef}
+                  headerId={headerId}
                   totalTime={totalTime}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.setup}

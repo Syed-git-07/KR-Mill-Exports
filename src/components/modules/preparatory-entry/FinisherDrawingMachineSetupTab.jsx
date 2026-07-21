@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
-import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
+import { Loader2, RefreshCw, Plus, Trash2, Edit, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getFinisherDrawingMachineSetupsAction,
@@ -34,6 +34,7 @@ import {
 } from '@/lib/finisherDrawingFormulaFallback'
 
 const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachineSetupTab({
+  headerId = null,
   shift = 1,
   totalTime = 0,
   onRefresh,
@@ -163,7 +164,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     setIsLoading(true)
     try {
       const [setupsResult, mixingsResult, countsResult] = await Promise.all([
-        getFinisherDrawingMachineSetupsAction(shift),
+        getFinisherDrawingMachineSetupsAction(shift, headerId),
         getFinisherDrawingMixingOptionsAction(),
         getSpinningCountOptionsAction()
       ])
@@ -482,9 +483,9 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
     setIsSaving(true)
     try {
-      const result = await bulkUpdateFinisherDrawingMachineMixingAction(selectedRows, mixingValue)
+      const result = await bulkUpdateFinisherDrawingMachineMixingAction(selectedRows, mixingValue, headerId)
       if (result.success) {
-        toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
+        toast.success(`Mixing updated for ${selectedRows.length} machine(s)`)
         setShowMixingChangeDialog(false)
         setNewMixing('')
         setCustomMixing('')
@@ -524,6 +525,12 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           )}
         </div>
         <div className="flex gap-2">
+          {Object.keys(editedRows).length > 0 && (
+            <Button size="sm" onClick={() => handleSave()} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+              Save Changes ({Object.keys(editedRows).length})
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleRefreshClick}>
             <RefreshCw className="h-4 w-4 mr-1" />
             Refresh

@@ -50,33 +50,27 @@ export default function SimplexMachinePage() {
 
   useEffect(() => {
     loadMachines();
-    loadCountOptions();
   }, []);
-
-  const loadCountOptions = async () => {
-    try {
-      const result = await getSimplexCountOptionsAction();
-      if (result.success) {
-        setCountOptions(result.data || []);
-      }
-    } catch (err) {
-      console.error('Error loading simplex count options:', err);
-    }
-  };
 
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const result = await getSimplexMachinesAction();
+      const [result, countRes] = await Promise.all([
+        getSimplexMachinesAction(),
+        getSimplexCountOptionsAction()
+      ]);
+      
+      if (countRes?.success) {
+        setCountOptions(countRes.data || []);
+      }
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
-      // Format data for display
-      const formattedData = result.data.map(machine => ({
+      const formattedData = (result.data || []).map(machine => ({
         ...machine,
-        prodn_mixing: machine.prodn_mixing || '-',
+        mixing_display: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',
         speed: machine.speed || 0,
         prodn_efficiency: machine.prodn_efficiency || 0,

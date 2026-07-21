@@ -32,7 +32,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { getDateShiftListAction } from '@/app/actions/date-shift-list'
-import { getHolidayListsAction, getHolidaysByListIdAction } from '@/app/actions/holiday-list'
+import { getAllHolidayDatesAction } from '@/app/actions/holiday-list'
 
 const ROWS_PER_PAGE = 30 // 10 dates × 3 shifts per page
 
@@ -86,25 +86,12 @@ export default function DateShiftListPage({
   const loadHolidayDates = useCallback(async () => {
     setIsCheckingHoliday(true)
     try {
-      const companyId = '1' // DEFAULT_COMPANY_ID
-      const listsRes = await getHolidayListsAction(companyId)
-      if (listsRes.success && listsRes.data) {
-        // Filter active lists
-        const activeLists = listsRes.data.filter(list => list.status === 'Active')
-        
-        // Fetch holidays for all active lists
-        const allHolidays = []
-        for (const list of activeLists) {
-          const holidaysRes = await getHolidaysByListIdAction(list.id)
-          if (holidaysRes.success && holidaysRes.data) {
-            allHolidays.push(...holidaysRes.data)
-          }
-        }
-        
-        setHolidaysList(allHolidays)
+      const res = await getAllHolidayDatesAction()
+      if (res.success && res.data) {
+        setHolidaysList(res.data.map(d => ({ date: d })))
       }
     } catch (err) {
-      console.error('Failed to load holiday dates from Holiday List Management page:', err)
+      console.error('Failed to load holiday dates:', err)
     } finally {
       setIsCheckingHoliday(false)
     }

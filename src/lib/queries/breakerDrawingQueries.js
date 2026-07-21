@@ -842,29 +842,52 @@ export async function applyBreakerDrawingPartialStoppage(headerId, fromMachineNo
 // BREAKER DRAWING MACHINE SETUP QUERIES
 // ============================================
 
-// Get all machine setups with machine info
-export async function getBreakerDrawingMachineSetups() {
+// Get all machine setups with machine info (optionally scoped to a specific headerId)
+export async function getBreakerDrawingMachineSetups(headerId = null) {
+  const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
   const setups = await prisma.breaker_drawing_machine_setup.findMany({
     orderBy: { machine_id: 'asc' }
   });
 
   const machineIds = [...new Set((setups || []).map(s => s.machine_id).filter(Boolean))];
-  const machines = machineIds.length > 0
-    ? await prisma.drawing_breaker_machines.findMany({
-        where: { id: { in: machineIds }, is_active: true },
-        select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
-      })
-    : [];
+  const [machines, headerDetails] = await Promise.all([
+    machineIds.length > 0
+      ? prisma.drawing_breaker_machines.findMany({
+          where: { id: { in: machineIds }, is_active: true },
+          select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+        })
+      : Promise.resolve([]),
+    validHeaderId
+      ? prisma.breaker_drawing_production_detail.findMany({
+          where: { header_id: validHeaderId },
+          select: { machine_id: true, prodn_mixing: true }
+        })
+      : Promise.resolve([])
+  ]);
 
   const machineMap = {};
-  machines.forEach(m => { machineMap[m.id] = m; });
+  if (Array.isArray(machines)) {
+    machines.forEach(m => { machineMap[m.id] = m; });
+  }
+
+  const mixingMap = {};
+  if (Array.isArray(headerDetails)) {
+    headerDetails.forEach(d => {
+      if (d.prodn_mixing) mixingMap[d.machine_id] = d.prodn_mixing;
+    });
+  }
 
   return (setups || [])
-    .map(setup => ({
-      ...setup,
-      machine: machineMap[setup.machine_id] || null,
-      speed: machineMap[setup.machine_id]?.speed ?? setup.speed
-    }))
+    .map(setup => {
+      const machine = machineMap[setup.machine_id] || null;
+      const dateMixing = mixingMap[setup.machine_id] ?? setup.prodn_mixing ?? machine?.prodn_mixing;
+      return {
+        ...setup,
+        machine: machine ? { ...machine, prodn_mixing: dateMixing } : null,
+        prodn_mixing: dateMixing,
+        speed: setup.speed ?? machine?.speed
+      };
+    })
     .filter(setup => setup.machine);
 }
 
@@ -877,6 +900,7 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
     where: { id },
     select: {
       machine_id: true,
+      speed: true,
       hank_constant: true,
       std_efficiency_factor: true,
       shift_time: true,
@@ -885,44 +909,26 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
     }
   });
 
-  // If speed is being updated, update it in the machine table (triggers will sync to setup)
-  if (updates.speed && currentSetup?.machine_id) {
-    await updateBreakerDrawingMachineSpeed(currentSetup.machine_id, updates.speed);
-    delete updates.speed;  // Remove from setup updates (handled by trigger)
-  }
+  const speedToUse = updates.speed !== undefined ? Number(updates.speed) : (currentSetup?.speed || 750);
 
-  // Recalculate std_prodn if other params change (speed handled by trigger)
-  if (updates.hank_constant || updates.std_efficiency_factor || updates.shift_time || updates.delivery) {
-    // Get current speed from machine table
-    const machine = await prisma.drawing_breaker_machines.findUnique({
-      where: { id: currentSetup?.machine_id },
-      select: { speed: true }
-    });
-
+  // Recalculate std_prodn if parameters change
+  if (updates.speed || updates.hank_constant || updates.std_efficiency_factor || updates.shift_time || updates.delivery) {
     const mergedSetup = {
       ...currentSetup,
       ...updates,
-      speed: machine?.speed
+      speed: speedToUse
     }
-    const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(mergedSetup, machine?.speed)
+    const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(mergedSetup, speedToUse)
     const shiftTime = Number(updates.shift_time || currentSetup?.shift_time || 0);
 
     updates.std_prodn = Math.round((speed / divisorConstant / hankConstant) * shiftTime * stdEfficiencyFactor * delivery * 100) / 100;
   }
 
-  // Only update setup if there are non-speed fields to update
-  if (Object.keys(updates).length === 0) {
-    // Return refreshed data after speed update
-    const data = await prisma.breaker_drawing_machine_setup.findUnique({
-      where: { id }
-    });
-    const machine = data?.machine_id
-      ? await prisma.drawing_breaker_machines.findUnique({
-          where: { id: data.machine_id },
-          select: { id: true, machine_no: true, speed: true }
-        })
-      : null;
-    return { ...data, machine, speed: machine?.speed ?? data?.speed };
+  if (updates.speed !== undefined && updates.speed !== null && currentSetup?.machine_id) {
+    await prisma.drawing_breaker_machines.update({
+      where: { id: currentSetup.machine_id },
+      data: { speed: Number(updates.speed) }
+    }).catch(() => {})
   }
 
   const data = await prisma.breaker_drawing_machine_setup.update({
@@ -932,11 +938,11 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
   const machine = data?.machine_id
     ? await prisma.drawing_breaker_machines.findUnique({
         where: { id: data.machine_id },
-        select: { id: true, machine_no: true, speed: true }
+        select: { id: true, machine_no: true }
       })
     : null;
 
-  return { ...data, machine, speed: machine?.speed ?? data?.speed };
+  return { ...data, machine, speed: data?.speed ?? machine?.speed };
 }
 
 // Update machine speed (source of truth in drawing_breaker_machines)
@@ -1286,41 +1292,34 @@ export async function removeBreakerDrawingMachine(machineId) {
   return data;
 }
 
-// Update machine mixing - updates both machine master and all production details
-export async function updateBreakerDrawingMachineMixing(machineId, newMixing) {
-  // Update machine master table
-  const data = await prisma.drawing_breaker_machines.update({
-    where: { id: machineId },
-    data: { prodn_mixing: newMixing }
-  });
-  
-  // Also update all production details for this machine to sync mixing
-  await prisma.breaker_drawing_production_detail.updateMany({
+// Update machine mixing on header production details and setup table
+export async function updateBreakerDrawingMachineMixing(machineId, newMixing, headerId = null) {
+  if (headerId) {
+    await prisma.breaker_drawing_production_detail.updateMany({
+      where: { header_id: headerId, machine_id: machineId },
+      data: { prodn_mixing: newMixing }
+    });
+  }
+  const data = await prisma.breaker_drawing_machine_setup.updateMany({
     where: { machine_id: machineId },
     data: { prodn_mixing: newMixing }
   });
-  
   return data;
 }
 
-// Bulk update machine mixing - updates both machine master and all production details
-export async function bulkUpdateBreakerDrawingMachineMixing(machineIds, newMixing) {
-  const promises = machineIds.map(id => 
-    prisma.drawing_breaker_machines.update({
-      where: { id },
+// Bulk update machine mixing on header production details and setup table
+export async function bulkUpdateBreakerDrawingMachineMixing(machineIds, newMixing, headerId = null) {
+  if (headerId && machineIds?.length > 0) {
+    await prisma.breaker_drawing_production_detail.updateMany({
+      where: { header_id: headerId, machine_id: { in: machineIds } },
       data: { prodn_mixing: newMixing }
-    })
-  );
-
-  const results = await Promise.all(promises);
-  
-  // Also update all production details for these machines to sync mixing
-  await prisma.breaker_drawing_production_detail.updateMany({
+    });
+  }
+  const data = await prisma.breaker_drawing_machine_setup.updateMany({
     where: { machine_id: { in: machineIds } },
     data: { prodn_mixing: newMixing }
   });
-  
-  return results;
+  return data;
 }
 
 // Get all mixing options from spinning_counts master table

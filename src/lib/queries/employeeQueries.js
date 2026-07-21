@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/prisma'
 import mysql from 'mysql2/promise'
-
-const prisma = new PrismaClient()
 
 let payrollPool
 

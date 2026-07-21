@@ -1066,45 +1066,52 @@ export async function applyFinisherDrawingPartialStoppage(headerId, fromMachineN
 // ============================================
 
 // Get all machine setups with machine info (all active machines)
-export async function getFinisherDrawingMachineSetups() {
+export async function getFinisherDrawingMachineSetups(headerId = null) {
   try {
+    const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
     const data = await prisma.finisher_drawing_machine_setup.findMany({
-      orderBy: {
-        machine_id: 'asc'
-      }
+      orderBy: { machine_id: 'asc' }
     })
 
-    const machineIds = [...new Set((data || []).map(setup => setup.machine_id).filter(Boolean))]
-    const machines = machineIds.length > 0
-      ? await prisma.drawing_finisher_machines.findMany({
-          where: {
-            id: { in: machineIds },
-            is_active: true
-          },
-          select: {
-            id: true,
-            machine_no: true,
-            description: true,
-            make_name: true,
-            prodn_mixing: true,
-            speed: true,
-            is_active: true
-          }
-        })
-      : []
+    const machineIds = [...new Set((data || []).map(s => s.machine_id).filter(Boolean))]
+    const [machines, headerDetails] = await Promise.all([
+      machineIds.length > 0
+        ? prisma.drawing_finisher_machines.findMany({
+            where: { id: { in: machineIds }, is_active: true },
+            select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+          })
+        : Promise.resolve([]),
+      validHeaderId
+        ? prisma.finisher_drawing_production_detail.findMany({
+            where: { header_id: validHeaderId },
+            select: { machine_id: true, prodn_mixing: true }
+          })
+        : Promise.resolve([])
+    ])
 
     const machineMap = {}
-    machines.forEach(machine => {
-      machineMap[machine.id] = machine
-    })
-    
-    // Override setup speed with machine's speed (source of truth)
+    if (Array.isArray(machines)) {
+      machines.forEach(machine => { machineMap[machine.id] = machine })
+    }
+
+    const mixingMap = {}
+    if (Array.isArray(headerDetails)) {
+      headerDetails.forEach(d => {
+        if (d.prodn_mixing) mixingMap[d.machine_id] = d.prodn_mixing
+      })
+    }
+
     return (data || [])
-      .map(setup => ({
-        ...setup,
-        machine: machineMap[setup.machine_id] || null,
-        speed: machineMap[setup.machine_id]?.speed ?? setup.speed
-      }))
+      .map(setup => {
+        const machine = machineMap[setup.machine_id] || null
+        const dateMixing = mixingMap[setup.machine_id] ?? setup.prodn_mixing ?? machine?.prodn_mixing
+        return {
+          ...setup,
+          machine: machine ? { ...machine, prodn_mixing: dateMixing } : null,
+          prodn_mixing: dateMixing,
+          speed: setup.speed ?? machine?.speed
+        }
+      })
       .filter(setup => setup.machine)
   } catch (error) {
     throw error
@@ -1130,6 +1137,7 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
       orderBy: { updated_at: 'desc' },
       select: {
         id: true,
+        speed: true,
         hank_constant: true,
         std_efficiency_factor: true,
         shift_time: true,
@@ -1138,15 +1146,17 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
       }
     })
 
-    // If speed is being updated, update it in the machine table
+    // If speed is being updated, update it in setup table and machine table
     if (hasSpeedUpdate) {
       const normalizedSpeed = Number.parseInt(String(updates.speed), 10)
       if (!Number.isFinite(normalizedSpeed) || normalizedSpeed <= 0) {
         throw new Error('Invalid speed value')
       }
-      await updateFinisherDrawingMachineSpeed(machineId, normalizedSpeed)
-      // Keep setup.speed mirrored for reporting/debug visibility.
       updates.speed = normalizedSpeed
+      await prisma.drawing_finisher_machines.update({
+        where: { id: machineId },
+        data: { speed: normalizedSpeed }
+      }).catch(() => {})
     }
 
     // Recalculate std_prodn if other params change
@@ -1157,13 +1167,14 @@ export async function updateFinisherDrawingMachineSetup(machineId, updates) {
         select: { speed: true }
       })
 
+      const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machine?.speed
       const resolved = resolveFinisherDrawingFormulaInputs({
         hank_constant: updates.hank_constant ?? existingSetup?.hank_constant,
         std_efficiency_factor: updates.std_efficiency_factor ?? existingSetup?.std_efficiency_factor,
         divisor_constant: updates.divisor_constant ?? existingSetup?.divisor_constant,
         delivery: updates.delivery ?? existingSetup?.delivery,
-        speed: machine?.speed,
-      }, machine?.speed)
+        speed: effectiveSpeed,
+      }, effectiveSpeed)
 
       const shiftTime = await resolveFinisherDrawingSetupShiftTime(
         updates.shift_time ?? existingSetup?.shift_time,
@@ -1904,18 +1915,30 @@ export async function lookupFinisherDrawingMachineByNo(machineNo) {
 }
 
 // Update machine mixing/count
-export async function updateFinisherDrawingMachineMixing(machineId, newMixing) {
-  const data = await prisma.drawing_finisher_machines.update({
-    where: { id: machineId },
+export async function updateFinisherDrawingMachineMixing(machineId, newMixing, headerId = null) {
+  if (headerId) {
+    await prisma.drawing_finisher_production_detail.updateMany({
+      where: { header_id: headerId, machine_id: machineId },
+      data: { prodn_mixing: newMixing }
+    })
+  }
+  const data = await prisma.finisher_drawing_machine_setup.updateMany({
+    where: { machine_id: machineId },
     data: { prodn_mixing: newMixing }
   })
   return data
 }
 
 // Bulk update machine mixing/count
-export async function bulkUpdateFinisherDrawingMachineMixing(machineIds, newMixing) {
-  const data = await prisma.drawing_finisher_machines.updateMany({
-    where: { id: { in: machineIds } },
+export async function bulkUpdateFinisherDrawingMachineMixing(machineIds, newMixing, headerId = null) {
+  if (headerId && machineIds?.length > 0) {
+    await prisma.drawing_finisher_production_detail.updateMany({
+      where: { header_id: headerId, machine_id: { in: machineIds } },
+      data: { prodn_mixing: newMixing }
+    })
+  }
+  const data = await prisma.finisher_drawing_machine_setup.updateMany({
+    where: { machine_id: { in: machineIds } },
     data: { prodn_mixing: newMixing }
   })
   return data

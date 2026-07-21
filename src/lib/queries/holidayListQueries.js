@@ -710,4 +710,22 @@ export async function getAllHolidayDates() {
   }
 }
 
+export async function bulkCreateHolidays(holidayListId, records) {
+  let inserted = 0
+  for (const record of records) {
+    if (!record.date || !record.description) continue
+    try {
+      await createHoliday({
+        holidayListId: Number(holidayListId),
+        date: record.date,
+        description: String(record.description).trim()
+      })
+      inserted++
+    } catch (e) {
+      console.error(`Skipping holiday ${record.date}:`, e)
+    }
+  }
+  return inserted
+}
+
 
