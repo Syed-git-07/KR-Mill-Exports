@@ -123,7 +123,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
   // Load machine setups
   const loadData = useCallback(async ({ force = false } = {}) => {
-    const loadKey = `${totalTime}`
+    if (!headerId) return
+    const loadKey = `${headerId}|${totalTime}`
     if (!force && lastLoadKeyRef.current === loadKey) return
     lastLoadKeyRef.current = loadKey
 
@@ -153,7 +154,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     } finally {
       setIsLoading(false)
     }
-  }, [totalTime, mergeServerRowsWithDrafts])
+  }, [headerId, totalTime, mergeServerRowsWithDrafts])
 
   useEffect(() => {
     loadData()
@@ -280,7 +281,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       
       for (const row of rowsToSave) {
         const resolvedSpeed = parseIntOr(row.speed ?? row.machine?.speed, 960)
-        await updateSimplexMachineSetupAction(row.id, {
+        const result = await updateSimplexMachineSetupAction(row.id, {
           prodn_mixing: row.prodn_mixing,
           session_no: parseIntOr(row.session_no, 1),
           cc_time: parseFloatOr(row.cc_time, 0),
@@ -291,6 +292,9 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           speed: resolvedSpeed,
           shift_time: parseIntOr(row.shift_time, 510)
         })
+        if (!result?.success) {
+          throw new Error(result?.error || `Failed to save simplex setup for machine ${row.machine?.machine_no || row.machine_id}`)
+        }
       }
 
       if (!suppressSuccessToast) {

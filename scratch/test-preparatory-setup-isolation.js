@@ -6,7 +6,7 @@ const cases = [
   ['comber_machine_setup', 'session_no'],
   ['finisher_drawing_machine_setup', 'speed'],
   ['lap_former_machine_setup', 'speed'],
-  ['simplex_machine_setup', 'session_no']
+  ['simplex_machine_setup', 'speed']
 ]
 const ignored = new Set(['id', 'created_at', 'updated_at', 'entry_date', 'shift'])
 

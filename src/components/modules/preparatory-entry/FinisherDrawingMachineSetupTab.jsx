@@ -156,7 +156,8 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
   // Load machine setups
   const loadData = useCallback(async ({ force = false } = {}) => {
-    const loadKey = `${shift}|${totalTime}`
+    if (!headerId) return
+    const loadKey = `${headerId}|${shift}|${totalTime}`
     if (!force && lastLoadKeyRef.current === loadKey) {
       return
     }
@@ -220,7 +221,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     } finally {
       setIsLoading(false)
     }
-  }, [shift, totalTime, mergeServerRowsWithDrafts])
+  }, [headerId, shift, totalTime, mergeServerRowsWithDrafts])
 
   useEffect(() => {
     setNewMachine(prev => ({ ...prev, shift_time: totalTime }))

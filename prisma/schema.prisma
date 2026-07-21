@@ -646,6 +646,7 @@ model simplex_machine_setup {
   machine_id    String    @db.Char(36)
   entry_date    DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
   shift         Int       @default(1)
+  speed         Int?      @default(960)
   prodn_mixing  String?   @db.VarChar(50)
   session_no    Int?      @default(1)
   cc_time       Int?      @default(0)
