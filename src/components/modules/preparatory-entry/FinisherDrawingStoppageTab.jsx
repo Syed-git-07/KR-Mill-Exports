@@ -311,7 +311,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         getFinisherDrawingStoppageEntriesAction(headerId),
         getFinisherDrawingStoppageReasonsAction(),
         getFinisherDrawingMachinesAction(),
-        getFinisherDrawingMachineSetupsAction(1, headerId)
+        getFinisherDrawingMachineSetupsAction()
       ])
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []

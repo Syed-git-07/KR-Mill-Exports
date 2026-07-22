@@ -1,7 +1,6 @@
 import { prisma } from '../prisma';
 import { resolveBreakerDrawingShiftFallbackTime } from '../breakerDrawingShiftFallback';
 import { calculateBreakerDrawingStdProdn, resolveBreakerDrawingFormulaInputs, BREAKER_DRAWING_FORMULA_FALLBACK } from '../breakerDrawingFormulaFallback';
-import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -620,7 +619,7 @@ export async function applyBreakerDrawingFullStoppage(headerId, stoppageId, stop
   const fallbackRunTime = header?.total_time || resolveBreakerDrawingShiftFallbackTime(header?.shift);
   
   // Get machine setups for recalculation (speed already merged from machine table)
-  const setups = await getBreakerDrawingMachineSetups(headerId);
+  const setups = await getBreakerDrawingMachineSetups();
   const setupMap = {};
   setups?.forEach(s => {
     setupMap[s.machine_id] = s;
@@ -693,7 +692,7 @@ export async function applyBreakerDrawingPartialStoppage(headerId, fromMachineNo
     }
 
     // Get machine setups for recalculation (speed already merged from machine table)
-    const setups = await getBreakerDrawingMachineSetups(headerId);
+    const setups = await getBreakerDrawingMachineSetups();
     const header = await prisma.breaker_drawing_production_header.findUnique({
       where: { id: headerId },
       select: { total_time: true, shift: true }
@@ -846,22 +845,25 @@ export async function applyBreakerDrawingPartialStoppage(headerId, fromMachineNo
 // Get all machine setups with machine info (optionally scoped to a specific headerId)
 export async function getBreakerDrawingMachineSetups(headerId = null) {
   const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
-  const machines = await prisma.drawing_breaker_machines.findMany({
-    where: { is_active: true },
-    select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+  const setups = await prisma.breaker_drawing_machine_setup.findMany({
+    orderBy: { machine_id: 'asc' }
   });
-  const setups = await getOrCreateDateScopedSetups({
-    setupModel: prisma.breaker_drawing_machine_setup,
-    headerModel: prisma.breaker_drawing_production_header,
-    headerId: validHeaderId,
-    machineIds: machines.map(machine => machine.id)
-  });
-  const headerDetails = validHeaderId
-    ? await prisma.breaker_drawing_production_detail.findMany({
-        where: { header_id: validHeaderId },
-        select: { machine_id: true, prodn_mixing: true }
-      })
-    : [];
+
+  const machineIds = [...new Set((setups || []).map(s => s.machine_id).filter(Boolean))];
+  const [machines, headerDetails] = await Promise.all([
+    machineIds.length > 0
+      ? prisma.drawing_breaker_machines.findMany({
+          where: { id: { in: machineIds }, is_active: true },
+          select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+        })
+      : Promise.resolve([]),
+    validHeaderId
+      ? prisma.breaker_drawing_production_detail.findMany({
+          where: { header_id: validHeaderId },
+          select: { machine_id: true, prodn_mixing: true }
+        })
+      : Promise.resolve([])
+  ]);
 
   const machineMap = {};
   if (Array.isArray(machines)) {
@@ -920,6 +922,13 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
     const shiftTime = Number(updates.shift_time || currentSetup?.shift_time || 0);
 
     updates.std_prodn = Math.round((speed / divisorConstant / hankConstant) * shiftTime * stdEfficiencyFactor * delivery * 100) / 100;
+  }
+
+  if (updates.speed !== undefined && updates.speed !== null && currentSetup?.machine_id) {
+    await prisma.drawing_breaker_machines.update({
+      where: { id: currentSetup.machine_id },
+      data: { speed: Number(updates.speed) }
+    }).catch(() => {})
   }
 
   const data = await prisma.breaker_drawing_machine_setup.update({

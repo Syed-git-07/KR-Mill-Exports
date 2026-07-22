@@ -20,9 +20,7 @@ const toNumber = (value) => {
 }
 
 export function resolveFinisherDrawingFormulaInputs(setup = {}, machineSpeed = null) {
-  // A dated setup is the source of truth for entry pages. Machine master speed
-  // is only a fallback when that date/shift has no setup speed.
-  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || FINISHER_DRAWING_FORMULA_FALLBACK.speed
+  const speed = toNumber(machineSpeed) || toNumber(setup?.speed) || FINISHER_DRAWING_FORMULA_FALLBACK.speed
   const hankConstant = toNumber(setup?.hank_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
   const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
   const divisorConstant = toNumber(setup?.divisor_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant

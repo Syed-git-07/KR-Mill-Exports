@@ -1,7 +1,6 @@
 import { prisma } from '../prisma'
 import { calculateSimplexProductionValues as calculateSimplexProductionValuesFromUtils } from '../utils/simplexCalculations'
 import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
-import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null
@@ -678,13 +677,16 @@ export async function updateSimplexStoppageEntry(id, updates) {
       return data
     }
 
+    const setup = await prisma.simplex_machine_setup.findFirst({
+      where: { machine_id: productionDetail.machine_id }
+    })
+
     const [header, machine] = await Promise.all([
       prisma.simplex_production_header.findUnique({
         where: { id: productionDetail.header_id },
         select: {
           total_time: true,
-          shift: true,
-          entry_date: true
+          shift: true
         }
       }),
       prisma.simplex_machines.findUnique({
@@ -697,13 +699,6 @@ export async function updateSimplexStoppageEntry(id, updates) {
         }
       })
     ])
-    const setup = await prisma.simplex_machine_setup.findFirst({
-      where: {
-        machine_id: productionDetail.machine_id,
-        entry_date: header.entry_date,
-        shift: header.shift
-      }
-    })
 
     const shift = header?.shift
     const totalTime = header?.total_time || resolveSimplexShiftFallbackTime(shift)
@@ -753,7 +748,7 @@ export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTim
   const headerTotalTime = header?.total_time || resolveSimplexShiftFallbackTime(header?.shift)
 
   // Get machine setups for recalculation
-  const setups = await getSimplexMachineSetups(headerId)
+  const setups = await getSimplexMachineSetups()
   const setupMap = {}
   setups?.forEach(s => {
     setupMap[s.machine_id] = s
@@ -832,7 +827,7 @@ export async function applySimplexPartialStoppage(headerId, fromMachineNo, toMac
     const headerTotalTime = header?.total_time || resolveSimplexShiftFallbackTime(header?.shift)
 
     // Get machine setups for recalculation
-    const setups = await getSimplexMachineSetups(headerId)
+    const setups = await getSimplexMachineSetups()
     const setupMap = {}
     setups?.forEach(s => {
       setupMap[s.machine_id] = s
@@ -970,19 +965,25 @@ export async function applySimplexPartialStoppage(headerId, fromMachineNo, toMac
 export async function getSimplexMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
-    const machines = await prisma.simplex_machines.findMany({
-      where: { is_active: true },
-      select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true }
+    const setups = await prisma.simplex_machine_setup.findMany({
+      orderBy: { machine_id: 'asc' }
     })
-    const setups = await getOrCreateDateScopedSetups({
-      setupModel: prisma.simplex_machine_setup,
-      headerModel: prisma.simplex_production_header,
-      headerId: validHeaderId,
-      machineIds: machines.map(machine => machine.id)
-    })
-    const headerDetails = validHeaderId
-      ? await prisma.simplex_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
-      : []
+
+    const machineIds = [...new Set((setups || []).map(s => s.machine_id).filter(Boolean))]
+    const [machines, headerDetails] = await Promise.all([
+      machineIds.length > 0
+        ? prisma.simplex_machines.findMany({
+            where: { id: { in: machineIds }, is_active: true },
+            select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true }
+          })
+        : Promise.resolve([]),
+      validHeaderId
+        ? prisma.simplex_production_detail.findMany({
+            where: { header_id: validHeaderId },
+            select: { machine_id: true, prodn_mixing: true }
+          })
+        : Promise.resolve([])
+    ])
 
     const machineMap = {}
     if (Array.isArray(machines)) {
@@ -1034,6 +1035,13 @@ export async function updateSimplexMachineSetup(id, updates) {
 
     if (!currentSetup) {
       throw new Error(`Simplex machine setup ${id} not found`)
+    }
+
+    if (updates.speed !== undefined && currentSetup?.machine_id) {
+      await prisma.simplex_machines.update({
+        where: { id: currentSetup.machine_id },
+        data: { speed: Number(updates.speed) || 0 }
+      }).catch(() => {})
     }
 
     const data = await prisma.simplex_machine_setup.update({
