@@ -25,8 +25,6 @@ model shift_config {
 model autoconer_machine_setup {
   id         String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id String    @db.Char(36)
-  entry_date DateTime  @default(dbgenerated("'2026-04-01'")) @db.Date
-  shift      Int       @default(1)
   count_name String?   @db.VarChar(100)
   count_id   String?   @db.Char(36)
   act_count  Decimal?  @default(69.50) @db.Decimal(10, 2)
@@ -34,8 +32,6 @@ model autoconer_machine_setup {
   run_time   Int?      @default(510)
   created_at DateTime? @default(now()) @db.DateTime(0)
   updated_at DateTime? @default(now()) @db.DateTime(0)
-
-  @@unique([machine_id, entry_date, shift], name: "idx_autoconer_machine_setup_date")
 }
 
 model autoconer_machines {
@@ -749,8 +745,6 @@ model spinning_counts {
 model spinning_machine_setup {
   id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   machine_id         String    @db.Char(36)
-  entry_date         DateTime  @default(dbgenerated("'2026-04-01'")) @db.Date
-  shift              Int       @default(1)
   count_name         String?   @db.VarChar(100)
   act_count          Decimal?  @default(69.50) @db.Decimal(10, 2)
   tpi                Decimal?  @default(13.00) @db.Decimal(5, 2)
@@ -763,10 +757,8 @@ model spinning_machine_setup {
   run_time           Int?      @default(510)
   efficiency         Decimal?  @default(0.985) @db.Decimal(5, 3)
   conversion_factor  Decimal?  @default(2.20456) @db.Decimal(10, 5)
-  created_at         DateTime? @default(now()) @db.DateTime(0)
-  updated_at         DateTime? @default(now()) @db.DateTime(0)
-
-  @@unique([machine_id, entry_date, shift], name: "idx_spinning_machine_setup_date")
+  created_at         DateTime? @db.DateTime(0)
+  updated_at         DateTime? @db.DateTime(0)
 }
 
 model spinning_machines {

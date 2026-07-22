@@ -1197,119 +1197,60 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 // MACHINE SETUP OPERATIONS
 // ============================================
 
-// Helper to get or create machine setups for a given date (with inheritance)
+// Helper to get or create machine setups (no date/shift scoping)
 export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
   try {
-    const dateObj = new Date(entryDate)
     const shiftNum = parseInt(shift)
     const targetShiftTime = shiftNum === 3 ? 420 : 510
     
-    // 1. Try to find setups for this exact date and shift
+    // 1. Find all existing setups
     let setups = await prisma.spinning_machine_setup.findMany({
-      where: { 
-        entry_date: dateObj,
-        shift: shiftNum
-      }
+      orderBy: { machine_id: 'asc' }
     })
     
-    if (setups.length > 0) {
-      return setups
-    }
-    
-    // 2. Fallback: Inherit from the most recent chronologically prior setups in the database (implicitly, no confirmation)
-    const latestPreviousSetup = await prisma.spinning_machine_setup.findFirst({
-      where: {
-        OR: [
-          { entry_date: { lt: dateObj } },
-          {
-            entry_date: dateObj,
-            shift: { lt: shiftNum }
-          }
-        ]
-      },
-      orderBy: [
-        { entry_date: 'desc' },
-        { shift: 'desc' }
-      ]
-    })
-    
-    if (latestPreviousSetup) {
-      const prevSetups = await prisma.spinning_machine_setup.findMany({
-        where: { 
-          entry_date: latestPreviousSetup.entry_date,
-          shift: latestPreviousSetup.shift
-        }
-      })
-      
-      const cloneData = prevSetups.map(s => {
-        const { id, created_at, updated_at, ...rest } = s
-        return {
-          ...rest,
-          entry_date: dateObj,
-          shift: shiftNum,
-          run_time: targetShiftTime
-        }
-      })
-      
-      await prisma.spinning_machine_setup.createMany({
-        data: cloneData
-      })
-      
-      return await prisma.spinning_machine_setup.findMany({
-        where: { 
-          entry_date: dateObj,
-          shift: shiftNum
-        }
-      })
-    }
-    
-    // 3. Fallback: Initialize default setups for all active machines
+    // 2. Find active machines that are missing setups
     const activeMachines = await prisma.spinning_machines.findMany({
       where: { is_active: true }
     })
     
-    const defaultSetups = activeMachines.map(m => ({
-      machine_id: m.id,
-      entry_date: dateObj,
-      shift: shiftNum,
-      count_name: '',
-      act_count: 69.50,
-      tpi: 13.00,
-      allocated_spindles: m.allocated_spindles || 1104,
-      tw_con: 4,
-      doff_loss: 0.70,
-      c_waste_percent: 0.90,
-      speed: 0,
-      session_no: 1,
-      run_time: targetShiftTime,
-      efficiency: 0.985,
-      conversion_factor: 2.20456
-    }))
+    const existingMachineIds = new Set(setups.map(s => s.machine_id))
+    const missingMachines = activeMachines.filter(m => !existingMachineIds.has(m.id))
     
-    if (defaultSetups.length > 0) {
+    if (missingMachines.length > 0) {
+      const missingSetups = missingMachines.map(m => ({
+        machine_id: m.id,
+        count_name: '',
+        act_count: 69.50,
+        tpi: 13.00,
+        allocated_spindles: m.allocated_spindles || 1104,
+        tw_con: 4,
+        doff_loss: 0.70,
+        c_waste_percent: 0.90,
+        speed: 0,
+        session_no: 1,
+        run_time: targetShiftTime,
+        efficiency: 0.985,
+        conversion_factor: 2.20456
+      }))
+      
       await prisma.spinning_machine_setup.createMany({
-        data: defaultSetups
+        data: missingSetups
+      })
+      
+      setups = await prisma.spinning_machine_setup.findMany({
+        orderBy: { machine_id: 'asc' }
       })
     }
     
-    return await prisma.spinning_machine_setup.findMany({
-      where: { 
-        entry_date: dateObj,
-        shift: shiftNum
-      }
-    })
+    return setups
   } catch (error) {
     throw error
   }
 }
 
-// Get all machine setups for a given date
-export async function getSpinningMachineSetups(entryDate, shift = 1) {
+// Get all machine setups
+export async function getSpinningMachineSetups(entryDate = null, shift = 1) {
   try {
-    if (!entryDate) {
-      throw new Error('entryDate is required for getSpinningMachineSetups')
-    }
-    
     const setups = await getOrCreateSpinningMachineSetups(entryDate, shift)
     
     // Get active machines
@@ -1339,7 +1280,7 @@ export async function getSpinningMachineSetups(entryDate, shift = 1) {
 }
 
 // Update machine setup
-export async function updateSpinningMachineSetup(id, updates, shift = null) {
+export async function updateSpinningMachineSetup(id, updates, shift = null, entryDate = null) {
   try {
     const data = await prisma.spinning_machine_setup.update({
       where: { id },
@@ -1349,11 +1290,12 @@ export async function updateSpinningMachineSetup(id, updates, shift = null) {
       }
     })
 
-    // If count_name was updated, sync it to all production details for this machine on this specific date & shift
-    if (updates.count_name && data.machine_id && data.entry_date) {
+    // If count_name was updated, sync it to all production details
+    if (updates.count_name && data.machine_id) {
+      const targetDate = entryDate ? new Date(entryDate) : null
       const headers = await prisma.spinning_production_header.findMany({
         where: { 
-          entry_date: data.entry_date,
+          ...(targetDate ? { entry_date: targetDate } : { entry_date: { gte: new Date(new Date().setDate(new Date().getDate() - 30)) } }),
           ...(shift !== null && { shift: parseInt(shift) })
         },
         select: { id: true }
@@ -1376,16 +1318,12 @@ export async function updateSpinningMachineSetup(id, updates, shift = null) {
   }
 }
 
-// Upsert machine setup
+// Upsert machine setup (no date/shift scoping)
 export async function upsertSpinningMachineSetup(machineId, entryDate, setupData) {
   try {
-    const dateObj = new Date(entryDate)
     // Check if setup exists
     const existing = await prisma.spinning_machine_setup.findFirst({
-      where: { 
-        machine_id: machineId,
-        entry_date: dateObj
-      }
+      where: { machine_id: machineId }
     })
 
     let result
@@ -1401,14 +1339,14 @@ export async function upsertSpinningMachineSetup(machineId, entryDate, setupData
       result = await prisma.spinning_machine_setup.create({
         data: {
           machine_id: machineId,
-          entry_date: dateObj,
           ...setupData
         }
       })
     }
 
     // Sync count_name if updated
-    if (setupData.count_name && machineId) {
+    if (setupData.count_name && machineId && entryDate) {
+      const dateObj = new Date(entryDate)
       const headers = await prisma.spinning_production_header.findMany({
         where: { entry_date: dateObj },
         select: { id: true }
@@ -1431,8 +1369,9 @@ export async function upsertSpinningMachineSetup(machineId, entryDate, setupData
   }
 }
 
+
 // Batch update machine setups
-export async function batchUpdateSpinningMachineSetups(updates, shift = null) {
+export async function batchUpdateSpinningMachineSetups(updates, shift = null, entryDate = null) {
   try {
     const results = []
     for (const update of updates) {
@@ -1446,11 +1385,12 @@ export async function batchUpdateSpinningMachineSetups(updates, shift = null) {
       })
       results.push(result)
       
-      // If count_name was updated, sync it to all production details for this machine on this specific date & shift
-      if (data.count_name && result.machine_id && result.entry_date) {
+      // If count_name was updated, sync it to all production details
+      if (data.count_name && result.machine_id) {
+        const targetDate = entryDate ? new Date(entryDate) : null
         const headers = await prisma.spinning_production_header.findMany({
           where: { 
-            entry_date: result.entry_date,
+            ...(targetDate ? { entry_date: targetDate } : { entry_date: { gte: new Date(new Date().setDate(new Date().getDate() - 30)) } }),
             ...(shift !== null && { shift: parseInt(shift) })
           },
           select: { id: true }
@@ -2119,18 +2059,16 @@ export async function addSpinningMachine(machineData) {
     if (machine) {
       // Check if default setup already exists
       const existingSetup = await prisma.spinning_machine_setup.findFirst({
-        where: { machine_id: machine.id, entry_date: new Date('2026-04-01') }
+        where: { machine_id: machine.id }
       })
       
       if (existingSetup) {
         setup = existingSetup
       } else {
-        // Create setup for the machine (default historic date uses shift 1)
+        // Create setup for the machine
         setup = await prisma.spinning_machine_setup.create({
           data: {
             machine_id: machine.id,
-            entry_date: new Date('2026-04-01'),
-            shift: 1,
             count_name: count_name || '30s CARDED',
             act_count: act_count || 69.5,
             session_no: session_no || 1,
@@ -2144,41 +2082,6 @@ export async function addSpinningMachine(machineData) {
             efficiency: efficiency || 0.95
           }
         })
-      }
-
-      // Also create setup for the active entryDate if it's provided, different, and not already existing
-      if (machineData.entryDate) {
-        const activeDateObj = new Date(machineData.entryDate)
-        const activeShift = parseInt(machineData.shift) || 1
-        if (activeDateObj.toISOString().split('T')[0] !== '2026-04-01') {
-          const existingActiveSetup = await prisma.spinning_machine_setup.findFirst({
-            where: { 
-              machine_id: machine.id, 
-              entry_date: activeDateObj,
-              shift: activeShift
-            }
-          })
-          if (!existingActiveSetup) {
-            await prisma.spinning_machine_setup.create({
-              data: {
-                machine_id: machine.id,
-                entry_date: activeDateObj,
-                shift: activeShift,
-                count_name: count_name || '30s CARDED',
-                act_count: act_count || 69.5,
-                session_no: session_no || 1,
-                run_time: run_time ?? resolveSpinningShiftFallbackTime(activeShift),
-                allocated_spindles: masterAllocatedSpindles || 1104,
-                tw_con: tw_con || 0,
-                doff_loss: doff_loss || 0,
-                c_waste_percent: c_waste_percent || 0,
-                speed: speed || 0,
-                tpi: tpi || 0,
-                efficiency: efficiency || 0.95
-              }
-            })
-          }
-        }
       }
     }
 
