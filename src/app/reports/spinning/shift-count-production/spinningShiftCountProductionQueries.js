@@ -10,7 +10,7 @@
  * Supports date range filtering (from_date to to_date)
  */
 
-const { prisma } = require('../../../../../lib/prisma')
+import { prisma } from '@/lib/prisma'
 
 /**
  * Normalize date to local date string for MySQL DATE comparison

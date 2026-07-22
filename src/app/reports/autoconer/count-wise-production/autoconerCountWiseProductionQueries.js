@@ -13,7 +13,7 @@
  *   autoconer_production_detail   →  count_name, act_prodn
  */
 
-const { prisma } = require('../../../../../lib/prisma')
+import { prisma } from '@/lib/prisma'
 
 /**
  * Normalise a date string to local YYYY-MM-DD (avoids UTC-offset issues).

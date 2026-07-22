@@ -21,7 +21,7 @@
  * "Upto Date" = cumulative from 1st of the month to the selected date.
  */
 
-const { prisma } = require('../../../../../lib/prisma')
+import { prisma } from '@/lib/prisma'
 
 function normalizeDateString(dateString) {
   const d = new Date(dateString)

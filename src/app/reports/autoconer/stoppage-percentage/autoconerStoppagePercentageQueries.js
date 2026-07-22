@@ -25,7 +25,7 @@
  *   stoppage_heads               →  stoppage_head_name, code
  */
 
-const { prisma } = require('../../../../../lib/prisma')
+import { prisma } from '@/lib/prisma'
 
 function normalizeDateString(dateString) {
   const d = new Date(dateString)

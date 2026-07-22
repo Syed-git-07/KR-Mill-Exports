@@ -13,7 +13,7 @@
  *   spinning_machines           →  machine_no, sort_order, is_active
  */
 
-const { prisma } = require('../../../../../lib/prisma')
+import { prisma } from '@/lib/prisma'
 
 /**
  * Normalise a date string to local YYYY-MM-DD (avoids UTC-offset issues).
