@@ -121,9 +121,7 @@ export async function updateSpinningMachine(id, machineData) {
   if (Object.keys(setupUpdate).length > 0) {
     await prisma.spinning_machine_setup.updateMany({
       where: { 
-        machine_id: id,
-        entry_date: new Date('2026-04-01'),
-        shift: 1
+        machine_id: id
       },
       data: setupUpdate
     });
@@ -139,9 +137,7 @@ export async function getSpinningMachineWithSetup(id) {
 
   const setup = await prisma.spinning_machine_setup.findFirst({
     where: { 
-      machine_id: id,
-      entry_date: new Date('2026-04-01'),
-      shift: 1
+      machine_id: id
     }
   });
 

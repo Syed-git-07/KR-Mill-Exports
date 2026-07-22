@@ -764,9 +764,7 @@ export async function getSpinningStoppageEntries(headerId) {
     })
     const setups = await prisma.spinning_machine_setup.findMany({
       where: { 
-        machine_id: { in: machineIds },
-        entry_date: entryDate,
-        shift: shift
+        machine_id: { in: machineIds }
       }
     })
 
@@ -943,9 +941,7 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
       })
       const setup = await prisma.spinning_machine_setup.findFirst({
         where: { 
-          machine_id: prodDetail.machine_id,
-          entry_date: header?.entry_date || new Date(),
-          shift: header?.shift || 1
+          machine_id: prodDetail.machine_id
         }
       })
       const machine = await prisma.spinning_machines.findUnique({
@@ -989,8 +985,7 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime, slot
     // Get machine setups for allocated spindles
     const setups = await prisma.spinning_machine_setup.findMany({
       where: { 
-        entry_date: header?.entry_date || new Date(),
-        shift: shift
+        machine_id: { in: details.map(d => d.machine_id) }
       }
     })
     const setupMap = {}
@@ -1084,8 +1079,7 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
     // Get machine setups for allocated spindles
     const setups = await prisma.spinning_machine_setup.findMany({
       where: { 
-        entry_date: header?.entry_date || new Date(),
-        shift: shift
+        machine_id: { in: details.map(d => d.machine?.id).filter(Boolean) }
       }
     })
     const setupMap = {}
@@ -1478,22 +1472,6 @@ export async function applySpinningOptionCheck(payload) {
       throw new Error('Target entry not found')
     }
 
-    const sourceHeader = await tx.spinning_production_header.findFirst({
-      where: {
-        entry_date: new Date(toDateOnlyString(sourceDate)),
-        shift: sourceShift
-      },
-      select: {
-        id: true,
-        entry_date: true,
-        shift: true
-      }
-    })
-
-    if (!sourceHeader) {
-      throw new Error('Source header not found')
-    }
-
     const targetDetails = await tx.spinning_production_detail.findMany({
       where: { header_id: targetHeader.id },
       select: { machine_id: true }
@@ -1502,7 +1480,7 @@ export async function applySpinningOptionCheck(payload) {
     const targetMachineIds = [...new Set(targetDetails.map(d => d.machine_id))]
     if (targetMachineIds.length === 0) {
       return {
-        sourceDate: toDateOnlyString(sourceHeader.entry_date),
+        sourceDate: toDateOnlyString(sourceDate),
         sourceShift,
         totalEligibleMachines: 0,
         machinesUpdated: 0,
@@ -1521,85 +1499,42 @@ export async function applySpinningOptionCheck(payload) {
 
     const eligibleMachineIds = new Set(targetMachines.map(m => m.id))
 
+    // Setups are global, so just query by machine_id
     const targetSetups = await tx.spinning_machine_setup.findMany({
       where: { 
-        machine_id: { in: [...eligibleMachineIds] },
-        entry_date: targetHeader.entry_date
+        machine_id: { in: [...eligibleMachineIds] }
       },
       select: {
         id: true,
-        machine_id: true
+        machine_id: true,
+        speed: true,
+        tpi: true,
+        tw_con: true,
+        count_name: true
       }
     })
-
-    const sourceDetails = await tx.spinning_production_detail.findMany({
-      where: { header_id: sourceHeader.id },
-      select: { machine_id: true }
-    })
-
-    const sourceMachineIds = [...new Set(sourceDetails.map(d => d.machine_id))]
-    const sourceSetups = sourceMachineIds.length
-      ? await tx.spinning_machine_setup.findMany({
-          where: { 
-            machine_id: { in: sourceMachineIds },
-            entry_date: sourceHeader.entry_date
-          },
-          select: {
-            machine_id: true,
-            speed: true,
-            tpi: true,
-            tw_con: true,
-            count_name: true
-          }
-        })
-      : []
-
-    const sourceSetupMap = new Map(sourceSetups.map(s => [s.machine_id, s]))
 
     let machinesUpdated = 0
     let machinesSkipped = 0
 
     for (const targetSetup of targetSetups) {
-      const sourceSetup = sourceSetupMap.get(targetSetup.machine_id)
-      if (!sourceSetup) {
-        machinesSkipped++
-        continue
-      }
-
-      const data = {}
-      if (copySpeed && sourceSetup.speed != null) data.speed = sourceSetup.speed
-      if (copyTpi && sourceSetup.tpi != null) data.tpi = sourceSetup.tpi
-      if (copyTwCon && sourceSetup.tw_con != null) data.tw_con = sourceSetup.tw_con
-      if (copyCount && sourceSetup.count_name) data.count_name = sourceSetup.count_name
-
-      if (Object.keys(data).length === 0) {
-        machinesSkipped++
-        continue
-      }
-
-      await tx.spinning_machine_setup.update({
-        where: { id: targetSetup.id },
-        data: {
-          ...data,
-          updated_at: new Date()
-        }
-      })
-
-      if (data.count_name) {
+      // Sync count_name to production details if requested
+      if (copyCount && targetSetup.count_name) {
         await tx.spinning_production_detail.updateMany({
           where: { 
             machine_id: targetSetup.machine_id,
             header_id: targetHeader.id
           },
-          data: { count_name: data.count_name }
+          data: { count_name: targetSetup.count_name }
         })
+        machinesUpdated++
+      } else {
+        machinesSkipped++
       }
-
-      machinesUpdated++
     }
 
     return {
-      sourceDate: toDateOnlyString(sourceHeader.entry_date),
+      sourceDate: toDateOnlyString(sourceDate),
       sourceShift,
       totalEligibleMachines: targetSetups.length,
       machinesUpdated,
