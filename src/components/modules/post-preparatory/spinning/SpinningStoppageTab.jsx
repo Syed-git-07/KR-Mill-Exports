@@ -54,6 +54,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const shiftTimeVal = effectiveTotalTime
+  const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
@@ -348,6 +350,10 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
 
   // Save changes
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    if (hasExceededError) {
+      toast.error('cannot exceed shift time')
+      return { success: false, error: 'cannot exceed shift time' }
+    }
     if (Object.keys(editedRows).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
@@ -431,6 +437,24 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       return
     }
 
+    const parsedTime = parseInt(fullStoppage.time) || 0
+    const slotNum = parseInt(fullStoppage.slot) || 1
+    let wouldExceed = false
+    for (const row of stoppageData) {
+      const s1 = slotNum === 1 ? parsedTime : (Number(row.stoppage1_time) || 0)
+      const s2 = slotNum === 2 ? parsedTime : (Number(row.stoppage2_time) || 0)
+      const s3 = slotNum === 3 ? parsedTime : (Number(row.stoppage3_time) || 0)
+      const s4 = slotNum === 4 ? parsedTime : (Number(row.stoppage4_time) || 0)
+      if (s1 + s2 + s3 + s4 > shiftTimeVal) {
+        wouldExceed = true
+        break
+      }
+    }
+    if (wouldExceed) {
+      toast.error('cannot exceed shift time')
+      return
+    }
+
     setIsSaving(true)
     try {
       await applySpinningFullStoppageAction(
@@ -454,6 +478,33 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const handleApplyPartialStoppage = async () => {
     if (!partialStoppage.reason || !partialStoppage.fromMachine || !partialStoppage.toMachine || !partialStoppage.time) {
       toast.warning('Please fill all fields for partial stoppage')
+      return
+    }
+
+    const parsedTime = parseInt(partialStoppage.time) || 0
+    const fromNum = parseInt(String(partialStoppage.fromMachine || '').replace(/\D/g, '') || '0')
+    const toNum = parseInt(String(partialStoppage.toMachine || '').replace(/\D/g, '') || '0')
+    const minNum = Math.min(fromNum, toNum)
+    const maxNum = Math.max(fromNum, toNum)
+
+    let partialWouldExceed = false
+    for (const row of stoppageData) {
+      const mcNo = row.production_detail?.machine?.machine_no
+      if (!mcNo) continue
+      const mcNum = parseInt(mcNo.replace(/\D/g, ''))
+      if (mcNum >= minNum && mcNum <= maxNum) {
+        const hasSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
+        if (hasSlot) {
+          const currentTotal = (Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)
+          if (currentTotal + parsedTime > shiftTimeVal) {
+            partialWouldExceed = true
+            break
+          }
+        }
+      }
+    }
+    if (partialWouldExceed) {
+      toast.error('cannot exceed shift time')
       return
     }
 
@@ -508,6 +559,14 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
 
   return (
     <div className="space-y-4">
+      {hasExceededError && (
+        <div className="p-3 bg-red-100 border-2 border-red-500 text-red-700 rounded font-semibold text-sm flex items-center gap-2">
+          <svg className="w-5 h-5 text-red-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span>cannot exceed shift time</span>
+        </div>
+      )}
       {/* Action Bar */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
