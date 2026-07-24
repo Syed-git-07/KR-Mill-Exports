@@ -7,6 +7,7 @@ import {
   resolveComberFormulaInputs,
 } from '../comberFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
+import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
 // ============================================
 // COMBER CONSTANTS
@@ -659,7 +660,7 @@ export async function updateComberStoppageEntry(id, updates) {
 }
 
 // Apply full stoppage to all machines
-export async function applyComberFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applyComberFullStoppage(headerId, stoppageId, stoppageTime) {
   try {
     // Get all stoppage entries for this header
     const stoppages = await getComberStoppageEntries(headerId)
@@ -668,12 +669,12 @@ export async function applyComberFullStoppage(headerId, stoppageId, stoppageTime
 
     // Apply full stoppage to all machines
     for (const s of stoppages) {
+      const slot = findFirstFreeStoppageSlot(s)
+      if (!slot) continue
       const updateData = {}
       updateData[`stoppage${slot}_id`] = stoppageId
       updateData[`stoppage${slot}_time`] = parseInt(stoppageTime) || 0
-      if (slot === 1) {
-        updateData.is_full_stoppage = true
-      }
+      updateData.is_full_stoppage = true
 
       const result = await updateComberStoppageEntry(s.id, updateData)
       appliedRows.push(result)

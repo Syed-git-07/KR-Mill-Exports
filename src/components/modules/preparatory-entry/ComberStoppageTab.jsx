@@ -256,11 +256,10 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
     })
   }, [totalTime, mergeProductionDetailDraft, resolveEffectiveSetup])
 
-  // Full stoppage form (allows manual slot selection)
+  // Full stoppage form (slot is selected automatically per machine)
   const [fullStoppage, setFullStoppage] = useState({
     reason: '',
-    time: '',
-    slot: '1'
+    time: ''
   })
 
   // Partial stoppage form (auto-allocates slot, no manual slot selector)
@@ -459,7 +458,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
   // Save changes
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     if (hasExceededError) {
-      toast.error('cannot exceed shift time')
+      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
     if (Object.keys(editedRows).length === 0) {
@@ -526,37 +525,38 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
   // Apply full stoppage (draft-safe: does not force save/discard of unsaved row edits)
   const handleApplyFullStoppage = async () => {
     const parsedTime = parseInt(fullStoppage.time)
-    if (!fullStoppage.reason || !fullStoppage.time || Number.isNaN(parsedTime) || parsedTime <= 0) {
-      toast.warning('Please select stoppage reason and enter time')
+    if (!fullStoppage.reason) {
+      toast.warning('Please select a stoppage reason')
+      return
+    }
+    if (!fullStoppage.time || Number.isNaN(parsedTime) || parsedTime <= 0) {
+      toast.error('Enter a valid stoppage time greater than 0 minutes.')
       return
     }
 
-    const slotNum = parseInt(fullStoppage.slot) || 1
-    let wouldExceed = false
-    for (const row of stoppageData) {
-      const s1 = slotNum === 1 ? parsedTime : (Number(row.stoppage1_time) || 0)
-      const s2 = slotNum === 2 ? parsedTime : (Number(row.stoppage2_time) || 0)
-      const s3 = slotNum === 3 ? parsedTime : (Number(row.stoppage3_time) || 0)
-      const s4 = slotNum === 4 ? parsedTime : (Number(row.stoppage4_time) || 0)
-      if (s1 + s2 + s3 + s4 > shiftTimeVal) {
-        wouldExceed = true
-        break
-      }
-    }
+    const wouldExceed = stoppageData.some(row => {
+      const hasFreeSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
+      const currentTotal = [1, 2, 3, 4].reduce(
+        (total, slot) => total + (Number(row[`stoppage${slot}_time`]) || 0),
+        0
+      )
+      return hasFreeSlot && currentTotal + parsedTime > shiftTimeVal
+    })
     if (wouldExceed) {
-      toast.error('cannot exceed shift time')
+      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return
     }
 
     setIsSaving(true)
     try {
-      // Apply to selected slot
-      const result = await applyComberFullStoppageAction(headerId, fullStoppage.reason, parsedTime, parseInt(fullStoppage.slot))
+      const result = await applyComberFullStoppageAction(headerId, fullStoppage.reason, parsedTime)
       if (!result.success) throw new Error(result.error)
 
       applyServerRowsToDrafts(result.data || [], editedRowsRef, setEditedRows, stoppageReasons, machineSetups)
-      toast.success(`Full stoppage applied to Stoppage ${fullStoppage.slot} for all machines`)
-      setFullStoppage({ reason: '', time: '', slot: '1' })
+      const updated = result.data?.length || 0
+      const skipped = Math.max(0, stoppageData.length - updated)
+      toast.success(`Full stoppage applied: updated ${updated}, skipped ${skipped}`)
+      setFullStoppage({ reason: '', time: '' })
       await loadData()
       onRefresh?.()
     } catch (error) {
@@ -570,8 +570,12 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
   // Apply partial stoppage (draft-safe: does not force save/discard of unsaved row edits)
   const handleApplyPartialStoppage = async () => {
     const parsedTime = parseInt(partialStoppage.time)
-    if (!partialStoppage.reason || !partialStoppage.fromMachine || !partialStoppage.toMachine || !partialStoppage.time || Number.isNaN(parsedTime) || parsedTime <= 0) {
+    if (!partialStoppage.reason || !partialStoppage.fromMachine || !partialStoppage.toMachine) {
       toast.warning('Please fill all fields for partial stoppage')
+      return
+    }
+    if (!partialStoppage.time || Number.isNaN(parsedTime) || parsedTime <= 0) {
+      toast.error('Enter a valid stoppage time greater than 0 minutes.')
       return
     }
 
@@ -597,7 +601,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
       }
     }
     if (partialWouldExceed) {
-      toast.error('cannot exceed shift time')
+      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return
     }
 
@@ -653,7 +657,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
           <svg className="w-5 h-5 text-red-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <span>cannot exceed shift time</span>
+          <span>Total stoppage cannot exceed the shift time.</span>
         </div>
       )}
       {/* Action Bar */}
@@ -847,8 +851,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
             <CardTitle className="text-base font-semibold">Full Stoppage</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 pt-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div>
                 <Label className="text-sm font-medium mb-1 block">Stoppage Reason</Label>
                 <StoppageAutocomplete
                   value={fullStoppage.reason || ''}
@@ -858,30 +861,14 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
                   onClear={() => setFullStoppage(prev => ({ ...prev, reason: '' }))}
                   className="w-full h-9"
                 />
-              </div>
-              <div>
-                <Label className="text-sm font-medium mb-1 block">Slot</Label>
-                <Select
-                  value={fullStoppage.slot}
-                  onValueChange={(value) => setFullStoppage(prev => ({ ...prev, slot: value }))}
-                >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Stoppage 1</SelectItem>
-                    <SelectItem value="2">Stoppage 2</SelectItem>
-                    <SelectItem value="3">Stoppage 3</SelectItem>
-                    <SelectItem value="4">Stoppage 4</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
             <div className="flex items-end gap-3">
               <div className="flex-1">
                 <Label className="text-sm font-medium mb-1 block">Time (mins)</Label>
                 <Input
                   type="number"
+                  min="1"
+                  max={shiftTimeVal}
                   placeholder="0"
                   value={fullStoppage.time}
                   onChange={(e) => setFullStoppage(prev => ({ ...prev, time: e.target.value }))}
@@ -959,6 +946,8 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
                 <Label className="text-sm font-medium mb-1 block">Time (mins)</Label>
                 <Input
                   type="number"
+                  min="1"
+                  max={shiftTimeVal}
                   placeholder="0"
                   value={partialStoppage.time}
                   onChange={(e) => setPartialStoppage(prev => ({ ...prev, time: e.target.value }))}

@@ -1,5 +1,6 @@
 import { prisma } from '../prisma'
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
+import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
 /**
  * Spinning (Ring Frame) Production Entry Queries
@@ -978,7 +979,7 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
 }
 
 // Apply full stoppage to all machines
-export async function applyFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
   try {
     // Get header to know shift
     const header = await prisma.spinning_production_header.findUnique({
@@ -1022,7 +1023,9 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime, slot
         })
       }
 
-      // Update the specified slot
+      // Preserve existing stoppages and use this machine's first free slot.
+      const slot = findFirstFreeStoppageSlot(stoppage)
+      if (!slot) continue
       const updateData = {}
       updateData[`stoppage${slot}_id`] = stoppageId
       updateData[`stoppage${slot}_time`] = parseInt(stoppageTime) || 0

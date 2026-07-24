@@ -122,7 +122,6 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
 
   // Full Stoppage State
   const [fullStoppage, setFullStoppage] = useState({
-    slot: '1',
     reason: '',
     time: ''
   })
@@ -395,7 +394,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
   // Handle save
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     if (hasExceededError) {
-      toast.error('cannot exceed shift time')
+      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
     const currentEdits = editedRowsRef.current || editedRows || {}
@@ -464,26 +463,26 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
 
   // Apply Full Stoppage
   const handleApplyFullStoppage = async () => {
-    if (!fullStoppage.reason || !fullStoppage.time) {
-      toast.warning('Please select stoppage reason and enter time')
+    if (!fullStoppage.reason) {
+      toast.warning('Please select a stoppage reason')
       return
     }
 
     const parsedTime = parseInt(fullStoppage.time) || 0
-    const slotNum = parseInt(fullStoppage.slot) || 1
-    let wouldExceed = false
-    for (const row of stoppageData) {
-      const s1 = slotNum === 1 ? parsedTime : (Number(row.stoppage1_time) || 0)
-      const s2 = slotNum === 2 ? parsedTime : (Number(row.stoppage2_time) || 0)
-      const s3 = slotNum === 3 ? parsedTime : (Number(row.stoppage3_time) || 0)
-      const s4 = slotNum === 4 ? parsedTime : (Number(row.stoppage4_time) || 0)
-      if (s1 + s2 + s3 + s4 > shiftTimeVal) {
-        wouldExceed = true
-        break
-      }
+    if (parsedTime <= 0) {
+      toast.error('Enter a valid stoppage time greater than 0 minutes.')
+      return
     }
+    const wouldExceed = stoppageData.some(row => {
+      const hasFreeSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
+      const currentTotal = [1, 2, 3, 4].reduce(
+        (total, slot) => total + (Number(row[`stoppage${slot}_time`]) || 0),
+        0
+      )
+      return hasFreeSlot && currentTotal + parsedTime > shiftTimeVal
+    })
     if (wouldExceed) {
-      toast.error('cannot exceed shift time')
+      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return
     }
 
@@ -497,16 +496,17 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       const result = await applySimplexFullStoppageAction(
         headerId,
         fullStoppage.reason,
-        parseInt(fullStoppage.time) || 0,
-        parseInt(fullStoppage.slot)
+        parseInt(fullStoppage.time) || 0
       )
       
       if (!result?.success) {
         throw new Error(result?.error || 'Failed to apply full stoppage')
       }
       
-      toast.success(`Full stoppage applied to Stoppage ${fullStoppage.slot} for all machines`)
-      setFullStoppage({ slot: '1', reason: '', time: '' })
+      const updated = result.data?.length || 0
+      const skipped = Math.max(0, stoppageData.length - updated)
+      toast.success(`Full stoppage applied: updated ${updated}, skipped ${skipped}`)
+      setFullStoppage({ reason: '', time: '' })
       
       await loadData({ force: true })
       onRefresh?.()
@@ -520,12 +520,16 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
 
   // Apply Partial Stoppage
   const handleApplyPartialStoppage = async () => {
-    if (!partialStoppage.reason || !partialStoppage.time) {
+    if (!partialStoppage.reason) {
       toast.warning('Please fill all fields for partial stoppage')
       return
     }
 
     const parsedTime = parseInt(partialStoppage.time) || 0
+    if (parsedTime <= 0) {
+      toast.error('Enter a valid stoppage time greater than 0 minutes.')
+      return
+    }
     const fromNum = parseInt(String(partialStoppage.fromMachine || '').replace(/\D/g, '') || '0')
     const toNum = parseInt(String(partialStoppage.toMachine || '').replace(/\D/g, '') || '0')
     const minNum = Math.min(fromNum, toNum)
@@ -548,7 +552,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       }
     }
     if (partialWouldExceed) {
-      toast.error('cannot exceed shift time')
+      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return
     }
 
@@ -607,7 +611,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
           <svg className="w-5 h-5 text-red-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <span>cannot exceed shift time</span>
+          <span>Total stoppage cannot exceed the shift time.</span>
         </div>
       )}
       {/* Action Bar */}
@@ -797,34 +801,17 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
             <CardTitle className="text-base font-semibold">Full Stoppage</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Stoppage Slot</Label>
-                <Select
-                  value={fullStoppage.slot}
-                  onValueChange={(value) => setFullStoppage(prev => ({ ...prev, slot: value }))}
-                >
-                  <SelectTrigger className="h-10 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Stoppage 1</SelectItem>
-                    <SelectItem value="2">Stoppage 2</SelectItem>
-                    <SelectItem value="3">Stoppage 3</SelectItem>
-                    <SelectItem value="4">Stoppage 4</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
+            <div>
                 <Label className="text-sm font-medium mb-2 block">Time (mins)</Label>
                 <Input
                   type="number"
+                  min="1"
+                  max={shiftTimeVal}
                   placeholder="Minutes"
                   value={fullStoppage.time}
                   onChange={(e) => setFullStoppage(prev => ({ ...prev, time: e.target.value }))}
                   className="h-10 text-sm"
                 />
-              </div>
             </div>
             <div>
               <Label className="text-sm font-medium mb-2 block">Stoppage Reason</Label>
@@ -857,6 +844,8 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
               <Label className="text-sm font-medium mb-2 block">Time (mins)</Label>
               <Input
                 type="number"
+                min="1"
+                max={shiftTimeVal}
                 placeholder="Minutes"
                 value={partialStoppage.time}
                 onChange={(e) => setPartialStoppage(prev => ({ ...prev, time: e.target.value }))}

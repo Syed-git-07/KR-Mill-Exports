@@ -6,6 +6,7 @@ import {
   calculateFinisherDrawingStdProdn,
 } from '../finisherDrawingFormulaFallback';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
+import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -819,7 +820,7 @@ export async function updateFinisherDrawingStoppageEntry(id, updates) {
 }
 
 // Apply full stoppage to all machines and recalculate production
-export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, stoppageTime) {
   try {
     const header = await prisma.finisher_drawing_production_header.findUnique({
       where: { id: headerId },
@@ -845,6 +846,8 @@ export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, sto
 
     // Update stoppage entries
     for (const s of stoppages) {
+      const slot = findFirstFreeStoppageSlot(s)
+      if (!slot) continue
       const updateData = {}
       updateData[`stoppage${slot}_id`] = stoppageId
       updateData[`stoppage${slot}_time`] = parseInt(stoppageTime) || 0
@@ -854,7 +857,8 @@ export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, sto
     }
     
     // Recalculate production for each machine
-    const prodPromises = stoppages.map(async (s) => {
+    const prodPromises = appliedRows.map(async (appliedRow) => {
+      const s = stoppages.find(entry => entry.id === appliedRow.id)
       if (!s.production_detail) return null
       
       const prodDetail = s.production_detail
@@ -863,11 +867,7 @@ export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, sto
       const machineSpeed = prodDetail.machine?.speed ?? setup?.speed ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
       
       // Calculate new total stoppage
-      const newTotalStoppage = 
-        (slot === 1 ? stoppageTime : (s.stoppage1_time || 0)) +
-        (slot === 2 ? stoppageTime : (s.stoppage2_time || 0)) +
-        (slot === 3 ? stoppageTime : (s.stoppage3_time || 0)) +
-        (slot === 4 ? stoppageTime : (s.stoppage4_time || 0))
+      const newTotalStoppage = getStoppageTotal(appliedRow)
       
       // Recalculate with machine speed from machine table
       const calculated = calculateFinisherDrawingValues(

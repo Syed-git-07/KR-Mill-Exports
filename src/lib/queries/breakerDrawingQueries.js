@@ -2,6 +2,7 @@ import { prisma } from '../prisma';
 import { resolveBreakerDrawingShiftFallbackTime } from '../breakerDrawingShiftFallback';
 import { calculateBreakerDrawingStdProdn, resolveBreakerDrawingFormulaInputs, BREAKER_DRAWING_FORMULA_FALLBACK } from '../breakerDrawingFormulaFallback';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
+import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -610,7 +611,7 @@ export async function updateBreakerDrawingStoppageEntry(id, updates) {
 }
 
 // Apply full stoppage to all machines and recalculate production
-export async function applyBreakerDrawingFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applyBreakerDrawingFullStoppage(headerId, stoppageId, stoppageTime) {
   // Get all stoppage entries for this header
   const stoppages = await getBreakerDrawingStoppageEntries(headerId);
   const header = await prisma.breaker_drawing_production_header.findUnique({
@@ -626,25 +627,28 @@ export async function applyBreakerDrawingFullStoppage(headerId, stoppageId, stop
     setupMap[s.machine_id] = s;
   });
 
-  const stoppageIdField = `stoppage${slot}_id`;
-  const stoppageTimeField = `stoppage${slot}_time`;
+  // Update the first free slot independently for every machine.
+  const updates = stoppages.flatMap(s => {
+    const slot = findFirstFreeStoppageSlot(s);
+    if (!slot) return [];
+    return [{
+      id: s.id,
+      slot,
+      [`stoppage${slot}_id`]: stoppageId,
+      [`stoppage${slot}_time`]: stoppageTime,
+      is_full_stoppage: true
+    }];
+  });
 
-  // Update stoppage entries
-  const updates = stoppages.map(s => ({
-    id: s.id,
-    [stoppageIdField]: stoppageId,
-    [stoppageTimeField]: stoppageTime,
-    is_full_stoppage: slot === 1
-  }));
-
-  const stoppagePromises = updates.map(({ id, ...data }) =>
+  const stoppagePromises = updates.map(({ id, slot: _slot, ...data }) =>
     updateBreakerDrawingStoppageEntry(id, data)
   );
 
   const updatedStoppages = await Promise.all(stoppagePromises);
   
   // Recalculate production for each machine
-  const prodPromises = stoppages.map(async (s) => {
+  const prodPromises = updates.map(async ({ id, slot }) => {
+    const s = stoppages.find(entry => entry.id === id);
     if (!s.production_detail) return null;
     
     const prodDetail = s.production_detail;
@@ -655,11 +659,10 @@ export async function applyBreakerDrawingFullStoppage(headerId, stoppageId, stop
     
     // Calculate new total stoppage
     const currentStoppage = s;
-    const newTotalStoppage = 
-      (slot === 1 ? stoppageTime : currentStoppage.stoppage1_time || 0) +
-      (slot === 2 ? stoppageTime : currentStoppage.stoppage2_time || 0) +
-      (slot === 3 ? stoppageTime : currentStoppage.stoppage3_time || 0) +
-      (slot === 4 ? stoppageTime : currentStoppage.stoppage4_time || 0);
+    const newTotalStoppage = getStoppageTotal({
+      ...currentStoppage,
+      [`stoppage${slot}_time`]: stoppageTime
+    });
     
     // Recalculate with machine speed from machine table
     const calculated = calculateBreakerDrawingValues(
@@ -754,28 +757,12 @@ export async function applyBreakerDrawingPartialStoppage(headerId, fromMachineNo
       return null;
     };
 
-    // Helper: pick common available slot for all entries
-    const pickCommonAvailableSlot = (entries) => {
-      for (let i = 1; i <= 4; i++) {
-        const allAvailable = entries.every(entry => {
-          const slotValue = entry?.[`stoppage${i}_id`];
-          return slotValue === null || slotValue === undefined || slotValue === '';
-        });
-        if (allAvailable) {
-          return i;
-        }
-      }
-      return null;
-    };
-
-    const commonSlot = stoppages.length > 0 ? pickCommonAvailableSlot(stoppages) : null;
-
     let updatedCount = 0;
     let overflowCount = 0;
     const appliedRows = [];
 
     for (const stoppage of stoppages) {
-      const resolvedSlot = commonSlot || pickFirstAvailableSlot(stoppage);
+      const resolvedSlot = pickFirstAvailableSlot(stoppage);
       if (!resolvedSlot) {
         overflowCount++;
         continue;

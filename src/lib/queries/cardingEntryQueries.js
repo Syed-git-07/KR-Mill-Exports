@@ -1,6 +1,7 @@
 import { prisma } from '../prisma'
 import { resolveCardingShiftFallbackTime } from '../cardingShiftFallback'
 import { calculateCardingStdProdn, resolveCardingFormulaInputs } from '../cardingFormulaFallback'
+import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
 function isCardingMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
@@ -853,7 +854,7 @@ export async function updateStoppageEntry(id, updates) {
 }
 
 // Apply full stoppage to all machines
-export async function applyFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
   const parsedTime = Number.parseInt(stoppageTime, 10)
   if (!stoppageId) {
     throw new Error('Stoppage reason is required')
@@ -865,15 +866,16 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime, slot
   // Get all stoppage entries for this header
   const stoppages = await getCardingStoppageEntries(headerId)
 
-  const stoppageIdField = `stoppage${slot}_id`
-  const stoppageTimeField = `stoppage${slot}_time`
-
-  const updates = stoppages.map(s => ({
-    id: s.id,
-    [stoppageIdField]: stoppageId,
-    [stoppageTimeField]: parsedTime,
-    is_full_stoppage: slot === 1
-  }))
+  const updates = stoppages.flatMap(s => {
+    const slot = findFirstFreeStoppageSlot(s)
+    if (!slot) return []
+    return [{
+      id: s.id,
+      [`stoppage${slot}_id`]: stoppageId,
+      [`stoppage${slot}_time`]: parsedTime,
+      is_full_stoppage: true
+    }]
+  })
 
   const promises = updates.map(({ id, ...data }) =>
     updateStoppageEntry(id, data)
@@ -951,27 +953,12 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
       return null
     }
 
-    const pickCommonAvailableSlot = (entries) => {
-      for (let i = 1; i <= 4; i++) {
-        const allAvailable = entries.every(entry => {
-          const slotValue = entry?.[`stoppage${i}_id`]
-          return slotValue === null || slotValue === undefined || slotValue === ''
-        })
-        if (allAvailable) {
-          return i
-        }
-      }
-      return null
-    }
-
-    const commonSlot = stoppages.length > 0 ? pickCommonAvailableSlot(stoppages) : null
-
     let updatedCount = 0
     let overflowCount = 0
     const appliedRows = []
 
     for (const stoppage of stoppages) {
-      const resolvedSlot = commonSlot || pickFirstAvailableSlot(stoppage)
+      const resolvedSlot = pickFirstAvailableSlot(stoppage)
       if (!resolvedSlot) {
         overflowCount++
         continue

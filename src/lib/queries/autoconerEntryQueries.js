@@ -11,6 +11,7 @@
 
 import { prisma } from '../prisma'
 import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
+import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -764,20 +765,19 @@ export async function updateAutoconerStoppageEntry(id, updates) {
 }
 
 // Apply full stoppage to all machines (with slot selection like Carding)
-export async function applyFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
   // Get all stoppage entries for this header
   const stoppages = await getAutoconerStoppageEntries(headerId)
 
-  const stoppageIdField = `stoppage${slot}_id`
-  const stoppageTimeField = `stoppage${slot}_time`
-
-  const promises = stoppages.map(s =>
-    updateAutoconerStoppageEntry(s.id, {
-      [stoppageIdField]: stoppageId,
-      [stoppageTimeField]: stoppageTime,
-      is_full_stoppage: slot === 1
-    })
-  )
+  const promises = stoppages.flatMap(s => {
+    const slot = findFirstFreeStoppageSlot(s)
+    if (!slot) return []
+    return [updateAutoconerStoppageEntry(s.id, {
+      [`stoppage${slot}_id`]: stoppageId,
+      [`stoppage${slot}_time`]: stoppageTime,
+      is_full_stoppage: true
+    })]
+  })
 
   return Promise.all(promises)
 }

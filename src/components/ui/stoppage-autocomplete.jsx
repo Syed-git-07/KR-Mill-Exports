@@ -147,7 +147,7 @@ export default function StoppageAutocomplete({
           ref={triggerRef}
           type="button"
           disabled={disabled}
-          onClick={() => triggerRef.current?.focus()}
+          onClick={() => openSearchModal()}
           className={cn(
             'group flex-1 min-w-0 text-left px-2 flex items-center justify-between overflow-hidden',
             'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded',
@@ -247,7 +247,7 @@ export default function StoppageAutocomplete({
             )}
 
             <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-              Type any letter to open this search and press Enter to select.
+              Click to browse, or type to search. Press Enter to select.
             </div>
           </div>
         </DialogContent>

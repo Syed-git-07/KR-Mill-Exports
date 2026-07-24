@@ -2,6 +2,7 @@ import { prisma } from '../prisma'
 import { calculateSimplexProductionValues as calculateSimplexProductionValuesFromUtils } from '../utils/simplexCalculations'
 import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
+import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null
@@ -742,7 +743,7 @@ export async function updateSimplexStoppageEntry(id, updates) {
 }
 
 // Apply full stoppage to all machines and recalculate production
-export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTime, slot = 1) {
+export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTime) {
   // Get all stoppage entries for this header with production details
   const stoppages = await getSimplexStoppageEntries(headerId)
   
@@ -759,24 +760,27 @@ export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTim
     setupMap[s.machine_id] = s
   })
 
-  const stoppageIdField = `stoppage${slot}_id`
-  const stoppageTimeField = `stoppage${slot}_time`
+  // Update the first free slot independently for every machine.
+  const updates = stoppages.flatMap(s => {
+    const slot = findFirstFreeStoppageSlot(s)
+    if (!slot) return []
+    return [{
+      id: s.id,
+      slot,
+      [`stoppage${slot}_id`]: stoppageId,
+      [`stoppage${slot}_time`]: stoppageTime
+    }]
+  })
 
-  // Update stoppage entries
-  const updates = stoppages.map(s => ({
-    id: s.id,
-    [stoppageIdField]: stoppageId,
-    [stoppageTimeField]: stoppageTime
-  }))
-
-  const stoppagePromises = updates.map(({ id, ...data }) =>
+  const stoppagePromises = updates.map(({ id, slot: _slot, ...data }) =>
     updateSimplexStoppageEntry(id, data)
   )
 
-  await Promise.all(stoppagePromises)
+  const appliedRows = await Promise.all(stoppagePromises)
   
   // Recalculate production for each machine
-  const prodPromises = stoppages.map(async (s) => {
+  const prodPromises = updates.map(async ({ id, slot }) => {
+    const s = stoppages.find(entry => entry.id === id)
     if (!s.production_detail) return null
     
     const prodDetail = s.production_detail
@@ -785,11 +789,10 @@ export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTim
     const machine = prodDetail.machine || {}
     
     // Calculate new total stoppage (all 4 stoppages)
-    const newTotalStoppage = 
-      (slot === 1 ? stoppageTime : s.stoppage1_time || 0) +
-      (slot === 2 ? stoppageTime : s.stoppage2_time || 0) +
-      (slot === 3 ? stoppageTime : s.stoppage3_time || 0) +
-      (slot === 4 ? stoppageTime : s.stoppage4_time || 0)
+    const newTotalStoppage = getStoppageTotal({
+      ...s,
+      [`stoppage${slot}_time`]: stoppageTime
+    })
     
     // Recalculate with Simplex formula
     const calculated = calculateSimplexProductionValues({
@@ -809,7 +812,8 @@ export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTim
     return updateSimplexProductionDetail(prodDetail.id, calculated)
   })
   
-  return Promise.all(prodPromises.filter(Boolean))
+  await Promise.all(prodPromises.filter(Boolean))
+  return appliedRows
 }
 
 // Helper: Pick first available slot (1-4) for a stoppage entry
