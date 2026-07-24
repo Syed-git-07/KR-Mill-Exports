@@ -1850,7 +1850,11 @@ export async function getMaisitries() {
         supervisor_name: 'asc'
       }
     })
-    return data || []
+    return (data || []).map(item => ({
+      id: item.id,
+      supervisor_name: item.supervisor_name,
+      maisitry_name: item.supervisor_name
+    }))
   } catch (error) {
     throw error
   }
