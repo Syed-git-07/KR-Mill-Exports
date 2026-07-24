@@ -1,4 +1,4 @@
-# 🔹 FINAL DESIGN – SPINNING (ACL / Ring Frame) MODULE
+ # 🔹 FINAL DESIGN – SPINNING (ACL / Ring Frame) MODULE
 
 > **Important rule (as you said):**
 > 👉 *Nothing is fetched from machine automatically*
