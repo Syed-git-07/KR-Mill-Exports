@@ -46,7 +46,7 @@ if (typeof window !== "undefined") {
           setTimeout(checkAndRedirect, 200)
         } else {
           try {
-            window.location.href = "/"
+            window.location.href = "/kr-production-app/"
           } catch (routeErr) {
             console.error("Redirection error:", routeErr)
           }
