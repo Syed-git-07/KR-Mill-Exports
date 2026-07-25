@@ -17,7 +17,7 @@ import {
  * - Clicking opens modal with search input.
  * - Typing any letter while focused opens modal and seeds search.
  * - Modal shows stoppage name + head/category.
- * - Enter confirms highlighted option and moves to next row.
+ * - Enter confirms the highlighted option and closes the modal.
  * - X button clears selection.
  */
 export default function StoppageAutocomplete({
@@ -73,8 +73,7 @@ export default function StoppageAutocomplete({
     setModalOpen(false)
     setModalSearch('')
     setModalHighlightedIndex(-1)
-    setTimeout(() => onEnterNavigation?.(), 50)
-  }, [onSelect, onEnterNavigation])
+  }, [onSelect])
 
   const openSearchModal = useCallback((initial = '') => {
     setModalSearch(initial)

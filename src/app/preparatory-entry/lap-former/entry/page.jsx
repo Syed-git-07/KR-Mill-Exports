@@ -414,6 +414,8 @@ function LapFormerEntryContent() {
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
         clearAllDrafts()
+        router.push('/preparatory-entry/lap-former')
+        return
       }
 
       await handleRefresh()

@@ -403,6 +403,8 @@ function FinisherDrawingEntryContent() {
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
         clearAllDrafts()
+        router.push('/preparatory-entry/finisher-drawing')
+        return
       }
 
       await handleRefresh()

@@ -292,6 +292,8 @@ function ComberEntryContent() {
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
         clearAllDrafts()
+        router.push('/preparatory-entry/comber')
+        return
       }
 
       handleRefresh()

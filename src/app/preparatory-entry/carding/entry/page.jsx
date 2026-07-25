@@ -301,6 +301,8 @@ function CardingEntryContent() {
         toast.error(`Saved ${totalSaved} change(s), but ${failures.length} tab(s) failed`)
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
+        router.push('/preparatory-entry/carding')
+        return
       }
 
       handleRefresh()

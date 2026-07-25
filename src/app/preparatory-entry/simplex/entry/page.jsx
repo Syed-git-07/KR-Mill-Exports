@@ -360,6 +360,9 @@ function SimplexEntryContent() {
 
       if (failures.length > 0) {
         toast.error(`Failed to save: ${failures.join(', ')}`)
+      } else {
+        router.push('/preparatory-entry/simplex')
+        return
       }
 
       await Promise.all([
@@ -373,7 +376,7 @@ function SimplexEntryContent() {
     } finally {
       setIsSavingAll(false)
     }
-  }, [totalEditedCount, editedCounts])
+  }, [totalEditedCount, editedCounts, router])
 
   const handleCancelAllChanges = useCallback(async () => {
     if (totalEditedCount === 0) {
