@@ -1280,17 +1280,17 @@ export async function copyAutoconerFromPreviousDate(targetDate, targetShift, tar
     const targetStoppages = await prisma.autoconer_stoppage_entry.findMany({
       where: {
         production_detail_id: { in: targetDetails.map(d => d.id) }
-      },
-      include: {
-        production_detail: {
-          select: { machine_id: true }
-        }
       }
+    })
+
+    const targetDetailMachineMap = {}
+    targetDetails.forEach(d => {
+      targetDetailMachineMap[d.id] = d.machine_id
     })
 
     // Copy stoppage data
     for (const targetStoppage of targetStoppages || []) {
-      const machineId = targetStoppage.production_detail?.machine_id
+      const machineId = targetDetailMachineMap[targetStoppage.production_detail_id]
       const sourceStoppage = sourceStoppageMap[machineId]
       if (!sourceStoppage) continue
 
