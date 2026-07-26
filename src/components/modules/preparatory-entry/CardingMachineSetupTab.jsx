@@ -308,7 +308,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     }))
   }
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     if (Object.keys(editedRows).length === 0) {
       if (!suppressNoChangesToast) {
@@ -518,7 +518,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

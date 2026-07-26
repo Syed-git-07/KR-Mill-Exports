@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
-import { Loader2, RefreshCw, Plus, Trash2, Edit, Save } from 'lucide-react'
+import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getFinisherDrawingMachineSetupsAction,
@@ -283,7 +283,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     }))
   }
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     const pendingEdits = editedRowsRef.current || editedRows || {}
 
@@ -515,23 +515,17 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
   return (
     <div className="space-y-4">
-      {/* Header with Refresh and Save */}
+      {/* Header with draft count and Refresh */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
         <div className="flex gap-2">
-          {Object.keys(editedRows).length > 0 && (
-            <Button size="sm" onClick={() => handleSave()} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-              Save Changes ({Object.keys(editedRows).length})
-            </Button>
-          )}
           <Button variant="outline" size="sm" onClick={handleRefreshClick}>
             <RefreshCw className="h-4 w-4 mr-1" />
             Refresh

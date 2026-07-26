@@ -382,7 +382,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       }
     } catch (error) {
       console.error('Error saving:', error)
-      toast.error('Failed to save changes')
+      toast.error('Failed to update production')
       return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
@@ -428,7 +428,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           Total Machines: <span className="font-semibold">{productionData.length}</span>
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

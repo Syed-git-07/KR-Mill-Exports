@@ -325,7 +325,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       return { success: true, saved: rowsToSave.length }
     } catch (error) {
       console.error('Error saving production data:', error)
-      toast.error('Failed to save changes')
+      toast.error('Failed to update production')
       return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
@@ -372,7 +372,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           {productionData.length} machines | Shift Time: {totalTime} mins | MCEffi: 92%
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

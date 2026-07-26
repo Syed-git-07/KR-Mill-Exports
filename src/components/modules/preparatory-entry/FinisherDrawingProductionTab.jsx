@@ -479,7 +479,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     ))
   }
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   // PATTERN (mirrors Spinning): read ONLY from editedRowsRef.current — the synchronously-maintained
   // source of truth. Do NOT merge with stale `editedRows` state prop, which may lag by one or more
   // parent render cycles and corrupt decimal values (e.g. {waste:6} overwriting {waste:6.78}).
@@ -620,7 +620,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
           {productionData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

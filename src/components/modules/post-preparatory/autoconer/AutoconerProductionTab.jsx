@@ -279,7 +279,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     }))
   }
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     const draftRows = editedRowsRef.current || {}
     if (Object.keys(draftRows).length === 0) {

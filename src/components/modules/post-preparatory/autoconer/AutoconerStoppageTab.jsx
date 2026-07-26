@@ -19,12 +19,11 @@ import { toast } from 'sonner'
 import {
   getAutoconerStoppageEntriesAction,
   updateAutoconerStoppageEntryAction,
-  applyAutoconerFullStoppageAction,
-  applyAutoconerPartialStoppageAction,
   getStoppageDetailsAction,
   getAutoconerMachinesAction,
   syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
+import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
 
 // Helper function to safely convert any value to a number
 const toNumber = (value) => {
@@ -33,6 +32,12 @@ const toNumber = (value) => {
   if (typeof value === 'string') return parseFloat(value) || 0
   if (typeof value === 'object' && value.toString) return parseFloat(value.toString()) || 0
   return 0
+}
+
+const getAutoconerMachineSequence = (machineNo) => {
+  const match = String(machineNo || '').match(/^AC(\d+)-(\d+)$/i)
+  if (match) return (parseInt(match[1]) * 100) + parseInt(match[2])
+  return parseInt(String(machineNo || '').replace(/\D/g, '') || '0')
 }
 
 // Helper function to format number with fixed decimals
@@ -303,7 +308,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     })
   }, [setEditedRows])
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
@@ -371,8 +376,8 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     discardChanges
   }), [handleSave, isSaving, discardChanges])
 
-  // Apply full stoppage (draft-safe: does not force save/discard of unsaved row edits)
-  const handleApplyFullStoppage = async () => {
+  // Apply full stoppage to shared local drafts. Final Update persists it.
+  const handleApplyFullStoppage = () => {
     if (!fullStoppage.reason) {
       toast.warning('Please select a stoppage reason')
       return
@@ -383,45 +388,29 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
       toast.error('Enter a valid stoppage time greater than 0 minutes.')
       return
     }
-    const wouldExceed = stoppageData.some(row => {
-      const hasFreeSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
-      const currentTotal = [1, 2, 3, 4].reduce(
-        (total, slot) => total + (Number(row[`stoppage${slot}_time`]) || 0),
-        0
-      )
-      return hasFreeSlot && currentTotal + parsedTime > shiftTimeVal
+    const selectedReason = stoppageReasons.find(
+      item => String(item.id) === String(fullStoppage.reason)
+    )
+    const result = applyBulkStoppageDraft({
+      rows: stoppageData,
+      drafts: editedRows,
+      reasonId: fullStoppage.reason,
+      reason: selectedReason,
+      minutes: parsedTime,
+      maxMinutes: shiftTimeVal,
+      additionalChanges: { is_full_stoppage: true }
     })
-    if (wouldExceed) {
-      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
-      return
-    }
 
-    setIsSaving(true)
-    try {
-      const result = await applyAutoconerFullStoppageAction(
-        headerId, 
-        fullStoppage.reason, 
-        parseInt(fullStoppage.time)
-      )
-      if (!result.success) throw new Error(result.error)
-
-      applyServerRowsToDrafts(result.data || [])
-      
-      const updated = result.data?.length || 0
-      const skipped = Math.max(0, stoppageData.length - updated)
-      toast.success(`Full stoppage applied: updated ${updated}, skipped ${skipped}`)
-      setFullStoppage({ reason: '', time: '' })
-      await loadData()
-    } catch (error) {
-      console.error('Error applying full stoppage:', error)
-      toast.error('Failed to apply full stoppage')
-    } finally {
-      setIsSaving(false)
-    }
+    setEditedRows(result.drafts)
+    setStoppageData(result.rows)
+    toast.success(
+      `Full stoppage added to draft: updated ${result.updatedCount}, skipped ${result.skippedCount}, overflow ${result.overflowCount}`
+    )
+    setFullStoppage({ reason: '', time: '' })
   }
 
-  // Apply partial stoppage (draft-safe: does not force save/discard of unsaved row edits)
-  const handleApplyPartialStoppage = async () => {
+  // Apply partial stoppage to shared local drafts. Final Update persists it.
+  const handleApplyPartialStoppage = () => {
     if (!partialStoppage.reason || !partialStoppage.fromMachine || !partialStoppage.toMachine) {
       toast.warning('Please fill all fields for partial stoppage')
       return
@@ -432,64 +421,38 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
       toast.error('Enter a valid stoppage time greater than 0 minutes.')
       return
     }
-    const fromNum = parseInt(String(partialStoppage.fromMachine || '').replace(/\D/g, '') || '0')
-    const toNum = parseInt(String(partialStoppage.toMachine || '').replace(/\D/g, '') || '0')
+    const fromNum = getAutoconerMachineSequence(partialStoppage.fromMachine)
+    const toNum = getAutoconerMachineSequence(partialStoppage.toMachine)
     const minNum = Math.min(fromNum, toNum)
     const maxNum = Math.max(fromNum, toNum)
 
-    let partialWouldExceed = false
-    for (const row of stoppageData) {
-      // In autoconer, the machine number is on row.production_detail?.machine?.machine_no
-      const mcNo = row.production_detail?.machine?.machine_no
-      if (!mcNo) continue
-      const mcNum = parseInt(mcNo.replace(/\D/g, ''))
-      if (mcNum >= minNum && mcNum <= maxNum) {
-        const hasSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
-        if (hasSlot) {
-          const currentTotal = (Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)
-          if (currentTotal + parsedTime > shiftTimeVal) {
-            partialWouldExceed = true
-            break
-          }
-        }
+    const selectedReason = stoppageReasons.find(
+      item => String(item.id) === String(partialStoppage.reason)
+    )
+    const result = applyBulkStoppageDraft({
+      rows: stoppageData,
+      drafts: editedRows,
+      reasonId: partialStoppage.reason,
+      reason: selectedReason,
+      minutes: parsedTime,
+      maxMinutes: shiftTimeVal,
+      shouldApply: row => {
+        const machineNo = row.production_detail?.machine?.machine_no || ''
+        const machineNumber = getAutoconerMachineSequence(machineNo)
+        return machineNumber >= minNum && machineNumber <= maxNum
       }
-    }
-    if (partialWouldExceed) {
-      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
-      return
-    }
+    })
 
-    setIsSaving(true)
-    try {
-      const result = await applyAutoconerPartialStoppageAction(
-        headerId,
-        partialStoppage.fromMachine,
-        partialStoppage.toMachine,
-        partialStoppage.reason,
-        parseInt(partialStoppage.time)
-      )
-      if (!result.success) throw new Error(result.error)
-
-      applyServerRowsToDrafts(result.data?.appliedRows || [])
-
-      const updated = result.data?.updatedCount || 0
-      const overflow = result.data?.overflowCount || 0
-      const skipped = result.data?.skippedCount || 0
-
-      if (updated === 0) {
+    setEditedRows(result.drafts)
+    setStoppageData(result.rows)
+    if (result.updatedCount === 0) {
         toast.warning('No machines updated. All target machines may already have all 4 stoppage slots filled.')
-      } else {
-        toast.success(`Partial stoppage applied: updated ${updated}, skipped ${skipped}, overflow ${overflow}`)
-      }
-
-      setPartialStoppage({ reason: '', fromMachine: '', toMachine: '', time: '' })
-      await loadData()
-    } catch (error) {
-      console.error('Error applying partial stoppage:', error)
-      toast.error(error.message || 'Failed to apply partial stoppage')
-    } finally {
-      setIsSaving(false)
+    } else {
+      toast.success(
+        `Partial stoppage added to draft: updated ${result.updatedCount}, skipped ${result.skippedCount}, overflow ${result.overflowCount}`
+      )
     }
+    setPartialStoppage({ reason: '', fromMachine: '', toMachine: '', time: '' })
   }
 
   if (isLoading) {

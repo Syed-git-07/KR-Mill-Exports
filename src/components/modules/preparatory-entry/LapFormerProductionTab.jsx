@@ -456,7 +456,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
     ))
   }
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     const currentEdits = editedRowsRef.current || editedRows || {}
 
@@ -582,7 +582,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           {productionData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

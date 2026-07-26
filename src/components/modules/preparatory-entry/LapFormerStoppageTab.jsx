@@ -18,8 +18,6 @@ import {
   getLapFormerStoppageEntriesAction,
   updateLapFormerStoppageEntryAction,
   getLapFormerStoppageReasonsAction,
-  applyLapFormerFullStoppageAction,
-  applyLapFormerPartialStoppageAction,
   getLapFormerMachinesAction,
   getLapFormerMachineSetupsAction,
   updateLapFormerDetailAction
@@ -29,6 +27,7 @@ import { getLapFormerActProdnConstant, resolveLapFormerFormulaInputs } from '@/l
 import { resolveLapFormerShiftFallbackTime } from '@/lib/lapFormerShiftFallback'
 import { NumberInput } from '@/components/ui/number-input'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
+import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
 
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0
@@ -435,7 +434,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     }))
   }
 
-  // Save changes
+  // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
@@ -550,8 +549,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     refreshData: () => loadData({ force: true })
   }), [handleSave, editedRows, isSaving, discardChanges, loadData])
 
-  // Apply full stoppage
-  const handleApplyFullStoppage = async () => {
+  // Apply full stoppage to shared local drafts. Final Update persists it.
+  const handleApplyFullStoppage = () => {
     const parsedTime = parseInt(fullStoppage.time)
     if (!fullStoppage.reason) {
       toast.warning('Please select a stoppage reason')
@@ -562,43 +561,29 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       return
     }
 
-    const wouldExceed = stoppageData.some(row => {
-      const hasFreeSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
-      const currentTotal = [1, 2, 3, 4].reduce(
-        (total, slot) => total + (Number(row[`stoppage${slot}_time`]) || 0),
-        0
-      )
-      return hasFreeSlot && currentTotal + parsedTime > shiftTimeVal
+    const selectedReason = stoppageReasons.find(
+      item => String(item.id) === String(fullStoppage.reason)
+    )
+    const result = applyBulkStoppageDraft({
+      rows: stoppageData,
+      drafts: editedRows,
+      reasonId: fullStoppage.reason,
+      reason: selectedReason,
+      minutes: parsedTime,
+      maxMinutes: shiftTimeVal,
+      additionalChanges: { is_full_stoppage: true }
     })
-    if (wouldExceed) {
-      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
-      return
-    }
 
-    setIsSaving(true)
-    try {
-      const result = await applyLapFormerFullStoppageAction(headerId, fullStoppage.reason, parsedTime)
-      if (!result?.success) {
-        throw new Error(result?.error || 'Failed to apply full stoppage')
-      }
-
-      const updated = result.data?.updatedCount || 0
-      const overflow = result.data?.overflowCount || 0
-      const skipped = result.data?.skippedCount || 0
-      toast.success(`Full stoppage applied: updated ${updated}, skipped ${skipped}, overflow ${overflow}`)
-
-      setFullStoppage({ reason: '', time: '' })
-      await loadData({ force: true })
-    } catch (error) {
-      console.error('Error applying full stoppage:', error)
-      toast.error(error?.message || 'Failed to apply full stoppage')
-    } finally {
-      setIsSaving(false)
-    }
+    setEditedRows(result.drafts)
+    setStoppageData(result.rows)
+    toast.success(
+      `Full stoppage added to draft: updated ${result.updatedCount}, skipped ${result.skippedCount}, overflow ${result.overflowCount}`
+    )
+    setFullStoppage({ reason: '', time: '' })
   }
 
-  // Apply partial stoppage
-  const handleApplyPartialStoppage = async () => {
+  // Apply partial stoppage to shared local drafts. Final Update persists it.
+  const handleApplyPartialStoppage = () => {
     const parsedTime = parseInt(partialStoppage.time)
     if (!partialStoppage.reason || !partialStoppage.fromMachine || !partialStoppage.toMachine) {
       toast.warning('Please fill all fields for partial stoppage')
@@ -614,59 +599,33 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     const minNum = Math.min(fromNum, toNum)
     const maxNum = Math.max(fromNum, toNum)
 
-    let partialWouldExceed = false
-    for (const row of stoppageData) {
-      const mcNo = row.production_detail?.machine?.machine_no
-      if (!mcNo) continue
-      const mcNum = parseInt(mcNo.replace(/\D/g, ''))
-      if (mcNum >= minNum && mcNum <= maxNum) {
-        const hasSlot = !row.stoppage1_id || !row.stoppage2_id || !row.stoppage3_id || !row.stoppage4_id
-        if (hasSlot) {
-          const currentTotal = (Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)
-          if (currentTotal + parsedTime > shiftTimeVal) {
-            partialWouldExceed = true
-            break
-          }
-        }
+    const selectedReason = stoppageReasons.find(
+      item => String(item.id) === String(partialStoppage.reason)
+    )
+    const result = applyBulkStoppageDraft({
+      rows: stoppageData,
+      drafts: editedRows,
+      reasonId: partialStoppage.reason,
+      reason: selectedReason,
+      minutes: parsedTime,
+      maxMinutes: shiftTimeVal,
+      shouldApply: row => {
+        const machineNo = row.production_detail?.machine?.machine_no || ''
+        const machineNumber = parseInt(String(machineNo).replace(/\D/g, '') || '0')
+        return machineNumber >= minNum && machineNumber <= maxNum
       }
-    }
-    if (partialWouldExceed) {
-      toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
-      return
-    }
+    })
 
-    setIsSaving(true)
-    try {
-      const result = await applyLapFormerPartialStoppageAction(
-        headerId,
-        partialStoppage.fromMachine,
-        partialStoppage.toMachine,
-        partialStoppage.reason,
-        parsedTime
-      )
-
-      if (!result?.success) {
-        throw new Error(result?.error || 'Failed to apply partial stoppage')
-      }
-
-      const updated = result.data?.updatedCount || 0
-      const overflow = result.data?.overflowCount || 0
-      const skipped = result.data?.skippedCount || 0
-
-      if (updated === 0) {
+    setEditedRows(result.drafts)
+    setStoppageData(result.rows)
+    if (result.updatedCount === 0) {
         toast.warning('No machines updated. All target machines may already have all 4 stoppage slots filled.')
-      } else {
-        toast.success(`Partial stoppage applied: updated ${updated}, skipped ${skipped}, overflow ${overflow}`)
-      }
-
-      setPartialStoppage({ reason: '', fromMachine: '', toMachine: '', time: '' })
-      await loadData({ force: true })
-    } catch (error) {
-      console.error('Error applying partial stoppage:', error)
-      toast.error(error?.message || 'Failed to apply partial stoppage')
-    } finally {
-      setIsSaving(false)
+    } else {
+      toast.success(
+        `Partial stoppage added to draft: updated ${result.updatedCount}, skipped ${result.skippedCount}, overflow ${result.overflowCount}`
+      )
     }
+    setPartialStoppage({ reason: '', fromMachine: '', toMachine: '', time: '' })
   }
 
   if (isLoading) {
@@ -694,7 +653,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
           {stoppageData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Unsaved changes: {Object.keys(editedRows).length}
+              Auto-saved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

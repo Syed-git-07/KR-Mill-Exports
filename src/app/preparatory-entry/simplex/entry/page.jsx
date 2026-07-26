@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { CalendarIcon, Copy, Loader2, Save, RefreshCw, ArrowLeft } from 'lucide-react'
+import { CalendarIcon, Copy, Loader2, CheckCircle2, RefreshCw, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -332,9 +332,9 @@ function SimplexEntryContent() {
     setIsSavingAll(true)
     try {
       const tabSaves = [
-        { key: 'Production', count: editedCounts.production, ref: productionTabRef.current },
+        { key: 'Machine Setup', count: editedCounts.setup, ref: setupTabRef.current },
         { key: 'Stoppage', count: editedCounts.stoppage, ref: stoppageTabRef.current },
-        { key: 'Machine Setup', count: editedCounts.setup, ref: setupTabRef.current }
+        { key: 'Production', count: editedCounts.production, ref: productionTabRef.current }
       ].filter(tab => tab.count > 0)
 
       let totalSaved = 0
@@ -647,18 +647,6 @@ function SimplexEntryContent() {
                   </DialogContent>
                 </Dialog>
 
-                <Button
-                  onClick={handleSaveAllChanges}
-                  disabled={isSavingAll || totalEditedCount === 0}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {isSavingAll ? (
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-1" />
-                  )}
-                  Update ({totalEditedCount})
-                </Button>
               </div>
             )}
           </div>
@@ -766,7 +754,7 @@ function SimplexEntryContent() {
                   {isSavingAll ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : (
-                    <Save className="h-4 w-4 mr-1" />
+                    <CheckCircle2 className="h-4 w-4 mr-1" />
                   )}
                   Update
                 </Button>

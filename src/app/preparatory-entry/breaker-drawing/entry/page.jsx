@@ -28,7 +28,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
-import { CalendarIcon, Loader2, Save, Copy, ArrowLeft } from 'lucide-react'
+import { CalendarIcon, Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveBreakerDrawingShiftFallbackTime } from '@/lib/breakerDrawingShiftFallback'
@@ -349,15 +349,7 @@ function BreakerDrawingEntryContent() {
 
     setIsSavingAll(true)
     try {
-      // Save in sequence to avoid cross-tab overwrite races.
-      const prodResult = await (
-        productionTabRef.current?.saveChanges?.({
-          suppressNoChangesToast: true,
-          suppressSuccessToast: true,
-          skipParentRefresh: true
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-
+      // Persist dependencies first so the final production save uses current setup/stoppage values.
       const setupResult = await (
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
@@ -368,6 +360,14 @@ function BreakerDrawingEntryContent() {
 
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
+          suppressNoChangesToast: true,
+          suppressSuccessToast: true,
+          skipParentRefresh: true
+        }) || Promise.resolve({ success: true, saved: 0 })
+      )
+
+      const prodResult = await (
+        productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true
@@ -632,18 +632,6 @@ function BreakerDrawingEntryContent() {
                     </div>
                   </DialogContent>
                 </Dialog>
-                <Button 
-                  onClick={handleSaveAllTabs}
-                  disabled={isSavingAll}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {isSavingAll ? (
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-1" />
-                  )}
-                  Save Changes
-                </Button>
               </div>
             )}
           </div>
@@ -753,7 +741,7 @@ function BreakerDrawingEntryContent() {
               </div>
               <div className="flex gap-2">
                 <Button variant="default" onClick={handleSaveAllTabs} disabled={isSavingAll}>
-                  <Save className="h-4 w-4 mr-1" />
+                  <CheckCircle2 className="h-4 w-4 mr-1" />
                   Update
                 </Button>
                 <Button variant="destructive" onClick={handleCancelAllDrafts}>

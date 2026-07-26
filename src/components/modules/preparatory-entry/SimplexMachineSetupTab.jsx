@@ -307,7 +307,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       return { success: true, saved: rowsToSave.length }
     } catch (error) {
       console.error('Error saving machine setup:', error)
-      toast.error('Failed to save changes')
+      toast.error('Failed to update machine setup')
       return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
@@ -479,7 +479,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
               <span className="text-sm text-gray-600">{setupData.length} machines</span>
               {Object.keys(editedRows).length > 0 && (
                 <span className="text-yellow-600 font-medium text-sm">
-                  • {Object.keys(editedRows).length} unsaved change(s)
+                  • Auto-saved draft: {Object.keys(editedRows).length}
                 </span>
               )}
             </div>
