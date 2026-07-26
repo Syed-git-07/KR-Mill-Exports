@@ -1,12 +1,32 @@
 const SYSTEM_FIELDS = new Set(['id', 'created_at', 'updated_at', 'entry_date', 'shift'])
 
-function cloneData(row, entryDate, shift) {
-  return Object.fromEntries([
+function cloneData(row, entryDate, shift, defaultSpeed = null) {
+  const cloned = Object.fromEntries([
     ...Object.entries(row)
       .filter(([key]) => !SYSTEM_FIELDS.has(key)),
     ['entry_date', entryDate],
     ['shift', shift]
   ])
+
+  if (defaultSpeed !== null && defaultSpeed !== undefined && 'speed' in row) {
+    cloned.speed = defaultSpeed
+
+    // Recalculate std_prodn for models that have it (breaker_drawing_machine_setup, finisher_drawing_machine_setup, lap_former_machine_setup)
+    if ('std_prodn' in row) {
+      const speed = Number(defaultSpeed)
+      const divisorConstant = Number(cloned.divisor_constant || 1693)
+      const hankConstant = Number(cloned.hank_constant || 0.14)
+      const stdEfficiencyFactor = Number(cloned.std_efficiency_factor || 0.85)
+      const delivery = Number(cloned.delivery || 1)
+      const shiftTime = Number(cloned.shift_time || 510)
+
+      if (hankConstant && divisorConstant) {
+        cloned.std_prodn = Math.round((speed / divisorConstant / hankConstant) * shiftTime * stdEfficiencyFactor * delivery * 100) / 100
+      }
+    }
+  }
+
+  return cloned
 }
 
 /**
@@ -18,7 +38,8 @@ export async function getOrCreateDateScopedSetups({
   setupModel,
   headerModel,
   headerId,
-  machineIds = null
+  machineIds = null,
+  machineSpeedMap = null
 }) {
   if (!headerId) {
     // Legacy callers (master lookup/add-machine flows) use the baseline rows.
@@ -62,7 +83,10 @@ export async function getOrCreateDateScopedSetups({
 
   if (sourceRows.length) {
     await setupModel.createMany({
-      data: sourceRows.map(row => cloneData(row, entryDate, shift)),
+      data: sourceRows.map(row => {
+        const defaultSpeed = machineSpeedMap ? machineSpeedMap[row.machine_id] : null
+        return cloneData(row, entryDate, shift, defaultSpeed)
+      }),
       skipDuplicates: true
     })
     targetRows = await setupModel.findMany({

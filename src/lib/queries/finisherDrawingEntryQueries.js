@@ -401,11 +401,16 @@ export async function initializeFinisherDrawingDetails(headerId) {
     })
 
     const machineIds = machines.map(m => m.id)
+    const machineSpeedMap = {};
+    machines.forEach(m => {
+      machineSpeedMap[m.id] = m.speed;
+    });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.finisher_drawing_machine_setup,
       headerModel: prisma.finisher_drawing_production_header,
       headerId,
-      machineIds
+      machineIds,
+      machineSpeedMap
     })
 
     const setupMap = {}
@@ -499,11 +504,16 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     })
 
     const machineIds = machines.map(m => m.id)
+    const machineSpeedMap = {};
+    machines.forEach(m => {
+      machineSpeedMap[m.id] = m.speed;
+    });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.finisher_drawing_machine_setup,
       headerModel: prisma.finisher_drawing_production_header,
       headerId,
-      machineIds
+      machineIds,
+      machineSpeedMap
     })
 
     const setupMap = {}
@@ -1075,11 +1085,16 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
       where: { is_active: true },
       select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
     })
+    const machineSpeedMap = {};
+    machines.forEach(m => {
+      machineSpeedMap[m.id] = m.speed;
+    });
     const data = await getOrCreateDateScopedSetups({
       setupModel: prisma.finisher_drawing_machine_setup,
       headerModel: prisma.finisher_drawing_production_header,
       headerId: validHeaderId,
-      machineIds: machines.map(machine => machine.id)
+      machineIds: machines.map(machine => machine.id),
+      machineSpeedMap
     })
     const headerDetails = validHeaderId
       ? await prisma.finisher_drawing_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
