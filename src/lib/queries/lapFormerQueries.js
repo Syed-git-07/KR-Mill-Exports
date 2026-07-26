@@ -1103,11 +1103,16 @@ export async function getLapFormerMachineSetups(headerId = null) {
   ]);
 
   const machineIds = machines.map(m => m.id);
+  const machineSpeedMap = {};
+  machines.forEach(m => {
+    machineSpeedMap[m.id] = m.speed;
+  });
   const data = await getOrCreateDateScopedSetups({
     setupModel: prisma.lap_former_machine_setup,
     headerModel: prisma.lap_former_production_header,
     headerId: validHeaderId,
-    machineIds
+    machineIds,
+    machineSpeedMap
   });
 
   const machineMap = {};

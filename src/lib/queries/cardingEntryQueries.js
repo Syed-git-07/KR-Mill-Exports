@@ -387,7 +387,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
       const inherited = inheritedSetups[machine.id] || {}
 
       const countMixing = inherited.count_mixing !== undefined ? inherited.count_mixing : (machine.prodn_mixing || '64COMBED GOLD')
-      const employeeName = inherited.employee_name !== undefined ? inherited.employee_name : null
+      const employeeName = null
       const sessionNo = inherited.session_no !== undefined ? inherited.session_no : 1
       const wasteVal = inherited.waste !== undefined && inherited.waste !== null ? inherited.waste : (setup.default_waste ?? null)
 
@@ -538,7 +538,7 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
       const inherited = inheritedSetups[machine.id] || {}
 
       const countMixing = inherited.count_mixing !== undefined ? inherited.count_mixing : (machine.prodn_mixing || '64COMBED GOLD')
-      const employeeName = inherited.employee_name !== undefined ? inherited.employee_name : null
+      const employeeName = null
       const sessionNo = inherited.session_no !== undefined ? inherited.session_no : 1
       const wasteVal = inherited.waste !== undefined && inherited.waste !== null ? inherited.waste : (setup.default_waste ?? null)
 
@@ -1049,8 +1049,10 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
 
       const cloneData = prevSetups.map(s => {
         const { id, created_at, updated_at, ...rest } = s
+        const machine = activeMachines.find(m => m.id === s.machine_id)
+        const defaultSpeed = machine ? (machine.speed ?? rest.speed) : rest.speed
         const fallbackStdProdn = calculateCardingStdProdn({
-          speed: rest.speed,
+          speed: defaultSpeed,
           divisor_constant: rest.divisor_constant ?? 1693,
           hank_constant: rest.hank_constant,
           std_efficiency_factor: rest.std_efficiency_factor
@@ -1058,6 +1060,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
 
         return {
           ...rest,
+          speed: defaultSpeed,
           entry_date: dateObj,
           shift: shiftNum,
           shift_time: targetShiftTime,

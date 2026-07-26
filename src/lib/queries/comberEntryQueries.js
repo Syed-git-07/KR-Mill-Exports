@@ -816,11 +816,16 @@ export async function getComberMachineSetups(headerId = null) {
       where: { is_active: true },
       select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
     })
+    const machineSpeedMap = {};
+    machines.forEach(m => {
+      machineSpeedMap[m.id] = m.speed;
+    });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.comber_machine_setup,
       headerModel: prisma.comber_production_header,
       headerId: validHeaderId,
-      machineIds: machines.map(machine => machine.id)
+      machineIds: machines.map(machine => machine.id),
+      machineSpeedMap
     })
     const headerDetails = validHeaderId
       ? await prisma.comber_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
