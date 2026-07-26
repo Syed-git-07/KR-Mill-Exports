@@ -580,8 +580,8 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
         toast.success('Stoppage data saved and production recalculated')
       }
       
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

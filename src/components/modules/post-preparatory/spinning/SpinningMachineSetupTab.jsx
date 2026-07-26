@@ -366,8 +366,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
           toast.success(`Saved ${updates.length} setup(s)`)
         }
         setEditedRows({})
-        loadData()
         if (!skipParentRefresh) {
+          await loadData()
           onRefresh?.()
         }
         return { success: true, saved: updates.length }

@@ -496,9 +496,8 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
         toast.success('Production data saved successfully')
       }
       
-      // Reload data
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

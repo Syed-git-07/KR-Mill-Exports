@@ -361,8 +361,8 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         toast.success('Setup data saved successfully')
       }
       
-      await loadData()
       if (!skipParentRefresh) {
+        await loadData()
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

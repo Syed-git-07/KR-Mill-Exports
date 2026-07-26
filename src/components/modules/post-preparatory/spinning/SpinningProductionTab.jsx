@@ -372,8 +372,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           toast.success(`Saved ${updates.length} production record(s)`)
         }
         setEditedRows({})
-        loadData()
         if (!skipParentRefresh) {
+          await loadData()
           onRefresh?.()
         }
         return { success: true, saved: updates.length }

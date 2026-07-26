@@ -409,9 +409,8 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
         toast.success('Production data saved successfully')
       }
       
-      // Reload data
-      await loadData()
       if (!skipParentRefresh) {
+        await loadData()
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

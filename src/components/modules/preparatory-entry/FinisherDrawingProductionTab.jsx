@@ -560,10 +560,9 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         toast.success('Production data saved successfully')
       }
       
-      await loadData({ force: true })
-      console.log('[FD-TRACE][save:reload-done] productionData refreshed from DB')
-
       if (!skipParentRefresh) {
+        await loadData({ force: true })
+        console.log('[FD-TRACE][save:reload-done] productionData refreshed from DB')
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

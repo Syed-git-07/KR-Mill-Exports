@@ -528,8 +528,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
         toast.success('Production data saved successfully')
       }
       
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

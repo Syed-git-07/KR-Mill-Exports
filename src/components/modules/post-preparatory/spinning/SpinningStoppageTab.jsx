@@ -387,8 +387,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})
-      await loadData()
       if (!skipParentRefresh) {
+        await loadData()
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

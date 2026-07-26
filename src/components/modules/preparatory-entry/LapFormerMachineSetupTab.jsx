@@ -348,8 +348,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         toast.success('Machine setups saved successfully')
       }
       
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

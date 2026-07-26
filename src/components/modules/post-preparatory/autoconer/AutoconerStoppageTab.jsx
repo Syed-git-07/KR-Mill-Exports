@@ -335,8 +335,8 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
         toast.success('Stoppage data saved successfully')
       }
       
-      await loadData()
       if (!skipParentRefresh) {
+        await loadData()
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

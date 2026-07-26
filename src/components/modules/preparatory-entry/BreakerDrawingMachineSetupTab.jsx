@@ -271,8 +271,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
         toast.success('Machine setups saved successfully')
       }
       
-      await loadData()
       if (!skipParentRefresh) {
+        await loadData()
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

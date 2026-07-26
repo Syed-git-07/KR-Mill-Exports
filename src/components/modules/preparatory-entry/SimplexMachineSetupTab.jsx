@@ -302,8 +302,10 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       }
       setEditedRows({})
       
-      await loadData({ force: true })
-      if (!skipParentRefresh) onRefresh?.()
+      if (!skipParentRefresh) {
+        await loadData({ force: true })
+        onRefresh?.()
+      }
       return { success: true, saved: rowsToSave.length }
     } catch (error) {
       console.error('Error saving machine setup:', error)

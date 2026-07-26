@@ -561,8 +561,8 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         toast.success('Stoppage data saved and production recalculated')
       }
       
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

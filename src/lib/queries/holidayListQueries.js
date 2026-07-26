@@ -29,6 +29,31 @@ async function findTableSchemas(tableName) {
   }
 }
 
+let holidayTablesSchemaPromise
+
+async function findHolidayTablesSchema() {
+  if (!holidayTablesSchemaPromise) {
+    holidayTablesSchemaPromise = prisma.$queryRaw`
+      SELECT h.TABLE_SCHEMA AS schema_name
+      FROM information_schema.tables h
+      INNER JOIN information_schema.tables hl
+        ON hl.TABLE_SCHEMA = h.TABLE_SCHEMA
+       AND hl.TABLE_NAME = 'holiday_lists'
+      WHERE h.TABLE_NAME = 'holidays'
+      ORDER BY (h.TABLE_SCHEMA = DATABASE()) DESC, h.TABLE_SCHEMA ASC
+      LIMIT 1
+    `
+      .then(rows => rows?.[0]?.schema_name || null)
+      .catch(() => null)
+  }
+
+  return holidayTablesSchemaPromise
+}
+
+function quoteIdentifier(identifier) {
+  return `\`${String(identifier).replaceAll('`', '``')}\``
+}
+
 function normalizeDateForSQL(dateInput) {
   try {
     const d = new Date(dateInput)
@@ -653,59 +678,44 @@ export async function deleteHoliday(id) {
 
 export async function isHoliday(dateString) {
   try {
-    const formattedDate = normalizeDateForSQL(dateString)
-    const [result] = await prisma.$queryRaw`
+    const schemaName = await findHolidayTablesSchema()
+    if (!schemaName) return null
+
+    const sql = Prisma.sql`
       SELECT h.id, h.description, h.type
-      FROM holidays h
-      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
-      WHERE h.date = ${formattedDate}
+      FROM ${Prisma.raw(`${quoteIdentifier(schemaName)}.${quoteIdentifier('holidays')}`)} h
+      INNER JOIN ${Prisma.raw(`${quoteIdentifier(schemaName)}.${quoteIdentifier('holiday_lists')}`)} hl
+        ON hl.id = h.holidayListId
+      WHERE h.date = ${normalizeDateForSQL(dateString)}
         AND hl.status = 'Active'
         AND h.date BETWEEN hl.startDate AND hl.endDate
       LIMIT 1
     `
+    const [result] = await prisma.$queryRaw(sql)
     return result || null
   } catch (error) {
-    if (isMissingTableError(error)) {
-      try {
-        const schemaName = await findTableSchema('holidays')
-        if (schemaName) {
-          const sql = `SELECT h.id, h.description, h.type FROM \`${schemaName}\`.holidays h INNER JOIN \`${schemaName}\`.holiday_lists hl ON hl.id = h.holidayListId WHERE h.date = '${normalizeDateForSQL(dateString)}' AND hl.status = 'Active' AND h.date BETWEEN hl.startDate AND hl.endDate LIMIT 1`
-          const [result] = await prisma.$queryRawUnsafe(sql)
-          return result || null
-        }
-        return null
-      } catch (e) {
-        return null
-      }
-    }
+    if (isMissingTableError(error)) return null
     throw error
   }
 }
 
 export async function getAllHolidayDates() {
   try {
-    const holidays = await prisma.$queryRaw`
+    const schemaName = await findHolidayTablesSchema()
+    if (!schemaName) return []
+
+    const sql = Prisma.sql`
       SELECT h.date
-      FROM holidays h
-      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      FROM ${Prisma.raw(`${quoteIdentifier(schemaName)}.${quoteIdentifier('holidays')}`)} h
+      INNER JOIN ${Prisma.raw(`${quoteIdentifier(schemaName)}.${quoteIdentifier('holiday_lists')}`)} hl
+        ON hl.id = h.holidayListId
       WHERE hl.status = 'Active'
         AND h.date BETWEEN hl.startDate AND hl.endDate
     `
+    const holidays = await prisma.$queryRaw(sql)
     return (holidays || []).map(h => h.date)
   } catch (error) {
-    if (isMissingTableError(error)) {
-      try {
-        const schemaName = await findTableSchema('holidays')
-        if (schemaName) {
-          const sql = `SELECT h.date FROM \`${schemaName}\`.holidays h INNER JOIN \`${schemaName}\`.holiday_lists hl ON hl.id = h.holidayListId WHERE hl.status = 'Active' AND h.date BETWEEN hl.startDate AND hl.endDate`
-          const holidays = await prisma.$queryRawUnsafe(sql)
-          return (holidays || []).map(h => h.date)
-        }
-        return []
-      } catch (e) {
-        return []
-      }
-    }
+    if (isMissingTableError(error)) return []
     throw error
   }
 }

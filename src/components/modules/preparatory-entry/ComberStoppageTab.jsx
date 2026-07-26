@@ -480,8 +480,8 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
         toast.success('Stoppage data saved successfully')
       }
       
-      await loadData()
       if (!skipParentRefresh) {
+        await loadData()
         onRefresh?.()
       }
       return { success: true, saved: savedCount }

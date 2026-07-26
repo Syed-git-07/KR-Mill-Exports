@@ -332,8 +332,8 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         toast.success('Machine setups saved successfully')
       }
       
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         await onRefresh?.()
       }
       return { success: true, saved: savedCount }

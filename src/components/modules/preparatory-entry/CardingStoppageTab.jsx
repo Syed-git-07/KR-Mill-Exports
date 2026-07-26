@@ -490,8 +490,8 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
         toast.success('Stoppage data saved successfully')
       }
       
-      await loadData({ force: true })
       if (!skipParentRefresh) {
+        await loadData({ force: true })
         onRefresh?.()
       }
       return { success: true, saved: savedCount }
