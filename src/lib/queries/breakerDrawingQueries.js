@@ -1408,10 +1408,7 @@ export async function copyBreakerDrawingFromPreviousDate(targetDate, targetShift
   
   // Get target's existing production details
   const targetDetails = await prisma.breaker_drawing_production_detail.findMany({
-    where: { header_id: targetHeaderId },
-    include: {
-      machine: { select: { machine_no: true } }
-    }
+    where: { header_id: targetHeaderId }
   });
   
   // Create a map of machine_id to source data
@@ -1462,14 +1459,16 @@ export async function copyBreakerDrawingFromPreviousDate(targetDate, targetShift
   const targetStoppages = await prisma.breaker_drawing_stoppage_entry.findMany({
     where: {
       production_detail_id: { in: targetDetails.map(d => d.id) }
-    },
-    include: {
-      production_detail: { select: { machine_id: true } }
     }
+  });
+
+  const targetDetailMachineMap = {};
+  targetDetails.forEach(d => {
+    targetDetailMachineMap[d.id] = d.machine_id;
   });
   
   const stoppageUpdatePromises = targetStoppages?.map(async (targetStoppage) => {
-    const machineId = targetStoppage.production_detail?.machine_id;
+    const machineId = targetDetailMachineMap[targetStoppage.production_detail_id];
     const sourceStoppage = sourceStoppageMap[machineId];
     if (!sourceStoppage) return null;
     
