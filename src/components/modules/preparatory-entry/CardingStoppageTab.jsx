@@ -24,6 +24,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { resolveCardingFormulaInputs } from '@/lib/cardingFormulaFallback'
 import {
@@ -330,9 +331,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     }
   }, [headerId, effectiveTotalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, effectiveTotalTime])
 
   useEffect(() => {
     if (!stoppageData.length) return

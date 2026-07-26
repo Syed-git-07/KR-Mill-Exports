@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   Select,
   SelectContent,
@@ -264,9 +265,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     }
   }, [headerId, totalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, totalTime])
 
   const getEffectiveSetup = useCallback((machineId) => {
     const baseSetup = machineSetupsRef.current[machineId] || machineSetups[machineId]

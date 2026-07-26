@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   Select,
   SelectContent,
@@ -353,9 +354,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     }
   }, [headerId, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId])
 
   useEffect(() => {
     if (!stoppageData.length) return

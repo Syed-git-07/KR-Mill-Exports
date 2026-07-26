@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getAutoconerStoppageEntriesAction,
   updateAutoconerStoppageEntryAction,
@@ -204,9 +205,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     }
   }, [headerId, mergeServerRowsWithDrafts, shiftNo])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, shiftNo])
 
   useEffect(() => {
     if (!stoppageData.length) return

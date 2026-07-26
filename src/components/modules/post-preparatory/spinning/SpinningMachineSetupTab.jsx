@@ -17,6 +17,7 @@ import { Loader2, RefreshCw, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Label } from "@/components/ui/label"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getSpinningMachineSetupsAction,
   updateSpinningMachineSetupAction,
@@ -232,9 +233,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     }
   }, [shift, entryDate, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [shift, entryDate])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {

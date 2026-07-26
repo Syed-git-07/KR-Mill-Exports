@@ -17,6 +17,7 @@ import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getSpinningStoppageEntriesAction,
   updateSpinningStoppageEntryAction,
@@ -252,9 +253,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     }
   }, [headerId, effectiveTotalTime, calculateStoppageValues])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, shiftNo, effectiveTotalTime])
 
   useEffect(() => {
     if (!stoppageData.length) return

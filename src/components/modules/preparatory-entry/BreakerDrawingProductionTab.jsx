@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import {
   getBreakerDrawingProductionWithSetupAction,
@@ -294,9 +295,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
     }
   }, [headerId, totalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, totalTime])
 
   useEffect(() => {
     if (!productionData.length) return

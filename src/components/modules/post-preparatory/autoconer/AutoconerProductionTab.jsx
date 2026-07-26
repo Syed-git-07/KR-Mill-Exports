@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getAutoconerProductionDetailsAction,
   batchUpdateAutoconerProductionDetailsAction,
@@ -195,9 +196,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     }
   }, [headerId, mergeServerRowsWithDrafts, shiftNo])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, shiftNo])
 
   useEffect(() => {
     if (!productionData.length) return

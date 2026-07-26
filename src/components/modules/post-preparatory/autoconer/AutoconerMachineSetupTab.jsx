@@ -23,6 +23,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, RefreshCw, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getAutoconerMachineSetupsAction,
   updateAutoconerMachineSetupAction,
@@ -243,9 +244,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     }
   }, [shift, entryDate, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [shift, entryDate])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {

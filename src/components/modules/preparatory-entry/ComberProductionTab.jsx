@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import {
@@ -272,9 +273,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
     }
   }, [headerId, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId])
 
   // Handle numeric input change
   const handleInputChange = (rowId, field, value) => {

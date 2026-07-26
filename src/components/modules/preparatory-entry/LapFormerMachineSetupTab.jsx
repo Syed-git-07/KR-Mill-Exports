@@ -23,6 +23,7 @@ import {
 import EnterSelect from '@/components/ui/enter-select'
 import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getLapFormerMachineSetupsAction,
   updateLapFormerMachineSetupAction,
@@ -242,9 +243,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     }
   }, [shift, totalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [shift, totalTime])
 
   // Calculate Std Prodn - LAP FORMER Formula
   const calculateStdProdn = (speed, hankConstant, stdEffiFactor, delivery, divisor = LAP_FORMER_FORMULA_FALLBACK.divisorConstant, shiftTime = totalTime) => {

@@ -32,6 +32,7 @@ import {
 import EnterSelect from '@/components/ui/enter-select'
 import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { CARDING_FORMULA_FALLBACK } from '@/lib/cardingFormulaFallback'
 import {
@@ -219,9 +220,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     }
   }, [entryDate, shift])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [entryDate, shift])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {

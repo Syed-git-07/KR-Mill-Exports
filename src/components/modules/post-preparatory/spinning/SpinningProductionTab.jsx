@@ -8,6 +8,7 @@ import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getSpinningProductionDetailsAction,
   batchUpdateSpinningProductionDetailsAction,
@@ -211,9 +212,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     }))
   }, [setupDraftEdits, getEffectiveSetup, calculateValues, productionData.length])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, shiftNo, effectiveTotalTime])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {

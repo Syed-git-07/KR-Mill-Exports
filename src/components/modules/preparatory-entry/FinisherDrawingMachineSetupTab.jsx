@@ -17,6 +17,7 @@ import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
 import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getFinisherDrawingMachineSetupsAction,
   updateFinisherDrawingMachineSetupAction,
@@ -227,9 +228,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     setNewMachine(prev => ({ ...prev, shift_time: totalTime }))
   }, [totalTime])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, shift, totalTime])
 
   const calculateStdProdn = (speed, hankConstant, stdEffiFactor, delivery, divisor, shiftTime) => {
     return calculateFinisherDrawingStdProdn(

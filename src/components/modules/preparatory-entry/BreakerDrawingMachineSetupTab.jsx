@@ -23,6 +23,7 @@ import {
 import EnterSelect from '@/components/ui/enter-select'
 import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getBreakerDrawingMachineSetupsAction,
   updateMachineSetupAction,
@@ -201,9 +202,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     }
   }, [])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {

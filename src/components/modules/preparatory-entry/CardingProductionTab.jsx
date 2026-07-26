@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getCardingProductionWithSetupAction,
   updateProductionDetailAction,
@@ -256,9 +257,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
     }
   }, [headerId, effectiveTotalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, effectiveTotalTime])
 
   useEffect(() => {
     if (!productionData.length) return

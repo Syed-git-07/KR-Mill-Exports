@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Loader2, RefreshCw, Plus, Trash2, Edit, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EnterSelect from '@/components/ui/enter-select'
 import {
   getComberMachineSetupsAction,
@@ -189,9 +190,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     }
   }, [mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {

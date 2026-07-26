@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Loader2, Plus, Trash2, Edit, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -156,9 +157,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     }
   }, [headerId, totalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, totalTime])
 
   const parseCountTpi = (value) => {
     if (value == null) return null

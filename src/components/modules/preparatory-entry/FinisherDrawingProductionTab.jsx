@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
   getFinisherDrawingProductionDetailsAction,
@@ -341,9 +342,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     }
   }, [headerId, totalTime, mergeServerRowsWithDrafts, getEffectiveSetup])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, totalTime])
 
   // Handle input change — mirrors Spinning module pattern:
   // 1. Find current row synchronously via productionData.find()

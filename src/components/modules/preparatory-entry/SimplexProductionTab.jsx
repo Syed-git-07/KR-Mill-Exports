@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -234,9 +235,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     }
   }, [headerId, totalTime, mergeServerRowsWithDrafts])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, totalTime])
 
   // Handle input changes
   const handleInputChange = (rowId, field, value) => {

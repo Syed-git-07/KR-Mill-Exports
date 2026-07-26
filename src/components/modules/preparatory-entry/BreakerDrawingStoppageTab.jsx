@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getBreakerDrawingStoppageEntriesAction,
   getBreakerDrawingStoppageReasonsAction,
@@ -383,9 +384,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     }
   }, [headerId, shift, totalTime, mergeServerRowsWithDrafts, getEffectiveSetup])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useServerDataLoader(loadData, [headerId, shift, totalTime])
 
   useEffect(() => {
     if (!stoppageData.length) return
