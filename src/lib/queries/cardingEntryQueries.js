@@ -1,6 +1,7 @@
 import { prisma } from '../prisma'
 import { resolveCardingShiftFallbackTime } from '../cardingShiftFallback'
 import { calculateCardingStdProdn, resolveCardingFormulaInputs } from '../cardingFormulaFallback'
+import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
 function isCardingMachineVisibleOnDate(machine, entryDate) {
@@ -1387,160 +1388,29 @@ export async function getSupervisors() {
 }
 
 // ============================================
-// COPY PREVIOUS DATA FUNCTIONALITY
+// COPY PREVIOUS SPEED FUNCTIONALITY
 // ============================================
 
-// Get available previous dates that have production data
+// Get previous dates in the same shift that contain setup speeds.
 export async function getCardingAvailablePreviousDates(beforeDate, shift, limit = 30) {
-  try {
-    const data = await prisma.carding_production_header.findMany({
-      where: {
-        shift: shift,
-        entry_date: {
-          lt: new Date(beforeDate)
-        }
-      },
-      select: {
-        entry_date: true,
-        shift: true
-      },
-      orderBy: {
-        entry_date: 'desc'
-      },
-      take: limit
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
+  return getAvailablePreviousSpeedDates(
+    prisma.carding_machine_setup,
+    beforeDate,
+    shift,
+    limit
+  )
 }
 
-// Copy data from a previous date
+// Copy only machine setup speed. Formula-derived standard production is
+// recalculated from the target row's own setup values.
 export async function copyCardingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
-  try {
-    let previousDate = sourceDate
-    if (!previousDate) {
-      const targetDateObj = new Date(targetDate)
-      const yesterdayDateObj = new Date(targetDateObj)
-      yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1)
-      previousDate = yesterdayDateObj.toISOString().split('T')[0]
-    }
-
-    // Normalize the date to just the date portion (YYYY-MM-DD) to handle ISO string dates
-    // This handles both "2026-01-30" and "2026-01-30T00:00:00.000Z" formats
-    const normalizedDate = previousDate.includes('T') 
-      ? previousDate.split('T')[0] 
-      : previousDate
-
-    // Get source header
-    const sourceHeader = await getCardingProductionByDateShift(normalizedDate, targetShift)
-    if (!sourceHeader) {
-      throw new Error(`No production data found for ${normalizedDate} shift ${targetShift}`)
-    }
-
-    // Get source production details
-    const sourceDetails = await prisma.carding_production_detail.findMany({
-      where: { header_id: sourceHeader.id }
-    })
-
-    if (!sourceDetails || sourceDetails.length === 0) {
-      throw new Error(`No production details found for ${previousDate}`)
-    }
-
-    // Get source stoppage entries
-    const sourceStoppages = await prisma.carding_stoppage_entry.findMany({
-      where: {
-        production_detail_id: { in: sourceDetails.map(d => d.id) }
-      }
-    })
-
-    // Get target's existing production details
-    const targetDetails = await prisma.carding_production_detail.findMany({
-      where: { header_id: targetHeaderId }
-    })
-
-    // Create a map of machine_id to source data
-    const sourceDataMap = {}
-    sourceDetails.forEach(d => {
-      sourceDataMap[d.machine_id] = d
-    })
-
-    const sourceStoppageMap = {}
-    sourceStoppages?.forEach(s => {
-      const detail = sourceDetails.find(d => d.id === s.production_detail_id)
-      if (detail) {
-        sourceStoppageMap[detail.machine_id] = s
-      }
-    })
-
-    // Update target details with source data
-    let machinesUpdated = 0
-    for (const targetDetail of targetDetails) {
-      const sourceData = sourceDataMap[targetDetail.machine_id]
-      if (!sourceData) continue
-
-      await prisma.carding_production_detail.update({
-        where: { id: targetDetail.id },
-        data: {
-          employee_name: sourceData.employee_name,
-          count_mixing: sourceData.count_mixing,
-          act_hank: sourceData.act_hank,
-          act_prodn: sourceData.act_prodn,
-          std_prodn: sourceData.std_prodn,
-          exp_prodn: sourceData.exp_prodn,
-          effi_percent: sourceData.effi_percent,
-          uti_percent: sourceData.uti_percent,
-          waste: sourceData.waste,
-          waste_percent: sourceData.waste_percent,
-          work_time: sourceData.work_time,
-          run_time: sourceData.run_time,
-          total_stoppage_mins: sourceData.total_stoppage_mins
-        }
-      })
-      machinesUpdated++
-    }
-
-    // Update target stoppage entries
-    const targetStoppages = await prisma.carding_stoppage_entry.findMany({
-      where: {
-        production_detail_id: { in: targetDetails.map(d => d.id) }
-      }
-    })
-
-    const targetDetailMachineMap = {}
-    targetDetails.forEach(d => {
-      targetDetailMachineMap[d.id] = d.machine_id
-    })
-
-    for (const targetStoppage of targetStoppages || []) {
-      const machineId = targetDetailMachineMap[targetStoppage.production_detail_id]
-      const sourceStoppage = sourceStoppageMap[machineId]
-      if (!sourceStoppage) continue
-
-      await prisma.carding_stoppage_entry.update({
-        where: { id: targetStoppage.id },
-        data: {
-          stoppage1_id: sourceStoppage.stoppage1_id,
-          stoppage1_time: sourceStoppage.stoppage1_time,
-          stoppage2_id: sourceStoppage.stoppage2_id,
-          stoppage2_time: sourceStoppage.stoppage2_time,
-          stoppage3_id: sourceStoppage.stoppage3_id,
-          stoppage3_time: sourceStoppage.stoppage3_time,
-          stoppage4_id: sourceStoppage.stoppage4_id,
-          stoppage4_time: sourceStoppage.stoppage4_time,
-          total_stoppage_time: sourceStoppage.total_stoppage_time
-        }
-      })
-    }
-
-    return {
-      success: true,
-      copiedFrom: normalizedDate,
-      machinesUpdated: machinesUpdated
-    }
-  } catch (error) {
-    throw error
-  }
+  return copyPreviousSpeeds({
+    setupModel: prisma.carding_machine_setup,
+    targetDate,
+    targetShift,
+    sourceDate,
+    updateSpeed: (setupId, speed) => updateMachineSetup(setupId, { speed })
+  })
 }
 
 // ============================================

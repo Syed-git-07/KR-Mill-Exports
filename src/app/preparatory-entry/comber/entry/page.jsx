@@ -19,14 +19,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
 import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
@@ -43,8 +35,6 @@ import {
   updateComberProductionHeaderAction,
   getSupervisorsAction,
   initializeComberProductionDetailsAction,
-  copyComberFromPreviousDateAction,
-  getComberAvailablePreviousDatesAction,
   getComberShiftConfigurationAction
 } from '@/app/actions/comber-entry'
 
@@ -70,12 +60,6 @@ function ComberEntryContent() {
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
   const [shiftTime, setShiftTime] = useState(resolveComberShiftFallbackTime(shift))
-  // Copy Previous Data states
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false)
-  const [availableDates, setAvailableDates] = useState([])
-  const [selectedSourceDate, setSelectedSourceDate] = useState(null)
-  const [isLoadingDates, setIsLoadingDates] = useState(false)
-  const [isCopying, setIsCopying] = useState(false)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
@@ -342,99 +326,6 @@ function ComberEntryContent() {
     setActiveTab(nextTab)
   }
 
-  // Load available previous dates for copy
-  const loadAvailableDates = async () => {
-    if (!headerId) return
-    
-    setIsLoadingDates(true)
-    try {
-      const dateStr = format(date, 'yyyy-MM-dd')
-      const result = await getComberAvailablePreviousDatesAction(dateStr, parseInt(shift))
-      const fetchedDates = result.success ? result.data : []
-      setAvailableDates(fetchedDates)
-      // Pre-select the most recent date if available
-      if (fetchedDates.length > 0) {
-        setSelectedSourceDate(JSON.stringify({ entry_date: fetchedDates[0].entry_date, shift: fetchedDates[0].shift }))
-      }
-    } catch (error) {
-      console.error('Error loading available dates:', error)
-      toast.error('Failed to load available dates')
-    } finally {
-      setIsLoadingDates(false)
-    }
-  }
-
-  // Handle opening copy dialog
-  const handleOpenCopyDialog = () => {
-    if (!headerId) {
-      toast.warning('Please initialize the entry first')
-      return
-    }
-    if (!confirmIfUnsaved('Copying previous data can overwrite current working values.')) {
-      return
-    }
-    loadAvailableDates()
-    setCopyDialogOpen(true)
-  }
-
-  // Copy from selected previous date
-  const handleCopyPreviousData = async () => {
-    if (!headerId || !selectedSourceDate) {
-      toast.warning('Please select a date to copy from')
-      return
-    }
-
-    setIsCopying(true)
-    try {
-      const dateStr = format(date, 'yyyy-MM-dd')
-      
-      // Parse the selected item which contains both date and shift
-      let sourceDateStr, sourceShift
-      try {
-        const selectedItem = JSON.parse(selectedSourceDate)
-        console.log('Selected item:', selectedItem)
-        const parsedDate = new Date(selectedItem.entry_date)
-        if (!isNaN(parsedDate.getTime())) {
-          sourceDateStr = format(parsedDate, 'yyyy-MM-dd')
-          sourceShift = selectedItem.shift
-          console.log('Parsed:', { sourceDateStr, sourceShift })
-        } else {
-          throw new Error('Invalid date')
-        }
-      } catch (err) {
-        console.error('Date parsing error:', err)
-        toast.error('Invalid date format selected')
-        setIsCopying(false)
-        return
-      }
-      
-      const result = await copyComberFromPreviousDateAction(
-        dateStr, 
-        parseInt(shift), 
-        headerId, 
-        sourceDateStr,
-        sourceShift
-      )
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to copy data')
-      }
-      
-      toast.success(`Copied data from ${result.data.copiedFrom} - ${result.data.machinesUpdated} machines updated`)
-      setCopyDialogOpen(false)
-      clearAllDrafts()
-      
-      // Refresh data
-      loadProductionHeader()
-      
-    } catch (error) {
-      console.error('Error copying previous data:', error)
-      toast.error(error.message || 'Failed to copy data')
-    } finally {
-      setIsCopying(false)
-    }
-  }
-
   return (
     <div className="container mx-auto p-6 space-y-4">
       {/* Page Title */}
@@ -549,93 +440,18 @@ function ComberEntryContent() {
               </Button>
             )}
 
-            {/* Copy Previous Data + Common Save */}
-            {headerId && (
+            {/* Comber speed is fixed, so the setup-only copy action is disabled. */}
+            {headerId && activeTab === 'setup' && (
               <div className="ml-auto flex flex-col items-end gap-2">
-                <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button 
-                      onClick={handleOpenCopyDialog}
-                      variant="outline"
-                      className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                    >
-                      <Copy className="h-4 w-4 mr-1" />
-                      Copy Previous Data
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Copy Previous Data</DialogTitle>
-                      <DialogDescription>
-                        Select a previous date to copy production data from.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      {isLoadingDates ? (
-                        <div className="flex items-center justify-center py-4">
-                          <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-                          <span className="ml-2">Loading available dates...</span>
-                        </div>
-                      ) : availableDates.length === 0 ? (
-                        <p className="text-center text-gray-500 py-4">
-                          No previous data found for Shift {shift}
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          <Label>Select Date</Label>
-                          <Select 
-                            value={selectedSourceDate || ''} 
-                            onValueChange={setSelectedSourceDate}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a date" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableDates.map((item) => {
-                                const dateObj = item.entry_date instanceof Date 
-                                  ? item.entry_date 
-                                  : new Date(item.entry_date)
-                                const formattedDate = !isNaN(dateObj.getTime()) 
-                                  ? format(dateObj, 'dd-MMM-yyyy')
-                                  : 'Invalid Date'
-                                const itemValue = JSON.stringify({ entry_date: item.entry_date, shift: item.shift })
-                                return (
-                                  <SelectItem 
-                                    key={`${item.entry_date}-${item.shift}`}
-                                    value={itemValue}
-                                  >
-                                    {formattedDate} (Shift {item.shift})
-                                  </SelectItem>
-                                )
-                              })}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setCopyDialogOpen(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        onClick={handleCopyPreviousData}
-                        disabled={isCopying || !selectedSourceDate || availableDates.length === 0}
-                        className="bg-orange-500 hover:bg-orange-600"
-                      >
-                        {isCopying ? (
-                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                        ) : (
-                          <Copy className="h-4 w-4 mr-1" />
-                        )}
-                        Copy Data
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
+                <Button
+                  variant="outline"
+                  className="border-orange-500 text-orange-600"
+                  disabled
+                  title="Comber speed is fixed and cannot be copied"
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Copy Previous Speed
+                </Button>
               </div>
             )}
           </div>

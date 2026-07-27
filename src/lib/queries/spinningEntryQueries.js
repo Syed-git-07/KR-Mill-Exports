@@ -1,6 +1,10 @@
 import { prisma } from '../prisma'
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
+
+const SPINNING_DEFAULT_SETUP_DATE_KEY = '2026-04-01'
+const SPINNING_DEFAULT_SETUP_DATE = new Date(`${SPINNING_DEFAULT_SETUP_DATE_KEY}T00:00:00.000Z`)
 
 /**
  * Spinning (Ring Frame) Production Entry Queries
@@ -372,60 +376,6 @@ export async function getSpinningProductionDetails(headerId) {
   }
 }
 
-// Helper to fetch inherited machine setups from the chronologically prior shift/date
-export async function getInheritedMachineSetups(dateObj, shiftNum, headerId) {
-  try {
-    const d = new Date(dateObj)
-    const s = parseInt(shiftNum)
-
-    // Find the most recent chronologically entered header prior to (d, s)
-    const priorHeader = await prisma.spinning_production_header.findFirst({
-      where: {
-        id: { not: headerId },
-        OR: [
-          { entry_date: { lt: d } },
-          {
-            entry_date: d,
-            shift: { lt: s }
-          }
-        ]
-      },
-      orderBy: [
-        { entry_date: 'desc' },
-        { shift: 'desc' }
-      ]
-    })
-
-    if (!priorHeader) {
-      return {}
-    }
-
-    // Fetch production details for this prior header
-    const details = await prisma.spinning_production_detail.findMany({
-      where: { header_id: priorHeader.id },
-      select: {
-        machine_id: true,
-        count_name: true,
-        session_no: true
-      }
-    })
-
-    // Convert to map: machine_id -> { count_name, session_no }
-    const inheritedMap = {}
-    details.forEach(detail => {
-      inheritedMap[detail.machine_id] = {
-        count_name: detail.count_name,
-        session_no: detail.session_no
-      }
-    })
-
-    return inheritedMap
-  } catch (error) {
-    console.error('Error in getInheritedMachineSetups:', error)
-    return {}
-  }
-}
-
 // Initialize production details for all spinning machines
 export async function initializeSpinningProductionDetails(headerId, shift = 1) {
   try {
@@ -470,27 +420,20 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
       setupMap[s.machine_id] = s
     })
 
-    // Fetch inherited machine setups from the chronologically prior shift/date
-    const inheritedSetups = await getInheritedMachineSetups(entryDate, shift, headerId)
-
     // Get shift configuration
     const shiftConfig = await getSpinningShiftConfiguration(shift)
 
     // Create detail records for new machines
     const details = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
-      const inherited = inheritedSetups[machine.id] || {}
       const allocatedSpindles = parseFloat(setup.allocated_spindles) || machine.allocated_spindles || 1104
       // Calculate No of Spindles based on shift: (Allocated / 8) × 8.5 for Shift 1&2, × 7 for Shift 3
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
 
-      const countName = inherited.count_name !== undefined ? inherited.count_name : (setup.count_name || null)
-      const sessionNo = inherited.session_no !== undefined ? inherited.session_no : (setup.session_no || 1)
-
       return {
         header_id: headerId,
         machine_id: machine.id,
-        count_name: countName,
+        count_name: setup.count_name || null,
         act_hank: null,
         act_prodn: null,
         waste: null,
@@ -500,7 +443,7 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
         stopped_spindles: 0,
         exp_gps: null,
         total_stoppage_mins: 0,
-        session_no: sessionNo,
+        session_no: setup.session_no || 1,
         run_time: shiftConfig.totalTime,
         work_time: shiftConfig.totalTime
       }
@@ -621,27 +564,20 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
       setupMap[s.machine_id] = s
     })
 
-    // Fetch inherited machine setups from the chronologically prior shift/date
-    const inheritedSetups = await getInheritedMachineSetups(entryDate, shift, headerId)
-
     // Get shift configuration
     const shiftConfig = await getSpinningShiftConfiguration(shift)
 
     // Create detail records
     const details = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
-      const inherited = inheritedSetups[machine.id] || {}
       const allocatedSpindles = parseFloat(setup.allocated_spindles) || machine.allocated_spindles || 1104
       // Calculate No of Spindles based on shift: (Allocated / 8) × 8.5 for Shift 1&2, × 7 for Shift 3
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
 
-      const countName = inherited.count_name !== undefined ? inherited.count_name : (setup.count_name || null)
-      const sessionNo = inherited.session_no !== undefined ? inherited.session_no : (setup.session_no || 1)
-
       return {
         header_id: headerId,
         machine_id: machine.id,
-        count_name: countName,
+        count_name: setup.count_name || null,
         act_hank: null,
         act_prodn: null,
         waste: null,
@@ -651,7 +587,7 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
         stopped_spindles: 0,
         exp_gps: null,
         total_stoppage_mins: 0,
-        session_no: sessionNo,
+        session_no: setup.session_no || 1,
         run_time: shiftConfig.totalTime,
         work_time: shiftConfig.totalTime
       }
@@ -1200,7 +1136,9 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 // MACHINE SETUP OPERATIONS
 // ============================================
 
-// Helper to get or create machine setups for a given date (with inheritance)
+// Create new date/shift snapshots from the canonical machine defaults.
+// Explicit copy actions remain available, but initialization never carries
+// forward the most recently edited setup automatically.
 export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
   try {
     const dateObj = new Date(entryDate)
@@ -1219,32 +1157,16 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
       return setups
     }
     
-    // 2. Fallback: Inherit from the most recent chronologically prior setups in the database (implicitly, no confirmation)
-    const latestPreviousSetup = await prisma.spinning_machine_setup.findFirst({
+    // 2. Seed from the baseline setup created for each configured machine.
+    const baselineSetups = await prisma.spinning_machine_setup.findMany({
       where: {
-        OR: [
-          { entry_date: { lt: dateObj } },
-          {
-            entry_date: dateObj,
-            shift: { lt: shiftNum }
-          }
-        ]
-      },
-      orderBy: [
-        { entry_date: 'desc' },
-        { shift: 'desc' }
-      ]
+        entry_date: SPINNING_DEFAULT_SETUP_DATE,
+        shift: 1
+      }
     })
     
-    if (latestPreviousSetup) {
-      const prevSetups = await prisma.spinning_machine_setup.findMany({
-        where: { 
-          entry_date: latestPreviousSetup.entry_date,
-          shift: latestPreviousSetup.shift
-        }
-      })
-      
-      const cloneData = prevSetups.map(s => {
+    if (baselineSetups.length > 0) {
+      const cloneData = baselineSetups.map(s => {
         const { id, created_at, updated_at, ...rest } = s
         return {
           ...rest,
@@ -1266,7 +1188,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
       })
     }
     
-    // 3. Fallback: Initialize default setups for all active machines
+    // 3. Legacy fallback if the installation has no baseline setup rows.
     const activeMachines = await prisma.spinning_machines.findMany({
       where: { is_active: true }
     })
@@ -1860,128 +1782,25 @@ export async function getMaisitries() {
   }
 }
 
-// Get available previous dates for copy
+// Get previous dates in the same shift that contain setup speeds.
 export async function getSpinningAvailablePreviousDates(beforeDate, shift, limit = 30) {
-  try {
-    const data = await prisma.spinning_production_header.findMany({
-      where: {
-        entry_date: { lt: new Date(beforeDate) },
-        shift: parseInt(shift)
-      },
-      orderBy: { entry_date: 'desc' },
-      take: limit,
-      select: {
-        id: true,
-        entry_date: true,
-        shift: true
-      }
-    })
-    return data || []
-  } catch (error) {
-    return []
-  }
+  return getAvailablePreviousSpeedDates(
+    prisma.spinning_machine_setup,
+    beforeDate,
+    shift,
+    limit
+  )
 }
 
-// Copy from previous date
+// Copy only speed between matching machine setup rows in the same shift.
 export async function copySpinningFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
-  try {
-    // Get source header
-    const sourceHeader = await prisma.spinning_production_header.findFirst({
-      where: {
-        entry_date: new Date(sourceDate),
-        shift: parseInt(targetShift)
-      }
-    })
-
-    if (!sourceHeader) {
-      throw new Error('Source data not found')
-    }
-
-    // Get source production details
-    const sourceDetails = await prisma.spinning_production_detail.findMany({
-      where: { header_id: sourceHeader.id }
-    })
-
-    // Get source stoppage entries
-    const sourceDetailIds = sourceDetails.map(d => d.id)
-    const sourceStoppages = await prisma.spinning_stoppage_entry.findMany({
-      where: { production_detail_id: { in: sourceDetailIds } }
-    })
-
-    const stoppageMap = {}
-    sourceStoppages.forEach(s => { stoppageMap[s.production_detail_id] = s })
-
-    // Get target details
-    const targetDetails = await prisma.spinning_production_detail.findMany({
-      where: { header_id: targetHeaderId }
-    })
-
-    // Map by machine_id
-    const targetDetailMap = {}
-    targetDetails.forEach(d => { targetDetailMap[d.machine_id] = d })
-
-    let machinesUpdated = 0
-
-    // Copy data
-    for (const sourceDetail of sourceDetails) {
-      const targetDetail = targetDetailMap[sourceDetail.machine_id]
-      if (!targetDetail) continue
-
-      // Update production detail
-      await prisma.spinning_production_detail.update({
-        where: { id: targetDetail.id },
-        data: {
-          count_name: sourceDetail.count_name,
-          act_hank: sourceDetail.act_hank,
-          act_prodn: sourceDetail.act_prodn,
-          waste: sourceDetail.waste,
-          waste_percent: sourceDetail.waste_percent,
-          gps: sourceDetail.gps,
-          stopped_spindles: sourceDetail.stopped_spindles,
-          worked_spindles: sourceDetail.worked_spindles,
-          exp_gps: sourceDetail.exp_gps,
-          session_no: sourceDetail.session_no,
-          sider1_name: sourceDetail.sider1_name,
-          sider2_name: sourceDetail.sider2_name
-        }
-      })
-
-      // Copy stoppage entry
-      const sourceStoppage = stoppageMap[sourceDetail.id]
-      if (sourceStoppage) {
-        const targetStoppage = await prisma.spinning_stoppage_entry.findFirst({
-          where: { production_detail_id: targetDetail.id }
-        })
-
-        if (targetStoppage) {
-          await prisma.spinning_stoppage_entry.update({
-            where: { id: targetStoppage.id },
-            data: {
-              stoppage1_id: sourceStoppage.stoppage1_id,
-              stoppage1_time: sourceStoppage.stoppage1_time,
-              stoppage2_id: sourceStoppage.stoppage2_id,
-              stoppage2_time: sourceStoppage.stoppage2_time,
-              stoppage3_id: sourceStoppage.stoppage3_id,
-              stoppage3_time: sourceStoppage.stoppage3_time,
-              stoppage4_id: sourceStoppage.stoppage4_id,
-              stoppage4_time: sourceStoppage.stoppage4_time,
-              total_stoppage_time: sourceStoppage.total_stoppage_time
-            }
-          })
-        }
-      }
-
-      machinesUpdated++
-    }
-
-    return {
-      success: true,
-      copiedFrom: sourceDate,
-      machinesUpdated
-    }
-  } catch (error) {
-    throw error
-  }
+  return copyPreviousSpeeds({
+    setupModel: prisma.spinning_machine_setup,
+    targetDate,
+    targetShift,
+    sourceDate,
+    updateSpeed: (setupId, speed) => updateSpinningMachineSetup(setupId, { speed }, targetShift)
+  })
 }
 
 // ============================================
@@ -2126,7 +1945,7 @@ export async function addSpinningMachine(machineData) {
     if (machine) {
       // Check if default setup already exists
       const existingSetup = await prisma.spinning_machine_setup.findFirst({
-        where: { machine_id: machine.id, entry_date: new Date('2026-04-01') }
+        where: { machine_id: machine.id, entry_date: SPINNING_DEFAULT_SETUP_DATE }
       })
       
       if (existingSetup) {
@@ -2136,7 +1955,7 @@ export async function addSpinningMachine(machineData) {
         setup = await prisma.spinning_machine_setup.create({
           data: {
             machine_id: machine.id,
-            entry_date: new Date('2026-04-01'),
+            entry_date: SPINNING_DEFAULT_SETUP_DATE,
             shift: 1,
             count_name: count_name || '30s CARDED',
             act_count: act_count || 69.5,
@@ -2157,7 +1976,7 @@ export async function addSpinningMachine(machineData) {
       if (machineData.entryDate) {
         const activeDateObj = new Date(machineData.entryDate)
         const activeShift = parseInt(machineData.shift) || 1
-        if (activeDateObj.toISOString().split('T')[0] !== '2026-04-01') {
+        if (activeDateObj.toISOString().split('T')[0] !== SPINNING_DEFAULT_SETUP_DATE_KEY) {
           const existingActiveSetup = await prisma.spinning_machine_setup.findFirst({
             where: { 
               machine_id: machine.id, 

@@ -7,6 +7,7 @@ import {
 } from '../finisherDrawingFormulaFallback';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -1493,150 +1494,26 @@ export async function getFinisherDrawingMixingOptions() {
   }
 }
 // ============================================
-// COPY PREVIOUS DATA FUNCTIONALITY
+// COPY PREVIOUS SPEED FUNCTIONALITY
 // ============================================
 
-// Get available previous dates that have production data
 export async function getFinisherDrawingAvailableDates(beforeDate, shift, limit = 30) {
-  try {
-    const data = await prisma.finisher_drawing_production_header.findMany({
-      where: {
-        shift: shift,
-        entry_date: { lt: new Date(beforeDate) }
-      },
-      select: { entry_date: true, shift: true },
-      orderBy: { entry_date: 'desc' },
-      take: limit
-    });
-    
-    return data || [];
-  } catch (error) {
-    throw error
-  }
+  return getAvailablePreviousSpeedDates(
+    prisma.finisher_drawing_machine_setup,
+    beforeDate,
+    shift,
+    limit
+  );
 }
 
-// Copy data from a previous date
 export async function copyFinisherDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
-  // If no sourceDate provided, calculate yesterday's date (for backward compatibility)
-  let previousDate = sourceDate;
-  if (!previousDate) {
-    const targetDateObj = new Date(targetDate);
-    const yesterdayDateObj = new Date(targetDateObj);
-    yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1);
-    previousDate = yesterdayDateObj.toISOString().split('T')[0];
-  }
-  
-  // Get source header
-  const sourceHeader = await getFinisherDrawingProductionByDateShift(previousDate, targetShift);
-  if (!sourceHeader) {
-    throw new Error(`No production data found for ${previousDate} shift ${targetShift}`);
-  }
-  
-  // Get source production details
-  const sourceDetails = await prisma.finisher_drawing_production_detail.findMany({
-    where: { header_id: sourceHeader.id }
+  return copyPreviousSpeeds({
+    setupModel: prisma.finisher_drawing_machine_setup,
+    targetDate,
+    targetShift,
+    sourceDate,
+    updateSpeed: (setupId, speed) => updateFinisherDrawingMachineSetup(setupId, { speed })
   });
-  
-  if (!sourceDetails || sourceDetails.length === 0) {
-    throw new Error(`No production details found for ${previousDate}`);
-  }
-  
-  // Get source stoppage entries
-  const sourceStoppages = await prisma.finisher_drawing_stoppage_entry.findMany({
-    where: {
-      production_detail_id: { in: sourceDetails.map(d => d.id) }
-    }
-  });
-  
-  // Get target's existing production details
-  const targetDetails = await prisma.finisher_drawing_production_detail.findMany({
-    where: { header_id: targetHeaderId }
-  });
-  
-  // Create a map of machine_id to source data
-  const sourceDataMap = {};
-  sourceDetails.forEach(d => {
-    sourceDataMap[d.machine_id] = d;
-  });
-  
-  const sourceStoppageMap = {};
-  sourceStoppages?.forEach(s => {
-    // Find which machine this stoppage belongs to
-    const detail = sourceDetails.find(d => d.id === s.production_detail_id);
-    if (detail) {
-      sourceStoppageMap[detail.machine_id] = s;
-    }
-  });
-  
-  // Update target details with source data
-  const updatePromises = targetDetails.map(async (targetDetail) => {
-    const sourceData = sourceDataMap[targetDetail.machine_id];
-    if (!sourceData) return null;
-
-    const normalizedWaste = normalizeFinisherDrawingWaste(sourceData.waste, sourceData.act_prodn)
-
-    // Copy production values
-    const data = await prisma.finisher_drawing_production_detail.update({
-      where: { id: targetDetail.id },
-      data: {
-        employee_name: sourceData.employee_name,
-        prodn_mixing: sourceData.prodn_mixing,
-        act_hank: sourceData.act_hank,
-        act_prodn: sourceData.act_prodn,
-        waste: normalizedWaste,
-      }
-    });
-    return data;
-  });
-  
-  await Promise.all(updatePromises.filter(Boolean));
-  
-  // Update target stoppage entries
-  // First get target stoppage entries
-  const targetStoppages = await prisma.finisher_drawing_stoppage_entry.findMany({
-    where: {
-      production_detail_id: { in: targetDetails.map(d => d.id) }
-    }
-  });
-
-  const targetMachineByDetailId = {};
-  targetDetails.forEach(detail => {
-    targetMachineByDetailId[detail.id] = detail.machine_id;
-  });
-  
-  const stoppageUpdatePromises = targetStoppages?.map(async (targetStoppage) => {
-    const machineId = targetMachineByDetailId[targetStoppage.production_detail_id];
-    const sourceStoppage = sourceStoppageMap[machineId];
-    if (!sourceStoppage) return null;
-    
-    const data = await prisma.finisher_drawing_stoppage_entry.update({
-      where: { id: targetStoppage.id },
-      data: {
-        stoppage1_id: sourceStoppage.stoppage1_id,
-        stoppage1_time: sourceStoppage.stoppage1_time,
-        stoppage2_id: sourceStoppage.stoppage2_id,
-        stoppage2_time: sourceStoppage.stoppage2_time,
-        stoppage3_id: sourceStoppage.stoppage3_id,
-        stoppage3_time: sourceStoppage.stoppage3_time,
-        stoppage4_id: sourceStoppage.stoppage4_id,
-        stoppage4_time: sourceStoppage.stoppage4_time,
-        total_stoppage_time: sourceStoppage.total_stoppage_time
-      }
-    });
-    return data;
-  }) || [];
-  
-  await Promise.all(stoppageUpdatePromises.filter(Boolean));
-
-  // Always recompute std/exp/effi/uti from current setup + machine speed.
-  const uniqueMachineIds = [...new Set(targetDetails.map(d => d.machine_id).filter(Boolean))]
-  await Promise.all(uniqueMachineIds.map(machineId => recalculateFinisherDrawingDetailsForMachine(machineId)))
-  
-  return {
-    success: true,
-    copiedFrom: previousDate,
-    machinesUpdated: targetDetails.length
-  };
 }
 
 // Backward compatibility wrapper

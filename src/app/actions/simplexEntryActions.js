@@ -349,13 +349,9 @@ export async function getSimplexAvailableDatesAction(beforeDate, shift, limit = 
   }
 }
 
-export async function copySimplexFromPreviousDateAction(targetDate, targetShift, targetHeaderId, sourceDate) {
-  try {
-    const data = await queries.copySimplexFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
+export async function copySimplexFromPreviousDateAction(...args) {
+  void args
+  return { success: false, error: 'Simplex speed is fixed and cannot be copied.' }
 }
 
 export async function copySimplexFromYesterdayAction(targetDate, targetShift, targetHeaderId) {

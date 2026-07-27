@@ -279,7 +279,6 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       const rowsToSave = setupData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
       
       for (const row of rowsToSave) {
-        const resolvedSpeed = parseIntOr(row.speed ?? row.machine?.speed, 960)
         const result = await updateSimplexMachineSetupAction(row.id, {
           prodn_mixing: row.prodn_mixing,
           session_no: parseIntOr(row.session_no, 1),
@@ -288,7 +287,6 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           mc_effi: parseFloatOr(row.mc_effi, 92),
           tpi: parseFloatOr(row.tpi, 1.73),
           spindles: parseIntOr(row.spindles, 140),
-          speed: resolvedSpeed,
           shift_time: parseIntOr(row.shift_time, 510)
         })
         if (!result?.success) {
@@ -652,17 +650,9 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
                       />
                     </td>
                     
-                    {/* Speed */}
-                    <td className="border border-gray-300 px-0 py-0">
-                      <NumberInput
-                        value={row.speed ?? machine.speed ?? ''}
-                        onChange={(e) => handleInputChange(row.id, 'speed', e.target.value)}
-                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        data-row={index}
-                        data-col="speed"
-                        onKeyDown={(e) => handleEnterNavigation(e, index, 'speed')}
-                        zeroAsEmpty
-                      />
+                    {/* Speed is fixed from the machine/setup snapshot, like Comber. */}
+                    <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                      {row.speed ?? machine.speed ?? '-'}
                     </td>
                     
                     {/* Shift Time - Read-only from shift config */}

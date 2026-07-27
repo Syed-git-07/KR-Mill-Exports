@@ -19,16 +19,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
-import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
+import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
@@ -42,8 +34,6 @@ import {
   getOrCreateAutoconerHeaderAction,
   updateAutoconerProductionHeaderAction,
   getSupervisorsAction,
-  getAutoconerAvailableDatesAction,
-  copyAutoconerFromPreviousDateAction,
   getAutoconerShiftConfigAction
 } from '@/app/actions/autoconerEntryActions'
 
@@ -63,12 +53,6 @@ function AutoconerEntryContent() {
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [totalTime, setTotalTime] = useState(() => resolveAutoconerShiftFallbackTime(paramShift || '1')) // Dynamic shift time
   
-  // Copy Previous Data states
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false)
-  const [availableDates, setAvailableDates] = useState([])
-  const [selectedSourceDate, setSelectedSourceDate] = useState(null)
-  const [isLoadingDates, setIsLoadingDates] = useState(false)
-  const [isCopying, setIsCopying] = useState(false)
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
   const productionTabRef = useRef(null)
@@ -249,84 +233,6 @@ function AutoconerEntryContent() {
     setShift(nextShift)
   }
 
-  // Load available previous dates for copy
-  const loadAvailableDates = async () => {
-    if (!headerId) return
-    
-    setIsLoadingDates(true)
-    try {
-      const dateStr = format(date, 'yyyy-MM-dd')
-      const result = await getAutoconerAvailableDatesAction(dateStr, parseInt(shift))
-      if (result.success) {
-        const dates = result.data || []
-        setAvailableDates(dates)
-        // Pre-select the most recent date if available
-        if (dates.length > 0) {
-          const dateValue = dates[0].entry_date instanceof Date 
-            ? dates[0].entry_date.toISOString().split('T')[0]
-            : dates[0].entry_date
-          setSelectedSourceDate(dateValue)
-        }
-      }
-    } catch (error) {
-      console.error('Error loading available dates:', error)
-      toast.error('Failed to load available dates')
-    } finally {
-      setIsLoadingDates(false)
-    }
-  }
-
-  // Handle opening copy dialog
-  const handleOpenCopyDialog = () => {
-    if (!headerId) {
-      toast.warning('Please initialize the entry first')
-      return
-    }
-    if (!confirmIfUnsaved('Copying previous data can overwrite current working values.')) {
-      return
-    }
-    loadAvailableDates()
-    setCopyDialogOpen(true)
-  }
-
-  // Copy from selected previous date
-  const handleCopyPreviousData = async () => {
-    if (!headerId || !selectedSourceDate) {
-      toast.warning('Please select a date to copy from')
-      return
-    }
-
-    setIsCopying(true)
-    try {
-      const dateStr = format(date, 'yyyy-MM-dd')
-      
-      const response = await copyAutoconerFromPreviousDateAction(
-        dateStr,
-        parseInt(shift),
-        headerId,
-        selectedSourceDate
-      )
-      
-      if (!response?.success || !response?.data) {
-        throw new Error(response?.error || 'Failed to copy data')
-      }
-
-      const result = response.data
-      toast.success(`Copied data from ${result.copiedFrom} - ${result.machinesUpdated} machines updated`)
-      setCopyDialogOpen(false)
-      
-      // Refresh data
-      loadProductionHeader()
-      setRefreshKey(prev => prev + 1)
-      
-    } catch (error) {
-      console.error('Error copying previous data:', error)
-      toast.error(error.message || 'Failed to copy data')
-    } finally {
-      setIsCopying(false)
-    }
-  }
-
   const handleSaveAllTabs = async () => {
     if (!headerId || isSavingAll) return
 
@@ -496,93 +402,6 @@ function AutoconerEntryContent() {
               </Button>
             )}
 
-            {/* Copy Previous Data Button with Dialog */}
-            {headerId && (
-              <div className="ml-auto flex flex-col items-end gap-2">
-                <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button 
-                      onClick={handleOpenCopyDialog}
-                      variant="outline"
-                      className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                    >
-                      <Copy className="h-4 w-4 mr-1" />
-                      Copy Previous Data
-                    </Button>
-                  </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Copy Previous Data</DialogTitle>
-                    <DialogDescription>
-                      Select a previous date to copy autoconer production data from.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    {isLoadingDates ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-                        <span className="ml-2">Loading available dates...</span>
-                      </div>
-                    ) : availableDates.length === 0 ? (
-                      <p className="text-center text-gray-500 py-4">
-                        No previous data found for Shift {shift}
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        <Label>Select Date</Label>
-                        <Select 
-                          value={selectedSourceDate || ''} 
-                          onValueChange={setSelectedSourceDate}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a date" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableDates.map((item) => {
-                              const dateValue = item.entry_date instanceof Date 
-                                ? item.entry_date.toISOString().split('T')[0]
-                                : item.entry_date
-                              const dateObj = item.entry_date instanceof Date 
-                                ? item.entry_date 
-                                : new Date(item.entry_date)
-                              return (
-                                <SelectItem 
-                                  key={dateValue} 
-                                  value={dateValue}
-                                >
-                                  {format(dateObj, 'dd-MMM-yyyy')} (Shift {item.shift})
-                                </SelectItem>
-                              )
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setCopyDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleCopyPreviousData}
-                      disabled={isCopying || !selectedSourceDate || availableDates.length === 0}
-                      className="bg-orange-500 hover:bg-orange-600"
-                    >
-                      {isCopying ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <Copy className="h-4 w-4 mr-1" />
-                      )}
-                      Copy Data
-                    </Button>
-                  </div>
-                </DialogContent>
-                </Dialog>
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>

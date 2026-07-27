@@ -299,11 +299,7 @@ export async function getAutoconerAvailableDatesAction(beforeDate, shift, limit 
   }
 }
 
-export async function copyAutoconerFromPreviousDateAction(targetDate, targetShift, targetHeaderId, sourceDate) {
-  try {
-    const data = await queries.copyAutoconerFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
+export async function copyAutoconerFromPreviousDateAction(...args) {
+  void args
+  return { success: false, error: 'Autoconer machine setup has no speed to copy.' }
 }

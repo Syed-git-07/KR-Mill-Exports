@@ -300,11 +300,7 @@ export async function getComberAvailablePreviousDatesAction(beforeDate, shift, l
   }
 }
 
-export async function copyComberFromPreviousDateAction(targetDate, targetShift, targetHeaderId, sourceDate, sourceShift) {
-  try {
-    const data = await queries.copyComberFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate, sourceShift)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
+export async function copyComberFromPreviousDateAction(...args) {
+  void args
+  return { success: false, error: 'Comber speed is fixed and cannot be copied.' }
 }

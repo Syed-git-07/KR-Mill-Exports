@@ -1045,9 +1045,13 @@ export async function updateSimplexMachineSetup(id, updates) {
       throw new Error(`Simplex machine setup ${id} not found`)
     }
 
+    // Simplex speed is fixed after setup creation and cannot be edited from an entry.
+    const safeUpdates = { ...(updates || {}) }
+    delete safeUpdates.speed
+
     const data = await prisma.simplex_machine_setup.update({
       where: { id },
-      data: updates
+      data: safeUpdates
     })
 
     return data

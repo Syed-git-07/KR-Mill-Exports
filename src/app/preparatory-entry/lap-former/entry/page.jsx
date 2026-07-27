@@ -64,7 +64,7 @@ function LapFormerEntryContent() {
   const [isInitializing, setIsInitializing] = useState(false)
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [shiftTime, setShiftTime] = useState(resolveLapFormerShiftFallbackTime(shift)) // Dynamic shift time from database
-  // Copy Previous Data states
+  // Copy Previous Speed states
   const [copyDialogOpen, setCopyDialogOpen] = useState(false)
   const [availableDates, setAvailableDates] = useState([])
   const [selectedSourceDate, setSelectedSourceDate] = useState(null)
@@ -314,7 +314,7 @@ function LapFormerEntryContent() {
       }
       
       const result = copyResult.data
-      toast.success(`Copied data from ${result.copiedFrom} - ${result.machinesUpdated} machines updated`)
+      toast.success(`Copied speed from ${result.copiedFrom} shift ${shift} - ${result.machinesUpdated} machines updated`)
       setCopyDialogOpen(false)
       clearAllDrafts()
       
@@ -327,8 +327,8 @@ function LapFormerEntryContent() {
       ])
       
     } catch (error) {
-      console.error('Error copying previous data:', error)
-      toast.error(error.message || 'Failed to copy data')
+      console.error('Error copying previous speed:', error)
+      toast.error(error.message || 'Failed to copy speed')
     } finally {
       setIsCopying(false)
     }
@@ -576,8 +576,8 @@ function LapFormerEntryContent() {
               </Button>
             )}
 
-            {/* Copy Previous Data Button with Dialog */}
-            {headerId && (
+            {/* Copy Previous Speed is available only inside Machine Setup. */}
+            {headerId && activeTab === 'setup' && (
               <div className="ml-auto flex flex-col items-end gap-2">
                 <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
                   <DialogTrigger asChild>
@@ -587,14 +587,14 @@ function LapFormerEntryContent() {
                       className="border-orange-500 text-orange-600 hover:bg-orange-50"
                     >
                       <Copy className="h-4 w-4 mr-1" />
-                      Copy Previous Data
+                      Copy Previous Speed
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Copy Previous Data</DialogTitle>
+                      <DialogTitle>Copy Previous Speed</DialogTitle>
                       <DialogDescription>
-                        Select a previous date to copy production data from.
+                        Select a previous date to copy machine setup speeds from Shift {shift}.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -605,7 +605,7 @@ function LapFormerEntryContent() {
                         </div>
                       ) : availableDates.length === 0 ? (
                         <p className="text-center text-gray-500 py-4">
-                          No previous data found for Shift {shift}
+                          No previous speeds found for Shift {shift}
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -658,7 +658,7 @@ function LapFormerEntryContent() {
                         ) : (
                           <Copy className="h-4 w-4 mr-1" />
                         )}
-                        Copy Data
+                        Copy Speed
                       </Button>
                     </div>
                   </DialogContent>

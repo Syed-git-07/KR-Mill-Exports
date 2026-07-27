@@ -35,12 +35,13 @@ export default function CardingMachinePage() {
     { label: 'Model', value: 'model' }
   ];
 
-  // VB6 Grid columns: McNo, Description, Model, Count Name
+  // Machine master summary columns. Speed already exists in carding_machines.
   const columns = [
     { key: 'machine_no', label: 'McNo', width: '100px' },
     { key: 'description', label: 'Description', width: '150px' },
     { key: 'model', label: 'Model', width: '150px' },
-    { key: 'mixing_display', label: 'Count Name', width: '120px' }
+    { key: 'mixing_display', label: 'Count Name', width: '120px' },
+    { key: 'speed', label: 'Speed', width: '80px' }
   ];
 
   useEffect(() => {
@@ -65,7 +66,8 @@ export default function CardingMachinePage() {
       
       const formattedData = (result.data || []).map(machine => ({
         ...machine,
-        mixing_display: machine.prodn_mixing || '-'
+        mixing_display: machine.prodn_mixing || '-',
+        speed: machine.speed ?? 0
       }));
       
       setMachines(formattedData);
@@ -92,7 +94,8 @@ export default function CardingMachinePage() {
       
       const formattedData = result.data.map(machine => ({
         ...machine,
-        mixing_display: machine.prodn_mixing || '-'
+        mixing_display: machine.prodn_mixing || '-',
+        speed: machine.speed ?? 0
       }));
       
       setMachines(formattedData);

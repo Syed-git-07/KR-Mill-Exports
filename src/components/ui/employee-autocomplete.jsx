@@ -26,12 +26,10 @@ export default function EmployeeAutocomplete({
   cleanCell = false,
   editingHighlight = false,
   disabled = false,
-  onEnterNavigation,
   'data-row': dataRow,
   'data-col': dataCol
 }) {
   const [open, setOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState(value)
   const [employees, setEmployees] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -40,7 +38,6 @@ export default function EmployeeAutocomplete({
   const requestSeqRef = useRef(0)
   const searchInputRef = useRef(null)
   const highlightedRef = useRef(null)
-  const menuRef = useRef(null)
 
   // Update searchTerm when value prop changes (external sync)
   useEffect(() => {
@@ -89,7 +86,6 @@ export default function EmployeeAutocomplete({
   // Focus search input when popup opens
   useEffect(() => {
     if (!open) return
-    setMenuOpen(false)
     const timer = setTimeout(() => {
       searchInputRef.current?.focus()
       searchInputRef.current?.select()
@@ -97,50 +93,12 @@ export default function EmployeeAutocomplete({
     return () => clearTimeout(timer)
   }, [open])
 
-  // Close copy/paste menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleOutside = (event) => {
-      if (!menuRef.current?.contains(event.target)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleOutside)
-    return () => document.removeEventListener('mousedown', handleOutside)
-  }, [menuOpen])
-
   const applySelection = (employeeName) => {
     const finalName = employeeName ?? searchTerm ?? ''
     setSearchTerm(finalName)
     onChange(finalName)
     setOpen(false)
     setHighlightedIndex(-1)
-    setTimeout(() => onEnterNavigation?.(), 50)
-  }
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value || '')
-    } catch (error) {
-      console.error('Copy failed:', error)
-    } finally {
-      setMenuOpen(false)
-      setTimeout(() => onEnterNavigation?.(), 50)
-    }
-  }
-
-  const handlePaste = async () => {
-    try {
-      const text = await navigator.clipboard.readText()
-      if (text != null) {
-        onChange(String(text))
-      }
-    } catch (error) {
-      console.error('Paste failed:', error)
-    } finally {
-      setMenuOpen(false)
-      setTimeout(() => onEnterNavigation?.(), 50)
-    }
   }
 
   // Confirm the currently highlighted employee
@@ -183,7 +141,9 @@ export default function EmployeeAutocomplete({
           readOnly
           onClick={() => {
             if (disabled) return
-            setMenuOpen(true)
+            setSearchTerm(value || '')
+            setHighlightedIndex(-1)
+            setOpen(true)
           }}
           onKeyDown={(e) => {
             if (disabled) return
@@ -191,7 +151,6 @@ export default function EmployeeAutocomplete({
               e.preventDefault()
               setSearchTerm(e.key)
               setHighlightedIndex(-1)
-              setMenuOpen(false)
               setOpen(true)
             }
           }}
@@ -206,27 +165,6 @@ export default function EmployeeAutocomplete({
           autoComplete="off"
         />
 
-        {menuOpen && !disabled && (
-          <div
-            ref={menuRef}
-            className="absolute z-40 mt-1 w-36 rounded-md border bg-white p-1 shadow-md"
-          >
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-100"
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              onClick={handlePaste}
-              className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-gray-100"
-            >
-              Paste
-            </button>
-          </div>
-        )}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -277,7 +215,8 @@ export default function EmployeeAutocomplete({
                 <div
                   key={emp.id}
                   ref={highlightedIndex === index ? highlightedRef : null}
-                  onClick={() => applySelection(emp.emp_name)}
+                  onClick={() => setHighlightedIndex(index)}
+                  onDoubleClick={() => applySelection(emp.emp_name)}
                   className={cn(
                     "px-3 py-2 cursor-pointer flex items-start select-none",
                     highlightedIndex === index
@@ -312,7 +251,7 @@ export default function EmployeeAutocomplete({
           )}
 
             <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-              Press Enter to apply selected name and move to next employee cell.
+              Press Enter to apply the selected name and close this dialog.
             </div>
           </div>
         </DialogContent>

@@ -73,7 +73,7 @@ function CardingEntryContent() {
   const [activeTab, setActiveTab] = useState('production')
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [shiftTime, setShiftTime] = useState(() => resolveCardingShiftFallbackTime(shift)) // Dynamic shift time from database
-  // Copy Previous Data states
+  // Copy Previous Speed states
   const [copyDialogOpen, setCopyDialogOpen] = useState(false)
   const [availableDates, setAvailableDates] = useState([])
   const [selectedSourceDate, setSelectedSourceDate] = useState(null)
@@ -414,10 +414,10 @@ function CardingEntryContent() {
       )
       
       if (!result.success) {
-        throw new Error(result.error || 'Failed to copy data')
+        throw new Error(result.error || 'Failed to copy speed')
       }
       
-      toast.success(`Copied data from ${result.data.copiedFrom} - ${result.data.machinesUpdated} machines updated`)
+      toast.success(`Copied speed from ${result.data.copiedFrom} shift ${shift} - ${result.data.machinesUpdated} machines updated`)
       setCopyDialogOpen(false)
       
       // Refresh data and force tabs to reload
@@ -425,8 +425,8 @@ function CardingEntryContent() {
       setRefreshKey(prev => prev + 1)
       
     } catch (error) {
-      console.error('Error copying previous data:', error)
-      toast.error(error.message || 'Failed to copy data')
+      console.error('Error copying previous speed:', error)
+      toast.error(error.message || 'Failed to copy speed')
     } finally {
       setIsCopying(false)
     }
@@ -540,8 +540,8 @@ function CardingEntryContent() {
               </Button>
             )}
 
-            {/* Copy Previous Data Button with Dialog */}
-            {headerId && (
+            {/* Copy Previous Speed is available only inside Machine Setup. */}
+            {headerId && activeTab === 'setup' && (
               <div className="ml-auto flex flex-col items-end gap-2">
                 <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
                   <DialogTrigger asChild>
@@ -551,14 +551,14 @@ function CardingEntryContent() {
                       className="border-orange-500 text-orange-600 hover:bg-orange-50"
                     >
                       <Copy className="h-4 w-4 mr-1" />
-                      Copy Previous Data
+                      Copy Previous Speed
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Copy Previous Data</DialogTitle>
+                      <DialogTitle>Copy Previous Speed</DialogTitle>
                       <DialogDescription>
-                        Select a previous date to copy production data from.
+                        Select a previous date to copy machine setup speeds from Shift {shift}.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -569,7 +569,7 @@ function CardingEntryContent() {
                         </div>
                       ) : availableDates.length === 0 ? (
                         <p className="text-center text-gray-500 py-4">
-                          No previous data found for Shift {shift}
+                          No previous speeds found for Shift {shift}
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -612,7 +612,7 @@ function CardingEntryContent() {
                         ) : (
                           <Copy className="h-4 w-4 mr-1" />
                         )}
-                        Copy Data
+                        Copy Speed
                       </Button>
                     </div>
                   </DialogContent>

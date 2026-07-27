@@ -13,14 +13,6 @@ import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { resolveSimplexShiftFallbackTime } from '@/lib/simplexFormulaFallback'
 
@@ -35,8 +27,6 @@ import {
   getSimplexMachineSetupsAction,
   getSupervisorsAction,
   getSimplexMachinesAction,
-  getSimplexAvailableDatesAction,
-  copySimplexFromPreviousDateAction,
   getSimplexShiftConfigAction
 } from '@/app/actions/simplexEntryActions'
 
@@ -70,13 +60,6 @@ function SimplexEntryContent() {
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
-
-  // Copy Previous Data states
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false)
-  const [availableDates, setAvailableDates] = useState([])
-  const [selectedSourceDate, setSelectedSourceDate] = useState(null)
-  const [isLoadingDates, setIsLoadingDates] = useState(false)
-  const [isCopying, setIsCopying] = useState(false)
 
   // Load supervisors
   useEffect(() => {
@@ -389,68 +372,6 @@ function SimplexEntryContent() {
     toast.success('Unsaved changes discarded')
   }, [totalEditedCount, confirmUnsavedDiscard, discardAllTabChanges])
 
-  // Load available previous dates for copy
-  const loadAvailableDates = async () => {
-    if (!headerId) return
-    
-    setIsLoadingDates(true)
-    try {
-      const dateStr = format(date, 'yyyy-MM-dd')
-      const result = await getSimplexAvailableDatesAction(dateStr, shift, 30)
-      if (result.success) {
-        setAvailableDates(result.data || [])
-      } else {
-        toast.error('Failed to load available dates')
-      }
-    } catch (error) {
-      console.error('Error loading available dates:', error)
-      toast.error('Failed to load available dates')
-    } finally {
-      setIsLoadingDates(false)
-    }
-  }
-
-  // Handle opening copy dialog
-  const handleOpenCopyDialog = () => {
-    if (!headerId) {
-      toast.warning('Please initialize the entry first')
-      return
-    }
-    if (!confirmUnsavedDiscard('Copying previous data')) return
-    loadAvailableDates()
-    setCopyDialogOpen(true)
-  }
-
-  // Copy from selected previous date
-  const handleCopyPreviousData = async () => {
-    if (!headerId || !selectedSourceDate) {
-      toast.warning('Please select a date to copy from')
-      return
-    }
-
-    setIsCopying(true)
-    try {
-      if (totalEditedCount > 0) {
-        await discardAllTabChanges()
-      }
-      const dateStr = format(date, 'yyyy-MM-dd')
-      const result = await copySimplexFromPreviousDateAction(dateStr, shift, headerId, selectedSourceDate)
-      if (result.success) {
-        toast.success(`Data copied from ${selectedSourceDate}`)
-        setCopyDialogOpen(false)
-        setSelectedSourceDate(null)
-        handleRefresh()
-      } else {
-        toast.error(result.error || 'Failed to copy data')
-      }
-    } catch (error) {
-      console.error('Error copying previous data:', error)
-      toast.error(error.message || 'Failed to copy data')
-    } finally {
-      setIsCopying(false)
-    }
-  }
-
   return (
     <div className="container mx-auto p-6 space-y-4">
       {/* Page Title */}
@@ -564,89 +485,18 @@ function SimplexEntryContent() {
               </Button>
             )}
 
-            {/* Copy Previous Data Button with Dialog */}
-            {headerId && (
+            {/* Simplex speed is fixed, so the setup-only copy action is disabled. */}
+            {headerId && activeTab === 'setup' && (
               <div className="ml-auto flex flex-col items-end gap-2">
-                <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button 
-                      onClick={handleOpenCopyDialog}
-                      variant="outline"
-                      className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                    >
-                      <Copy className="h-4 w-4 mr-1" />
-                      Copy Previous Data
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Copy Previous Data</DialogTitle>
-                      <DialogDescription>
-                        Select a previous date to copy production data from.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      {isLoadingDates ? (
-                        <div className="flex items-center justify-center py-4">
-                          <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-                          <span className="ml-2">Loading available dates...</span>
-                        </div>
-                      ) : availableDates.length === 0 ? (
-                        <p className="text-center text-gray-500 py-4">
-                          No previous data found for Shift {shift}
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          <Label>Select Date</Label>
-                          <Select 
-                            value={selectedSourceDate || ''} 
-                            onValueChange={setSelectedSourceDate}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a date" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableDates.map((item) => {
-                                const dateStr = typeof item.entry_date === 'string' 
-                                  ? item.entry_date.split('T')[0] 
-                                  : format(new Date(item.entry_date), 'yyyy-MM-dd')
-                                return (
-                                  <SelectItem 
-                                    key={dateStr} 
-                                    value={dateStr}
-                                  >
-                                    {format(new Date(dateStr + 'T00:00:00'), 'dd-MMM-yyyy')} (Shift {item.shift})
-                                  </SelectItem>
-                                )
-                              })}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setCopyDialogOpen(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        onClick={handleCopyPreviousData}
-                        disabled={isCopying || !selectedSourceDate || availableDates.length === 0}
-                        className="bg-orange-500 hover:bg-orange-600"
-                      >
-                        {isCopying ? (
-                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                        ) : (
-                          <Copy className="h-4 w-4 mr-1" />
-                        )}
-                        Copy Data
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
+                <Button
+                  variant="outline"
+                  className="border-orange-500 text-orange-600"
+                  disabled
+                  title="Simplex speed is fixed and cannot be copied"
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Copy Previous Speed
+                </Button>
               </div>
             )}
           </div>
