@@ -657,6 +657,7 @@ export default function DateShiftListPage({
                     mode="single"
                     selected={newEntryDate}
                     onSelect={(d) => d && setNewEntryDate(d)}
+                    tableName={tableName}
                     initialFocus
                   />
                 </PopoverContent>

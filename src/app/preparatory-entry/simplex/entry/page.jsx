@@ -415,6 +415,7 @@ function SimplexEntryContent() {
                     mode="single"
                     selected={date}
                     onSelect={handleDateChange}
+                    tableName="simplex_production_header"
                     initialFocus
                   />
                 </PopoverContent>

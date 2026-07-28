@@ -151,6 +151,33 @@
   }
 }
 
+/*
+ * Entry tables scroll in both directions. Each header cell needs its own
+ * opaque stacking layer so body values never paint over the header.
+ */
+div[class*="overflow-x-auto"][class*="overflow-y-auto"] {
+  isolation: isolate;
+}
+
+div[class*="overflow-x-auto"][class*="overflow-y-auto"]
+  > table
+  > thead.sticky {
+  z-index: 30;
+}
+
+div[class*="overflow-x-auto"][class*="overflow-y-auto"]
+  > table
+  > thead.sticky
+  > tr
+  > th {
+  position: sticky;
+  top: 0;
+  z-index: 31;
+  background-color: #2563eb;
+  background-clip: padding-box;
+  box-shadow: 0 1px 0 #1d4ed8;
+}
+
 /* Print Styles */
 @media print {
   body {

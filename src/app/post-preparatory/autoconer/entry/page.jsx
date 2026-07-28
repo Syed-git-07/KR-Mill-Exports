@@ -350,6 +350,7 @@ function AutoconerEntryContent() {
                     mode="single"
                     selected={date}
                     onSelect={handleDateChange}
+                    tableName="autoconer_production_header"
                     initialFocus
                   />
                 </PopoverContent>

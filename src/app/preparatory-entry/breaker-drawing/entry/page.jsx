@@ -477,6 +477,7 @@ function BreakerDrawingEntryContent() {
                     mode="single"
                     selected={date}
                     onSelect={handleDateChange}
+                    tableName="breaker_drawing_production_header"
                     initialFocus
                   />
                 </PopoverContent>

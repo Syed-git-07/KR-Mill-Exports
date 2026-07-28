@@ -497,6 +497,7 @@ function FinisherDrawingEntryContent() {
                     mode="single"
                     selected={date}
                     onSelect={handleDateChange}
+                    tableName="finisher_drawing_production_header"
                     initialFocus
                   />
                 </PopoverContent>

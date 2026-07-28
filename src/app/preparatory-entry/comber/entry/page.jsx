@@ -370,6 +370,7 @@ function ComberEntryContent() {
                     mode="single"
                     selected={date}
                     onSelect={handleDateChange}
+                    tableName="comber_production_header"
                     initialFocus
                   />
                 </PopoverContent>

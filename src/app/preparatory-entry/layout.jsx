@@ -9,7 +9,7 @@ export default function PreparatoryEntryLayout({ children }) {
   return (
     <div className="flex h-screen bg-gray-50">
       <PreparatoryEntrySidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="min-w-0 flex-1 overflow-auto">
         {children}
       </main>
     </div>
