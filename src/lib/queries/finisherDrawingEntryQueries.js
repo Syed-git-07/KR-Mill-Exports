@@ -5,6 +5,7 @@ import {
   resolveFinisherDrawingFormulaInputs,
   calculateFinisherDrawingStdProdn,
 } from '../finisherDrawingFormulaFallback';
+import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
@@ -811,15 +812,16 @@ export async function updateFinisherDrawingStoppageEntry(id, updates) {
       : null
     const shiftTime = await getFinisherDrawingShiftTime(header?.shift || 1)
     const totalTime = header?.total_time || detail?.run_time || shiftTime
-    const workTime = Math.max(totalTime - total, 0)
-    const utiPercent = Math.round((workTime / totalTime) * 100 * 100) / 100
+    const productionTime = resolveProductionTime(totalTime, total)
 
     await prisma.finisher_drawing_production_detail.update({
       where: { id: existing.production_detail_id },
       data: {
-        total_stoppage_mins: total,
-        work_time: workTime,
-        uti_percent: utiPercent
+        total_stoppage_mins: productionTime.stoppageTime,
+        work_time: productionTime.workTime,
+        uti_percent: productionTime.totalTime > 0
+          ? Math.round((productionTime.workTime / productionTime.totalTime) * 100 * 100) / 100
+          : 0
       }
     })
 
@@ -1366,32 +1368,33 @@ export function calculateFinisherDrawingValues(actHank, actProdn, totalTime, sto
     divisorConstant,
     delivery,
   } = resolveFinisherDrawingFormulaInputs(setup, machineSpeed)
-  const runTime = totalTime
-  const workTime = Math.max(totalTime - stoppageTime, 0)
   
   const stdProdn = (speed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor * delivery
 
   // Exp Prodn = Std Prodn × (Work Time / Total Time) - based on actual working time
-  const expProdn = stdProdn * (workTime / totalTime)
 
   // Effi% = Act Prodn / Exp Prodn × 100
-  const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
 
   // UTI% = Work Time / Total Time × 100 (how much of shift was actually worked)
-  const utiPercent = (workTime / totalTime) * 100
 
   // Waste% = Waste / Act Prodn × 100
-  const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
+  const metrics = calculateTimeAdjustedProductionMetrics({
+    actualProduction: actProdn,
+    standardProduction: stdProdn,
+    waste,
+    totalTime,
+    stoppageTime,
+  })
 
   return {
-    std_prodn: Math.round(stdProdn * 100) / 100,
-    exp_prodn: Math.round(expProdn * 100) / 100,
-    effi_percent: Math.round(effiPercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100,
+    std_prodn: metrics.standardProduction,
+    exp_prodn: metrics.expectedProduction,
+    effi_percent: metrics.efficiencyPercent,
+    uti_percent: metrics.utilizationPercent,
     waste,
-    waste_percent: Math.round(wastePercent * 100) / 100,
-    run_time: runTime,
-    work_time: workTime,
+    waste_percent: metrics.wastePercent,
+    run_time: metrics.totalTime,
+    work_time: metrics.workTime,
     speed
   }
 }

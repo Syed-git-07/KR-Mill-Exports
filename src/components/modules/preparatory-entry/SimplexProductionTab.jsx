@@ -15,6 +15,13 @@ import {
 } from '@/app/actions/simplexEntryActions'
 import { calculateSimplexProductionValues } from '@/lib/utils/simplexCalculations'
 import { NumberInput } from '@/components/ui/number-input'
+import {
+  findDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  rowHasDependencyDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0
@@ -79,29 +86,16 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     else if (e.key === 'ArrowUp') { e.preventDefault(); focusRowByDelta(rowIndex, -1, colName) }
   }, [focusRowByDelta])
 
-  const findSetupDraftForMachine = useCallback((machineId, setupId) => {
-    const drafts = setupDraftEdits || {}
-    const direct =
-      drafts[setupId] || drafts[String(setupId)] || drafts[machineId] || drafts[String(machineId)]
-    if (direct && direct.machine_id) return direct
-    return Object.values(drafts).find(draft => String(draft?.machine_id) === String(machineId)) || null
-  }, [setupDraftEdits])
-
   const getEffectiveSetup = useCallback((row, setupMap) => {
     const baseSetup = setupMap[row.machine_id] || {}
-    if (!baseSetup?.id) return baseSetup
-    const setupDraft = findSetupDraftForMachine(row.machine_id, baseSetup.id)
-    return setupDraft ? { ...baseSetup, ...setupDraft } : baseSetup
-  }, [findSetupDraftForMachine])
+    return mergeSetupDraft(baseSetup, row.machine_id, setupDraftEdits) || baseSetup
+  }, [setupDraftEdits])
 
   const recalculateRow = useCallback((row, setupMap, draft = null) => {
     const setup = getEffectiveSetup(row, setupMap)
     const machine = row.machine || {}
     const base = draft ? { ...row, ...draft } : row
-    const stoppageTime = (Array.isArray(base.stoppage) ? base.stoppage[0] : base.stoppage)?.total_stoppage_time ?? base.total_stoppage_mins ?? 0
-    if (!draft && base.act_prodn !== undefined && base.act_prodn !== null && Number(base.act_prodn) > 0) {
-      return base
-    }
+    const stoppageTime = getEffectiveStoppageTotal(base, stoppageDraftEdits)
 
     const runHrs = toNumber(base.run_hrs)
     const idleSpindles = parseInt(base.idle_spindles, 10) || 0
@@ -141,21 +135,10 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       waste_percent: calculated.waste_percent,
       uti_percent: calculated.uti_percent
     }
-  }, [totalTime, getEffectiveSetup])
+  }, [totalTime, getEffectiveSetup, stoppageDraftEdits])
 
   const getEffectiveTotalStoppageMins = useCallback((row) => {
-    const stoppageRow = Array.isArray(row.stoppage) ? row.stoppage[0] : row.stoppage
-    const baseTotal = toNumber(stoppageRow?.total_stoppage_time ?? row.total_stoppage_mins ?? 0)
-    if (!stoppageRow?.id) return baseTotal
-
-    const stoppageDraft = stoppageDraftEdits?.[stoppageRow.id] || stoppageDraftEdits?.[String(stoppageRow.id)]
-    if (!stoppageDraft) return baseTotal
-
-    const t1 = toNumber(stoppageDraft.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0)
-    const t2 = toNumber(stoppageDraft.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0)
-    const t3 = toNumber(stoppageDraft.stoppage3_time ?? stoppageRow.stoppage3_time ?? 0)
-    const t4 = toNumber(stoppageDraft.stoppage4_time ?? stoppageRow.stoppage4_time ?? 0)
-    return t1 + t2 + t3 + t4
+    return getEffectiveStoppageTotal(row, stoppageDraftEdits)
   }, [stoppageDraftEdits])
 
   useEffect(() => {
@@ -174,7 +157,13 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           }
         ]
       }
-      return recalculateRow(withEffectiveStoppage, machineSetups, draft)
+      const forceRecalculate = rowHasDependencyDraft(
+        row,
+        machineSetups,
+        setupDraftEdits,
+        stoppageDraftEdits
+      )
+      return recalculateRow(withEffectiveStoppage, machineSetups, draft, forceRecalculate)
     }))
   }, [stoppageDraftEdits, setupDraftEdits, machineSetups, recalculateRow, getEffectiveTotalStoppageMins, productionData.length])
 
@@ -192,9 +181,15 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
     return (rows || []).map(row => {
       const draft = drafts[row.id] || drafts[String(row.id)]
-      return recalculateRow(row, setupMap, draft)
+      const forceRecalculate = rowHasDependencyDraft(
+        row,
+        setupMap,
+        setupDraftEdits,
+        stoppageDraftEdits
+      )
+      return recalculateRow(row, setupMap, draft, forceRecalculate)
     })
-  }, [setEditedRows, recalculateRow])
+  }, [setEditedRows, recalculateRow, setupDraftEdits, stoppageDraftEdits])
 
   // Load production data
   const loadData = useCallback(async ({ force = false } = {}) => {
@@ -260,22 +255,40 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
   }
 
   // Handle save
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
     const currentEdits = editedRowsRef.current || editedRows || {}
-    const editedRowIds = Object.keys(currentEdits)
-    if (editedRowIds.length === 0) {
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      currentEdits,
+      machineSetups,
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
+
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) toast.info('No changes to save')
       return { success: true, saved: 0 }
     }
 
     setIsSaving(true)
     try {
-      const rowsToSave = productionData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
-      
       for (const row of rowsToSave) {
-        const setup = getEffectiveSetup(row, machineSetups)
+        const changes = findDraftByKeys(currentEdits, row.id) || {}
+        const setup = mergeSetupDraft(
+          machineSetups[row.machine_id],
+          row.machine_id,
+          effectiveSetupDrafts
+        ) || {}
         const machine = row.machine || {}
-        const stoppageTime = (Array.isArray(row.stoppage) ? row.stoppage[0] : row.stoppage)?.total_stoppage_time ?? 0
+        const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const effectiveRow = { ...row, ...changes }
 
         // Get machine parameters
         const speed = setup.speed || machine.speed || 960
@@ -286,32 +299,35 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
         // Calculate production values
         const calculated = calculateSimplexProductionValues({
-          runHrs: parseFloat(row.run_hrs) || 0,
+          runHrs: parseFloat(effectiveRow.run_hrs) || 0,
           speed,
           tpi,
           hank,
           mcEffi,
           totalSpindles,
-          idleSpindles: parseInt(row.idle_spindles) || 0,
-          waste: parseFloat(row.waste) || 0,
+          idleSpindles: parseInt(effectiveRow.idle_spindles) || 0,
+          waste: parseFloat(effectiveRow.waste) || 0,
           totalTime,
           stoppageTime
         })
 
-        await updateSimplexProductionDetailAction(row.id, {
-          employee_name: row.employee_name,
-          run_hrs: row.run_hrs,
-          run_min: row.run_min,
+        const result = await updateSimplexProductionDetailAction(row.id, {
+          employee_name: effectiveRow.employee_name,
+          run_hrs: effectiveRow.run_hrs,
+          run_min: calculated.run_min,
           run_time: totalTime,
-          idle_spindles: row.idle_spindles,
-          waste: row.waste,
-          act_prodn: row.act_prodn,
-          waste_percent: row.waste_percent,
-          act_effi_percent: row.act_effi_percent,
-          uti_percent: row.uti_percent,
-          std_hrs: row.std_hrs,
-          work_time: row.work_time
+          idle_spindles: effectiveRow.idle_spindles,
+          waste: effectiveRow.waste,
+          act_prodn: calculated.act_prodn,
+          waste_percent: calculated.waste_percent,
+          act_effi_percent: calculated.act_effi_percent,
+          uti_percent: calculated.uti_percent,
+          std_hrs: calculated.std_hrs,
+          work_time: calculated.work_time
         })
+        if (!result?.success) {
+          throw new Error(result?.error || `Failed to update simplex production row ${row.id}`)
+        }
       }
 
       if (!suppressSuccessToast) {

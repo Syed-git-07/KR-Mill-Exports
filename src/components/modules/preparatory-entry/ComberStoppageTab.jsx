@@ -472,7 +472,9 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
         updateComberStoppageEntryAction(rowId, changes)
       )
 
-      await Promise.all(updatePromises)
+      const results = await Promise.all(updatePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save a Comber stoppage row')
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})
       if (!suppressSuccessToast) {

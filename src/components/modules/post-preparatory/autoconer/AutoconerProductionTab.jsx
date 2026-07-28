@@ -23,6 +23,12 @@ import {
   syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
 import { calculateAutoconerProductionValues } from '@/lib/queries/autoconerEntryQueries'
+import {
+  findDraftByKeys,
+  findSetupDraft as findMachineSetupDraft,
+  getEffectiveStoppageTotal,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 
 /**
  * Autoconer Production Formulas (from plan.md):
@@ -104,25 +110,14 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     loadIdleReasons()
   }, [])
 
-  const findSetupDraft = useCallback((row) => {
+  const findSetupDraft = useCallback((row, drafts = setupDraftEdits) => {
     const machineId = row?.machine_id ?? row?.machine?.id
-    if (!machineId || !setupDraftEdits) return null
-    return setupDraftEdits[machineId] || setupDraftEdits[String(machineId)] || null
+    if (!machineId) return null
+    return findMachineSetupDraft(drafts, row?.setup?.id, machineId)
   }, [setupDraftEdits])
 
   const getEffectiveTotalStoppageMins = useCallback((row) => {
-    const stoppageRow = row?.stoppage?.[0]
-    const stoppageRowId = stoppageRow?.id
-    const stoppageDraft = (stoppageRowId && stoppageDraftEdits)
-      ? stoppageDraftEdits[stoppageRowId]
-      : null
-
-    const stoppage1 = stoppageDraft?.stoppage1_time ?? stoppageRow?.stoppage1_time ?? 0
-    const stoppage2 = stoppageDraft?.stoppage2_time ?? stoppageRow?.stoppage2_time ?? 0
-    const stoppage3 = stoppageDraft?.stoppage3_time ?? stoppageRow?.stoppage3_time ?? 0
-    const stoppage4 = stoppageDraft?.stoppage4_time ?? stoppageRow?.stoppage4_time ?? 0
-
-    return parseInt(stoppage1 || 0) + parseInt(stoppage2 || 0) + parseInt(stoppage3 || 0) + parseInt(stoppage4 || 0)
+    return getEffectiveStoppageTotal(row, stoppageDraftEdits)
   }, [stoppageDraftEdits])
 
   const recalculateRow = useCallback((row, changes = {}) => {
@@ -146,10 +141,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       totalStoppageMins,
       totalTime
     )
-    const { prodn_effi, ...derivedWithoutEffi } = calculated
-
     return {
-      ...derivedWithoutEffi,
+      ...calculated,
       _totalDrums: totalDrums
     }
   }, [totalTime, findSetupDraft])
@@ -279,9 +272,24 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
     const draftRows = editedRowsRef.current || {}
-    if (Object.keys(draftRows).length === 0) {
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      draftRows,
+      {},
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
+
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -290,16 +298,22 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
 
     setIsSaving(true)
     try {
-      const updates = Object.entries(draftRows).map(([rowId, changes]) => {
-        const row = productionData.find(r => r.id === rowId)
-        if (!row) return null
+      const updates = rowsToSave.map((row) => {
+        const rowId = row.id
+        const changes = findDraftByKeys(draftRows, row.id) || {}
 
         // Get current or updated values
         const actProdn = changes.act_prodn ?? row.act_prodn ?? 0
         const wasteKg = changes.waste_kg ?? row.waste_kg ?? 0
         const idleDrum = changes.idle_drum ?? row.idle_drum ?? 0
-        const totalStoppageMins = getEffectiveTotalStoppageMins(row)
-        const totalDrums = parseInt(row.machine?.no_of_drums) || 0
+        const totalStoppageMins = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const setupDraft = findSetupDraft(row, effectiveSetupDrafts)
+        const totalDrums =
+          parseInt(setupDraft?.no_of_drums) ||
+          parseInt(setupDraft?.total_drums) ||
+          parseInt(row.machine?.no_of_drums) ||
+          parseInt(row._totalDrums) ||
+          0
 
         // Calculate all production values (like carding does)
         const calculated = calculateAutoconerProductionValues(
@@ -312,14 +326,12 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
         )
 
         // Filter out underscore-prefixed fields (they're not in database schema)
-        const { _idleDrumPercent, _drumEfficiency, uti_percent, prodn_effi, ...dbFields } = calculated
-        const manualProdnEffi = changes.prodn_effi
+        const { _idleDrumPercent, _drumEfficiency, ...dbFields } = calculated
 
         return {
           id: rowId,
           ...changes,
-          ...dbFields, // Only include database fields (waste_percent, prodn_effi, work_time, etc.)
-          ...(manualProdnEffi !== undefined ? { prodn_effi: parseFloat(manualProdnEffi) || 0 } : {}),
+          ...dbFields,
           act_prodn: actProdn,
           waste_kg: wasteKg,
           idle_drum: idleDrum,
@@ -492,19 +504,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                       />
                     </td>
                     {/* Production Efficiency (Manual Entry) */}
-                    <td className="border border-gray-300 px-0 py-0">
-                      <NumberInput
-                        type="number"
-                        step="0.01"
-                        value={row.prodn_effi ?? ''}
-                        onChange={(e) => handleInputChange(row.id, 'prodn_effi', e.target.value)}
-                        onKeyDown={(e) => handleEnterNavigation(e, index, 'prodn_effi')}
-                        data-row={index}
-                        data-col="prodn_effi"
-                        className={`h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100 ${effiColor}`}
-                        placeholder="0.00"
-                        zeroAsEmpty
-                      />
+                    <td className={`border border-gray-300 px-2 py-1 text-right text-xs tabular-nums ${effiColor}`}>
+                      {Number(row.prodn_effi || 0).toFixed(2)}
                     </td>
                     {/* Red Light */}
                     <td className="border border-gray-300 px-0 py-0">

@@ -121,6 +121,7 @@ const recalcProductionFromStoppage = (productionDetail, totalStoppageTime, total
 const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTab({
   headerId,
   totalTime = 0,
+  shift = 1,
   onRefresh,
   sharedDraftEdits,
   onSharedDraftEditsChange,
@@ -312,7 +313,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         getFinisherDrawingStoppageEntriesAction(headerId),
         getFinisherDrawingStoppageReasonsAction(),
         getFinisherDrawingMachinesAction(),
-        getFinisherDrawingMachineSetupsAction(1, headerId)
+        getFinisherDrawingMachineSetupsAction(shift, headerId)
       ])
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
@@ -352,7 +353,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     } finally {
       setIsLoading(false)
     }
-  }, [headerId, mergeServerRowsWithDrafts])
+  }, [headerId, shift, mergeServerRowsWithDrafts])
 
   useServerDataLoader(loadData, [headerId])
 
@@ -502,7 +503,11 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         updateFinisherDrawingStoppageEntryAction(rowId, changes)
       )
 
-      await Promise.all(updatePromises)
+      const stoppageResults = await Promise.all(updatePromises)
+      const failedStoppage = stoppageResults.find(result => !result?.success)
+      if (failedStoppage) {
+        throw new Error(failedStoppage.error || 'Failed to save a Finisher Drawing stoppage row')
+      }
       
       // Now recalculate production details based on updated stoppages
       const latestDetailsResult = await getFinisherDrawingProductionDetailsAction(headerId)

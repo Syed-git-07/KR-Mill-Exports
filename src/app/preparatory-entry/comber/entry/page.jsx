@@ -58,7 +58,7 @@ function ComberEntryContent() {
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
   const [isSavingAll, setIsSavingAll] = useState(false)
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const [shiftTime, setShiftTime] = useState(resolveComberShiftFallbackTime(shift))
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
@@ -78,14 +78,15 @@ function ComberEntryContent() {
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const getUnsavedEditCount = useCallback(() => {
     const sharedCount =
       Object.keys(sharedDrafts.production || {}).length +
       Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length
+      Object.keys(sharedDrafts.setup || {}).length +
+      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
@@ -200,29 +201,15 @@ function ComberEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
-    if (headerId) {
-      try {
-        await updateComberProductionHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
-    if (headerId) {
-      try {
-        await updateComberProductionHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
   }
 
   // Refresh data
@@ -247,7 +234,8 @@ function ComberEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -255,7 +243,8 @@ function ComberEntryContent() {
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -263,11 +252,15 @@ function ComberEntryContent() {
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateComberProductionHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -303,6 +296,7 @@ function ComberEntryContent() {
     ])
 
     clearAllDrafts()
+    await loadProductionHeader()
 
     toast.success('Unsaved changes discarded')
   }

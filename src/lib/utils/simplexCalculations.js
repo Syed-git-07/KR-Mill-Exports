@@ -4,6 +4,7 @@
  */
 
 import { resolveSimplexFormulaInputs } from '@/lib/simplexFormulaFallback'
+import { resolveProductionTime } from '@/lib/productionFormulaMath'
 
 /**
  * Parse run hours from HH.MM format to total minutes
@@ -64,7 +65,8 @@ export function calculateSimplexProductionValues(params) {
   const runMin = parseRunHoursToMinutes(runHrs)
 
   // Step 2: Calculate Work Time
-  const workTime = totalTime - stoppageTime
+  const productionTime = resolveProductionTime(totalTime, stoppageTime)
+  const workTime = productionTime.workTime
 
   // Step 3: Calculate Standard Hours
   const stdHrs = workTime * (formula.mcEffiPercent / 100)
@@ -90,7 +92,9 @@ export function calculateSimplexProductionValues(params) {
 
   // Step 8: Calculate Utilization
   // UTI % = (WorkTime / TotalTime) × 100
-  const utiPercent = totalTime > 0 ? (workTime / totalTime) * 100 : 0
+  const utiPercent = productionTime.totalTime > 0
+    ? (workTime / productionTime.totalTime) * 100
+    : 0
 
   return {
     run_min: runMin,

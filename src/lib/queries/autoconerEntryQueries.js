@@ -12,6 +12,7 @@
 import { prisma } from '../prisma'
 import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { resolveProductionTime } from '../productionFormulaMath'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -1651,19 +1652,22 @@ export function calculateAutoconerProductionValues(actProdn, wasteKg, idleDrum, 
   // Ensure numeric values
   actProdn = parseFloat(actProdn) || 0
   wasteKg = parseFloat(wasteKg) || 0
-  idleDrum = parseInt(idleDrum) || 0
-  totalDrums = parseInt(totalDrums) || 0
+  idleDrum = Math.max(parseInt(idleDrum) || 0, 0)
+  totalDrums = Math.max(parseInt(totalDrums) || 0, 0)
   totalStoppageMins = parseInt(totalStoppageMins) || 0
   runTime = parseInt(runTime) || resolveAutoconerShiftFallbackTime(1)
 
-  // Calculate Work Time = Run Time - Total Stoppage
-  const workTime = Math.max(runTime - totalStoppageMins, 0)
+  const productionTime = resolveProductionTime(runTime, totalStoppageMins)
+  const workTime = productionTime.workTime
+  totalStoppageMins = productionTime.stoppageTime
+  runTime = productionTime.totalTime
 
   // Calculate Waste % = (Waste Kg / Act Prodn) × 100
   const wastePercent = actProdn > 0 ? (wasteKg / actProdn) * 100 : null
 
   // Calculate Idle Drum % = (Idle Drum / Total Drum) × 100
-  const idleDrumPercent = totalDrums > 0 ? (idleDrum / totalDrums) * 100 : 0
+  const effectiveIdleDrum = Math.min(Math.max(idleDrum, 0), totalDrums)
+  const idleDrumPercent = totalDrums > 0 ? (effectiveIdleDrum / totalDrums) * 100 : 0
 
   // Calculate Drum Efficiency = 100 - Idle Drum %
   const drumEfficiency = 100 - idleDrumPercent

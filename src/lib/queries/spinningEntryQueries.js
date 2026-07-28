@@ -2,6 +2,7 @@ import { prisma } from '../prisma'
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
+import { resolveProductionTime } from '../productionFormulaMath'
 
 const SPINNING_DEFAULT_SETUP_DATE_KEY = '2026-04-01'
 const SPINNING_DEFAULT_SETUP_DATE = new Date(`${SPINNING_DEFAULT_SETUP_DATE_KEY}T00:00:00.000Z`)
@@ -144,8 +145,9 @@ export function calculateWastePercent(waste, actProdn) {
  * Formula: Stopped_Spl = (Stoppage_Mins / Total_Mins) × Total_Spl
  */
 export function calculateStoppedSpindles(stoppageMins, totalMins, totalSpindles) {
-  if (!totalMins || totalMins === 0) return 0
-  return (stoppageMins / totalMins) * totalSpindles
+  const time = resolveProductionTime(totalMins, stoppageMins)
+  if (time.totalTime === 0) return 0
+  return (time.stoppageTime / time.totalTime) * totalSpindles
 }
 
 /**
@@ -153,7 +155,7 @@ export function calculateStoppedSpindles(stoppageMins, totalMins, totalSpindles)
  * Formula: Worked_Spl = Total_Spl - Stopped_Spl
  */
 export function calculateWorkedSpindles(totalSpindles, stoppedSpindles) {
-  return totalSpindles - stoppedSpindles
+  return Math.max(totalSpindles - stoppedSpindles, 0)
 }
 
 /**

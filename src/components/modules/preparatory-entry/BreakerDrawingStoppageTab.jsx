@@ -526,7 +526,11 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
         updateStoppageEntryAction(rowId, changes)
       )
 
-      await Promise.all(updatePromises)
+      const stoppageResults = await Promise.all(updatePromises)
+      const failedStoppage = stoppageResults.find(result => !result?.success)
+      if (failedStoppage) {
+        throw new Error(failedStoppage.error || 'Failed to save a Breaker Drawing stoppage row')
+      }
       
       // Now recalculate production details based on updated stoppages
       const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {

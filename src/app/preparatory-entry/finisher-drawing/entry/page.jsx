@@ -64,7 +64,7 @@ function FinisherDrawingEntryContent() {
   const [isInitializing, setIsInitializing] = useState(false)
   const [shiftTime, setShiftTime] = useState(resolveFinisherDrawingShiftFallbackTime(shift))
   const [isSavingAll, setIsSavingAll] = useState(false)
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   // Copy Previous Speed states
   const [copyDialogOpen, setCopyDialogOpen] = useState(false)
   const [availableDates, setAvailableDates] = useState([])
@@ -93,7 +93,7 @@ function FinisherDrawingEntryContent() {
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const handleProductionDraftsChange = useCallback((next) => {
@@ -112,7 +112,8 @@ function FinisherDrawingEntryContent() {
     const sharedCount =
       Object.keys(sharedDrafts.production || {}).length +
       Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length
+      Object.keys(sharedDrafts.setup || {}).length +
+      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
@@ -324,29 +325,15 @@ function FinisherDrawingEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
-    if (headerId) {
-      try {
-        await updateFinisherDrawingHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
-    if (headerId) {
-      try {
-        await updateFinisherDrawingHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
   }
 
   // Refresh data
@@ -374,7 +361,8 @@ function FinisherDrawingEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -382,7 +370,8 @@ function FinisherDrawingEntryContent() {
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -391,11 +380,15 @@ function FinisherDrawingEntryContent() {
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateFinisherDrawingHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -431,6 +424,7 @@ function FinisherDrawingEntryContent() {
     ])
 
     clearAllDrafts()
+    await loadProductionHeader()
     toast.success('Unsaved changes discarded')
   }
 
@@ -697,6 +691,7 @@ function FinisherDrawingEntryContent() {
                   ref={productionTabRef}
                   headerId={headerId} 
                   totalTime={tabTotalTime}
+                  shift={parseInt(shift)}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.production}
                   onSharedDraftEditsChange={handleProductionDraftsChange}
@@ -710,6 +705,7 @@ function FinisherDrawingEntryContent() {
                   ref={stoppageTabRef}
                   headerId={headerId}
                   totalTime={tabTotalTime}
+                  shift={parseInt(shift)}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.stoppage}
                   onSharedDraftEditsChange={handleStoppageDraftsChange}

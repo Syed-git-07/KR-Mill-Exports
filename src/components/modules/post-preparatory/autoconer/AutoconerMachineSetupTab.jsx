@@ -353,7 +353,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         updateAutoconerMachineSetupAction(rowId, changes, shift)
       )
 
-      await Promise.all(updatePromises)
+      const results = await Promise.all(updatePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save an Autoconer setup row')
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})
       if (!suppressSuccessToast) {

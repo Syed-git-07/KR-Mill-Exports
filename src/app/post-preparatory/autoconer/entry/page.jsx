@@ -54,7 +54,7 @@ function AutoconerEntryContent() {
   const [totalTime, setTotalTime] = useState(() => resolveAutoconerShiftFallbackTime(paramShift || '1')) // Dynamic shift time
   
   const [isSavingAll, setIsSavingAll] = useState(false)
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
@@ -76,7 +76,7 @@ function AutoconerEntryContent() {
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
@@ -95,12 +95,13 @@ function AutoconerEntryContent() {
     const productionShared = Object.keys(sharedDrafts.production || {}).length
     const stoppageShared = Object.keys(sharedDrafts.stoppage || {}).length
     const setupShared = Object.keys(sharedDrafts.setup || {}).length
+    const headerShared = Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0
 
     const productionCount = productionShared || (productionTabRef.current?.getEditedCount?.() || 0)
     const stoppageCount = stoppageShared || (stoppageTabRef.current?.getEditedCount?.() || 0)
     const setupCount = setupShared || (setupTabRef.current?.getEditedCount?.() || 0)
 
-    return productionCount + stoppageCount + setupCount
+    return headerShared + productionCount + stoppageCount + setupCount
   }, [sharedDrafts])
 
   // Load supervisors
@@ -197,16 +198,9 @@ function AutoconerEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
-    if (headerId) {
-      try {
-        await updateAutoconerProductionHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
   }
 
   // Refresh data
@@ -250,25 +244,31 @@ function AutoconerEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const prodResult = await (
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateAutoconerProductionHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -303,6 +303,7 @@ function AutoconerEntryContent() {
     ])
 
     clearAllDrafts()
+    await loadProductionHeader()
 
     toast.success('Unsaved changes discarded')
   }

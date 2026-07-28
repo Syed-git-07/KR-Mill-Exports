@@ -64,7 +64,7 @@ function SpinningEntryContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [shiftTime, setShiftTime] = useState(resolveSpinningShiftFallbackTime(shift)) // Dynamic shift time from database
   // Copy Previous Speed states
@@ -94,7 +94,8 @@ function SpinningEntryContent() {
     const sharedCount =
       Object.keys(sharedDrafts.production || {}).length +
       Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length
+      Object.keys(sharedDrafts.setup || {}).length +
+      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
@@ -220,28 +221,24 @@ function SpinningEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
     if (headerId) {
-      try {
-        await updateSpinningProductionHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
+      setSharedDrafts(prev => ({
+        ...prev,
+        header: { ...prev.header, supervisor_id: value || null }
+      }))
     }
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
     if (headerId) {
-      try {
-        await updateSpinningProductionHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
+      setSharedDrafts(prev => ({
+        ...prev,
+        header: { ...prev.header, maisitry_id: value || null }
+      }))
     }
   }
 
@@ -344,8 +341,7 @@ function SpinningEntryContent() {
   const handleSaveAllTabs = async () => {
     if (!headerId || isSavingAll) return
 
-    const refs = [productionTabRef.current, stoppageTabRef.current, setupTabRef.current]
-    const totalPending = refs.reduce((sum, tab) => sum + (tab?.getEditedCount?.() || 0), 0)
+    const totalPending = getUnsavedEditCount()
 
     if (totalPending === 0) {
       toast.info('No changes to save')
@@ -359,25 +355,31 @@ function SpinningEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const prodResult = await (
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateSpinningProductionHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -410,6 +412,8 @@ function SpinningEntryContent() {
       stoppageTabRef.current?.discardChanges?.() || Promise.resolve({ success: true }),
       setupTabRef.current?.discardChanges?.() || Promise.resolve({ success: true })
     ])
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+    await loadProductionHeader()
 
     toast.success('Unsaved changes discarded')
   }

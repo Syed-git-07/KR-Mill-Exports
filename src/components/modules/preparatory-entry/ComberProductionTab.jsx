@@ -17,6 +17,12 @@ import {
 import {
   calculateComberProductionValues
 } from '@/lib/queries/comberEntryQueries'
+import {
+  findDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 import { NumberInput } from '@/components/ui/number-input'
 
 // Helper function to safely convert Prisma Decimal to number
@@ -89,32 +95,12 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
   }, [focusRowByDelta])
 
   const getEffectiveTotalStoppageMins = useCallback((row) => {
-    const stoppageEntry = row?.stoppage?.[0]
-    const baseTotal = toNumber(row?.total_stoppage_mins ?? stoppageEntry?.total_stoppage_time ?? 0)
-    if (!stoppageEntry?.id) return baseTotal
-
-    const stoppageDraft = stoppageDraftEdits?.[stoppageEntry.id] || stoppageDraftEdits?.[String(stoppageEntry.id)]
-    if (!stoppageDraft) return baseTotal
-
-    const t1 = toNumber(stoppageDraft.stoppage1_time ?? stoppageEntry.stoppage1_time ?? 0)
-    const t2 = toNumber(stoppageDraft.stoppage2_time ?? stoppageEntry.stoppage2_time ?? 0)
-    const t3 = toNumber(stoppageDraft.stoppage3_time ?? stoppageEntry.stoppage3_time ?? 0)
-    const t4 = toNumber(stoppageDraft.stoppage4_time ?? stoppageEntry.stoppage4_time ?? 0)
-    return t1 + t2 + t3 + t4
+    return getEffectiveStoppageTotal(row, stoppageDraftEdits)
   }, [stoppageDraftEdits])
 
-  const findSetupDraftForMachine = useCallback((machineId) => {
-    if (!machineId) return null
-    const drafts = setupDraftEdits || {}
-    const direct = drafts[machineId] || drafts[String(machineId)]
-    if (direct && direct.machine_id) return direct
-    return Object.values(drafts).find(draft => String(draft?.machine_id) === String(machineId)) || null
-  }, [setupDraftEdits])
-
   const resolveEffectiveSetup = useCallback((setup, machineId) => {
-    const setupDraft = findSetupDraftForMachine(machineId)
-    return setupDraft ? { ...setup, ...setupDraft } : setup
-  }, [findSetupDraftForMachine])
+    return mergeSetupDraft(setup, machineId, setupDraftEdits) || setup
+  }, [setupDraftEdits])
 
   const mergeServerRowsWithDrafts = useCallback((rows, setupMap) => {
     const drafts = editedRowsRef.current || {}
@@ -133,23 +119,9 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
 
     return (rows || []).map(row => {
       const draft = drafts[row.id] || drafts[String(row.id)]
-      const hasProductionDraft = !!draft
       const stoppageTime = getEffectiveTotalStoppageMins(row)
-      const hasStoppageDraft = stoppageTime !== (toNumber(row?.total_stoppage_mins) || toNumber(row?.stoppage?.[0]?.total_stoppage_time) || 0)
-
-      const baseSetup = setupMap[row.machine_id]
-      const setupDraft = baseSetup ? (setupDraftEdits?.[baseSetup.id] || setupDraftEdits?.[String(baseSetup.id)] || setupDraftEdits?.[row.machine_id] || setupDraftEdits?.[String(row.machine_id)]) : null
-      const hasSetupDraft = !!setupDraft
 
       const mergedRow = draft ? { ...row, ...draft } : { ...row }
-
-      // Preserve saved server calculations when no active drafts exist
-      if (!hasProductionDraft && !hasStoppageDraft && !hasSetupDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
-        return {
-          ...mergedRow,
-          total_stoppage_mins: stoppageTime,
-        }
-      }
 
       const setup = resolveEffectiveSetup(setupMap[mergedRow.machine_id], mergedRow.machine_id)
       const actHank = draft?.act_hank ?? mergedRow.act_hank
@@ -294,7 +266,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
         
         // Get stoppage time from stoppage entry
         const stoppageTime = row.stoppage?.[0]?.total_stoppage_time ?? 0
-        const setup = machineSetups[row.machine_id]
+          const setup = resolveEffectiveSetup(machineSetups[row.machine_id], row.machine_id)
         
         // Get current values
         const actHank = field === 'act_hank' ? numValue : row.act_hank
@@ -354,8 +326,24 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      currentEdits,
+      machineSetups,
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
+
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -364,13 +352,14 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
-        // Get the full row data for recalculation
-        const row = productionData.find(r => r.id === rowId)
-        if (!row) return null
-
-        const stoppageTime = row.stoppage?.[0]?.total_stoppage_time ?? 0
-        const setup = machineSetups[row.machine_id]
+      const updatePromises = rowsToSave.map((row) => {
+        const changes = findDraftByKeys(currentEdits, row.id) || {}
+        const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const setup = mergeSetupDraft(
+          machineSetups[row.machine_id],
+          row.machine_id,
+          effectiveSetupDrafts
+        )
         
         const actHank = changes.act_hank ?? row.act_hank
         const runHrs = changes.run_hrs ?? row.run_hrs
@@ -385,14 +374,14 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
           setup
         )
 
-        return updateComberProductionDetailAction(rowId, {
+        return updateComberProductionDetailAction(row.id, {
           ...changes,
           ...calculated,
           act_hank: actHank,
           run_hrs: runHrs,
           waste: waste
         })
-      }).filter(Boolean)
+      })
 
       const results = await Promise.all(updatePromises)
       
@@ -402,7 +391,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
         throw new Error(failed[0].error || 'Failed to save')
       }
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')

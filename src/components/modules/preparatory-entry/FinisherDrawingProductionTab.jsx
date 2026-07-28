@@ -19,6 +19,12 @@ import {
   resolveFinisherDrawingFormulaInputs,
   getFinisherDrawingActProdnConstant,
 } from '@/lib/finisherDrawingFormulaFallback'
+import {
+  findDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 import { NumberInput } from '@/components/ui/number-input'
 
 const toNumber = (value) => {
@@ -31,6 +37,7 @@ const normalizeDraftKey = (value) => String(value || '').trim().toLowerCase()
 const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProductionTab({
   headerId,
   totalTime = 0,
+  shift = 1,
   onRefresh,
   sharedDraftEdits,
   onSharedDraftEditsChange,
@@ -53,9 +60,6 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         return
       }
       editedRowsRef.current = next
-      console.log('[FD-TRACE][draft:set] ref updated →', JSON.stringify(
-        Object.fromEntries(Object.entries(next).map(([id, v]) => [id.slice(0,8), { waste: v?.waste, act_hank: v?.act_hank, act_prodn: v?.act_prodn }]))
-      ))
       onSharedDraftEditsChange(next)
       return
     }
@@ -152,33 +156,16 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
     return (rows || []).map(row => {
       const draft = drafts[row.id] || drafts[String(row.id)]
-      const hasProductionDraft = !!draft
       const stoppageTime = getEffectiveTotalStoppageMins(row)
-      const hasStoppageDraft = stoppageTime !== parseFloat(row?.total_stoppage_mins ?? row?.stoppage?.[0]?.total_stoppage_time ?? 0)
-
-      const baseSetup = setupMap[row.machine_id]
-      const setupDraft = baseSetup ? (setupDraftEdits?.[baseSetup.id] || setupDraftEdits?.[String(baseSetup.id)] || setupDraftEdits?.[row.machine_id] || setupDraftEdits?.[String(row.machine_id)]) : null
-      const hasSetupDraft = !!setupDraft
 
       const mergedRow = draft ? { ...row, ...draft } : { ...row }
-
-      // Preserve saved server calculations when no active drafts exist
-      if (!hasProductionDraft && !hasStoppageDraft && !hasSetupDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
-        return {
-          ...mergedRow,
-          total_stoppage_mins: stoppageTime,
-        }
-      }
 
       const setup = getEffectiveSetup(mergedRow.machine_id, setupMap)
       const machineSpeed = setup?.speed ?? mergedRow.machine?.speed ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
       const constant = getFinisherDrawingActProdnConstant(setup)
       let actHank = draft?.act_hank ?? mergedRow.act_hank ?? 0
-      let actProdn = draft?.act_prodn ?? mergedRow.act_prodn ?? (actHank * constant)
-      if (draft?.act_prodn !== undefined && draft?.act_hank === undefined) {
-        actHank = actProdn / constant
-      }
       actHank = parseFloat(actHank) || 0
+      let actProdn = actHank * constant
       actProdn = parseFloat(actProdn) || 0
       const waste = parseFloat(draft?.waste ?? mergedRow.waste) || 0
 
@@ -225,11 +212,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       const constant = getFinisherDrawingActProdnConstant(setup)
       const stoppageTime = getEffectiveTotalStoppageMins(row)
       let actHank = draft?.act_hank ?? row.act_hank ?? 0
-      let actProdn = draft?.act_prodn ?? row.act_prodn ?? (actHank * constant)
-      if (draft?.act_prodn !== undefined && draft?.act_hank === undefined) {
-        actHank = actProdn / constant
-      }
       actHank = parseFloat(actHank) || 0
+      let actProdn = actHank * constant
       actProdn = parseFloat(actProdn) || 0
 
       // Always prefer the draft's waste (user's in-memory edit) over the row's display value,
@@ -285,7 +269,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
       const [detailsResult, setupsResult] = await Promise.all([
         getFinisherDrawingProductionDetailsAction(headerId),
-        getFinisherDrawingMachineSetupsAction(1, headerId)
+        getFinisherDrawingMachineSetupsAction(shift, headerId)
       ])
       
       const details = detailsResult.success ? detailsResult.data : []
@@ -331,7 +315,6 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       })
       
       const mergedRows = mergeServerRowsWithDrafts(recalculatedDetails, setupMap)
-      console.log('[FD-TRACE][load:waste-from-db]', recalculatedDetails.map(r => ({ id: r.id?.slice(0,8), waste: r.waste, act_prodn: r.act_prodn })))
       setProductionData(mergedRows)
     } catch (error) {
       lastLoadKeyRef.current = ''
@@ -340,7 +323,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     } finally {
       setIsLoading(false)
     }
-  }, [headerId, totalTime, mergeServerRowsWithDrafts, getEffectiveSetup])
+  }, [headerId, shift, totalTime, mergeServerRowsWithDrafts, getEffectiveSetup])
 
   useServerDataLoader(loadData, [headerId, totalTime])
 
@@ -356,10 +339,6 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     const parsedValue = Number.parseFloat(rawValue)
     const hasNumericInput = rawValue !== '' && Number.isFinite(parsedValue)
     const numValue = hasNumericInput ? parsedValue : 0
-
-    if (field === 'waste') {
-      console.log(`[FD-TRACE][input:waste] raw="${rawValue}" parsed=${parsedValue} numValue=${numValue} refWaste=${editedRowsRef.current?.[rowId]?.waste}`)
-    }
 
     // Partial decimal: "6." or "6.7e" etc — do NOT commit to draft (display-only)
     const isPartialDecimal = hasNumericInput && (
@@ -428,12 +407,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         ...(editedRowsRef.current || {}),
         [rowId]: { ...(editedRowsRef.current?.[rowId] || {}), ...draftPayload }
       }
-      if (field === 'waste') {
-        console.log(`[FD-TRACE][draft:waste-committed] waste=${waste} raw="${rawValue}"`)
-      }
       setEditedRows(nextDrafts)
-    } else if (field === 'waste') {
-      console.log(`[FD-TRACE][draft:waste-skipped] partial="${rawValue}"`)
     }
 
     // ── Step 4: Update display state ──
@@ -482,15 +456,26 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
   // PATTERN (mirrors Spinning): read ONLY from editedRowsRef.current — the synchronously-maintained
   // source of truth. Do NOT merge with stale `editedRows` state prop, which may lag by one or more
   // parent render cycles and corrupt decimal values (e.g. {waste:6} overwriting {waste:6.78}).
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
     // Use only the ref — it is always the most current (updated synchronously in setEditedRows).
     const pendingEdits = editedRowsRef.current || {}
 
-    console.log('[FD-TRACE][save:start] pendingEdits from ref →', JSON.stringify(
-      Object.fromEntries(Object.entries(pendingEdits).map(([id, v]) => [id.slice(0,8), { waste: v?.waste, act_hank: v?.act_hank }]))
-    ))
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      pendingEdits,
+      machineSetups,
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
 
-    if (Object.keys(pendingEdits).length === 0) {
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -499,26 +484,23 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(pendingEdits).map(([rowId, changes]) => {
-        const row = productionData.find(r => String(r.id) === String(rowId))
-        if (!row) return null
-
-        const stoppageEntry = Array.isArray(row.stoppage) ? row.stoppage[0] : row.stoppage
-        const stoppageTime = stoppageEntry?.total_stoppage_time ?? 0
-        const setup = getEffectiveSetup(row.machine_id) || machineSetups[row.machine_id]
+      const updatePromises = rowsToSave.map((row) => {
+        const rowId = String(row.id)
+        const changes = findDraftByKeys(pendingEdits, row.id) || {}
+        const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const setup = mergeSetupDraft(
+          machineSetups[row.machine_id],
+          row.machine_id,
+          effectiveSetupDrafts
+        )
         const machineSpeed = setup?.speed ?? row.machine?.speed ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
 
         const constant = getFinisherDrawingActProdnConstant(setup)
         let actHank = toNumber(changes.act_hank ?? row.act_hank ?? 0)
-        let actProdn = changes.act_prodn !== undefined ? toNumber(changes.act_prodn) : (actHank * constant)
-        // If act_prodn was manually entered, back-calculate act_hank
-        if (changes.act_prodn !== undefined && changes.act_hank === undefined) {
-          actHank = constant > 0 ? (actProdn / constant) : 0
-        }
+        const actProdn = actHank * constant
         // Waste: read directly from the draft (same as Spinning reads from editedRows).
         // toNumber() safely handles undefined (falls back to row.waste from DB).
         const waste = toNumber(changes.waste ?? row.waste)
-        console.log(`[FD-TRACE][save:row] rowId=${rowId.slice(0,8)} changes.waste=${changes.waste} row.waste=${row.waste} → resolved waste=${waste}`)
         const roundedActProdn = Math.round(actProdn * 100) / 100
         
         const calculated = calculateFinisherDrawingValues(
@@ -551,8 +533,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       if (failed) {
         throw new Error(failed.error || 'Failed to save one or more production rows')
       }
-      const savedCount = Object.keys(pendingEdits).length
-      console.log(`[FD-TRACE][save:success] saved ${savedCount} rows — clearing ref and reloading`)
+      const savedCount = rowsToSave.length
       editedRowsRef.current = {}
       setEditedRows({})
       if (!suppressSuccessToast) {
@@ -561,7 +542,6 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       
       if (!skipParentRefresh) {
         await loadData({ force: true })
-        console.log('[FD-TRACE][save:reload-done] productionData refreshed from DB')
         onRefresh?.()
       }
       return { success: true, saved: savedCount }
@@ -697,18 +677,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
                       zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-0 py-0">
-                    <NumberInput
-                      type="number"
-                      value={row.act_prodn ?? ''}
-                      onChange={(e) => handleInputChange(row.id, 'act_prodn', e.target.value)}
-                      fixedDecimals={2}
-                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                      data-row={index}
-                      data-col="act_prodn"
-                      onKeyDown={(e) => handleEnterNavigation(e, index, 'act_prodn')}
-                      zeroAsEmpty
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {Number(row.act_prodn || 0).toFixed(2)}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {Number(row.exp_prodn || 0).toFixed(2)}

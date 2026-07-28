@@ -44,8 +44,8 @@ export function calculateLapFormerStdProdn(setup, totalTime, machineSpeed = null
 }
 
 export function getLapFormerActProdnConstant(setup = {}) {
-  const { hankConstant, delivery } = resolveLapFormerFormulaInputs(setup)
+  const { hankConstant } = resolveLapFormerFormulaInputs(setup)
   const divisor = LAP_FORMER_FORMULA_FALLBACK.poundsPerKg * hankConstant
   if (!divisor) return 0
-  return (1 / divisor) * delivery
+  return 1 / divisor
 }

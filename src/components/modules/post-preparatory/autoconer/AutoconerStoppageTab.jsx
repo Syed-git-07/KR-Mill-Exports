@@ -327,7 +327,9 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
         updateAutoconerStoppageEntryAction(rowId, changes)
       )
 
-      await Promise.all(updatePromises)
+      const results = await Promise.all(updatePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save an Autoconer stoppage row')
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})
       if (!suppressSuccessToast) {

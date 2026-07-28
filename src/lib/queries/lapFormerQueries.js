@@ -7,6 +7,7 @@ import {
   getLapFormerActProdnConstant,
   resolveLapFormerFormulaInputs,
 } from '../lapFormerFormulaFallback';
+import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 
@@ -779,15 +780,16 @@ export async function updateLapFormerStoppageEntry(id, updates) {
       : null;
 
     const totalTime = Number(header?.total_time) || await getLapFormerShiftTime(header?.shift || 1)
-    const workTime = totalTime - total
-    const utiPercent = Math.round((workTime / totalTime) * 100 * 100) / 100
+    const productionTime = resolveProductionTime(totalTime, total)
 
     await prisma.lap_former_production_detail.update({
       where: { id: existing.production_detail_id },
       data: {
-        total_stoppage_mins: total,
-        work_time: workTime,
-        uti_percent: utiPercent
+        total_stoppage_mins: productionTime.stoppageTime,
+        work_time: productionTime.workTime,
+        uti_percent: productionTime.totalTime > 0
+          ? Math.round((productionTime.workTime / productionTime.totalTime) * 100 * 100) / 100
+          : 0
       }
     });
 
@@ -1302,7 +1304,7 @@ export async function getSupervisors() {
 // CALCULATION HELPERS - LAP FORMER FORMULAS
 // ============================================
 // From lap-former-formula.md:
-// Constst = (1 / 2.20456 / Hank) × Delivery
+// Constant = 1 / 2.20456 / Hank
 // Act Prodn = Act Hank × Constst
 // Std Prodn = Speed / 1693 / Hank × Total Time × Std Effi × Delivery
 // Exp Prodn = Std Prodn × (Work Time / Total Time)
@@ -1317,14 +1319,13 @@ export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageT
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(setup, machineSpeed);
   const waste = setup?.default_waste ?? null;
 
-  // Constst = (1 / 2.20456 / Hank) × Delivery
-  const constst = getLapFormerActProdnConstant({ hank_constant: hankConstant, delivery });
+  // Constant = 1 / 2.20456 / Hank
+  const constst = getLapFormerActProdnConstant({ hank_constant: hankConstant });
   // Act Prodn = manually entered value (if provided), else Act Hank × Constst
   const hasManualActProdn = actProdn !== null && actProdn !== undefined && !Number.isNaN(Number(actProdn));
   const calculatedActProdn = hasManualActProdn ? Number(actProdn) : (actHank * constst);
 
   // Work Time = Total Time - Stoppage Time
-  const workTime = totalTime - stoppageTime;
   
   // Std Prodn = (Speed / 1693 / Hank) × Total Time × Std Effi × Delivery
   const stdProdn = calculateLapFormerStdProdn(
@@ -1340,27 +1341,30 @@ export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageT
   );
 
   // Exp Prodn = Std Prodn × (Work Time / Total Time)
-  const expProdn = stdProdn * (workTime / totalTime);
 
   // Effi% = Act Prodn / Exp Prodn × 100
-  const effiPercent = expProdn > 0 ? (calculatedActProdn / expProdn) * 100 : 0;
 
   // UTI% = Work Time / Total Time × 100
-  const utiPercent = (workTime / totalTime) * 100;
 
   // Waste% = Waste / Act Prodn × 100
-  const wastePercent = calculatedActProdn > 0 ? (waste / calculatedActProdn) * 100 : 0;
+  const metrics = calculateTimeAdjustedProductionMetrics({
+    actualProduction: calculatedActProdn,
+    standardProduction: stdProdn,
+    waste,
+    totalTime,
+    stoppageTime,
+  });
 
   return {
-    act_prodn: Math.round(calculatedActProdn * 100) / 100,
-    std_prodn: Math.round(stdProdn * 100) / 100,
-    exp_prodn: Math.round(expProdn * 100) / 100,
-    effi_percent: Math.round(effiPercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100,
+    act_prodn: metrics.actualProduction,
+    std_prodn: metrics.standardProduction,
+    exp_prodn: metrics.expectedProduction,
+    effi_percent: metrics.efficiencyPercent,
+    uti_percent: metrics.utilizationPercent,
     waste,
-    waste_percent: Math.round(wastePercent * 100) / 100,
-    run_time: totalTime,
-    work_time: workTime,
+    waste_percent: metrics.wastePercent,
+    run_time: metrics.totalTime,
+    work_time: metrics.workTime,
     speed
   };
 }

@@ -1,7 +1,8 @@
 import { prisma } from '../prisma';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { resolveBreakerDrawingShiftFallbackTime } from '../breakerDrawingShiftFallback';
-import { calculateBreakerDrawingStdProdn, resolveBreakerDrawingFormulaInputs, BREAKER_DRAWING_FORMULA_FALLBACK } from '../breakerDrawingFormulaFallback';
+import { calculateBreakerDrawingStdProdn, getBreakerDrawingActProdnConstant, resolveBreakerDrawingFormulaInputs, BREAKER_DRAWING_FORMULA_FALLBACK } from '../breakerDrawingFormulaFallback';
+import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 
@@ -592,15 +593,16 @@ export async function updateBreakerDrawingStoppageEntry(id, updates) {
         })
       : null
     const totalTime = detail?.run_time || header?.total_time || resolveBreakerDrawingShiftFallbackTime(header?.shift)
-    const workTime = totalTime - total
-    const utiPercent = Math.round((workTime / totalTime) * 100 * 100) / 100
+    const productionTime = resolveProductionTime(totalTime, total)
 
     await prisma.breaker_drawing_production_detail.update({
       where: { id: data.production_detail_id },
       data: {
-        total_stoppage_mins: total,
-        work_time: workTime,
-        uti_percent: utiPercent
+        total_stoppage_mins: productionTime.stoppageTime,
+        work_time: productionTime.workTime,
+        uti_percent: productionTime.totalTime > 0
+          ? Math.round((productionTime.workTime / productionTime.totalTime) * 100 * 100) / 100
+          : 0
       }
     });
 
@@ -1002,7 +1004,7 @@ export async function getSupervisors() {
 // CALCULATION HELPERS - BREAKER DRAWING FORMULAS
 // ============================================
 // From breaker-drawing-formula.md:
-// Constst = (1 / 2.20456 / Hank) × Delivery
+// Constant = 1 / 2.20456 / Hank
 // Act Prodn = Act Hank × Constst
 // Std Prodn = Speed / Divisor Constant / Hank × Total Time × Std Effi × Delivery
 // Exp Prodn = Std Prodn × (Work Time / Total Time)
@@ -1032,40 +1034,42 @@ export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stop
   const safeStoppageTime = toNumber(stoppageTime, 0);
   const safeActHank = toNumber(actHank, 0);
 
-  // Constst = (1 / 2.20456 / Hank) × Delivery
-  const constst = hankConstant > 0 ? (1 / 2.20456 / hankConstant) * delivery : 0;
+  // Constant = 1 / 2.20456 / Hank
+  const constst = getBreakerDrawingActProdnConstant({ hank_constant: hankConstant });
   // Act Prodn = manually entered value (if provided), else Act Hank × Constst
   const hasManualActProdn = actProdn !== null && actProdn !== undefined && !Number.isNaN(Number(actProdn));
   const calculatedActProdn = hasManualActProdn ? toNumber(actProdn, 0) : (safeActHank * constst);
 
   // Work Time = Total Time - Stoppage Time (this is actual running time)
-  const workTime = safeTotalTime - safeStoppageTime;
   
   // Std Prodn = (Speed / Divisor Constant / Hank) × Total Time × Std Effi × Delivery
   const stdProdn = (speed / divisorConstant / hankConstant) * safeTotalTime * stdEfficiencyFactor * delivery;
 
   // Exp Prodn = Std Prodn × (Work Time / Total Time)
-  const expProdn = safeTotalTime > 0 ? stdProdn * (workTime / safeTotalTime) : 0;
 
   // Effi% = Act Prodn / Exp Prodn × 100
-  const effiPercent = expProdn > 0 ? (calculatedActProdn / expProdn) * 100 : 0;
 
   // UTI% = Work Time / Total Time × 100
-  const utiPercent = safeTotalTime > 0 ? (workTime / safeTotalTime) * 100 : 0;
 
   // Waste% = Waste / Act Prodn × 100
-  const wastePercent = calculatedActProdn > 0 ? (wasteValue / calculatedActProdn) * 100 : 0;
+  const metrics = calculateTimeAdjustedProductionMetrics({
+    actualProduction: calculatedActProdn,
+    standardProduction: stdProdn,
+    waste: wasteValue,
+    totalTime: safeTotalTime,
+    stoppageTime: safeStoppageTime,
+  });
 
   return {
-    act_prodn: Math.round(calculatedActProdn * 100) / 100,
-    std_prodn: Math.round(stdProdn * 100) / 100,
-    exp_prodn: Math.round(expProdn * 100) / 100,
-    effi_percent: Math.round(effiPercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100,
+    act_prodn: metrics.actualProduction,
+    std_prodn: metrics.standardProduction,
+    exp_prodn: metrics.expectedProduction,
+    effi_percent: metrics.efficiencyPercent,
+    uti_percent: metrics.utilizationPercent,
     waste: currentWaste ?? setup?.default_waste ?? null,
-    waste_percent: Math.round(wastePercent * 100) / 100,
-    run_time: safeTotalTime,
-    work_time: workTime,  // Work Time = Total Time - Stoppage
+    waste_percent: metrics.wastePercent,
+    run_time: metrics.totalTime,
+    work_time: metrics.workTime,
     speed                 // Return speed used for reference
   };
 }

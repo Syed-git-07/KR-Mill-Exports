@@ -23,8 +23,13 @@ import {
   syncNewMachinesToHeaderAction
 } from '@/app/actions/carding-entry'
 import { calculateProductionValues } from '@/lib/queries/cardingEntryQueries'
-import { resolveCardingFormulaInputs } from '@/lib/cardingFormulaFallback'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
+import {
+  findDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 
 // Helper function to safely convert any value to a number
 const toNumber = (value) => {
@@ -41,17 +46,10 @@ const formatNumber = (value, decimals = 2) => {
   return toNumber(value).toFixed(decimals)
 }
 
-const calculateAutoExpProdn = (setup, totalTime, workTime) => {
-  const { speed, hankConstant, stdEfficiencyFactor, divisorConstant } = resolveCardingFormulaInputs(setup)
-
-  if (!totalTime || !hankConstant || !divisorConstant) return 0
-
-  const stdProdn = (speed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor
-  return stdProdn * workTime / totalTime
-}
-
 const CardingProductionTab = forwardRef(function CardingProductionTab({
   headerId,
+  entryDate,
+  shift = 1,
   totalTime,
   onRefresh,
   sharedDraftEdits,
@@ -59,7 +57,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
   stoppageDraftEdits,
   setupDraftEdits
 }, ref) {
-  const effectiveTotalTime = totalTime ?? resolveCardingShiftFallbackTime(1)
+  const effectiveTotalTime = totalTime ?? resolveCardingShiftFallbackTime(shift)
   const [productionData, setProductionData] = useState([])
   const [machineSetups, setMachineSetups] = useState({})
   const [isLoading, setIsLoading] = useState(true)
@@ -101,41 +99,13 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
   }, [focusRowByDelta])
 
   const getEffectiveTotalStoppageMins = useCallback((row) => {
-    const stoppageEntry = row?.stoppage?.[0]
-    const baseTotal = toNumber(row?.total_stoppage_mins ?? stoppageEntry?.total_stoppage_time ?? 0)
-    if (!stoppageEntry?.id) return baseTotal
-
-    const stoppageDraft = stoppageDraftEdits?.[stoppageEntry.id] || stoppageDraftEdits?.[String(stoppageEntry.id)]
-    if (!stoppageDraft) return baseTotal
-
-    const t1 = toNumber(stoppageDraft.stoppage1_time ?? stoppageEntry.stoppage1_time ?? 0)
-    const t2 = toNumber(stoppageDraft.stoppage2_time ?? stoppageEntry.stoppage2_time ?? 0)
-    const t3 = toNumber(stoppageDraft.stoppage3_time ?? stoppageEntry.stoppage3_time ?? 0)
-    const t4 = toNumber(stoppageDraft.stoppage4_time ?? stoppageEntry.stoppage4_time ?? 0)
-    return t1 + t2 + t3 + t4
+    return getEffectiveStoppageTotal(row, stoppageDraftEdits)
   }, [stoppageDraftEdits])
-
-  const findSetupDraftForMachine = useCallback((machineId) => {
-    if (!setupDraftEdits || !machineId) return null
-    const direct = setupDraftEdits[machineId] || setupDraftEdits[String(machineId)]
-    if (direct) return direct
-    for (const draft of Object.values(setupDraftEdits)) {
-      if (draft?.machine_id && String(draft.machine_id) === String(machineId)) {
-        return draft
-      }
-    }
-    return null
-  }, [setupDraftEdits])
 
   const getEffectiveSetup = useCallback((machineId, setupMap = machineSetups) => {
     const baseSetup = setupMap?.[machineId]
-    if (!baseSetup) return undefined
-    const draft =
-      setupDraftEdits?.[baseSetup.id] ||
-      setupDraftEdits?.[String(baseSetup.id)] ||
-      findSetupDraftForMachine(machineId)
-    return draft ? { ...baseSetup, ...draft } : baseSetup
-  }, [machineSetups, setupDraftEdits, findSetupDraftForMachine])
+    return mergeSetupDraft(baseSetup, machineId, setupDraftEdits)
+  }, [machineSetups, setupDraftEdits])
 
   const mergeServerRowsWithDrafts = useCallback((rows, setupMap) => {
     const drafts = editedRowsRef.current || {}
@@ -153,23 +123,9 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 
     return (rows || []).map(row => {
       const draft = drafts[row.id] || drafts[String(row.id)]
-      const hasProductionDraft = !!draft
       const stoppageTime = getEffectiveTotalStoppageMins(row)
-      const hasStoppageDraft = stoppageTime !== toNumber(row?.total_stoppage_mins ?? row?.stoppage?.[0]?.total_stoppage_time ?? 0)
-
-      const baseSetup = setupMap[row.machine_id]
-      const setupDraft = baseSetup ? (setupDraftEdits?.[baseSetup.id] || setupDraftEdits?.[String(baseSetup.id)] || setupDraftEdits?.[row.machine_id] || setupDraftEdits?.[String(row.machine_id)]) : null
-      const hasSetupDraft = !!setupDraft
 
       const mergedRow = draft ? { ...row, ...draft } : { ...row }
-
-      // Preserve saved server calculations when no active drafts exist
-      if (!hasProductionDraft && !hasStoppageDraft && !hasSetupDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
-        return {
-          ...mergedRow,
-          total_stoppage_mins: stoppageTime,
-        }
-      }
 
       const setup = getEffectiveSetup(mergedRow.machine_id, setupMap)
       const actHank = toNumber(draft?.act_hank ?? mergedRow.act_hank)
@@ -184,7 +140,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         setup
       )
 
-      const finalExpProdn = toNumber(draft?.exp_prodn ?? calculated.exp_prodn)
+      const finalExpProdn = toNumber(calculated.exp_prodn)
       const finalEffi = finalExpProdn > 0 ? (actProdn / finalExpProdn) * 100 : 0
 
       return {
@@ -221,7 +177,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 
       const [detailsResult, setupsResult] = await Promise.all([
         getCardingProductionWithSetupAction(headerId),
-        getCardingMachineSetupsAction()
+        getCardingMachineSetupsAction(entryDate, shift)
       ])
       
       // Create machine setup map first
@@ -255,7 +211,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
     } finally {
       setIsLoading(false)
     }
-  }, [headerId, effectiveTotalTime, mergeServerRowsWithDrafts])
+  }, [headerId, entryDate, shift, effectiveTotalTime, mergeServerRowsWithDrafts])
 
   useServerDataLoader(loadData, [headerId, effectiveTotalTime])
 
@@ -278,10 +234,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         setup
       )
 
-      const hasManualExpProdn = draft && Object.prototype.hasOwnProperty.call(draft, 'exp_prodn')
-      const finalExpProdn = hasManualExpProdn
-        ? toNumber(draft.exp_prodn)
-        : toNumber(calculated.exp_prodn)
+      const finalExpProdn = toNumber(calculated.exp_prodn)
       const finalEffi = finalExpProdn > 0 ? (actProdn / finalExpProdn) * 100 : 0
 
       return {
@@ -326,16 +279,20 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         const setup = getEffectiveSetup(row.machine_id)
         
         // Recalculate based on which field changed
-        if (['act_hank', 'act_prodn', 'exp_prodn', 'waste', 'run_time', 'work_time'].includes(field)) {
+        if (['act_hank', 'act_prodn', 'waste'].includes(field)) {
           const actHank = field === 'act_hank' ? numValue : row.act_hank
           const actProdn = field === 'act_prodn' ? numValue : row.act_prodn
           const waste = field === 'waste' ? numValue : row.waste
-          const runTime = field === 'run_time' ? numValue : row.run_time
-          const workTime = field === 'work_time' ? numValue : row.work_time
-
-          // Auto-calculate Exp Prodn from formula unless user is editing Exp Prodn directly.
-          const autoExpProdn = calculateAutoExpProdn(setup, effectiveTotalTime, toNumber(workTime))
-          const expProdn = field === 'exp_prodn' ? numValue : autoExpProdn
+          const calculated = calculateProductionValues(
+            actHank,
+            actProdn,
+            effectiveTotalTime,
+            stoppageTime,
+            setup
+          )
+          const expProdn = calculated.exp_prodn
+          const runTime = calculated.run_time
+          const workTime = calculated.work_time
           
           // Calculate efficiency (Performance %)
           const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
@@ -397,8 +354,24 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      currentEdits,
+      machineSetups,
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
+
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -407,13 +380,14 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(async ([rowId, changes]) => {
-        // Get the full row data for recalculation
-        const row = productionData.find(r => r.id === rowId)
-        if (!row) return null
-
-        const stoppageTime = getEffectiveTotalStoppageMins(row)
-        const setup = getEffectiveSetup(row.machine_id)
+      const updatePromises = rowsToSave.map(async (row) => {
+        const changes = findDraftByKeys(currentEdits, row.id) || {}
+        const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const setup = mergeSetupDraft(
+          machineSetups[row.machine_id],
+          row.machine_id,
+          effectiveSetupDrafts
+        )
         
         const actHank = changes.act_hank ?? row.act_hank
         const actProdn = changes.act_prodn ?? row.act_prodn
@@ -433,11 +407,10 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 
         const { waste: _ignoredWaste, waste_percent: _ignoredWastePercent, ...calculatedWithoutWaste } = calculated
 
-        const hasManualExpProdn = Object.prototype.hasOwnProperty.call(changes, 'exp_prodn')
-        const finalExpProdn = hasManualExpProdn ? toNumber(changes.exp_prodn) : toNumber(calculated.exp_prodn)
+        const finalExpProdn = toNumber(calculated.exp_prodn)
         const finalEffiPercent = finalExpProdn > 0 ? (toNumber(actProdn) / finalExpProdn) * 100 : 0
 
-        return updateProductionDetailAction(rowId, {
+        const result = await updateProductionDetailAction(row.id, {
           ...changes,
           ...calculatedWithoutWaste,
           act_hank: actHank,
@@ -447,10 +420,14 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
           exp_prodn: Math.round(finalExpProdn * 100) / 100,
           effi_percent: Math.round(finalEffiPercent * 100) / 100
         })
-      }).filter(Boolean)
+        if (!result?.success) {
+          throw new Error(result?.error || `Failed to update carding production row ${row.id}`)
+        }
+        return result
+      })
 
       await Promise.all(updatePromises)
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
@@ -590,15 +567,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
                       zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="exp_prodn">
-                    <NumberInput
-                      type="number"
-                      value={row.exp_prodn ?? ''}
-                      onChange={(e) => handleInputChange(row.id, 'exp_prodn', e.target.value)}
-                      onKeyDown={(e) => handleEnterNavigation(e, index, 'exp_prodn')}
-                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                      zeroAsEmpty
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {formatNumber(row.exp_prodn)}
                   </td>
                   <td className={`border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap ${
                     toNumber(row.effi_percent) >= 100 ? 'text-green-600' : 
@@ -626,7 +596,6 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
                     <Input
                       type="number"
                       value={row.run_time || effectiveTotalTime}
-                      onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
                       className="h-9 text-sm text-center tabular-nums w-full rounded-none border-0 bg-gray-50 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                       readOnly
                     />
@@ -635,7 +604,6 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
                     <Input
                       type="number"
                       value={row.work_time || ''}
-                      onChange={(e) => handleInputChange(row.id, 'work_time', e.target.value)}
                       className="h-9 text-sm text-center tabular-nums w-full rounded-none border-0 bg-gray-50 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                       readOnly
                     />

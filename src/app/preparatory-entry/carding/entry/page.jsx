@@ -80,7 +80,7 @@ function CardingEntryContent() {
   const [isLoadingDates, setIsLoadingDates] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const [isSavingAll, setIsSavingAll] = useState(false)
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
@@ -102,7 +102,7 @@ function CardingEntryContent() {
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
@@ -121,12 +121,13 @@ function CardingEntryContent() {
     const productionShared = Object.keys(sharedDrafts.production || {}).length
     const stoppageShared = Object.keys(sharedDrafts.stoppage || {}).length
     const setupShared = Object.keys(sharedDrafts.setup || {}).length
+    const headerShared = Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0
 
     const productionCount = productionShared || (productionTabRef.current?.getEditedCount?.() || 0)
     const stoppageCount = stoppageShared || (stoppageTabRef.current?.getEditedCount?.() || 0)
     const setupCount = setupShared || (setupTabRef.current?.getEditedCount?.() || 0)
 
-    return productionCount + stoppageCount + setupCount
+    return headerShared + productionCount + stoppageCount + setupCount
   }, [sharedDrafts])
   // Load supervisors
   useEffect(() => {
@@ -232,29 +233,15 @@ function CardingEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
-    if (headerId) {
-      try {
-        await updateProductionHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
-    if (headerId) {
-      try {
-        await updateProductionHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
   }
 
   // Non-destructive refresh: keep mounted tab draft state intact.
@@ -280,25 +267,31 @@ function CardingEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateProductionHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const prodResult = await (
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -339,6 +332,7 @@ function CardingEntryContent() {
     ])
 
     clearAllDrafts()
+    await loadProductionHeader()
 
     toast.success('Unsaved changes discarded')
   }
@@ -660,6 +654,8 @@ function CardingEntryContent() {
                   ref={productionTabRef}
                   key={`prod-${refreshKey}`}
                   headerId={headerId} 
+                  entryDate={format(date, 'yyyy-MM-dd')}
+                  shift={parseInt(shift)}
                   totalTime={shiftTime}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.production}
@@ -674,6 +670,8 @@ function CardingEntryContent() {
                   ref={stoppageTabRef}
                   key={`stop-${refreshKey}`}
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
+                  shift={parseInt(shift)}
                   totalTime={shiftTime}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.stoppage}

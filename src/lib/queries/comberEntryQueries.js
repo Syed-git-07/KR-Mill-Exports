@@ -6,6 +6,7 @@ import {
   calculateComberConstantFromSlHank,
   resolveComberFormulaInputs,
 } from '../comberFormulaFallback'
+import { resolveProductionTime } from '../productionFormulaMath'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
@@ -1552,12 +1553,13 @@ export function calculateRunMin(runHrs) {
 export function calculateComberProductionValues(actHank, runHrs, waste, totalTime, stoppageTime, setup) {
   const { mcEffiFactor, constant } = resolveComberFormulaInputs(setup)
   const wasteValue = waste ?? 0
+  const productionTime = resolveProductionTime(totalTime, stoppageTime)
 
   // Run Min = Hours×60 + (Decimal×100)
   const runMin = calculateRunMin(runHrs)
 
   // Work Time = Total Time - Stoppage Time
-  const workTime = totalTime - stoppageTime
+  const workTime = productionTime.workTime
 
   // Std.hrs = WorkTime × MCEffi(Factor)
   const stdHrs = workTime * mcEffiFactor
@@ -1572,7 +1574,9 @@ export function calculateComberProductionValues(actHank, runHrs, waste, totalTim
   const actEffiPercent = stdHrs > 0 ? (runMin / stdHrs) * 100 : 0
 
   // UTI% = (WorkTime / TotalTime) × 100
-  const utiPercent = totalTime > 0 ? (workTime / totalTime) * 100 : 0
+  const utiPercent = productionTime.totalTime > 0
+    ? (workTime / productionTime.totalTime) * 100
+    : 0
 
   return {
     run_min: runMin,

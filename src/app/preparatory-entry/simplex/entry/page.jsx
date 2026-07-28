@@ -52,6 +52,7 @@ function SimplexEntryContent() {
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [totalTime, setTotalTime] = useState(resolveSimplexShiftFallbackTime(paramShift || '1'))
   const [sharedDrafts, setSharedDrafts] = useState({
+    header: {},
     production: {},
     stoppage: {},
     setup: {}
@@ -165,7 +166,7 @@ function SimplexEntryContent() {
   }, [loadProductionHeader])
 
   const clearSharedDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const setProductionDraftEdits = useCallback((updates) => {
@@ -181,11 +182,12 @@ function SimplexEntryContent() {
   }, [])
 
   const editedCounts = {
+    header: Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0,
     production: Object.keys(sharedDrafts.production || {}).length,
     stoppage: Object.keys(sharedDrafts.stoppage || {}).length,
     setup: Object.keys(sharedDrafts.setup || {}).length
   }
-  const totalEditedCount = editedCounts.production + editedCounts.stoppage + editedCounts.setup
+  const totalEditedCount = editedCounts.header + editedCounts.production + editedCounts.stoppage + editedCounts.setup
 
   const confirmUnsavedDiscard = useCallback((actionLabel) => {
     if (totalEditedCount === 0) return true
@@ -267,28 +269,24 @@ function SimplexEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
     if (headerId) {
-      try {
-        await updateSimplexProductionHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
+      setSharedDrafts(prev => ({
+        ...prev,
+        header: { ...prev.header, supervisor_id: value || null }
+      }))
     }
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
     if (headerId) {
-      try {
-        await updateSimplexProductionHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
+      setSharedDrafts(prev => ({
+        ...prev,
+        header: { ...prev.header, maisitry_id: value || null }
+      }))
     }
   }
 
@@ -314,10 +312,22 @@ function SimplexEntryContent() {
 
     setIsSavingAll(true)
     try {
+      if (editedCounts.header > 0) {
+        const headerResult = await updateSimplexProductionHeaderAction(headerId, sharedDrafts.header)
+        if (!headerResult?.success) {
+          throw new Error(headerResult?.error || 'Failed to update entry header')
+        }
+      }
+
+      const hasDependentProductionChanges = editedCounts.setup > 0 || editedCounts.stoppage > 0
       const tabSaves = [
         { key: 'Machine Setup', count: editedCounts.setup, ref: setupTabRef.current },
         { key: 'Stoppage', count: editedCounts.stoppage, ref: stoppageTabRef.current },
-        { key: 'Production', count: editedCounts.production, ref: productionTabRef.current }
+        {
+          key: 'Production',
+          count: editedCounts.production + (hasDependentProductionChanges ? 1 : 0),
+          ref: productionTabRef.current
+        }
       ].filter(tab => tab.count > 0)
 
       let totalSaved = 0
@@ -327,7 +337,8 @@ function SimplexEntryContent() {
         const result = await tab.ref?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         })
 
         if (result?.success) {
@@ -369,6 +380,7 @@ function SimplexEntryContent() {
     if (!confirmUnsavedDiscard('Cancelling changes')) return
 
     await discardAllTabChanges()
+    await loadProductionHeader()
     toast.success('Unsaved changes discarded')
   }, [totalEditedCount, confirmUnsavedDiscard, discardAllTabChanges])
 

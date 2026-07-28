@@ -8,6 +8,7 @@ export const BREAKER_DRAWING_FORMULA_FALLBACK = {
   stdEfficiencyFactor: 0.85,
   divisorConstant: 1693,
   delivery: 1,
+  poundsPerKg: 2.20456,
 }
 
 const toNumber = (value) => {
@@ -19,7 +20,7 @@ const toNumber = (value) => {
 }
 
 export function resolveBreakerDrawingFormulaInputs(setup = {}, machineSpeed = null) {
-  const speed = toNumber(machineSpeed) || toNumber(setup?.speed) || BREAKER_DRAWING_FORMULA_FALLBACK.speed
+  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || BREAKER_DRAWING_FORMULA_FALLBACK.speed
   const hankConstant = toNumber(setup?.hank_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant
   const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
   const divisorConstant = toNumber(setup?.divisor_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.divisorConstant
@@ -32,6 +33,12 @@ export function resolveBreakerDrawingFormulaInputs(setup = {}, machineSpeed = nu
     divisorConstant,
     delivery,
   }
+}
+
+export function getBreakerDrawingActProdnConstant(setup = {}) {
+  const { hankConstant } = resolveBreakerDrawingFormulaInputs(setup)
+  const divisor = BREAKER_DRAWING_FORMULA_FALLBACK.poundsPerKg * hankConstant
+  return divisor > 0 ? 1 / divisor : 0
 }
 
 export function calculateBreakerDrawingStdProdn(setup, totalTime, machineSpeed = null) {

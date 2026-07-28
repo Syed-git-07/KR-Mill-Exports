@@ -93,6 +93,8 @@ const recalcProductionFromStoppage = (productionDetail, totalStoppageTime, total
 
 const CardingStoppageTab = forwardRef(function CardingStoppageTab({
   headerId,
+  entryDate,
+  shift = 1,
   totalTime,
   onRefresh,
   sharedDraftEdits,
@@ -100,7 +102,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
   productionDraftEdits,
   setupDraftEdits
 }, ref) {
-  const effectiveTotalTime = totalTime ?? resolveCardingShiftFallbackTime(1)
+  const effectiveTotalTime = totalTime ?? resolveCardingShiftFallbackTime(shift)
   const [stoppageData, setStoppageData] = useState([])
   const shiftTimeVal = effectiveTotalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
@@ -290,7 +292,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
         getCardingStoppageEntriesAction(headerId),
         getCardingStoppageReasonsAction(),
         getCardingMachinesAction(),
-        getCardingMachineSetupsAction()
+        getCardingMachineSetupsAction(entryDate, shift)
       ])
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
@@ -329,7 +331,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     } finally {
       setIsLoading(false)
     }
-  }, [headerId, effectiveTotalTime, mergeServerRowsWithDrafts])
+  }, [headerId, entryDate, shift, effectiveTotalTime, mergeServerRowsWithDrafts])
 
   useServerDataLoader(loadData, [headerId, effectiveTotalTime])
 
@@ -482,7 +484,9 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
         updateStoppageEntryAction(rowId, changes)
       )
 
-      await Promise.all(updatePromises)
+      const results = await Promise.all(updatePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save a Carding stoppage row')
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})
       if (!suppressSuccessToast) {

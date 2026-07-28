@@ -17,7 +17,14 @@ import {
   getLapFormerActProdnConstant,
   resolveLapFormerFormulaInputs,
 } from '@/lib/lapFormerFormulaFallback'
+import {
+  findDraftByKeys as findSharedDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 import { resolveLapFormerShiftFallbackTime } from '@/lib/lapFormerShiftFallback'
+import { resolveProductionTime } from '@/lib/productionFormulaMath'
 import { NumberInput } from '@/components/ui/number-input'
 
 const toNumber = (value) => {
@@ -60,7 +67,7 @@ const findDraftByKeys = (drafts, ...keys) => {
   return undefined
 }
 
-// Constst = (1 / 2.20456 / Hank) * Delivery
+// Workbook formula: Constant = 1 / 2.20456 / Hank
 const calculateConstst = (setup) => {
   const constst = getLapFormerActProdnConstant(setup)
   return toNumber(constst)
@@ -125,19 +132,10 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
   }, [focusRowByDelta])
 
   const getEffectiveTotalStoppageMins = useCallback((row) => {
-    const stoppageEntry = Array.isArray(row.stoppage) ? row.stoppage[0] : row.stoppage
-    const baseTotal = stoppageEntry?.total_stoppage_time ?? row.total_stoppage_mins ?? (totalTime - (row.work_time || totalTime))
-
-    if (!stoppageEntry?.id) return baseTotal
-
-    const draft = findDraftByKeys(stoppageDraftEdits, stoppageEntry.id)
-    if (!draft) return baseTotal
-
-    const s1 = toNumber(draft.stoppage1_time ?? stoppageEntry.stoppage1_time ?? 0)
-    const s2 = toNumber(draft.stoppage2_time ?? stoppageEntry.stoppage2_time ?? 0)
-    const s3 = toNumber(draft.stoppage3_time ?? stoppageEntry.stoppage3_time ?? 0)
-    const s4 = toNumber(draft.stoppage4_time ?? stoppageEntry.stoppage4_time ?? 0)
-    return s1 + s2 + s3 + s4
+    return resolveProductionTime(
+      totalTime,
+      getEffectiveStoppageTotal(row, stoppageDraftEdits)
+    ).stoppageTime
   }, [stoppageDraftEdits, totalTime])
 
   const getEffectiveSetup = useCallback((machineId) => {
@@ -152,37 +150,17 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
     if (!setup) return row
 
     const totalStoppageMins = getEffectiveTotalStoppageMins(row)
-    const productionDraft = findDraftByKeys(editedRowsRef.current, row.id)
-    const baseSetup = machineSetups[row.machine_id]
-    const setupDraft = baseSetup ? findDraftByKeys(setupDraftEdits, baseSetup.id, baseSetup.machine_id, row.machine_id) : null
-    const hasStoppageDraft = totalStoppageMins !== toNumber(row?.total_stoppage_mins ?? row?.stoppage?.[0]?.total_stoppage_time ?? 0)
-
-    if (!productionDraft && !setupDraft && !hasStoppageDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
-      return {
-        ...row,
-        total_stoppage_mins: totalStoppageMins
-      }
-    }
     const { speed: machineSpeed, hankConstant, stdEfficiencyFactor, delivery, divisorConstant } = resolveLapFormerFormulaInputs(setup, row.machine?.speed)
     const constst = calculateConstst(setup)
 
-    let actHank = toNumber(row.act_hank)
-    let actProdn = (row.act_prodn !== null && row.act_prodn !== undefined)
-      ? toNumber(row.act_prodn)
-      : (actHank * constst)
-    if (productionDraft?.act_hank !== undefined && productionDraft?.act_prodn === undefined) {
-      actProdn = actHank * constst
-    } else if (productionDraft?.act_prodn !== undefined && productionDraft?.act_hank === undefined && constst > 0) {
-      actHank = actProdn / constst
-    }
+    const actHank = toNumber(row.act_hank)
+    const actProdn = actHank * constst
     const waste = toNumber(row.waste)
 
     const workTime = totalTime - totalStoppageMins
     const stdProdn = (machineSpeed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor * delivery
     const calculatedExpProdn = stdProdn * (workTime / totalTime)
-    const expProdn = productionDraft?.exp_prodn !== undefined
-      ? toNumber(productionDraft.exp_prodn)
-      : calculatedExpProdn
+    const expProdn = calculatedExpProdn
     const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
     const utiPercent = (workTime / totalTime) * 100
     const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
@@ -227,11 +205,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
       const { speed: machineSpeed, hankConstant, stdEfficiencyFactor, delivery, divisorConstant } = resolveLapFormerFormulaInputs(setup, mergedRow.machine?.speed)
       const constst = calculateConstst(setup)
 
-      let actHank = draft.act_hank ?? mergedRow.act_hank ?? 0
-      let actProdn = draft.act_prodn ?? mergedRow.act_prodn ?? (actHank * constst)
-      if (draft.act_prodn !== undefined && draft.act_hank === undefined) {
-        actHank = constst > 0 ? (actProdn / constst) : actHank
-      }
+      const actHank = draft.act_hank ?? mergedRow.act_hank ?? 0
+      const actProdn = actHank * constst
       const waste = draft.waste ?? mergedRow.waste ?? 0
 
       const workTime = mergedRow.work_time && mergedRow.work_time < totalTime
@@ -240,9 +215,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
       const stdProdn = (machineSpeed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor * delivery
       const calculatedExpProdn = stdProdn * (workTime / totalTime)
-      const expProdn = draft.exp_prodn !== undefined
-        ? toNumber(draft.exp_prodn)
-        : calculatedExpProdn
+      const expProdn = calculatedExpProdn
       const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
       const utiPercent = (workTime / totalTime) * 100
       const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
@@ -456,10 +429,24 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
     const currentEdits = editedRowsRef.current || editedRows || {}
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      currentEdits,
+      machineSetups,
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
 
-    if (Object.keys(currentEdits).length === 0) {
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -468,17 +455,19 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
-        const row = productionData.find(r => r.id === rowId)
-        if (!row) return null
-
-        const stoppageTime = row.stoppage?.[0]?.total_stoppage_time ?? row.total_stoppage_mins ?? 0
-        const setup = getEffectiveSetup(row.machine_id) || machineSetups[row.machine_id]
+      const updatePromises = rowsToSave.map((row) => {
+        const changes = findSharedDraftByKeys(currentEdits, row.id) || {}
+        const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const setup = mergeSetupDraft(
+          machineSetups[row.machine_id],
+          row.machine_id,
+          effectiveSetupDrafts
+        )
         const { speed: machineSpeed } = resolveLapFormerFormulaInputs(setup, row.machine?.speed)
         
         const actHank = toNumber(changes.act_hank ?? row.act_hank ?? 0)
         const derivedActProdn = Math.round((actHank * calculateConstst(setup)) * 100) / 100
-        const actProdn = toNumber(changes.act_prodn ?? row.act_prodn ?? derivedActProdn)
+        const actProdn = derivedActProdn
         const waste = toNumber(changes.waste ?? row.waste ?? 0)
         
         // Recalculate production metrics using setup-driven formula inputs
@@ -491,20 +480,12 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           machineSpeed
         )
 
-        if (changes.exp_prodn !== undefined) {
-          const manualExpProdn = toNumber(changes.exp_prodn)
-          calculated.exp_prodn = Math.round(manualExpProdn * 100) / 100
-          calculated.effi_percent = manualExpProdn > 0
-            ? Math.round((actProdn / manualExpProdn) * 100 * 100) / 100
-            : 0
-        }
-
         calculated.waste = waste
         calculated.waste_percent = actProdn > 0 ? Math.round((waste / actProdn) * 100 * 100) / 100 : 0
 
         const wastePercent = actProdn > 0 ? Math.round((waste / actProdn) * 100 * 100) / 100 : 0
 
-        return updateLapFormerDetailAction(rowId, {
+        return updateLapFormerDetailAction(row.id, {
           ...calculated,
           employee_name: changes.employee_name ?? row.employee_name,
           prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
@@ -513,7 +494,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           waste,
           waste_percent: wastePercent
         })
-      }).filter(Boolean)
+      })
 
       const results = await Promise.all(updatePromises)
       const failed = results.filter(r => !r.success)
@@ -521,7 +502,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
         throw new Error('Some updates failed')
       }
       
-      const savedCount = Object.keys(currentEdits).length
+      const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
@@ -655,27 +636,11 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
                       zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-0 py-0">
-                    <NumberInput
-                      value={row.act_prodn ?? ''}
-                      onChange={(e) => handleInputChange(row.id, 'act_prodn', e.target.value)}
-                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm font-medium text-blue-600 tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                      data-row={index}
-                      data-col="act_prodn"
-                      onKeyDown={(e) => handleEnterNavigation(e, index, 'act_prodn')}
-                      zeroAsEmpty
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                    {Number(row.act_prodn || 0).toFixed(2)}
                   </td>
-                  <td className="border border-gray-300 px-0 py-0">
-                    <NumberInput
-                      value={row.exp_prodn ?? ''}
-                      onChange={(e) => handleInputChange(row.id, 'exp_prodn', e.target.value)}
-                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                      data-row={index}
-                      data-col="exp_prodn"
-                      onKeyDown={(e) => handleEnterNavigation(e, index, 'exp_prodn')}
-                      zeroAsEmpty
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {Number(row.exp_prodn || 0).toFixed(2)}
                   </td>
                   <td className={`border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap ${
                     Number(row.effi_percent) >= 100 ? 'text-green-600' : 

@@ -15,6 +15,13 @@ import {
   syncNewMachinesToSpinningHeaderAction,
   calculateSpinningProductionAction
 } from '@/app/actions/spinning-entry'
+import {
+  findDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
+import { resolveProductionTime } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Production Entry Tab
@@ -78,11 +85,9 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   }
 
   // Calculate production values based on formulas
-  const getEffectiveSetup = useCallback((row) => {
+  const getEffectiveSetup = useCallback((row, drafts = setupDraftEdits) => {
     const baseSetup = row.setup || {}
-    if (!baseSetup?.id) return baseSetup
-    const draft = setupDraftEdits?.[baseSetup.id] || setupDraftEdits?.[String(baseSetup.id)]
-    return draft ? { ...baseSetup, ...draft } : baseSetup
+    return mergeSetupDraft(baseSetup, row.machine_id, drafts) || baseSetup
   }, [setupDraftEdits])
 
   const calculateValues = useCallback((row, updates = {}, effectiveSetupOverride = null) => {
@@ -90,8 +95,10 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const actCount = parseFloat(setup.act_count) || 0
     const allocatedSpindles = parseInt(setup.allocated_spindles) || row.machine?.allocated_spindles || 1104
     const efficiency = parseFloat(setup.efficiency) || 0.95
-    const stoppageMins = parseInt(row.total_stoppage_mins) || 0
-    const runTime = effectiveTotalTime
+    const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
+    const productionTime = resolveProductionTime(effectiveTotalTime, requestedStoppageMins)
+    const stoppageMins = productionTime.stoppageTime
+    const runTime = productionTime.totalTime
 
     // Get values needed for Exp GPS calculation (from machine setup, sourced from spinning_counts master)
     const speed = parseInt(setup.speed) || 0
@@ -106,17 +113,12 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 
     // Calculate constant (uses fixed 0.985 efficiency, NOT the setup efficiency)
     const CONSTANT_EFFICIENCY = 0.985
-    const constant = (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
+    const constant = actCount > 0
+      ? (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
+      : 0
 
-    // Support bidirectional: if act_prodn is directly edited, back-calculate act_hank
-    let actHank, actProdn
-    if ('act_prodn' in updates) {
-      actProdn = parseFloat(updates.act_prodn) || 0
-      actHank = constant > 0 ? actProdn / constant : 0
-    } else {
-      actHank = parseFloat(updates.act_hank ?? row.act_hank) || 0
-      actProdn = actHank * constant
-    }
+    const actHank = parseFloat(updates.act_hank ?? row.act_hank) || 0
+    const actProdn = actHank * constant
 
     const waste = parseFloat(updates.waste ?? row.waste) || 0
 
@@ -127,7 +129,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
     const stoppedSpindles = runTime > 0 ? (stoppageMins / runTime) * totalSpindles : 0
     // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
-    const workedSpindles = totalSpindles - stoppedSpindles
+    const workedSpindles = Math.max(totalSpindles - stoppedSpindles, 0)
 
     // Calculate GPS = (ACL_Prod / Worked_Spl) × 1000
     const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
@@ -146,12 +148,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       _constant: Math.round(constant * 1000) / 1000,
       _totalSpindles: totalSpindles
     }
-    // When act_prodn is directly edited, propagate the reverse-calculated hank back
-    if ('act_prodn' in updates) {
-      result.act_hank = Math.round(actHank * 10000) / 10000
-    }
     return result
-  }, [effectiveTotalTime])
+  }, [effectiveTotalTime, shiftNo])
 
   // Load production data
   const loadData = useCallback(async () => {
@@ -205,12 +203,14 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     if (!productionData.length) return
     setProductionData(prev => prev.map(row => {
       const effectiveSetup = getEffectiveSetup(row)
+      const totalStoppageMins = getEffectiveStoppageTotal(row, stoppageDraftEdits)
       return {
         ...row,
-        ...calculateValues(row, {}, effectiveSetup)
+        total_stoppage_mins: totalStoppageMins,
+        ...calculateValues(row, { total_stoppage_mins: totalStoppageMins }, effectiveSetup)
       }
     }))
-  }, [setupDraftEdits, getEffectiveSetup, calculateValues, productionData.length])
+  }, [setupDraftEdits, stoppageDraftEdits, getEffectiveSetup, calculateValues, productionData.length])
 
   useServerDataLoader(loadData, [headerId, shiftNo, effectiveTotalTime])
 
@@ -325,9 +325,24 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   }
 
   // Save all changes
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    const editedIds = Object.keys(editedRows)
-    if (editedIds.length === 0) {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      currentEdits,
+      {},
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
+
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -336,12 +351,18 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 
     setIsSaving(true)
     try {
-      const updates = editedIds.map(id => {
-        const row = productionData.find(r => r.id === id)
-        const edits = editedRows[id]
+      const updates = rowsToSave.map(row => {
+        const id = row.id
+        const edits = findDraftByKeys(currentEdits, id) || {}
+        const effectiveSetup = getEffectiveSetup(row, effectiveSetupDrafts)
+        const totalStoppageMins = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         
         // Calculate final values
-        const calculated = calculateValues(row, edits, getEffectiveSetup(row))
+        const calculated = calculateValues(
+          row,
+          { ...edits, total_stoppage_mins: totalStoppageMins },
+          effectiveSetup
+        )
 
         // Resolve act_hank: prefer explicitly edited value, then back-calculated (when act_prodn was edited),
         // then the row's stored value. Preserve 0 (don't use || null which would coerce 0 → null).
@@ -517,19 +538,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                         zeroAsEmpty
                       />
                     </td>
-                    <td className="border border-gray-300 px-0 py-0">
-                      <NumberInput
-                        type="number"
-                        step="0.01"
-                        value={row.act_prodn ?? ''}
-                        onChange={(e) => handleInputChange(row.id, 'act_prodn', e.target.value)}
-                        onKeyDown={(e) => handleEnterNavigation(e, index, 'act_prodn')}
-                        data-row={index}
-                        data-col="act_prodn"
-                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm font-medium text-blue-600 tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        placeholder="0.00"
-                        zeroAsEmpty
-                      />
+                    <td className="border border-gray-300 px-3 py-1 text-right text-sm font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                      {Number(row.act_prodn || 0).toFixed(2)}
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput

@@ -77,7 +77,7 @@ function BreakerDrawingEntryContent() {
   const [activeTab, setActiveTab] = useState('production')
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [isSavingAll, setIsSavingAll] = useState(false)
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
@@ -99,7 +99,7 @@ function BreakerDrawingEntryContent() {
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
@@ -118,7 +118,8 @@ function BreakerDrawingEntryContent() {
     const sharedCount =
       Object.keys(sharedDrafts.production || {}).length +
       Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length
+      Object.keys(sharedDrafts.setup || {}).length +
+      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
@@ -305,29 +306,15 @@ function BreakerDrawingEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
-    if (headerId) {
-      try {
-        await updateBreakerDrawingHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
-    if (headerId) {
-      try {
-        await updateBreakerDrawingHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
   }
 
   // Refresh data
@@ -339,8 +326,7 @@ function BreakerDrawingEntryContent() {
   const handleSaveAllTabs = async () => {
     if (!headerId || isSavingAll) return
 
-    const refs = [productionTabRef.current, stoppageTabRef.current, setupTabRef.current]
-    const totalPending = refs.reduce((sum, tab) => sum + (tab?.getEditedCount?.() || 0), 0)
+    const totalPending = getUnsavedEditCount()
 
     if (totalPending === 0) {
       toast.info('No changes to save')
@@ -354,7 +340,8 @@ function BreakerDrawingEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -362,7 +349,8 @@ function BreakerDrawingEntryContent() {
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -370,11 +358,15 @@ function BreakerDrawingEntryContent() {
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateBreakerDrawingHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -415,6 +407,7 @@ function BreakerDrawingEntryContent() {
     ])
 
     clearAllDrafts()
+    await loadProductionHeader()
 
     toast.success('Unsaved changes discarded')
   }

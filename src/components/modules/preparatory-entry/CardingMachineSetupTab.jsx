@@ -326,7 +326,9 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
         return updateMachineSetupAction(machineId || rowId, changes, formattedDate, shift)
       })
 
-      await Promise.all(updatePromises)
+      const results = await Promise.all(updatePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save a Carding machine setup row')
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {

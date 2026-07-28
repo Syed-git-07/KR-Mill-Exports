@@ -14,8 +14,18 @@ import {
   syncNewMachinesToBreakerDrawingHeaderAction
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
-import { BREAKER_DRAWING_FORMULA_FALLBACK, resolveBreakerDrawingFormulaInputs } from '@/lib/breakerDrawingFormulaFallback'
+import {
+  BREAKER_DRAWING_FORMULA_FALLBACK,
+  getBreakerDrawingActProdnConstant,
+  resolveBreakerDrawingFormulaInputs
+} from '@/lib/breakerDrawingFormulaFallback'
 import { NumberInput } from '@/components/ui/number-input'
+import {
+  findDraftByKeys,
+  getEffectiveStoppageTotal,
+  mergeSetupDraft,
+  selectRowsForDependentCommit
+} from '@/lib/entryDraftSync'
 
 // Helper function to safely convert any value to a number
 const toNumber = (value) => {
@@ -32,12 +42,9 @@ const formatNumber = (value, decimals = 2) => {
   return toNumber(value).toFixed(decimals)
 }
 
-// Constst = (1 / 2.20456 / Hank) * Delivery
+// Workbook formula: Constant = 1 / 2.20456 / Hank
 const calculateConstst = (setup) => {
-  const hankConstant = toNumber(setup?.hank_constant)
-  const delivery = toNumber(setup?.delivery) || BREAKER_DRAWING_FORMULA_FALLBACK.delivery
-  if (hankConstant <= 0) return 0
-  return (1 / 2.20456 / hankConstant) * delivery
+  return getBreakerDrawingActProdnConstant(setup)
 }
 
 const normalizeDraftKey = (value) => String(value || '').trim().toLowerCase()
@@ -45,6 +52,7 @@ const normalizeDraftKey = (value) => String(value || '').trim().toLowerCase()
 const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProductionTab({
   headerId,
   totalTime = 0,
+  shift = 1,
   onRefresh,
   sharedDraftEdits,
   onSharedDraftEditsChange,
@@ -158,30 +166,16 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
     return (rows || []).map(row => {
       const draft = drafts[row.id] || drafts[String(row.id)]
-      const hasProductionDraft = !!draft
       const stoppageTime = getEffectiveTotalStoppageMins(row)
-      const hasStoppageDraft = stoppageTime !== toNumber(row?.total_stoppage_mins ?? row?.stoppage?.[0]?.total_stoppage_time ?? 0)
-
-      const baseSetup = setupMap[row.machine_id]
-      const setupDraft = baseSetup ? (setupDraftEdits?.[baseSetup.id] || setupDraftEdits?.[String(baseSetup.id)] || setupDraftEdits?.[row.machine_id] || setupDraftEdits?.[String(row.machine_id)]) : null
-      const hasSetupDraft = !!setupDraft
 
       const mergedRow = draft ? { ...row, ...draft } : { ...row }
-
-      // Preserve saved server calculations when no active drafts exist
-      if (!hasProductionDraft && !hasStoppageDraft && !hasSetupDraft && row.std_prodn !== undefined && row.std_prodn !== null && Number(row.std_prodn) > 0) {
-        return {
-          ...mergedRow,
-          total_stoppage_mins: stoppageTime,
-        }
-      }
 
       const setup = getEffectiveSetup(mergedRow.machine_id, setupMap)
       const machineSpeed = setup?.speed ?? mergedRow.machine?.speed ?? BREAKER_DRAWING_FORMULA_FALLBACK.speed
 
       const actHank = draft?.act_hank ?? mergedRow.act_hank ?? 0
       const derivedActProdn = Math.round((actHank * calculateConstst(setup)) * 100) / 100
-      const actProdn = draft?.act_prodn ?? mergedRow.act_prodn ?? derivedActProdn
+      const actProdn = derivedActProdn
       const waste = draft?.waste ?? mergedRow.waste ?? null
 
       const calculated = calculateBreakerDrawingValues(
@@ -228,7 +222,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
       const [detailsResult, setupsResult] = await Promise.all([
         getBreakerDrawingProductionWithSetupAction(headerId),
-        getBreakerDrawingMachineSetupsAction(1, headerId)
+        getBreakerDrawingMachineSetupsAction(shift, headerId)
       ])
       
       const details = detailsResult?.data || []
@@ -293,7 +287,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
     } finally {
       setIsLoading(false)
     }
-  }, [headerId, totalTime, mergeServerRowsWithDrafts])
+  }, [headerId, shift, totalTime, mergeServerRowsWithDrafts])
 
   useServerDataLoader(loadData, [headerId, totalTime])
 
@@ -307,7 +301,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       const stoppageTime = getEffectiveTotalStoppageMins(row)
       const actHank = draft?.act_hank ?? row.act_hank ?? 0
       const derivedActProdn = Math.round((actHank * calculateConstst(setup)) * 100) / 100
-      const actProdn = draft?.act_prodn ?? row.act_prodn ?? derivedActProdn
+      const actProdn = derivedActProdn
       const waste = draft?.waste ?? row.waste ?? null
 
       const calculated = calculateBreakerDrawingValues(
@@ -433,8 +427,24 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({
+    suppressNoChangesToast = false,
+    suppressSuccessToast = false,
+    skipParentRefresh = false,
+    dependencyDrafts = null
+  } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
+    const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
+    const rowsToSave = selectRowsForDependentCommit(
+      productionData,
+      currentEdits,
+      machineSetups,
+      effectiveSetupDrafts,
+      effectiveStoppageDrafts
+    )
+
+    if (rowsToSave.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -443,20 +453,21 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
-        // Get the full row data for recalculation
-        const row = productionData.find(r => r.id === rowId)
-        if (!row) return null
-
-        const stoppageTime = row.stoppage?.[0]?.total_stoppage_time || 0
-        const setup = getEffectiveSetup(row.machine_id) || machineSetups[row.machine_id]
+      const updatePromises = rowsToSave.map((row) => {
+        const changes = findDraftByKeys(currentEdits, row.id) || {}
+        const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
+        const setup = mergeSetupDraft(
+          machineSetups[row.machine_id],
+          row.machine_id,
+          effectiveSetupDrafts
+        )
         // Speed from machine table (source of truth)
         const machineSpeed = setup?.speed ?? row.machine?.speed ?? BREAKER_DRAWING_FORMULA_FALLBACK.speed
         
         // Get actual values - either from changes or from current row
         const actHank = changes.act_hank ?? row.act_hank ?? 0
         const derivedActProdn = Math.round((actHank * calculateConstst(setup)) * 100) / 100
-        const actProdn = changes.act_prodn ?? row.act_prodn ?? derivedActProdn
+        const actProdn = derivedActProdn
         const waste = changes.waste ?? row.waste ?? null
         
         // Use Breaker Drawing specific calculations with setup and machine speed
@@ -473,14 +484,14 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
         calculated.waste = waste
         calculated.waste_percent = actProdn > 0 ? Math.round((((waste ?? 0) / actProdn) * 100) * 100) / 100 : 0
 
-        return updateBreakerDrawingDetailAction(rowId, {
+        return updateBreakerDrawingDetailAction(row.id, {
           employee_name: changes.employee_name ?? row.employee_name,
           prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
           act_prodn: actProdn,
           ...calculated
         })
-      }).filter(Boolean)
+      })
 
       const results = await Promise.all(updatePromises)
       
@@ -489,7 +500,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       if (failed.length > 0) {
         throw new Error(`Failed to update ${failed.length} record(s)`)
       }
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
@@ -621,29 +632,11 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
                       zeroAsEmpty
                     />
                   </td>
-                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="act_prodn">
-                    <NumberInput
-                      type="number"
-                      value={row.act_prodn ?? ''}
-                      onChange={(e) => handleInputChange(row.id, 'act_prodn', e.target.value)}
-                      data-row={index}
-                      data-col="act_prodn"
-                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                      onKeyDown={(e) => handleEnterNavigation(e, index, 'act_prodn')}
-                      zeroAsEmpty
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {formatNumber(row.act_prodn)}
                   </td>
-                  <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="exp_prodn">
-                    <NumberInput
-                      type="number"
-                      value={row.exp_prodn ?? ''}
-                      onChange={(e) => handleInputChange(row.id, 'exp_prodn', e.target.value)}
-                      data-row={index}
-                      data-col="exp_prodn"
-                      className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                      onKeyDown={(e) => handleEnterNavigation(e, index, 'exp_prodn')}
-                      zeroAsEmpty
-                    />
+                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                    {formatNumber(row.exp_prodn)}
                   </td>
                   <td className={`border border-gray-300 px-2 py-1 text-right font-medium ${
                     row.effi_percent >= 100 ? 'text-blue-600' : 

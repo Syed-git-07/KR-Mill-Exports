@@ -71,7 +71,7 @@ function LapFormerEntryContent() {
   const [isLoadingDates, setIsLoadingDates] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
-  const [sharedDrafts, setSharedDrafts] = useState({ production: {}, stoppage: {}, setup: {} })
+  const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
@@ -93,7 +93,7 @@ function LapFormerEntryContent() {
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ production: {}, stoppage: {}, setup: {} })
+    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
   }, [])
 
   const handleProductionDraftsChange = useCallback((next) => {
@@ -112,7 +112,8 @@ function LapFormerEntryContent() {
     const sharedCount =
       Object.keys(sharedDrafts.production || {}).length +
       Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length
+      Object.keys(sharedDrafts.setup || {}).length +
+      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
@@ -335,29 +336,15 @@ function LapFormerEntryContent() {
   }
 
   // Update supervisor
-  const handleSupervisorChange = async (value) => {
+  const handleSupervisorChange = (value) => {
     setSupervisorId(value)
-    
-    if (headerId) {
-      try {
-        await updateLapFormerHeaderAction(headerId, { supervisor_id: value || null })
-      } catch (error) {
-        console.error('Error updating supervisor:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
   }
 
   // Update maisitry
-  const handleMaisitryChange = async (value) => {
+  const handleMaisitryChange = (value) => {
     setMaisitryId(value)
-    
-    if (headerId) {
-      try {
-        await updateLapFormerHeaderAction(headerId, { maisitry_id: value || null })
-      } catch (error) {
-        console.error('Error updating maisitry:', error)
-      }
-    }
+    if (headerId) updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
   }
 
   // Refresh data
@@ -386,7 +373,8 @@ function LapFormerEntryContent() {
         setupTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -394,7 +382,8 @@ function LapFormerEntryContent() {
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -402,11 +391,15 @@ function LapFormerEntryContent() {
         productionTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
-          skipParentRefresh: true
+          skipParentRefresh: true,
+          dependencyDrafts: sharedDrafts
         }) || Promise.resolve({ success: true, saved: 0 })
       )
+      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
+        ? await updateLapFormerHeaderAction(headerId, sharedDrafts.header)
+        : { success: true, saved: 0 }
 
-      const results = [prodResult, stoppageResult, setupResult]
+      const results = [prodResult, stoppageResult, setupResult, headerResult]
       const failures = results.filter(r => !r?.success)
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
@@ -442,6 +435,7 @@ function LapFormerEntryContent() {
     ])
 
     clearAllDrafts()
+    await loadProductionHeader()
     toast.success('Unsaved changes discarded')
   }
 

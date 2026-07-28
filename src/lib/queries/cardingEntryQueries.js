@@ -1,6 +1,7 @@
 import { prisma } from '../prisma'
 import { resolveCardingShiftFallbackTime } from '../cardingShiftFallback'
 import { calculateCardingStdProdn, resolveCardingFormulaInputs } from '../cardingFormulaFallback'
+import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 
@@ -805,8 +806,6 @@ export async function updateStoppageEntry(id, updates) {
       : null
 
     const totalTime = await getCardingShiftTime(header?.shift || 1)
-    const workTime = Math.max(totalTime - total, 0)
-    const utiPercent = Math.round((workTime / totalTime) * 100 * 100) / 100
 
     // STEP-2/3/4/7 dynamic recalculation from formula flow:
     // Std Prodn = setup/std baseline, Exp Prodn = Std * Work / Total,
@@ -829,22 +828,26 @@ export async function updateStoppageEntry(id, updates) {
       (setup?.std_prodn ?? null) ||
       calculateCardingStdProdn(setup || {}, totalTime)
 
-    const expProdn = totalTime > 0 ? (stdProdnBaseline * workTime) / totalTime : 0
     const actProdn = Number.parseFloat(prodDetail?.act_prodn || 0)
-    const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
     const waste = Number.parseFloat(prodDetail?.waste || 0)
-    const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
+    const metrics = calculateTimeAdjustedProductionMetrics({
+      actualProduction: actProdn,
+      standardProduction: stdProdnBaseline,
+      waste,
+      totalTime,
+      stoppageTime: total,
+    })
 
     await prisma.carding_production_detail.update({
       where: { id: data.production_detail_id },
       data: {
-        total_stoppage_mins: total,
-        work_time: workTime,
-        uti_percent: utiPercent,
-        std_prodn: Math.round(stdProdnBaseline * 100) / 100,
-        exp_prodn: Math.round(expProdn * 100) / 100,
-        effi_percent: Math.round(effiPercent * 100) / 100,
-        waste_percent: Math.round(wastePercent * 100) / 100,
+        total_stoppage_mins: metrics.stoppageTime,
+        work_time: metrics.workTime,
+        uti_percent: metrics.utilizationPercent,
+        std_prodn: metrics.standardProduction,
+        exp_prodn: metrics.expectedProduction,
+        effi_percent: metrics.efficiencyPercent,
+        waste_percent: metrics.wastePercent,
       }
     })
 
@@ -1428,36 +1431,37 @@ export function calculateProductionValues(actHank, actProdn, totalTime, stoppage
   const wasteValue = setup?.default_waste ?? 0
 
   // WorkTime = TotalTime - StoppageTime (this is the actual run time)
-  const workTime = Math.max(totalTime - stoppageTime, 0)
   
   // RunTime defaults to TotalTime, represents available shift time
-  const runTime = totalTime
 
   // Std Prodn = (Speed / Divisor / Hank) × TotalTime × StdEffi
   const stdProdn = (speed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor
 
   // Exp Prodn = Std Prodn × WorkTime / TotalTime (time-adjusted target)
-  const expProdn = stdProdn * workTime / totalTime
 
   // Effi% = ActProdn / ExpProdn × 100 (Performance %)
-  const effiPercent = expProdn > 0 ? (actProdn / expProdn) * 100 : 0
 
   // UTI% = WorkTime / TotalTime × 100 (Utilization based on actual working time)
-  const utiPercent = (workTime / totalTime) * 100
 
   // Waste% = Waste / ActProdn × 100
-  const wastePercent = actProdn > 0 ? (wasteValue / actProdn) * 100 : 0
+  const metrics = calculateTimeAdjustedProductionMetrics({
+    actualProduction: actProdn,
+    standardProduction: stdProdn,
+    waste: wasteValue,
+    totalTime,
+    stoppageTime,
+  })
 
   return {
-    std_prodn: Math.round(stdProdn * 100) / 100,
-    exp_prodn: Math.round(expProdn * 100) / 100,
-    effi_percent: Math.round(effiPercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100,
+    std_prodn: metrics.standardProduction,
+    exp_prodn: metrics.expectedProduction,
+    effi_percent: metrics.efficiencyPercent,
+    uti_percent: metrics.utilizationPercent,
     waste: setup?.default_waste ?? null,
-    waste_percent: Math.round(wastePercent * 100) / 100,
-    run_time: runTime,
-    work_time: workTime, // TotalTime - StoppageTime
-    total_stoppage_mins: stoppageTime // Store total stoppage for reference
+    waste_percent: metrics.wastePercent,
+    run_time: metrics.totalTime,
+    work_time: metrics.workTime,
+    total_stoppage_mins: metrics.stoppageTime
   }
 }
 

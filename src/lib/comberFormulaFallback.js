@@ -40,8 +40,9 @@ export function resolveComberFormulaInputs(setup = {}, machine = null) {
   )
   const mcEffiPercent = mcEffiFactor * 100
 
-  const setupConstant = toNumber(setup?.constant)
-  const constant = setupConstant || calculateComberConstantFromSlHank(slHank)
+  // Constant is formula-owned. Recompute it from the effective Sliver Hank so
+  // an unsaved hank draft cannot be paired with an old stored constant.
+  const constant = calculateComberConstantFromSlHank(slHank)
 
   return {
     slHank,

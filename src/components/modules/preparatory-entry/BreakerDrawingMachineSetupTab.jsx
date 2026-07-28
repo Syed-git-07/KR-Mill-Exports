@@ -263,7 +263,9 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
         updateMachineSetupAction(rowId, changes)
       )
 
-      await Promise.all(updatePromises)
+      const results = await Promise.all(updatePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save a machine setup row')
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
