@@ -244,7 +244,7 @@ async function getAutoconerAbstractReport(date) {
 
   } catch (error) {
     console.error('Error fetching autoconer abstract report:', error)
-    return { success: false, message: error.message }
+    return { success: false, message: 'The report could not be generated. Please try again.' }
   }
 }
 

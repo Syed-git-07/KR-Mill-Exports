@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/employeeQueries'
 
@@ -17,7 +19,7 @@ export async function searchEmployeesAction(searchTerm = '', limit = 10) {
     const data = await queries.searchEmployees(searchTerm, limit)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -29,7 +31,7 @@ export async function getAllEmployeesAction() {
     const data = await queries.getAllEmployees()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -41,7 +43,7 @@ export async function addEmployeeAction(employeeData) {
     const data = await queries.addEmployee(employeeData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -53,7 +55,7 @@ export async function updateEmployeeAction(id, updates) {
     const data = await queries.updateEmployee(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -65,7 +67,7 @@ export async function deactivateEmployeeAction(id) {
     const data = await queries.deactivateEmployee(id)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -77,6 +79,6 @@ export async function checkEmployeeExistsAction(empName, excludeId = null) {
     const exists = await queries.checkEmployeeExists(empName, excludeId)
     return { success: true, data: exists }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

@@ -198,7 +198,7 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
     console.error('Error generating autoconer particular sider report:', error)
     return {
       success: false,
-      message: error.message || 'Failed to generate report'
+      message: 'The report could not be generated. Please try again.'
     }
   }
 }

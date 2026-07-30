@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function PostPreparatoryLayout({ children }) {
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-[calc(100dvh-3rem)] bg-gray-50">
       <PostPreparatorySidebar />
       <main className="min-w-0 flex-1 overflow-auto">
         {children}

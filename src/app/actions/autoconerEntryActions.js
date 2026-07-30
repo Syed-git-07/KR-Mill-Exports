@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/autoconerEntryQueries'
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
@@ -24,7 +26,7 @@ export async function getAutoconerShiftConfigAction(shift) {
     const fallbackShiftTime = resolveAutoconerShiftFallbackTime(shift)
     return { 
       success: false, 
-      error: error.message,
+      error: safeActionError(error),
       data: {
         shiftTime: fallbackShiftTime,
         defaultStoppage: 0,
@@ -46,7 +48,7 @@ export async function getAutoconerProductionByDateShiftAction(date, shift) {
     return { success: true, data: serializeData(data) }
   } catch (error) {
     console.error(`[HEADER] Error:`, error)
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -56,7 +58,7 @@ export async function getOrCreateAutoconerHeaderAction(date, shift, supervisorId
     const data = await queries.getOrCreateAutoconerHeader(date, shift, supervisorId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -65,7 +67,7 @@ export async function updateAutoconerProductionHeaderAction(id, updates) {
     const data = await queries.updateAutoconerProductionHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -78,7 +80,7 @@ export async function getAutoconerProductionDetailsAction(headerId) {
     const data = await queries.getAutoconerProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -92,7 +94,7 @@ export async function syncNewMachinesToAutoconerHeaderAction(headerId, shift = 1
     return { success: true, data: serializeData(data) }
   } catch (error) {
     console.error(`[SYNC] Error:`, error)
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -101,7 +103,7 @@ export async function updateAutoconerProductionDetailAction(id, updates) {
     const data = await queries.updateAutoconerProductionDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -110,7 +112,7 @@ export async function batchUpdateAutoconerProductionDetailsAction(updates) {
     const data = await queries.batchUpdateAutoconerProductionDetails(updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -123,7 +125,7 @@ export async function getAutoconerStoppageEntriesAction(headerId) {
     const data = await queries.getAutoconerStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -132,7 +134,7 @@ export async function updateAutoconerStoppageEntryAction(id, updates) {
     const data = await queries.updateAutoconerStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -141,7 +143,7 @@ export async function applyAutoconerFullStoppageAction(headerId, stoppageId, sto
     const data = await queries.applyFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -150,7 +152,7 @@ export async function applyAutoconerPartialStoppageAction(headerId, fromMachineN
     const data = await queries.applyPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -159,7 +161,7 @@ export async function getStoppageDetailsAction() {
     const data = await queries.getStoppageDetails()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -175,7 +177,7 @@ export async function getAutoconerMachineSetupsAction(shift = 1, entryDate) {
     const data = await queries.getAutoconerMachineSetups(entryDate, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -184,7 +186,7 @@ export async function updateAutoconerMachineSetupAction(id, updates, shift = nul
     const data = await queries.updateAutoconerMachineSetup(id, updates, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -193,7 +195,7 @@ export async function upsertAutoconerMachineSetupAction(machineId, entryDate, sh
     const data = await queries.upsertAutoconerMachineSetup(machineId, entryDate, shift, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -202,7 +204,7 @@ export async function batchUpdateAutoconerMachineSetupsAction(updates, shift = n
     const data = await queries.batchUpdateAutoconerMachineSetups(updates, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -215,7 +217,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -224,7 +226,7 @@ export async function getAutoconerMachinesAction() {
     const data = await queries.getAutoconerMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -233,7 +235,7 @@ export async function lookupAutoconerMachineByNoAction(machineNo) {
     const data = await queries.lookupAutoconerMachineByNo(machineNo)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -242,7 +244,7 @@ export async function getAutoconerGroupsAction() {
     const data = await queries.getAutoconerGroups()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -251,7 +253,7 @@ export async function getSpinningCountsAction() {
     const data = await queries.getSpinningCounts()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -260,7 +262,7 @@ export async function addAutoconerMachineAction(machineData) {
     const data = await queries.addAutoconerMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -269,7 +271,7 @@ export async function removeAutoconerMachineAction(id, entryDate) {
     const data = await queries.removeAutoconerMachine(id, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -278,7 +280,7 @@ export async function removeAutoconerMachineSetupsAction(setupIds) {
     const data = await queries.removeAutoconerMachineSetups(setupIds)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -295,7 +297,7 @@ export async function getAutoconerAvailableDatesAction(beforeDate, shift, limit 
     const data = await queries.getAutoconerAvailablePreviousDates(beforeDate, shift, limit)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 

@@ -1,5 +1,7 @@
 'use server';
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize';
 import {
   getLapFormerMachines,
@@ -17,7 +19,7 @@ export async function getLapFormerMachinesAction() {
     return { success: true, data: serializeData(machines) };
   } catch (error) {
     console.error('Get lap former machines error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -27,7 +29,7 @@ export async function createLapFormerMachineAction(data) {
     return { success: true, data: serializeData(machine) };
   } catch (error) {
     console.error('Create lap former machine error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -37,7 +39,7 @@ export async function updateLapFormerMachineAction(id, data) {
     return { success: true, data: serializeData(machine) };
   } catch (error) {
     console.error('Update lap former machine error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -47,7 +49,7 @@ export async function deleteLapFormerMachineAction(id) {
     return { success: true };
   } catch (error) {
     console.error('Delete lap former machine error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -57,7 +59,7 @@ export async function searchLapFormerMachinesAction(field, condition, value) {
     return { success: true, data: serializeData(machines) };
   } catch (error) {
     console.error('Search lap former machines error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -67,7 +69,7 @@ export async function getActiveLapFormerMachinesAction() {
     return { success: true, data: serializeData(machines) };
   } catch (error) {
     console.error('Get active lap former machines error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -77,6 +79,6 @@ export async function getLapFormerCountOptionsAction() {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Get lap former count options error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }

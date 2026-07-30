@@ -1,5 +1,7 @@
 'use server';
 
+import { safeActionError } from '@/lib/security/errors'
+
 import {
   getTWCEntries,
   createTWCEntry,
@@ -16,7 +18,7 @@ export async function getTWCEntriesAction() {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching TWC entries:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -26,7 +28,7 @@ export async function createTWCEntryAction(entryData) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error creating TWC entry:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -36,7 +38,7 @@ export async function updateTWCEntryAction(id, entryData) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error updating TWC entry:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -46,7 +48,7 @@ export async function deleteTWCEntryAction(id) {
     return { success: true };
   } catch (error) {
     console.error('Error deleting TWC entry:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -56,7 +58,7 @@ export async function searchTWCEntriesAction(field, condition, value) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error searching TWC entries:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -66,6 +68,6 @@ export async function getCountsForDropdownAction() {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching counts for dropdown:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }

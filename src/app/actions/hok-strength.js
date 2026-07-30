@@ -1,5 +1,7 @@
 'use server';
 
+import { safeActionError } from '@/lib/security/errors'
+
 import {
   getHOKEntries,
   getHOKEntryById,
@@ -17,7 +19,7 @@ export async function getHOKEntriesAction() {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching HOK entries:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -27,7 +29,7 @@ export async function getHOKEntryByIdAction(hokId) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching HOK entry:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -37,7 +39,7 @@ export async function createBulkHOKEntriesAction(entriesData) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error creating HOK entries:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -47,7 +49,7 @@ export async function updateHOKEntryAction(hokId, hokData) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error updating HOK entry:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -57,7 +59,7 @@ export async function deleteHOKEntryAction(hokId) {
     return { success: true };
   } catch (error) {
     console.error('Error deleting HOK entry:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -67,7 +69,7 @@ export async function searchHOKEntriesAction(searchParams) {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error searching HOK entries:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }
 
@@ -77,6 +79,6 @@ export async function getDepartmentsForDropdownAction() {
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching departments for dropdown:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: safeActionError(error) };
   }
 }

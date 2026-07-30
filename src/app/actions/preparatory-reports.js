@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { generatePreparatoryStoppageReport, getPreparatoryDateRange } from '@/lib/queries/preparatoryStoppageReportQueries'
 import { generatePreparatoryWasteReport } from '@/lib/queries/preparatoryWasteReportQueries'
 import { generatePreparatorySiderPerformanceReport } from '@/lib/queries/preparatorySiderPerformanceReportQueries'
@@ -46,7 +48,7 @@ export async function generatePreparatoryStoppageReportAction(fromDate, toDate) 
     console.error('Error generating preparatory stoppage report:', error)
     return {
       success: false,
-      error: error.message || 'Failed to generate report'
+      error: safeActionError(error) || 'Failed to generate report'
     }
   }
 }
@@ -67,7 +69,7 @@ export async function getPreparatoryDateRangeAction() {
     console.error('Error getting preparatory date range:', error)
     return {
       success: false,
-      error: error.message || 'Failed to get date range'
+      error: safeActionError(error) || 'Failed to get date range'
     }
   }
 }
@@ -114,7 +116,7 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
     console.error('Error generating preparatory waste report:', error)
     return {
       success: false,
-      error: error.message || 'Failed to generate report'
+      error: safeActionError(error) || 'Failed to generate report'
     }
   }
 }
@@ -161,7 +163,7 @@ export async function generatePreparatorySiderPerformanceReportAction(fromDate, 
     console.error('Error generating preparatory sider performance report:', error)
     return {
       success: false,
-      error: error.message || 'Failed to generate report'
+      error: safeActionError(error) || 'Failed to generate report'
     }
   }
 }

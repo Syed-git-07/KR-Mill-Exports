@@ -185,23 +185,23 @@ div[class*="overflow-x-auto"][class*="overflow-y-auto"]
     print-color-adjust: exact;
   }
   
-  .print\\:hidden {
+  .print\:hidden {
     display: none !important;
   }
   
-  .print\\:shadow-none {
+  .print\:shadow-none {
     box-shadow: none !important;
   }
   
-  .print\\:border-black {
+  .print\:border-black {
     border-color: #000 !important;
   }
   
-  .print\\:bg-gray-200 {
+  .print\:bg-gray-200 {
     background-color: #e5e7eb !important;
   }
   
-  .print\\:bg-gray-100 {
+  .print\:bg-gray-100 {
     background-color: #f3f4f6 !important;
   }
   

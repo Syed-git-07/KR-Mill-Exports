@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 
 import * as queries from '@/lib/queries/stoppageHeadQueries'
@@ -9,7 +11,7 @@ export async function getStoppageHeadsAction() {
     const data = await queries.getStoppageHeads()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -18,7 +20,7 @@ export async function createStoppageHeadAction(stoppageData) {
     const data = await queries.createStoppageHead(stoppageData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -27,7 +29,7 @@ export async function updateStoppageHeadAction(id, stoppageData) {
     const data = await queries.updateStoppageHead(id, stoppageData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -36,7 +38,7 @@ export async function deleteStoppageHeadAction(id) {
     const data = await queries.deleteStoppageHead(id)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -45,7 +47,7 @@ export async function searchStoppageHeadsAction(field, condition, value) {
     const data = await queries.searchStoppageHeads(field, condition, value)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -54,6 +56,6 @@ export async function generateStoppageCodeAction(deptId) {
     const data = await queries.generateStoppageCode(deptId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

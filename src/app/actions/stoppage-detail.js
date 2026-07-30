@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 
 import * as queries from '@/lib/queries/stoppageDetailQueries'
@@ -9,7 +11,7 @@ export async function getStoppageDetailsAction() {
     const data = await queries.getStoppageDetails()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -18,7 +20,7 @@ export async function createStoppageDetailAction(stoppageData) {
     const data = await queries.createStoppageDetail(stoppageData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -27,7 +29,7 @@ export async function updateStoppageDetailAction(id, stoppageData) {
     const data = await queries.updateStoppageDetail(id, stoppageData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -36,7 +38,7 @@ export async function deleteStoppageDetailAction(id) {
     const data = await queries.deleteStoppageDetail(id)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -45,7 +47,7 @@ export async function searchStoppageDetailsAction(field, condition, value) {
     const data = await queries.searchStoppageDetails(field, condition, value)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -54,7 +56,7 @@ export async function getStoppageHeadsAction() {
     const data = await queries.getStoppageHeadsForDropdown()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -63,6 +65,6 @@ export async function getDepartmentsAction() {
     const data = await queries.getDepartmentsForDropdown()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/finisherDrawingEntryQueries'
 import { resolveFinisherDrawingShiftFallbackTime } from '@/lib/finisherDrawingShiftFallback'
@@ -14,7 +16,7 @@ export async function getFinisherDrawingShiftConfigAction(shift) {
     const data = await queries.getFinisherDrawingShiftConfig(shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -27,7 +29,7 @@ export async function getFinisherDrawingProductionByDateShiftAction(date, shift)
     const data = await queries.getFinisherDrawingProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -37,7 +39,7 @@ export async function getOrCreateFinisherDrawingHeaderAction(date, shift, superv
     const data = await queries.getOrCreateFinisherDrawingHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -46,7 +48,7 @@ export async function updateFinisherDrawingHeaderAction(id, updates) {
     const data = await queries.updateFinisherDrawingHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -59,7 +61,7 @@ export async function getFinisherDrawingProductionDetailsAction(headerId) {
     const data = await queries.getFinisherDrawingProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -68,7 +70,7 @@ export async function getFinisherDrawingProductionWithSetupAction(headerId) {
     const data = await queries.getFinisherDrawingProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -77,7 +79,7 @@ export async function initializeFinisherDrawingDetailsAction(headerId) {
     const data = await queries.initializeFinisherDrawingDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -86,7 +88,7 @@ export async function syncFinisherDrawingNewMachinesToHeaderAction(headerId) {
     const data = await queries.syncFinisherDrawingNewMachinesToHeader(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -95,7 +97,7 @@ export async function updateFinisherDrawingDetailAction(id, updates) {
     const data = await queries.updateFinisherDrawingDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -104,7 +106,7 @@ export async function bulkUpdateFinisherDrawingDetailsAction(updates) {
     const data = await queries.bulkUpdateFinisherDrawingDetails(updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -117,7 +119,7 @@ export async function getFinisherDrawingStoppageEntriesAction(headerId) {
     const data = await queries.getFinisherDrawingStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -126,7 +128,7 @@ export async function updateFinisherDrawingStoppageEntryAction(id, updates) {
     const data = await queries.updateFinisherDrawingStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -135,7 +137,7 @@ export async function getStoppageDetailsAction() {
     const data = await queries.getStoppageDetails()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -145,7 +147,7 @@ export async function applyFinisherDrawingFullStoppageAction(headerId, stoppageD
     const result = await queries.applyFinisherDrawingFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: result.success, data: serializeData(result.data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -154,7 +156,7 @@ export async function getFinisherDrawingStoppageReasonsAction() {
     const data = await queries.getFinisherDrawingStoppageReasons()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -171,7 +173,7 @@ export async function applyFinisherDrawingPartialStoppageAction(headerId, fromMa
       }
     }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -192,7 +194,7 @@ export async function getFinisherDrawingMachineSetupsAction(shift = 1, headerId 
 
     return { success: true, data: serializeData(modifiedData) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -201,7 +203,7 @@ export async function updateFinisherDrawingMachineSetupAction(machineId, updates
     const data = await queries.updateFinisherDrawingMachineSetup(machineId, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -210,7 +212,7 @@ export async function updateFinisherDrawingMachineSpeedAction(machineId, newSpee
     const data = await queries.updateFinisherDrawingMachineSpeed(machineId, newSpeed)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -219,7 +221,7 @@ export async function getFinisherDrawingMixingOptionsAction() {
     const data = await queries.getFinisherDrawingMixingOptions()
     return { success: true, data: data }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -228,7 +230,7 @@ export async function getFinisherDrawingMachinesAction() {
     const data = await queries.getFinisherDrawingMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -237,7 +239,7 @@ export async function addFinisherDrawingMachineAction(machineData) {
     const data = await queries.addFinisherDrawingMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -246,7 +248,7 @@ export async function removeFinisherDrawingMachineAction(machineId) {
     const data = await queries.removeFinisherDrawingMachine(machineId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -255,7 +257,7 @@ export async function bulkUpdateFinisherDrawingMachineMixingAction(machineIds, m
     const data = await queries.bulkUpdateFinisherDrawingMachineMixing(machineIds, mixingValue, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -268,7 +270,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -277,7 +279,7 @@ export async function copyFinisherDrawingFromPreviousDateAction(targetDate, targ
     const data = await queries.copyFinisherDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -286,7 +288,7 @@ export async function getFinisherDrawingAvailableDatesAction(currentDate, shift)
     const data = await queries.getFinisherDrawingAvailableDates(currentDate, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -295,7 +297,7 @@ export async function getSpinningCountOptionsAction() {
     const data = await queries.getSpinningCountOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -304,6 +306,6 @@ export async function lookupFinisherDrawingMachineByNoAction(machineNo) {
     const data = await queries.lookupFinisherDrawingMachineByNo(machineNo)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 const { getAutoconerStoppagePercentageReport } = require('./autoconerStoppagePercentageQueries')
 
 /**
@@ -13,6 +15,6 @@ export async function fetchAutoconerStoppagePercentageReport(fromDate, toDate = 
     return data
   } catch (error) {
     console.error('Error in fetchAutoconerStoppagePercentageReport:', error)
-    return { success: false, error: error.message || 'Failed to fetch report data' }
+    return { success: false, error: safeActionError(error) || 'Failed to fetch report data' }
   }
 }

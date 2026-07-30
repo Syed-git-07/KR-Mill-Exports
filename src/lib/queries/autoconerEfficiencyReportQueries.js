@@ -171,7 +171,7 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
     console.error('Error generating autoconer efficiency report:', error)
     return {
       success: false,
-      message: error.message || 'Failed to generate report'
+      message: 'The report could not be generated. Please try again.'
     }
   }
 }

@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as dateShiftQueries from '@/lib/queries/dateShiftListQueries'
 
@@ -31,6 +33,6 @@ export async function getDateShiftListAction(tableName, fromDate, toDate) {
     const data = await dateShiftQueries.getDateShiftList(tableName, fromDate, toDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

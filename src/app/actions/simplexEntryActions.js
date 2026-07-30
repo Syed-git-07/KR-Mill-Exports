@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/simplexEntryQueries'
 import { resolveSimplexShiftFallbackTime } from '@/lib/simplexFormulaFallback'
@@ -24,7 +26,7 @@ export async function getSimplexShiftConfigAction(shift) {
     const fallbackShiftTime = resolveSimplexShiftFallbackTime(shift)
     return { 
       success: false, 
-      error: error.message,
+      error: safeActionError(error),
       data: {
         shiftTime: fallbackShiftTime,
         defaultStoppage: 0,
@@ -43,7 +45,7 @@ export async function getSimplexProductionHeadersAction() {
     const data = await queries.getSimplexProductionHeaders()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -52,7 +54,7 @@ export async function getSimplexProductionByDateShiftAction(date, shift) {
     const data = await queries.getSimplexProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -62,7 +64,7 @@ export async function getOrCreateSimplexProductionHeaderAction(date, shift, supe
     const data = await queries.getOrCreateSimplexProductionHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -71,7 +73,7 @@ export async function updateSimplexProductionHeaderAction(id, updates) {
     const data = await queries.updateSimplexProductionHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -84,7 +86,7 @@ export async function getSimplexProductionDetailsAction(headerId) {
     const data = await queries.getSimplexProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -93,7 +95,7 @@ export async function getSimplexProductionWithSetupAction(headerId) {
     const data = await queries.getSimplexProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -102,7 +104,7 @@ export async function initializeSimplexProductionDetailsAction(headerId) {
     const data = await queries.initializeSimplexProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -111,7 +113,7 @@ export async function addMissingSimplexProductionDetailsAction(headerId) {
     const data = await queries.addMissingSimplexProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -120,7 +122,7 @@ export async function updateSimplexProductionDetailAction(id, updates) {
     const data = await queries.updateSimplexProductionDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -129,7 +131,7 @@ export async function bulkUpdateSimplexProductionDetailsAction(updates) {
     const data = await queries.bulkUpdateSimplexProductionDetails(updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -142,7 +144,7 @@ export async function getSimplexStoppageEntriesAction(headerId) {
     const data = await queries.getSimplexStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -151,7 +153,7 @@ export async function updateSimplexStoppageEntryAction(id, updates) {
     const data = await queries.updateSimplexStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -160,7 +162,7 @@ export async function applySimplexFullStoppageAction(headerId, stoppageId, stopp
     const data = await queries.applySimplexFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -169,7 +171,7 @@ export async function applySimplexPartialStoppageAction(headerId, fromMachine, t
     const data = await queries.applySimplexPartialStoppage(headerId, fromMachine, toMachine, stoppageId, stoppageTime)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -178,7 +180,7 @@ export async function getSimplexStoppageReasonsAction() {
     const data = await queries.getSimplexStoppageReasons()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -191,7 +193,7 @@ export async function getSimplexMachineSetupsAction(headerId = null) {
     const data = await queries.getSimplexMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -200,7 +202,7 @@ export async function getSimplexMachineSetupByMachineIdAction(machineId) {
     const data = await queries.getSimplexMachineSetupByMachineId(machineId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -209,7 +211,7 @@ export async function updateSimplexMachineSetupAction(id, updates) {
     const data = await queries.updateSimplexMachineSetup(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -218,7 +220,7 @@ export async function upsertSimplexMachineSetupAction(machineId, setupData) {
     const data = await queries.upsertSimplexMachineSetup(machineId, setupData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -231,7 +233,7 @@ export async function getSimplexMachinesAction() {
     const data = await queries.getSimplexMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -244,7 +246,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -253,7 +255,7 @@ export async function getStoppageDetailsAction() {
     const data = await queries.getStoppageDetails()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -262,7 +264,7 @@ export async function getSimplexEmployeesAction() {
     const data = await queries.getSimplexEmployees()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -271,7 +273,7 @@ export async function searchSimplexEmployeesAction(searchTerm) {
     const data = await queries.searchSimplexEmployees(searchTerm)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -296,7 +298,7 @@ export async function bulkUpdateSimplexMachineCountAction(machineIds, countValue
     const data = await queries.bulkUpdateSimplexMachineCount(machineIds, countValue, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -305,7 +307,7 @@ export async function getSimplexCountOptionsAction() {
     const data = await queries.getSimplexCountOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -314,7 +316,7 @@ export async function addSimplexMachineAction(machineData) {
     const data = await queries.addSimplexMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -323,7 +325,7 @@ export async function lookupSimplexMachineByNoAction(machineNo) {
     const data = await queries.lookupSimplexMachineByNo(machineNo)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -332,7 +334,7 @@ export async function removeSimplexMachineAction(machineId) {
     const data = await queries.removeSimplexMachine(machineId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -345,7 +347,7 @@ export async function getSimplexAvailableDatesAction(beforeDate, shift, limit = 
     const data = await queries.getSimplexAvailableDates(beforeDate, shift, limit)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -359,6 +361,6 @@ export async function copySimplexFromYesterdayAction(targetDate, targetShift, ta
     const data = await queries.copySimplexFromYesterday(targetDate, targetShift, targetHeaderId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

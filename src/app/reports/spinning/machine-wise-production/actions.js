@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 const { getSpinningMachineWiseProductionReport } = require('./spinningMachineWiseProductionQueries')
 
 /**
@@ -13,6 +15,6 @@ export async function fetchSpinningMachineWiseProductionReport(fromDate, toDate 
     return { success: true, data }
   } catch (error) {
     console.error('Error in fetchSpinningMachineWiseProductionReport:', error)
-    return { success: false, error: error.message || 'Failed to fetch report data' }
+    return { success: false, error: safeActionError(error) || 'Failed to fetch report data' }
   }
 }

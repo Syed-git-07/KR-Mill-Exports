@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import * as XLSX from 'xlsx'
+import readXlsxFile from 'read-excel-file/browser'
 import { format, parse, isValid } from 'date-fns'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,10 @@ import { bulkCreateHolidaysAction } from '@/app/actions/holiday-list'
 
 function parseDateValue(value) {
   if (!value) return null
+
+  if (value instanceof Date && isValid(value)) {
+    return format(value, 'yyyy-MM-dd')
+  }
   
   // Excel serial number date format (e.g. 45312)
   if (typeof value === 'number') {
@@ -45,6 +49,51 @@ function parseDateValue(value) {
   return null
 }
 
+function csvToRows(text) {
+  const rows = []
+  let row = []
+  let field = ''
+  let quoted = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        field += '"'
+        index += 1
+      } else if (character === '"') {
+        quoted = false
+      } else {
+        field += character
+      }
+    } else if (character === '"') {
+      quoted = true
+    } else if (character === ',') {
+      row.push(field)
+      field = ''
+    } else if (character === '\n') {
+      row.push(field.replace(/\r$/, ''))
+      rows.push(row)
+      row = []
+      field = ''
+    } else {
+      field += character
+    }
+  }
+
+  row.push(field.replace(/\r$/, ''))
+  if (row.some(value => value !== '')) rows.push(row)
+  return rows
+}
+
+function tableRowsToObjects(rows) {
+  if (!rows.length) return []
+  const headers = rows[0].map(value => String(value || '').trim())
+  return rows.slice(1).map(row =>
+    Object.fromEntries(headers.map((header, index) => [header || `Column ${index + 1}`, row[index] ?? '']))
+  )
+}
+
 export default function ImportHolidaysModal({ open, onOpenChange, holidayList, existingHolidays = [], onSuccess }) {
   const [file, setFile] = useState(null)
   const [parsedRows, setParsedRows] = useState([])
@@ -61,92 +110,105 @@ export default function ImportHolidaysModal({ open, onOpenChange, holidayList, e
     onOpenChange(false)
   }
 
-  // Download Sample Excel Template
+  // Download a safe, universally supported CSV template without a spreadsheet
+  // formula or macro surface.
   const handleDownloadTemplate = () => {
-    const templateData = [
-      { Date: '2026-01-15', Description: 'Pongal / Makar Sankranti' },
-      { Date: '2026-01-26', Description: 'Republic Day' },
-      { Date: '2026-05-01', Description: 'May Day' },
-      { Date: '2026-08-15', Description: 'Independence Day' },
-      { Date: '2026-10-20', Description: 'Diwali' },
-    ]
-
-    const worksheet = XLSX.utils.json_to_sheet(templateData)
-    worksheet['!cols'] = [{ wch: 15 }, { wch: 30 }]
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Holidays')
-    XLSX.writeFile(workbook, 'Holiday_Import_Template.xlsx')
+    const csv = [
+      'Date,Description',
+      '2026-01-15,Pongal / Makar Sankranti',
+      '2026-01-26,Republic Day',
+      '2026-05-01,May Day',
+      '2026-08-15,Independence Day',
+      '2026-10-20,Diwali',
+    ].join('\r\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'Holiday_Import_Template.csv'
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   // File Upload Handler
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const selectedFile = e.target.files?.[0]
     if (!selectedFile) return
 
+    const extension = selectedFile.name.split('.').pop()?.toLowerCase()
+    if (!['xlsx', 'csv'].includes(extension)) {
+      toast.error('Only .xlsx and .csv files are accepted')
+      e.target.value = ''
+      return
+    }
+    if (selectedFile.size > 2 * 1024 * 1024) {
+      toast.error('The file is too large. Maximum size is 2 MB.')
+      e.target.value = ''
+      return
+    }
+
     setFile(selectedFile)
 
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result
-        const workbook = XLSX.read(bstr, { type: 'binary' })
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
+    try {
+      const rows = extension === 'csv'
+        ? csvToRows(await selectedFile.text())
+        : await readXlsxFile(selectedFile)
+      const rawJson = tableRowsToObjects(rows.slice(0, 2001))
 
-        if (!rawJson || rawJson.length === 0) {
-          toast.error('The selected file is empty')
-          setParsedRows([])
-          return
+      if (!rawJson || rawJson.length === 0) {
+        toast.error('The selected file is empty')
+        setParsedRows([])
+        return
+      }
+      if (rows.length > 2001) {
+        toast.warning('Only the first 2,000 holiday rows were read.')
+      }
+
+      const existingDateSet = new Set((existingHolidays || []).map(h => String(h.date).split('T')[0]))
+
+      const listStart = holidayList?.startDate ? String(holidayList.startDate).split('T')[0] : null
+      const listEnd = holidayList?.endDate ? String(holidayList.endDate).split('T')[0] : null
+
+      const processed = rawJson.map((row, idx) => {
+        // Flexible key lookup
+        const rawDateKey = Object.keys(row).find(k => /date|day/i.test(k)) || Object.keys(row)[0]
+        const rawDescKey = Object.keys(row).find(k => /desc|name|title|reason/i.test(k)) || Object.keys(row)[1]
+
+        const rawDate = row[rawDateKey]
+        const description = String(row[rawDescKey] || '').trim().slice(0, 200)
+        const parsedDate = parseDateValue(rawDate)
+
+        let status = 'valid'
+        let statusText = 'Ready to import'
+
+        if (!parsedDate) {
+          status = 'invalid'
+          statusText = 'Invalid date format'
+        } else if (!description) {
+          status = 'invalid'
+          statusText = 'Missing description'
+        } else if (listStart && listEnd && (parsedDate < listStart || parsedDate > listEnd)) {
+          status = 'out_of_bounds'
+          statusText = `Outside list range (${listStart} to ${listEnd})`
+        } else if (existingDateSet.has(parsedDate)) {
+          status = 'duplicate'
+          statusText = 'Date already exists in holiday list'
         }
 
-        const existingDateSet = new Set((existingHolidays || []).map(h => String(h.date).split('T')[0]))
+        return {
+          id: idx,
+          date: parsedDate || String(rawDate || '-'),
+          description: description || '-',
+          status,
+          statusText
+        }
+      })
 
-        const listStart = holidayList?.startDate ? String(holidayList.startDate).split('T')[0] : null
-        const listEnd = holidayList?.endDate ? String(holidayList.endDate).split('T')[0] : null
-
-        const processed = rawJson.map((row, idx) => {
-          // Flexible key lookup
-          const rawDateKey = Object.keys(row).find(k => /date|day/i.test(k)) || Object.keys(row)[0]
-          const rawDescKey = Object.keys(row).find(k => /desc|name|title|reason/i.test(k)) || Object.keys(row)[1]
-
-          const rawDate = row[rawDateKey]
-          const description = String(row[rawDescKey] || '').trim()
-          const parsedDate = parseDateValue(rawDate)
-
-          let status = 'valid'
-          let statusText = 'Ready to import'
-
-          if (!parsedDate) {
-            status = 'invalid'
-            statusText = 'Invalid date format'
-          } else if (!description) {
-            status = 'invalid'
-            statusText = 'Missing description'
-          } else if (listStart && listEnd && (parsedDate < listStart || parsedDate > listEnd)) {
-            status = 'out_of_bounds'
-            statusText = `Outside list range (${listStart} to ${listEnd})`
-          } else if (existingDateSet.has(parsedDate)) {
-            status = 'duplicate'
-            statusText = 'Date already exists in holiday list'
-          }
-
-          return {
-            id: idx,
-            date: parsedDate || String(rawDate || '-'),
-            description: description || '-',
-            status,
-            statusText
-          }
-        })
-
-        setParsedRows(processed)
-      } catch (err) {
-        console.error('Error parsing file:', err)
-        toast.error('Failed to parse file. Please upload a valid Excel or CSV file.')
-      }
+      setParsedRows(processed)
+    } catch (err) {
+      console.error('Error parsing file:', err)
+      setParsedRows([])
+      toast.error('Failed to parse file. Please upload a valid .xlsx or .csv file.')
     }
-    reader.readAsBinaryString(selectedFile)
   }
 
   const validRows = parsedRows.filter(r => r.status === 'valid')
@@ -188,7 +250,7 @@ export default function ImportHolidaysModal({ open, onOpenChange, holidayList, e
             Import Holidays from Excel / CSV
           </DialogTitle>
           <DialogDescription>
-            Upload an Excel (.xlsx, .xls) or CSV file to import multiple holidays into <strong>{holidayList?.listName || 'Holiday List'}</strong>.
+            Upload an Excel (.xlsx) or CSV file to import multiple holidays into <strong>{holidayList?.listName || 'Holiday List'}</strong>.
           </DialogDescription>
         </DialogHeader>
 
@@ -208,7 +270,7 @@ export default function ImportHolidaysModal({ open, onOpenChange, holidayList, e
             <input
               type="file"
               id="excel-file-input"
-              accept=".xlsx, .xls, .csv"
+              accept=".xlsx,.csv"
               onChange={handleFileUpload}
               className="hidden"
             />
@@ -217,7 +279,7 @@ export default function ImportHolidaysModal({ open, onOpenChange, holidayList, e
               <div className="font-medium text-sm text-gray-700">
                 {file ? file.name : 'Click to upload or drag Excel / CSV file here'}
               </div>
-              <p className="text-xs text-muted-foreground">Supports .xlsx, .xls, and .csv files</p>
+              <p className="text-xs text-muted-foreground">Supports .xlsx and .csv files up to 2 MB</p>
             </label>
           </div>
 

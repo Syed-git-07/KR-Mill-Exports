@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 const { getAutoconerCountWiseProductionReport } = require('./autoconerCountWiseProductionQueries')
 
 /**
@@ -13,6 +15,6 @@ export async function fetchAutoconerCountWiseProductionReport(fromDate, toDate =
     return { success: true, data }
   } catch (error) {
     console.error('Error in fetchAutoconerCountWiseProductionReport:', error)
-    return { success: false, error: error.message || 'Failed to fetch report data' }
+    return { success: false, error: safeActionError(error) || 'Failed to fetch report data' }
   }
 }
