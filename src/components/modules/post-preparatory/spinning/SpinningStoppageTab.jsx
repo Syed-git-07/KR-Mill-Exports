@@ -589,7 +589,11 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {effectiveTotalTime}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-center font-medium text-green-600 tabular-nums whitespace-nowrap">
+                  <td className={`border border-gray-300 px-2 py-1 text-center font-medium tabular-nums whitespace-nowrap ${
+                    row.gps !== undefined && row.expGps !== undefined && row.gps !== null && row.expGps !== null && row.gps < row.expGps
+                      ? 'text-red-600 bg-red-50'
+                      : 'text-green-600'
+                  }`}>
                     {row.gps?.toFixed(2) || '-'}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center text-purple-600 tabular-nums whitespace-nowrap">
