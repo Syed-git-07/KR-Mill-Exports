@@ -42,6 +42,10 @@ export function NumberInput({ value, onChange, onBlur, className, zeroAsEmpty, f
       {...props}
       className={className}
       value={display}
+      onWheel={(e) => {
+        e.target.blur()
+        props.onWheel?.(e)
+      }}
       onFocus={(e) => {
         isFocused.current = true
         // Select all text so typing immediately replaces the existing value
