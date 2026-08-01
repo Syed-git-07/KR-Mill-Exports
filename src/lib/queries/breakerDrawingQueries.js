@@ -841,15 +841,26 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
   });
   const machineSpeedMap = {};
+  const machineSetupOverridesMap = {};
   machines.forEach(m => {
     machineSpeedMap[m.id] = m.speed;
+    const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+    machineSetupOverridesMap[m.id] = {
+      ...(m.speed != null && { speed: m.speed }),
+      ...(m.delivery != null && { delivery: m.delivery }),
+      ...(m.sliver_hank != null && { hank_constant: m.sliver_hank }),
+      ...(Number.isFinite(rawEfficiency) && {
+        std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+      })
+    };
   });
   const setups = await getOrCreateDateScopedSetups({
     setupModel: prisma.breaker_drawing_machine_setup,
     headerModel: prisma.breaker_drawing_production_header,
     headerId: validHeaderId,
     machineIds: machines.map(machine => machine.id),
-    machineSpeedMap
+    machineSpeedMap,
+    machineSetupOverridesMap
   });
   const headerDetails = validHeaderId
     ? await prisma.breaker_drawing_production_detail.findMany({
@@ -902,19 +913,26 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
     }
   });
 
-  const speedToUse = updates.speed !== undefined ? Number(updates.speed) : (currentSetup?.speed || 750);
+  const speedToUse = updates.speed !== undefined ? Number(updates.speed) : (currentSetup?.speed ?? 750);
 
   // Recalculate std_prodn if parameters change
-  if (updates.speed || updates.hank_constant || updates.std_efficiency_factor || updates.shift_time || updates.delivery) {
+  if (
+    updates.speed !== undefined ||
+    updates.hank_constant !== undefined ||
+    updates.std_efficiency_factor !== undefined ||
+    updates.shift_time !== undefined ||
+    updates.delivery !== undefined ||
+    updates.divisor_constant !== undefined
+  ) {
     const mergedSetup = {
       ...currentSetup,
       ...updates,
       speed: speedToUse
     }
-    const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(mergedSetup, speedToUse)
-    const shiftTime = Number(updates.shift_time || currentSetup?.shift_time || 0);
-
-    updates.std_prodn = Math.round((speed / divisorConstant / hankConstant) * shiftTime * stdEfficiencyFactor * delivery * 100) / 100;
+    const shiftTime = Number(updates.shift_time ?? currentSetup?.shift_time ?? 0);
+    updates.std_prodn = Math.round(
+      calculateBreakerDrawingStdProdn(mergedSetup, shiftTime, speedToUse) * 100
+    ) / 100;
   }
 
   const data = await prisma.breaker_drawing_machine_setup.update({
@@ -1129,7 +1147,7 @@ export async function addBreakerDrawingMachine(machineData) {
           make_name: machineData.make_name || 'LMW',
           model: machineData.model || null,
           prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
-          speed: machineData.speed || BREAKER_DRAWING_FORMULA_FALLBACK.speed,
+          speed: resolveBreakerDrawingFormulaInputs(machineData).speed,
           installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
           activated_at: new Date(),
           deactivated_at: null,
@@ -1148,7 +1166,7 @@ export async function addBreakerDrawingMachine(machineData) {
       const stdEffi = formulaInputs.stdEfficiencyFactor;
       const divisor = formulaInputs.divisorConstant;
       const delivery = formulaInputs.delivery;
-      const stdProdn = (speed / divisor / hankConstant) * shiftTime * stdEffi * delivery;
+      const stdProdn = calculateBreakerDrawingStdProdn(machineData, shiftTime, speed);
 
       let setup = existingSetup;
       if (existingSetup) {
@@ -1210,7 +1228,7 @@ export async function addBreakerDrawingMachine(machineData) {
           default_waste: null,
           default_stoppage: null,
           delivery,
-          std_prodn: (speed / divisor / hankConstant) * shiftTime * stdEffi * delivery
+          std_prodn: calculateBreakerDrawingStdProdn(machineData, shiftTime, speed)
         }
       });
       return { machine: existingMachine, setup: newSetup, reactivated: false, syncedHeaders: 0 };
@@ -1235,7 +1253,7 @@ export async function addBreakerDrawingMachine(machineData) {
       make_name: machineData.make_name || 'LMW',
       model: machineData.model || null,
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
-      speed: machineData.speed || BREAKER_DRAWING_FORMULA_FALLBACK.speed,
+      speed: resolveBreakerDrawingFormulaInputs(machineData).speed,
       installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
       is_active: true
     }

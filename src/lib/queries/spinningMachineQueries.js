@@ -1,5 +1,31 @@
 import { prisma } from '../prisma';
 
+const SPINNING_DEFAULT_SETUP_DATE = new Date('2026-04-01T00:00:00.000Z');
+
+async function upsertDefaultSpinningSetup(machineId, setupFields) {
+  const data = Object.fromEntries(
+    Object.entries(setupFields).filter(([, value]) => value !== undefined)
+  );
+  if (Object.keys(data).length === 0) return null;
+
+  return prisma.spinning_machine_setup.upsert({
+    where: {
+      idx_spinning_machine_setup_date: {
+        machine_id: machineId,
+        entry_date: SPINNING_DEFAULT_SETUP_DATE,
+        shift: 1,
+      }
+    },
+    update: data,
+    create: {
+      machine_id: machineId,
+      entry_date: SPINNING_DEFAULT_SETUP_DATE,
+      shift: 1,
+      ...data,
+    }
+  });
+}
+
 /**
  * Spinning Machine Master CRUD Operations
  */
@@ -67,6 +93,13 @@ export async function createSpinningMachine(machineData) {
             deactivated_at: null,
           }
         });
+        await upsertDefaultSpinningSetup(reactivated.id, {
+          speed,
+          count_name,
+          act_count,
+          tpi,
+          allocated_spindles: processedData.allocated_spindles,
+        });
         return reactivated;
       } else {
         throw new Error(`Machine ${processedData.machine_no} already exists and is active`);
@@ -81,8 +114,15 @@ export async function createSpinningMachine(machineData) {
       data: { ...processedData, activated_at: new Date(), sort_order: nextSortOrder }
     });
 
-    // NOTE: Machine setup records are NOT created here.
-    // They are only created when the machine is explicitly added via the Machine Setup tab.
+    // Keep the baseline setup in sync with the master. New dated entries clone
+    // this row and then refresh count-controlled values from the counts master.
+    await upsertDefaultSpinningSetup(machine.id, {
+      speed,
+      count_name,
+      act_count,
+      tpi,
+      allocated_spindles: processedData.allocated_spindles,
+    });
 
     return machine;
   } catch (error) {
@@ -111,23 +151,15 @@ export async function updateSpinningMachine(id, machineData) {
     }
   });
 
-  // Update the setup row (count/tpi/speed/act_count) if any are provided
-  const setupUpdate = {};
-  if (speed !== undefined) setupUpdate.speed = speed;
-  if (count_name !== undefined) setupUpdate.count_name = count_name;
-  if (act_count !== undefined) setupUpdate.act_count = act_count;
-  if (tpi !== undefined) setupUpdate.tpi = tpi;
-
-  if (Object.keys(setupUpdate).length > 0) {
-    await prisma.spinning_machine_setup.updateMany({
-      where: { 
-        machine_id: id,
-        entry_date: new Date('2026-04-01'),
-        shift: 1
-      },
-      data: setupUpdate
-    });
-  }
+  // Update or create the baseline setup so master speed/TPI/count/spindles are
+  // the source for newly-created dated entries. Explicit zero is valid.
+  await upsertDefaultSpinningSetup(id, {
+    speed,
+    count_name,
+    act_count,
+    tpi,
+    allocated_spindles: processedData.allocated_spindles,
+  });
 
   return data;
 }
@@ -150,7 +182,7 @@ export async function getSpinningMachineWithSetup(id) {
     count_name: setup?.count_name || null,
     act_count: setup?.act_count != null ? parseFloat(setup.act_count) : null,
     tpi: setup?.tpi != null ? parseFloat(setup.tpi) : null,
-    speed: setup?.speed || null,
+    speed: setup?.speed ?? null,
   };
 }
 

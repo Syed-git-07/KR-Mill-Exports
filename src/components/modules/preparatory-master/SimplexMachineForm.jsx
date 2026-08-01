@@ -126,10 +126,10 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
       make_name: initialData?.make_name || '',
       model: initialData?.model || '',
       count_name: initialData?.prodn_mixing || '',
-      speed: initialData?.speed || '',
-      prodn_effi: initialData?.prodn_efficiency || '',
-      tpi: initialData?.tpi || '',               // NEW
-      no_of_spindles: initialData?.no_of_spindles || '',  // NEW
+      speed: initialData?.speed ?? '',
+      prodn_effi: initialData?.prodn_efficiency ?? '',
+      tpi: initialData?.tpi ?? '',               // NEW
+      no_of_spindles: initialData?.no_of_spindles ?? '',  // NEW
       installed_date: formatDateForInput(initialData?.installed_date),
       is_active: initialData?.is_active ?? true,
       direct_hank_entry: initialData?.direct_hank_entry ?? false,
@@ -156,10 +156,10 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
         make_name: initialData.make_name || '',
         model: initialData.model || '',
         count_name: countVal,
-        speed: initialData.speed || '',
-        prodn_effi: initialData.prodn_efficiency || '',
-        tpi: initialData.tpi || '',               // NEW
-        no_of_spindles: initialData.no_of_spindles || '',  // NEW
+        speed: initialData.speed ?? '',
+        prodn_effi: initialData.prodn_efficiency ?? '',
+        tpi: initialData.tpi ?? '',               // NEW
+        no_of_spindles: initialData.no_of_spindles ?? '',  // NEW
         installed_date: formatDateForInput(initialData.installed_date),
         is_active: initialData.is_active ?? true,
         direct_hank_entry: initialData.direct_hank_entry ?? false,
@@ -364,7 +364,7 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
       make_name: data.make_name || null,
       model: data.model || null,
       prodn_mixing: data.count_name || null,
-      count_tpi: resolveCountOption(data.count_name)?.tpi || null,
+      count_tpi: resolveCountOption(data.count_name)?.tpi ?? null,
     };
     onSubmit(cleanedData);
   };

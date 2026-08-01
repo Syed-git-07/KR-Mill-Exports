@@ -394,7 +394,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         speed: newMachine.speed,
         prodn_effi: newMachine.prodn_effi,
         tpi: selectedCountTpi ?? newMachine.tpi,
-        count_tpi: (countOptions.find(c => c.count_name === newMachine.prodn_mixing)?.tpi) || null,
+        count_tpi: countOptions.find(c => c.count_name === newMachine.prodn_mixing)?.tpi ?? null,
         no_of_spindles: newMachine.no_of_spindles,
         session_no: 1,
         cc_time: 0,

@@ -15,7 +15,7 @@ const spinningMachineSchema = z.object({
   description: z.string().min(1, 'Description is required'),
   make_name: z.string().default('LMW'),
   model: z.string().optional().nullable(),
-  allocated_spindles: z.number().min(1, 'Allocated Spindles count is required').default(1104),
+  allocated_spindles: z.number().min(0, 'Allocated Spindles cannot be negative').default(1104),
   installed_date: z.string().optional(),
   is_active: z.boolean().default(true),
   production_kgs_manual_entry: z.boolean().default(false),
@@ -106,10 +106,10 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       ...data,
       allocated_spindles: parseInt(data.allocated_spindles),
       model: data.model || null,
-      speed: data.speed || null,
+      speed: data.speed ?? null,
       count_name: data.count_name || null,
-      act_count: data.act_count || null,
-      tpi: data.tpi || null,
+      act_count: data.act_count ?? null,
+      tpi: data.tpi ?? null,
     };
     
     await onSubmit(formattedData);

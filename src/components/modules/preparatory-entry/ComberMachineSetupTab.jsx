@@ -535,7 +535,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
-                    {row.machine?.speed || 350}
+                    {row.machine?.speed ?? 350}
                   </td>
                   <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="session_no">
                     <NumberInput

@@ -318,12 +318,6 @@ export default function TPIEntryMaster() {
         onOpenChange={setIsModalOpen}
         title="TPI Entry Master"
         description={isEditing ? "Update TPI entry details" : "Add a new TPI entry"}
-        onSave={() => {
-          const form = document.querySelector('form')
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingEntry(null);

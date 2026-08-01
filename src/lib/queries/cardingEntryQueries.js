@@ -1055,16 +1055,25 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         const { id, created_at, updated_at, ...rest } = s
         const machine = activeMachines.find(m => m.id === s.machine_id)
         const defaultSpeed = machine ? (machine.speed ?? rest.speed) : rest.speed
+        const machineEfficiency = machine?.prodn_efficiency == null
+          ? null
+          : Number(machine.prodn_efficiency)
+        const stdEfficiencyFactor = Number.isFinite(machineEfficiency)
+          ? (machineEfficiency > 1 ? machineEfficiency / 100 : machineEfficiency)
+          : rest.std_efficiency_factor
+        const hankConstant = machine?.hank_constant ?? rest.hank_constant
         const fallbackStdProdn = calculateCardingStdProdn({
           speed: defaultSpeed,
           divisor_constant: rest.divisor_constant ?? 1693,
-          hank_constant: rest.hank_constant,
-          std_efficiency_factor: rest.std_efficiency_factor
+          hank_constant: hankConstant,
+          std_efficiency_factor: stdEfficiencyFactor
         }, targetShiftTime)
 
         return {
           ...rest,
           speed: defaultSpeed,
+          hank_constant: hankConstant,
+          std_efficiency_factor: stdEfficiencyFactor,
           entry_date: dateObj,
           shift: shiftNum,
           shift_time: targetShiftTime,

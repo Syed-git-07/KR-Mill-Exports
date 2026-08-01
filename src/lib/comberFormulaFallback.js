@@ -9,11 +9,10 @@ export const COMBER_FORMULA_FALLBACK = {
 }
 
 const toNumber = (value) => {
-  if (value === null || value === undefined) return 0
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') return Number.parseFloat(value) || 0
-  if (typeof value === 'object' && value.toString) return Number.parseFloat(value.toString()) || 0
-  return 0
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const parsed = Number.parseFloat(value?.toString?.() ?? String(value))
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export function calculateComberConstantFromSlHank(slHank) {
@@ -25,14 +24,14 @@ export function calculateComberConstantFromSlHank(slHank) {
 // Supports both legacy percent inputs (e.g. 93) and factor inputs (e.g. 0.93).
 export function resolveComberMcEffiFactor(value) {
   const n = toNumber(value)
-  if (n <= 0) return COMBER_FORMULA_FALLBACK.mcEffiFactor
+  if (n === null) return COMBER_FORMULA_FALLBACK.mcEffiFactor
   return n > 1 ? (n / 100) : n
 }
 
 export function resolveComberFormulaInputs(setup = {}, machine = null) {
   const slHank =
-    toNumber(setup?.sl_hank) ||
-    toNumber(machine?.sliver_hank) ||
+    toNumber(setup?.sl_hank) ??
+    toNumber(machine?.sliver_hank) ??
     COMBER_FORMULA_FALLBACK.slHank
 
   const mcEffiFactor = resolveComberMcEffiFactor(

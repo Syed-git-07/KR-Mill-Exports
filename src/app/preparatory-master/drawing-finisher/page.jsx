@@ -381,12 +381,6 @@ export default function DrawingFinisherPage() {
         onOpenChange={setIsModalOpen}
         title="Draw Frame Finisher M/c Master"
         description={isEditing ? "Modify machine make details" : "Add new machine make details"}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setSelectedMachine(null);

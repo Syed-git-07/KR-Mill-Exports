@@ -38,7 +38,7 @@ export async function fetchSpinningAbstractSummary(reportDate) {
       countSummary[countName] = {
         countName,
         conv40sValue: Number(row.conv_40s_value) || 0,
-        allocatedSpindles: Number(row.allocated_spindles) || 1104,
+        allocatedSpindles: Number(row.allocated_spindles ?? 1104),
         machines: new Set(),
         shifts: {
           1: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, stoppageMins: 0, runTime: 510 },

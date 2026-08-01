@@ -250,12 +250,6 @@ export default function StoppageDetailPage() {
         onOpenChange={setIsModalOpen}
         title="Stoppage Detail Master"
         description={isEditing ? "Modify stoppage detail information" : "Add new stoppage detail"}
-        onSave={() => {
-          const form = document.querySelector('form')
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-          }
-        }}
         onCancel={() => setIsModalOpen(false)}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

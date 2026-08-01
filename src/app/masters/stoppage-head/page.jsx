@@ -239,12 +239,6 @@ export default function StoppageHeadMaster() {
         onOpenChange={setIsModalOpen}
         title="Stoppage Head Master"
         description={isEditing ? "Modify stoppage head details" : "Add new stoppage head"}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => setIsModalOpen(false)}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

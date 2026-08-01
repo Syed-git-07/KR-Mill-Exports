@@ -1107,15 +1107,24 @@ export async function getLapFormerMachineSetups(headerId = null) {
 
   const machineIds = machines.map(m => m.id);
   const machineSpeedMap = {};
+  const machineSetupOverridesMap = {};
   machines.forEach(m => {
     machineSpeedMap[m.id] = m.speed;
+    const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+    machineSetupOverridesMap[m.id] = {
+      ...(m.speed != null && { speed: m.speed }),
+      ...(Number.isFinite(rawEfficiency) && {
+        std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+      })
+    };
   });
   const data = await getOrCreateDateScopedSetups({
     setupModel: prisma.lap_former_machine_setup,
     headerModel: prisma.lap_former_production_header,
     headerId: validHeaderId,
     machineIds,
-    machineSpeedMap
+    machineSpeedMap,
+    machineSetupOverridesMap
   });
 
   const machineMap = {};
@@ -1477,7 +1486,10 @@ export async function addLapFormerMachine(machineData) {
               ? new Date(machineData.installed_date)
               : existingMachine.installed_date,
             prodn_mixing: machineData.prodn_mixing || existingMachine.prodn_mixing || '64COMBED GOLD',
-            speed: machineData.speed || existingMachine.speed || LAP_FORMER_FORMULA_FALLBACK.speed,
+            speed: resolveLapFormerFormulaInputs(
+              { speed: machineData.speed === '' || machineData.speed == null ? existingMachine.speed : machineData.speed },
+              existingMachine.speed
+            ).speed,
             prodn_efficiency: machineData.prodn_effi ?? existingMachine.prodn_efficiency
           }
         });
@@ -1560,7 +1572,7 @@ export async function addLapFormerMachine(machineData) {
       make_name: machineData.make_name || 'LMW',
       model: machineData.model || null,
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
-      speed: machineData.speed || LAP_FORMER_FORMULA_FALLBACK.speed,
+      speed: resolveLapFormerFormulaInputs(machineData, machineData.speed).speed,
       prodn_efficiency: machineData.prodn_effi ?? null,
       installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
       is_active: true,

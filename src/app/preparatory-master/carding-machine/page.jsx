@@ -358,12 +358,6 @@ export default function CardingMachinePage() {
         onOpenChange={setIsModalOpen}
         title="Carding Machine"
         description={editingMachine ? "Modify machine make details" : "Add new machine make details"}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingMachine(null);

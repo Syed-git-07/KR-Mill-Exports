@@ -906,11 +906,27 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
           shift: latestPreviousSetup.shift
         }
       })
+
+      const countIds = [...new Set(prevSetups.map(s => s.count_id).filter(Boolean))]
+      const countNames = [...new Set(prevSetups.map(s => s.count_name).filter(Boolean))]
+      const currentCounts = await prisma.spinning_counts.findMany({
+        where: {
+          is_active: true,
+          OR: [
+            ...(countIds.length ? [{ id: { in: countIds } }] : []),
+            ...(countNames.length ? [{ count_name: { in: countNames } }] : [])
+          ]
+        }
+      })
+      const countById = new Map(currentCounts.map(count => [count.id, count]))
+      const countByName = new Map(currentCounts.map(count => [count.count_name, count]))
       
       const cloneData = prevSetups.map(s => {
         const { id, created_at, updated_at, ...rest } = s
+        const currentCount = countById.get(s.count_id) || countByName.get(s.count_name)
         return {
           ...rest,
+          ...(currentCount?.act_count != null && { act_count: currentCount.act_count }),
           entry_date: dateObj,
           shift: shiftNum,
           run_time: targetShiftTime
@@ -946,7 +962,7 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
         shift: shiftNum,
         count_name: m.count || '',
         count_id: matchedCount?.id || null,
-        act_count: matchedCount?.act_count || 69.50,
+        act_count: matchedCount?.act_count ?? 69.50,
         session_no: 1,
         run_time: targetShiftTime
       }

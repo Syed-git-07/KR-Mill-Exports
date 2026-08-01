@@ -364,12 +364,6 @@ export default function ComberMachinePage() {
         onOpenChange={setIsModalOpen}
         title="Comber M/c Master"
         description={editingMachine ? "Modify comber machine details" : "Add new comber machine details"}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingMachine(null);

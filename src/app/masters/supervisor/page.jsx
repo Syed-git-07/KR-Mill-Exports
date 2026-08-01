@@ -282,12 +282,6 @@ export default function SupervisorMaster() {
         onOpenChange={setIsModalOpen}
         title="Supervisor Master"
         description={isEditing ? 'To Add, Modify, Supervisor details.' : 'Add a new supervisor to the system'}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setIsEditing(false);

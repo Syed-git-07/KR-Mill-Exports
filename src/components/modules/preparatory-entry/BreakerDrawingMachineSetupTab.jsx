@@ -553,7 +553,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
                   <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="delivery">
                     <NumberInput
                       type="number"
-                      value={toNumber(row.delivery) || 1}
+                      value={row.delivery == null || row.delivery === '' ? 1 : toNumber(row.delivery)}
                       onChange={(e) => handleInputChange(row.id, 'delivery', e.target.value)}
                       data-row={index}
                       data-col="delivery"

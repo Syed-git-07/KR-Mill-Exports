@@ -367,12 +367,6 @@ export default function LapFormerPage() {
         onOpenChange={setIsModalOpen}
         title="Lap Former M/C Master"
         description={editingMachine ? "Modify machine make details" : "Add new machine make details"}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingMachine(null);

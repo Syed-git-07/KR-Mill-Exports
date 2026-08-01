@@ -34,6 +34,12 @@ const spinningCountSchema = z.object({
   sliver_hank: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val)))
 })
 
+const optionalNumber = value => (
+  value === null || value === undefined || value === '' || Number.isNaN(value)
+    ? null
+    : Number(value)
+)
+
 export default function SpinningCountForm({ initialData, onSubmit }) {
   const {
     register,
@@ -86,24 +92,24 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       act_count: Number(data.act_count),
       mixing_name: data.mixing_name || null,
       fibre: data.fibre || null,
-      conv_40s_value: data.conv_40s_value ? Number(data.conv_40s_value) : null,
-      ukg: data.ukg ? Number(data.ukg) : null,
-      effi_exp_hank: data.effi_exp_hank ? Number(data.effi_exp_hank) : null,
-      effi_exp_prodn: data.effi_exp_prodn ? Number(data.effi_exp_prodn) : null,
+      conv_40s_value: optionalNumber(data.conv_40s_value),
+      ukg: optionalNumber(data.ukg),
+      effi_exp_hank: optionalNumber(data.effi_exp_hank),
+      effi_exp_prodn: optionalNumber(data.effi_exp_prodn),
       is_running_now: Boolean(data.is_running_now),
       autoconer_active: Boolean(data.autoconer_active),
-      sitra_conv_value: data.sitra_conv_value ? Number(data.sitra_conv_value) : null,
-      cone_weight: data.cone_weight ? Number(data.cone_weight) : null,
-      effi_actual_prodn: data.act_effi !== null && data.act_effi !== undefined && data.act_effi !== '' ? Number(data.act_effi) : null,
-      tpi: data.tpi || null,
-      speed: data.speed || null,
-      speed_autoconer: data.speed_autoconer ? Number(data.speed_autoconer) : null,
+      sitra_conv_value: optionalNumber(data.sitra_conv_value),
+      cone_weight: optionalNumber(data.cone_weight),
+      effi_actual_prodn: optionalNumber(data.act_effi),
+      tpi: data.tpi === '' ? null : data.tpi,
+      speed: data.speed === '' ? null : data.speed,
+      speed_autoconer: optionalNumber(data.speed_autoconer),
       tw_con: data.tw_con || null,
-      waste_percent: data.waste_percent ? Number(data.waste_percent) : null,
-      doff_loss: data.doff_loss ? Number(data.doff_loss) : null,
-      auto_effi: data.auto_effi ? Number(data.auto_effi) : null,
-      hok_cons: data.hok_cons ? Number(data.hok_cons) : null,
-      sliver_hank: data.sliver_hank ? Number(data.sliver_hank) : null
+      waste_percent: optionalNumber(data.waste_percent),
+      doff_loss: optionalNumber(data.doff_loss),
+      auto_effi: optionalNumber(data.auto_effi),
+      hok_cons: optionalNumber(data.hok_cons),
+      sliver_hank: optionalNumber(data.sliver_hank)
     }
     
     console.log('Transformed data:', transformedData)

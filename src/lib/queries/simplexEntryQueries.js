@@ -12,6 +12,15 @@ function parseCountTpi(tpiValue) {
   return Number.isNaN(parsed) ? null : parsed
 }
 
+function firstFiniteNumber(values, fallback) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
 function isSimplexMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
   if (machine.activated_at && new Date(machine.activated_at) > entryDate) return false
@@ -711,11 +720,11 @@ export async function updateSimplexStoppageEntry(id, updates) {
 
     const calculated = calculateSimplexProductionValues({
       runHrs: productionDetail.run_hrs || 0,
-      speed: setup?.speed || machine?.speed || 960,
-      tpi: setup?.tpi || machine?.tpi || 1.73,
-      hank: setup?.sl_hank || 1.4,
-      mcEffi: setup?.mc_effi || machine?.mc_effi || 92,
-      totalSpindles: setup?.spindles || machine?.no_of_spindles || 140,
+      speed: firstFiniteNumber([setup?.speed, machine?.speed], 960),
+      tpi: firstFiniteNumber([setup?.tpi, machine?.tpi], 1.73),
+      hank: firstFiniteNumber([setup?.sl_hank], 1.4),
+      mcEffi: firstFiniteNumber([setup?.mc_effi, machine?.mc_effi], 92),
+      totalSpindles: firstFiniteNumber([setup?.spindles, machine?.no_of_spindles], 140),
       idleSpindles: productionDetail.idle_spindles || 0,
       waste: productionDetail.waste ?? 0,
       totalTime,
@@ -797,11 +806,11 @@ export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTim
     // Recalculate with Simplex formula
     const calculated = calculateSimplexProductionValues({
       runHrs: prodDetail.run_hrs || 0,
-      speed: machine.speed || setup?.speed || 960,
-      tpi: setup?.tpi || machine.tpi || 1.73,
-      hank: setup?.sl_hank || 1.4,
-      mcEffi: machine.mc_effi || setup?.mc_effi || 92,
-      totalSpindles: setup?.spindles || machine.no_of_spindles || 140,
+      speed: firstFiniteNumber([setup?.speed, machine.speed], 960),
+      tpi: firstFiniteNumber([setup?.tpi, machine.tpi], 1.73),
+      hank: firstFiniteNumber([setup?.sl_hank], 1.4),
+      mcEffi: firstFiniteNumber([setup?.mc_effi, machine.mc_effi], 92),
+      totalSpindles: firstFiniteNumber([setup?.spindles, machine.no_of_spindles], 140),
       idleSpindles: prodDetail.idle_spindles || 0,
       waste: prodDetail.waste ?? 0,
       totalTime: headerTotalTime,
@@ -943,11 +952,11 @@ export async function applySimplexPartialStoppage(headerId, fromMachineNo, toMac
       // Recalculate with Simplex formula
       const calculated = calculateSimplexProductionValues({
         runHrs: prodDetail.run_hrs || 0,
-        speed: machine.speed || setup?.speed || 960,
-        tpi: setup?.tpi || machine.tpi || 1.73,
-        hank: setup?.sl_hank || 1.4,
-        mcEffi: machine.mc_effi || setup?.mc_effi || 92,
-        totalSpindles: setup?.spindles || machine.no_of_spindles || 140,
+        speed: firstFiniteNumber([setup?.speed, machine.speed], 960),
+        tpi: firstFiniteNumber([setup?.tpi, machine.tpi], 1.73),
+        hank: firstFiniteNumber([setup?.sl_hank], 1.4),
+        mcEffi: firstFiniteNumber([setup?.mc_effi, machine.mc_effi], 92),
+        totalSpindles: firstFiniteNumber([setup?.spindles, machine.no_of_spindles], 140),
         idleSpindles: prodDetail.idle_spindles || 0,
         waste: prodDetail.waste ?? 0,
         totalTime: headerTotalTime,
@@ -979,15 +988,23 @@ export async function getSimplexMachineSetups(headerId = null) {
       select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true }
     })
     const machineSpeedMap = {};
+    const machineSetupOverridesMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
+      machineSetupOverridesMap[m.id] = {
+        ...(m.speed != null && { speed: m.speed }),
+        ...(m.tpi != null && { tpi: m.tpi }),
+        ...(m.mc_effi != null && { mc_effi: m.mc_effi }),
+        ...(m.no_of_spindles != null && { spindles: m.no_of_spindles })
+      };
     });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.simplex_machine_setup,
       headerModel: prisma.simplex_production_header,
       headerId: validHeaderId,
       machineIds: machines.map(machine => machine.id),
-      machineSpeedMap
+      machineSpeedMap,
+      machineSetupOverridesMap
     })
     const headerDetails = validHeaderId
       ? await prisma.simplex_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
@@ -1406,10 +1423,10 @@ export async function addSimplexMachine(machineData) {
               model: machineData.model || existingMachine.model || null,
               prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
               installed_date: machineData.installed_date ? new Date(machineData.installed_date) : existingMachine.installed_date,
-              speed: parseInt(machineData.speed) || existingMachine.speed,
+              speed: firstFiniteNumber([machineData.speed, existingMachine.speed], 960),
               prodn_efficiency: machineData.prodn_effi != null ? parseFloat(machineData.prodn_effi) : existingMachine.prodn_efficiency,
               tpi: effectiveTpi ?? existingMachine.tpi,
-              no_of_spindles: parseInt(machineData.no_of_spindles ?? machineData.spindles) || existingMachine.no_of_spindles
+              no_of_spindles: firstFiniteNumber([machineData.no_of_spindles, machineData.spindles, existingMachine.no_of_spindles], 140)
             }
           })
 
@@ -1423,10 +1440,10 @@ export async function addSimplexMachine(machineData) {
                 prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
                 session_no: parseInt(machineData.session_no) || 1,
                 cc_time: parseInt(machineData.cc_time) || 0,
-                sl_hank: parseFloat(machineData.sl_hank) || 1.4,
-                mc_effi: parseInt(machineData.mc_effi) || existingMachine.mc_effi || 92,
+                sl_hank: firstFiniteNumber([machineData.sl_hank], 1.4),
+                mc_effi: firstFiniteNumber([machineData.mc_effi, existingMachine.mc_effi], 92),
                 tpi: effectiveTpi ?? existingMachine.tpi ?? 1.73,
-                spindles: parseInt(machineData.no_of_spindles ?? machineData.spindles) || existingMachine.no_of_spindles || 140,
+                spindles: firstFiniteNumber([machineData.no_of_spindles, machineData.spindles, existingMachine.no_of_spindles], 140),
                 shift_time: defaultSetupShiftTime,
                 default_waste: machineData.default_waste != null && machineData.default_waste !== ''
                   ? parseFloat(machineData.default_waste)
@@ -1448,10 +1465,10 @@ export async function addSimplexMachine(machineData) {
             prodn_mixing: machineData.prodn_mixing || existingMachine.prodn_mixing || '64COMBED GOLD',
             session_no: parseInt(machineData.session_no) || 1,
             cc_time: parseInt(machineData.cc_time) || 0,
-            sl_hank: parseFloat(machineData.sl_hank) || 1.4,
-            mc_effi: parseInt(machineData.mc_effi) || existingMachine.mc_effi || 92,
+            sl_hank: firstFiniteNumber([machineData.sl_hank], 1.4),
+            mc_effi: firstFiniteNumber([machineData.mc_effi, existingMachine.mc_effi], 92),
             tpi: effectiveTpi ?? existingMachine.tpi ?? 1.73,
-            spindles: parseInt(machineData.no_of_spindles ?? machineData.spindles) || existingMachine.no_of_spindles || 140,
+            spindles: firstFiniteNumber([machineData.no_of_spindles, machineData.spindles, existingMachine.no_of_spindles], 140),
             shift_time: defaultSetupShiftTime,
             default_waste: machineData.default_waste != null && machineData.default_waste !== ''
               ? parseFloat(machineData.default_waste)
@@ -1475,11 +1492,11 @@ export async function addSimplexMachine(machineData) {
         model: machineData.model || null,
         prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
         installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
-        speed: parseInt(machineData.speed) || 1000,
+        speed: firstFiniteNumber([machineData.speed], 1000),
         prodn_efficiency: machineData.prodn_effi != null ? parseFloat(machineData.prodn_effi) : null,
-        mc_effi: parseInt(machineData.mc_effi) || 92,
+        mc_effi: firstFiniteNumber([machineData.mc_effi], 92),
         tpi: effectiveTpi ?? 1.73,
-        no_of_spindles: parseInt(machineData.no_of_spindles ?? machineData.spindles) || 140,
+        no_of_spindles: firstFiniteNumber([machineData.no_of_spindles, machineData.spindles], 140),
         is_active: true,
         activated_at: new Date(),
         sort_order: nextSortOrder
@@ -1493,10 +1510,10 @@ export async function addSimplexMachine(machineData) {
         prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
         session_no: parseInt(machineData.session_no) || 1,
         cc_time: parseInt(machineData.cc_time) || 0,
-        sl_hank: parseFloat(machineData.sl_hank) || 1.4,
-        mc_effi: parseInt(machineData.mc_effi) || 92,
+        sl_hank: firstFiniteNumber([machineData.sl_hank], 1.4),
+        mc_effi: firstFiniteNumber([machineData.mc_effi], 92),
         tpi: effectiveTpi ?? 1.73,
-        spindles: parseInt(machineData.no_of_spindles ?? machineData.spindles) || 140,
+        spindles: firstFiniteNumber([machineData.no_of_spindles, machineData.spindles], 140),
         shift_time: defaultSetupShiftTime,
         default_waste: machineData.default_waste != null && machineData.default_waste !== ''
           ? parseFloat(machineData.default_waste)

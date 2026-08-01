@@ -12,21 +12,20 @@ export const FINISHER_DRAWING_FORMULA_FALLBACK = {
 }
 
 const toNumber = (value) => {
-  if (value === null || value === undefined) return 0
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') return Number.parseFloat(value) || 0
-  if (typeof value === 'object' && value.toString) return Number.parseFloat(value.toString()) || 0
-  return 0
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const parsed = Number.parseFloat(value?.toString?.() ?? String(value))
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export function resolveFinisherDrawingFormulaInputs(setup = {}, machineSpeed = null) {
   // A dated setup is the source of truth for entry pages. Machine master speed
   // is only a fallback when that date/shift has no setup speed.
-  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || FINISHER_DRAWING_FORMULA_FALLBACK.speed
-  const hankConstant = toNumber(setup?.hank_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
-  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
-  const divisorConstant = toNumber(setup?.divisor_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant
-  const delivery = toNumber(setup?.delivery) || FINISHER_DRAWING_FORMULA_FALLBACK.delivery
+  const speed = toNumber(setup?.speed) ?? toNumber(machineSpeed) ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
+  const hankConstant = toNumber(setup?.hank_constant) ?? FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
+  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) ?? FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
+  const divisorConstant = toNumber(setup?.divisor_constant) ?? FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant
+  const delivery = toNumber(setup?.delivery) ?? FINISHER_DRAWING_FORMULA_FALLBACK.delivery
 
   return {
     speed,
