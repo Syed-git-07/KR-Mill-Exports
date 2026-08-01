@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/drawingBreakerQueries'
 
@@ -8,7 +10,7 @@ export async function getDrawingBreakerMachinesAction() {
     const data = await queries.getDrawingBreakerMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -17,7 +19,7 @@ export async function createDrawingBreakerMachineAction(machineData) {
     const data = await queries.createDrawingBreakerMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -26,7 +28,7 @@ export async function updateDrawingBreakerMachineAction(id, machineData) {
     const data = await queries.updateDrawingBreakerMachine(id, machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -35,7 +37,7 @@ export async function deleteDrawingBreakerMachineAction(id) {
     const data = await queries.deleteDrawingBreakerMachine(id)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -44,7 +46,7 @@ export async function searchDrawingBreakerMachinesAction(field, condition, value
     const data = await queries.searchDrawingBreakerMachines(field, condition, value)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -53,7 +55,7 @@ export async function getDrawingBreakerCountOptionsAction() {
     const data = await queries.getDrawingBreakerCountOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -62,6 +64,6 @@ export async function lookupDrawingBreakerMachineByNoAction(machineNo) {
     const data = await queries.lookupDrawingBreakerMachineByNo(machineNo)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

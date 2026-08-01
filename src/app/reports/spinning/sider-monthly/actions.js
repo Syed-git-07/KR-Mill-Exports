@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { fetchSiderMonthlyData } from './siderMonthlyQueries'
 
 export async function fetchSiderMonthlyReport(fromDate, toDate) {
@@ -17,7 +19,7 @@ export async function fetchSiderMonthlyReport(fromDate, toDate) {
     console.error('Error fetching sider monthly report:', error)
     return {
       success: false,
-      error: error.message
+      error: safeActionError(error)
     }
   }
 }

@@ -1,45 +1,24 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import mysql from 'mysql2/promise'
-
-let payrollPool
-
-function getPayrollPool() {
-  if (payrollPool) return payrollPool
-
-  // Hardcoded payroll DB connection (as requested).
-  payrollPool = mysql.createPool({
-    host: '127.0.0.1',
-    user: 'root',
-    password: 'Alan@2005',
-    database: 'payroll',
-    waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0
-  })
-
-  return payrollPool
-}
 
 async function searchEmployeesFromPayroll(searchTerm = '', limit = 10) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(50, Number(limit))) : 10
   const term = String(searchTerm || '').trim()
 
-  const baseSql = `
+  const where = term
+    ? Prisma.sql`WHERE e.firstName LIKE ${`${term}%`}`
+    : Prisma.empty
+  const rows = await prisma.$queryRaw`
     SELECT
       e.firstName,
       e.biometricEnrollmentId,
       d.departmentname
-    FROM employees e
-    JOIN departments d ON d.id = e.departmentId
+    FROM payroll.employees e
+    JOIN payroll.departments d ON d.id = e.departmentId
+    ${where}
+    ORDER BY e.firstName ASC
+    LIMIT ${safeLimit}
   `
-
-  const sql = term
-    ? `${baseSql} WHERE e.firstName LIKE ? ORDER BY e.firstName ASC LIMIT ?`
-    : `${baseSql} ORDER BY e.firstName ASC LIMIT ?`
-
-  // Prefix-only search: "ABI" => ABINAYA, ABINATH (not KABIN)
-  const params = term ? [`${term}%`, safeLimit] : [safeLimit]
-  const [rows] = await getPayrollPool().query(sql, params)
 
   return (rows || []).map((row, index) => ({
     id: String(row.biometricEnrollmentId ?? `${row.firstName}-${index}`),

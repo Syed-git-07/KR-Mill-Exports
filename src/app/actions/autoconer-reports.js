@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 /**
  * Server Actions for Autoconer Reports
  * Handles data fetching and processing for various autoconer reports
@@ -37,7 +39,7 @@ export async function generateAutoconerLowEfficiencyReportAction(selectedDate) {
     }
   } catch (error) {
     console.error('Error generating autoconer low efficiency report:', error)
-    throw new Error('Failed to generate report: ' + error.message)
+    return { success: false, message: safeActionError(error) }
   }
 }
 
@@ -54,7 +56,7 @@ export async function getAutoconerDateRangeAction() {
     }
   } catch (error) {
     console.error('Error getting autoconer date range:', error)
-    throw new Error('Failed to get date range: ' + error.message)
+    return { minDate: null, maxDate: null, error: safeActionError(error) }
   }
 }
 
@@ -103,7 +105,7 @@ export async function generateAutoconerParticularSiderReportAction(empName, from
     console.error('Error generating autoconer particular sider report:', error)
     return {
       success: false,
-      message: error.message || 'Failed to generate report'
+      message: safeActionError(error)
     }
   }
 }
@@ -131,7 +133,7 @@ export async function generateAutoconerEfficiencyReportAction(selectedDate) {
     console.error('Error generating autoconer efficiency report:', error)
     return {
       success: false,
-      message: error.message || 'Failed to generate report'
+      message: safeActionError(error)
     }
   }
 }

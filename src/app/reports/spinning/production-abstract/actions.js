@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { fetchSpinningAbstractSummary, fetchSpinningAbstractTableData, fetchCountwiseSummary } from './spinningAbstractQueries'
 
 export async function fetchSpinningProductionAbstract(reportDate) {
@@ -20,7 +22,7 @@ export async function fetchSpinningProductionAbstract(reportDate) {
     console.error('Error fetching spinning production abstract:', error)
     return {
       success: false,
-      error: error.message
+      error: safeActionError(error)
     }
   }
 }

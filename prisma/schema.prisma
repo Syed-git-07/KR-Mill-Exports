@@ -953,3 +953,76 @@ model twc_entries {
   updated_at        DateTime? @default(now()) @db.DateTime(0)
   entry_id          Int       @default(1)
 }
+
+/// Application identities are intentionally separate from production employees.
+/// Passwords are stored only as versioned scrypt hashes.
+model app_users {
+  id                   String          @id @default(uuid()) @db.Char(36)
+  username             String          @unique(map: "uq_app_users_username") @db.VarChar(64)
+  display_name         String          @db.VarChar(120)
+  password_hash        String          @db.VarChar(255)
+  role                 String          @default("OPERATOR") @db.VarChar(20)
+  is_active            Boolean         @default(true)
+  must_change_password Boolean         @default(true)
+  failed_login_count   Int             @default(0)
+  locked_until         DateTime?       @db.DateTime(3)
+  password_changed_at  DateTime?       @db.DateTime(3)
+  last_login_at        DateTime?       @db.DateTime(3)
+  created_at           DateTime        @default(now()) @db.DateTime(3)
+  updated_at           DateTime        @default(now()) @updatedAt @db.DateTime(3)
+  sessions             auth_sessions[]
+  audit_logs           audit_logs[]
+
+  @@index([is_active], map: "idx_app_users_active")
+}
+
+/// Only a SHA-256 digest of the browser session token is persisted.
+model auth_sessions {
+  id           String    @id @default(uuid()) @db.Char(36)
+  user_id      String    @db.Char(36)
+  token_hash   String    @unique(map: "uq_auth_sessions_token_hash") @db.Char(64)
+  ip_address   String?   @db.VarChar(64)
+  user_agent   String?   @db.VarChar(512)
+  expires_at   DateTime  @db.DateTime(3)
+  last_seen_at DateTime  @default(now()) @db.DateTime(3)
+  revoked_at   DateTime? @db.DateTime(3)
+  created_at   DateTime  @default(now()) @db.DateTime(3)
+  user         app_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, revoked_at, expires_at], map: "idx_auth_sessions_user_status")
+  @@index([expires_at], map: "idx_auth_sessions_expiry")
+}
+
+/// Security and administrative events. Sensitive values must never be written here.
+model audit_logs {
+  id          BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  occurred_at DateTime   @default(now()) @db.DateTime(3)
+  user_id     String?    @db.Char(36)
+  username    String?    @db.VarChar(64)
+  event_type  String     @db.VarChar(64)
+  outcome     String     @db.VarChar(20)
+  action      String     @db.VarChar(120)
+  resource    String?    @db.VarChar(255)
+  request_id  String?    @db.VarChar(64)
+  ip_address  String?    @db.VarChar(64)
+  user_agent  String?    @db.VarChar(512)
+  details     Json?
+  user        app_users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([occurred_at], map: "idx_audit_logs_occurred")
+  @@index([user_id, occurred_at], map: "idx_audit_logs_user_occurred")
+  @@index([event_type, occurred_at], map: "idx_audit_logs_event_occurred")
+  @@index([outcome, occurred_at], map: "idx_audit_logs_outcome_occurred")
+}
+
+/// Persistent throttling data protects login even after an application restart.
+model login_attempts {
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  username       String   @db.VarChar(64)
+  ip_address     String   @db.VarChar(64)
+  was_successful Boolean  @default(false)
+  attempted_at   DateTime @default(now()) @db.DateTime(3)
+
+  @@index([username, attempted_at], map: "idx_login_attempts_username_time")
+  @@index([ip_address, attempted_at], map: "idx_login_attempts_ip_time")
+}

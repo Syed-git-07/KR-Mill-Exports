@@ -1,0 +1,123 @@
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+import {
+  hashPassword,
+  validatePassword,
+  verifyPassword,
+} from "../src/lib/security/password.js";
+import {
+  isValidUsername,
+  normalizeUsername,
+  safeReturnPath,
+} from "../src/lib/security/request.js";
+
+test("password hashes are salted, opaque, and verifiable", async () => {
+  const password = "Correct-Horse-Factory-29!";
+  const [firstHash, secondHash] = await Promise.all([
+    hashPassword(password),
+    hashPassword(password),
+  ]);
+
+  assert.notEqual(firstHash, secondHash);
+  assert.equal(firstHash.includes(password), false);
+  assert.equal(await verifyPassword(password, firstHash), true);
+  assert.equal(await verifyPassword("Wrong-Password-29!", firstHash), false);
+  assert.equal(await verifyPassword(password, "malformed"), false);
+});
+
+test("password policy rejects weak and identity-derived passwords", () => {
+  assert.match(validatePassword("short"), /6 characters/);
+  assert.match(validatePassword("123456"), /predictable/);
+  assert.match(
+    validatePassword("Admin-operator1-Password-29!", {
+      username: "operator1",
+    }),
+    /username/,
+  );
+  assert.equal(
+    validatePassword("Mill27", { username: "operator1" }),
+    null,
+  );
+});
+
+test("usernames are normalized and constrained", () => {
+  assert.equal(normalizeUsername("  Shift.Admin  "), "shift.admin");
+  assert.equal(isValidUsername("shift.admin"), true);
+  assert.equal(isValidUsername("../admin"), false);
+  assert.equal(isValidUsername("ab"), false);
+});
+
+test("post-login return paths cannot escape the application origin", () => {
+  assert.equal(safeReturnPath("/reports?day=1"), "/reports?day=1");
+  assert.equal(safeReturnPath("https://evil.example"), "/");
+  assert.equal(safeReturnPath("//evil.example/path"), "/");
+  assert.equal(safeReturnPath("javascript:alert(1)"), "/");
+});
+
+async function sourceFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await sourceFiles(fullPath)));
+    else if (/\.(js|jsx|mjs)$/.test(entry.name)) files.push(fullPath);
+  }
+  return files;
+}
+
+test("runtime source does not use unsafe raw database APIs", async () => {
+  const files = [
+    ...(await sourceFiles(path.resolve("src"))),
+    ...(await sourceFiles(path.resolve("scripts"))),
+  ];
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(
+      source,
+      /\$(?:queryRawUnsafe|executeRawUnsafe)/,
+      `${file} uses a non-parameterized database API`,
+    );
+  }
+});
+
+test("customer login copy describes the product, not its security internals", async () => {
+  const loginPage = await readFile(
+    path.resolve("src/app/login/page.jsx"),
+    "utf8",
+  );
+  const loginForm = await readFile(
+    path.resolve("src/components/auth/LoginForm.jsx"),
+    "utf8",
+  );
+  const customerCopy = `${loginPage}\n${loginForm}`;
+
+  assert.doesNotMatch(
+    customerCopy,
+    /secure access|sign in securely|authenticated|revocable|hashing|audit trail/i,
+  );
+});
+
+test("authenticated pages share one compact navbar and login remains separate", async () => {
+  const rootLayout = await readFile(path.resolve("src/app/layout.js"), "utf8");
+  const homePage = await readFile(path.resolve("src/app/page.js"), "utf8");
+  const loginPage = await readFile(
+    path.resolve("src/app/login/page.jsx"),
+    "utf8",
+  );
+  const appHeader = await readFile(
+    path.resolve("src/components/layout/AppHeader.jsx"),
+    "utf8",
+  );
+
+  assert.match(rootLayout, /\{user && <AppHeader user=\{user\} \/>\}/);
+  assert.doesNotMatch(homePage, /AppHeader/);
+  assert.doesNotMatch(loginPage, /AppHeader/);
+  assert.match(appHeader, /data-app-auth-header/);
+  assert.match(appHeader, /router\.back\(\)/);
+  assert.match(appHeader, /href="\/"/);
+  assert.match(appHeader, /href="\/admin\/security-logs"/);
+  assert.match(appHeader, /href="\/account\/security"/);
+  assert.match(appHeader, /logoutAction/);
+});

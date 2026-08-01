@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 const { getSpinningShiftCountProductionReport } = require('./spinningShiftCountProductionQueries')
 
 /**
@@ -19,7 +21,7 @@ export async function fetchSpinningShiftCountProductionReport(fromDate, toDate =
     console.error('Error in fetchSpinningShiftCountProductionReport:', error)
     return {
       success: false,
-      error: error.message || 'Failed to fetch report data'
+      error: safeActionError(error) || 'Failed to fetch report data'
     }
   }
 }

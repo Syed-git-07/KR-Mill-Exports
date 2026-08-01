@@ -7,6 +7,8 @@ async function findTableSchema(tableName) {
       SELECT TABLE_SCHEMA as schema_name
       FROM information_schema.tables
       WHERE table_name = ${tableName}
+        AND TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+      ORDER BY (TABLE_SCHEMA = DATABASE()) DESC, TABLE_SCHEMA ASC
       LIMIT 1
     `
     return found?.schema_name || null
@@ -21,7 +23,8 @@ async function findTableSchemas(tableName) {
       SELECT TABLE_SCHEMA as schema_name
       FROM information_schema.tables
       WHERE table_name = ${tableName}
-      ORDER BY TABLE_SCHEMA ASC
+        AND TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+      ORDER BY (TABLE_SCHEMA = DATABASE()) DESC, TABLE_SCHEMA ASC
     `
     return (rows || []).map(r => r.schema_name).filter(Boolean)
   } catch (e) {
@@ -52,6 +55,10 @@ async function findHolidayTablesSchema() {
 
 function quoteIdentifier(identifier) {
   return `\`${String(identifier).replaceAll('`', '``')}\``
+}
+
+function qualifiedTable(schemaName, tableName) {
+  return Prisma.raw(`${quoteIdentifier(schemaName)}.${quoteIdentifier(tableName)}`)
 }
 
 function normalizeDateForSQL(dateInput) {
@@ -108,9 +115,10 @@ export async function getCompanies() {
           LIMIT 1
         `
         if (found && found.schema_name) {
-          const schemaName = found.schema_name
-          const fallbackSql = `SELECT DISTINCT companyId AS id, CAST(companyId AS CHAR) AS name FROM \`${schemaName}\`.holiday_lists ORDER BY companyId ASC`
-          const fallback = await prisma.$queryRawUnsafe(fallbackSql)
+          const table = qualifiedTable(found.schema_name, 'holiday_lists')
+          const fallback = await prisma.$queryRaw(
+            Prisma.sql`SELECT DISTINCT companyId AS id, CAST(companyId AS CHAR) AS name FROM ${table} ORDER BY companyId ASC`
+          )
           return fallback || []
         }
         return []
@@ -144,11 +152,12 @@ export async function getHolidayLists(companyId) {
           LIMIT 1
         `
         if (found && found.schema_name) {
-          const schemaName = found.schema_name
           const cid = Number(companyId) || null
-          const whereClause = cid ? `WHERE companyId = ${cid}` : ''
-          const sql = `SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM \`${schemaName}\`.holiday_lists ${whereClause} ORDER BY startDate DESC, id DESC`
-          const lists = await prisma.$queryRawUnsafe(sql)
+          const table = qualifiedTable(found.schema_name, 'holiday_lists')
+          const where = cid ? Prisma.sql`WHERE companyId = ${cid}` : Prisma.empty
+          const lists = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} ${where} ORDER BY startDate DESC, id DESC`
+          )
           return lists || []
         }
         return []
@@ -203,35 +212,38 @@ export async function searchHolidayLists(field, condition, value, companyId) {
         if (schemaName) {
           const sqlClauses = []
           const cid = companyId ? Number(companyId) : null
-          if (cid) sqlClauses.push(`companyId = ${cid}`)
+          if (cid) sqlClauses.push(Prisma.sql`companyId = ${cid}`)
 
           if (value && value.toString().trim() !== '') {
             const trimmedValue = value.toString().trim()
-            const escaped = trimmedValue.replace(/'/g, "''")
             switch (field) {
               case 'name':
                 if (condition === 'Like') {
-                  sqlClauses.push(`name LIKE '%${escaped}%'`)
+                  sqlClauses.push(Prisma.sql`name LIKE ${`%${trimmedValue}%`}`)
                 } else {
-                  sqlClauses.push(`name = '${escaped}'`)
+                  sqlClauses.push(Prisma.sql`name = ${trimmedValue}`)
                 }
                 break
               case 'id':
                 if (!isNaN(Number(trimmedValue))) {
-                  sqlClauses.push(`id = ${Number(trimmedValue)}`)
+                  sqlClauses.push(Prisma.sql`id = ${Number(trimmedValue)}`)
                 }
                 break
               case 'status':
-                sqlClauses.push(`status = '${escaped}'`)
+                sqlClauses.push(Prisma.sql`status = ${trimmedValue}`)
                 break
               default:
-                sqlClauses.push(`name LIKE '%${escaped}%'`)
+                sqlClauses.push(Prisma.sql`name LIKE ${`%${trimmedValue}%`}`)
             }
           }
 
-          const whereClause = sqlClauses.length > 0 ? `WHERE ${sqlClauses.join(' AND ')}` : ''
-          const sql = `SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM \`${schemaName}\`.holiday_lists ${whereClause} ORDER BY startDate DESC, id DESC`
-          const lists = await prisma.$queryRawUnsafe(sql)
+          const where = sqlClauses.length > 0
+            ? Prisma.sql`WHERE ${Prisma.join(sqlClauses, ' AND ')}`
+            : Prisma.empty
+          const table = qualifiedTable(schemaName, 'holiday_lists')
+          const lists = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} ${where} ORDER BY startDate DESC, id DESC`
+          )
           return lists || []
         }
         return []
@@ -257,8 +269,10 @@ export async function getHolidayListById(id) {
       try {
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
-          const sql = `SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM \`${schemaName}\`.holiday_lists WHERE id = ${Number(id)} LIMIT 1`
-          const [list] = await prisma.$queryRawUnsafe(sql)
+          const table = qualifiedTable(schemaName, 'holiday_lists')
+          const [list] = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} LIMIT 1`
+          )
           return list
         }
         return null
@@ -286,9 +300,11 @@ export async function checkHolidayListNameUnique(name, companyId, excludeId = nu
       try {
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
-          const ex = excludeId ? `AND id != ${Number(excludeId)}` : ''
-          const sql = `SELECT id FROM \`${schemaName}\`.holiday_lists WHERE name = ${JSON.stringify(name)} AND companyId = ${Number(companyId)} ${ex} LIMIT 1`
-          const [existing] = await prisma.$queryRawUnsafe(sql)
+          const exclude = excludeId ? Prisma.sql`AND id != ${Number(excludeId)}` : Prisma.empty
+          const table = qualifiedTable(schemaName, 'holiday_lists')
+          const [existing] = await prisma.$queryRaw(
+            Prisma.sql`SELECT id FROM ${table} WHERE name = ${name} AND companyId = ${Number(companyId)} ${exclude} LIMIT 1`
+          )
           return !existing
         }
         return true
@@ -336,10 +352,11 @@ export async function checkHolidayListOverlap(startDate, endDate, companyId, exc
       try {
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
-          const ex = excludeId ? `AND id != ${Number(excludeId)}` : ''
-          const sql = `SELECT id, startDate, endDate FROM \`${schemaName}\`.holiday_lists WHERE companyId = ${Number(companyId)} AND status = 'Active' ${ex}`
-          debugLog('checkHolidayListOverlap cross-schema SQL', sql)
-          const rows = await prisma.$queryRawUnsafe(sql)
+          const exclude = excludeId ? Prisma.sql`AND id != ${Number(excludeId)}` : Prisma.empty
+          const table = qualifiedTable(schemaName, 'holiday_lists')
+          const rows = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, startDate, endDate FROM ${table} WHERE companyId = ${Number(companyId)} AND status = 'Active' ${exclude}`
+          )
           debugLog('checkHolidayListOverlap fetched rows (cross-schema)', rows)
           for (const r of rows || []) {
             const existingId = Number(r.id)
@@ -399,11 +416,16 @@ export async function createHolidayList(payload) {
         const eDate = normalizeDateForSQL(payload.endDate)
         for (const schemaName of schemas) {
           try {
-            const insertSql = `INSERT INTO \`${schemaName}\`.holiday_lists (name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt) VALUES (${JSON.stringify(payload.name)}, '${sDate}', '${eDate}', '${JSON.stringify(payload.weekOffs)}', ${JSON.stringify(payload.status)}, ${Number(payload.companyId)}, NOW(), NOW())`
-            debugLog('createHolidayList: trying insert SQL', insertSql)
-            await prisma.$executeRawUnsafe(insertSql)
-            const selectSql = `SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM \`${schemaName}\`.holiday_lists WHERE id = LAST_INSERT_ID() LIMIT 1`
-            const [created] = await prisma.$queryRawUnsafe(selectSql)
+            const table = qualifiedTable(schemaName, 'holiday_lists')
+            const created = await prisma.$transaction(async tx => {
+              await tx.$executeRaw(
+                Prisma.sql`INSERT INTO ${table} (name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt) VALUES (${payload.name}, ${sDate}, ${eDate}, ${JSON.stringify(payload.weekOffs)}, ${payload.status}, ${Number(payload.companyId)}, NOW(), NOW())`
+              )
+              const [row] = await tx.$queryRaw(
+                Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = LAST_INSERT_ID() LIMIT 1`
+              )
+              return row
+            })
             debugLog('createHolidayList: created row', created)
             return created
           } catch (innerErr) {
@@ -455,10 +477,13 @@ export async function updateHolidayList(id, payload) {
       try {
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
-          const updateSql = `UPDATE \`${schemaName}\`.holiday_lists SET name = ${JSON.stringify(payload.name)}, startDate = '${sDate}', endDate = '${eDate}', weekOffs = '${JSON.stringify(payload.weekOffs)}', status = ${JSON.stringify(payload.status)}, companyId = ${Number(payload.companyId)}, updatedAt = NOW() WHERE id = ${Number(id)}`
-          await prisma.$executeRawUnsafe(updateSql)
-          const selectSql = `SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM \`${schemaName}\`.holiday_lists WHERE id = ${Number(id)} LIMIT 1`
-          const [updated] = await prisma.$queryRawUnsafe(selectSql)
+          const table = qualifiedTable(schemaName, 'holiday_lists')
+          await prisma.$executeRaw(
+            Prisma.sql`UPDATE ${table} SET name = ${payload.name}, startDate = ${sDate}, endDate = ${eDate}, weekOffs = ${JSON.stringify(payload.weekOffs)}, status = ${payload.status}, companyId = ${Number(payload.companyId)}, updatedAt = NOW() WHERE id = ${Number(id)}`
+          )
+          const [updated] = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} LIMIT 1`
+          )
           return updated
         }
         throw new Error('Holiday list feature is unavailable because the holiday_lists table is missing.')
@@ -483,7 +508,10 @@ export async function hasHolidaysForList(id) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const [result] = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM \`${schemaName}\`.holidays WHERE holidayListId = ${Number(id)}`)
+          const table = qualifiedTable(schemaName, 'holidays')
+          const [result] = await prisma.$queryRaw(
+            Prisma.sql`SELECT COUNT(*) as count FROM ${table} WHERE holidayListId = ${Number(id)}`
+          )
           return result?.count > 0
         }
         return false
@@ -513,8 +541,10 @@ export async function deleteHolidayList(id) {
           if (await hasHolidaysForList(id)) {
             throw new Error('This holiday list contains holidays and cannot be deleted until all holidays are removed.')
           }
-          const delSql = `DELETE FROM \`${schemaName}\`.holiday_lists WHERE id = ${Number(id)}`
-          await prisma.$executeRawUnsafe(delSql)
+          const table = qualifiedTable(schemaName, 'holiday_lists')
+          await prisma.$executeRaw(
+            Prisma.sql`DELETE FROM ${table} WHERE id = ${Number(id)}`
+          )
           return true
         }
         return []
@@ -540,8 +570,10 @@ export async function getHolidaysByListId(holidayListId) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const sql = `SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM \`${schemaName}\`.holidays WHERE holidayListId = ${Number(holidayListId)} ORDER BY date ASC`
-          const holidays = await prisma.$queryRawUnsafe(sql)
+          const table = qualifiedTable(schemaName, 'holidays')
+          const holidays = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM ${table} WHERE holidayListId = ${Number(holidayListId)} ORDER BY date ASC`
+          )
           return holidays || []
         }
         return []
@@ -569,9 +601,11 @@ export async function checkHolidayDuplicate(date, holidayListId, excludeId = nul
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const ex = excludeId ? `AND id != ${Number(excludeId)}` : ''
-          const sql = `SELECT id FROM \`${schemaName}\`.holidays WHERE date = '${date}' AND holidayListId = ${Number(holidayListId)} ${ex} LIMIT 1`
-          const [existing] = await prisma.$queryRawUnsafe(sql)
+          const exclude = excludeId ? Prisma.sql`AND id != ${Number(excludeId)}` : Prisma.empty
+          const table = qualifiedTable(schemaName, 'holidays')
+          const [existing] = await prisma.$queryRaw(
+            Prisma.sql`SELECT id FROM ${table} WHERE date = ${date} AND holidayListId = ${Number(holidayListId)} ${exclude} LIMIT 1`
+          )
           return !existing
         }
         return true
@@ -602,10 +636,16 @@ export async function createHoliday(payload) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const insertSql = `INSERT INTO \`${schemaName}\`.holidays (date, description, type, holidayListId, createdAt, updatedAt) VALUES ('${payload.date}', ${JSON.stringify(payload.description)}, 'Holiday', ${Number(payload.holidayListId)}, NOW(), NOW())`
-          await prisma.$executeRawUnsafe(insertSql)
-          const selectSql = `SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM \`${schemaName}\`.holidays WHERE id = LAST_INSERT_ID() LIMIT 1`
-          const [created] = await prisma.$queryRawUnsafe(selectSql)
+          const table = qualifiedTable(schemaName, 'holidays')
+          const created = await prisma.$transaction(async tx => {
+            await tx.$executeRaw(
+              Prisma.sql`INSERT INTO ${table} (date, description, type, holidayListId, createdAt, updatedAt) VALUES (${payload.date}, ${payload.description}, 'Holiday', ${Number(payload.holidayListId)}, NOW(), NOW())`
+            )
+            const [row] = await tx.$queryRaw(
+              Prisma.sql`SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM ${table} WHERE id = LAST_INSERT_ID() LIMIT 1`
+            )
+            return row
+          })
           return created
         }
         throw new Error('Holiday creation is unavailable because the holidays table is missing.')
@@ -636,10 +676,13 @@ export async function updateHoliday(id, payload) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const updateSql = `UPDATE \`${schemaName}\`.holidays SET date = '${payload.date}', description = ${JSON.stringify(payload.description)}, updatedAt = NOW() WHERE id = ${Number(id)}`
-          await prisma.$executeRawUnsafe(updateSql)
-          const selectSql = `SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM \`${schemaName}\`.holidays WHERE id = ${Number(id)} LIMIT 1`
-          const [updated] = await prisma.$queryRawUnsafe(selectSql)
+          const table = qualifiedTable(schemaName, 'holidays')
+          await prisma.$executeRaw(
+            Prisma.sql`UPDATE ${table} SET date = ${payload.date}, description = ${payload.description}, updatedAt = NOW() WHERE id = ${Number(id)}`
+          )
+          const [updated] = await prisma.$queryRaw(
+            Prisma.sql`SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} LIMIT 1`
+          )
           return updated
         }
         throw new Error('Holiday update is unavailable because the holidays table is missing.')
@@ -663,8 +706,10 @@ export async function deleteHoliday(id) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
-          const delSql = `DELETE FROM \`${schemaName}\`.holidays WHERE id = ${Number(id)}`
-          await prisma.$executeRawUnsafe(delSql)
+          const table = qualifiedTable(schemaName, 'holidays')
+          await prisma.$executeRaw(
+            Prisma.sql`DELETE FROM ${table} WHERE id = ${Number(id)}`
+          )
           return true
         }
         throw new Error('Holiday deletion is unavailable because the holidays table is missing.')

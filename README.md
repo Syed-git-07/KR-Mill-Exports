@@ -1,133 +1,68 @@
 # KR Production System
 
-Production Management System for Kayaar Exports Private Limited - Smart Spin Lite
+Internal production management for KR Exports, built with Next.js 15, React 19,
+Tailwind CSS, Prisma, and MySQL.
 
-## Technology Stack
+## Local development
 
-- **Framework:** Next.js 15 (App Router)
-- **Styling:** Tailwind CSS + Shadcn UI
-- **Database:** Supabase (PostgreSQL)
-- **State Management:** Zustand
-- **Form Handling:** React Hook Form + Zod
-- **Icons:** Lucide React
+Requirements:
 
-## Getting Started
+- Node.js 20.9 or newer
+- MySQL 8
+- A configured `DATABASE_URL`
 
-### Prerequisites
-- Node.js 18+ installed
-- Supabase account and project
-
-### Installation
-
-1. Navigate to project directory
-```bash
-cd d:\Ai-Projects\ERP-Project\kr-production-system
-```
-
-2. Install dependencies (already completed)
-```bash
-npm install
-```
-
-3. Configure environment variables
-Update `.env.local` with your Supabase credentials:
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-4. Run the development server
-```bash
+```powershell
+npm ci
+npx prisma generate
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+Copy `.env.example` to `.env.local` and provide local values. Environment files
+are excluded from Git.
 
-## Project Structure
+## Authentication and logging
 
+All application routes and server actions require a valid database-backed
+session. The security layer provides:
+
+- memory-hard scrypt password hashing;
+- `HttpOnly`, `Secure`, `SameSite=Strict` session cookies;
+- server-side session expiry and revocation;
+- persistent login throttling and account lockout;
+- forced temporary-password replacement;
+- `ADMIN` and `OPERATOR` roles;
+- origin validation and production security headers;
+- structured JSON runtime/error logs;
+- database audit logs and an admin review screen;
+- generic production errors that do not expose database internals.
+
+Create or reset an account interactively:
+
+```powershell
+npm run user:create -- --username admin --name "System Administrator" --role ADMIN
+npm run user:create -- --username operator1 --name "Production Operator" --role OPERATOR
+npm run user:create -- --username operator1 --name "Production Operator" --role OPERATOR --reset
 ```
-kr-production-system/
-├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── layout.js          # Root layout with sidebar
-│   │   ├── page.js            # Dashboard home
-│   │   └── masters/           # Master data modules
-│   ├── components/
-│   │   ├── ui/                # Shadcn UI components
-│   │   ├── common/            # Reusable components
-│   │   └── modules/           # Feature-specific components
-│   ├── lib/
-│   │   ├── supabase.js        # Supabase client
-│   │   └── utils.js           # Utility functions
-│   └── hooks/                 # Custom React hooks
-├── public/                    # Static assets
-└── .env.local                # Environment variables
+
+The command prompts for the temporary password and requires a password change at
+first sign-in.
+
+## Verification
+
+```powershell
+npm test
+npm run lint
+npm run build
+npm run security:smoke
+npm audit --omit=dev
 ```
 
-## Modules Implemented
+## Deployment
 
-### Master Data
-- ✅ Project Setup Complete
-- ⏳ Department Master
-- ⏳ Spinning Machine Master
-- ⏳ Stoppage Head Master
-- ⏳ Spinning Count Master
-- ⏳ HOKStrength Master
-- ⏳ Supervisor Master
-- ⏳ Autocorner Machine Master
-- ⏳ TPI Entry Master
-- ⏳ TWC Entry Master
-
-## Development
-
-### Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
-
-### Installed Packages
-
-**Core Dependencies:**
-- next, react, react-dom
-- @supabase/supabase-js, @supabase/ssr
-- zustand (state management)
-- react-hook-form, @hookform/resolvers, zod (forms)
-- date-fns (date utilities)
-- lucide-react (icons)
-- clsx, tailwind-merge (utilities)
-
-**Shadcn UI Components:**
-- button, input, label, card, dialog
-- table, select, dropdown-menu
-- checkbox, separator, sonner (toast)
-
-### Code Style
-
-- Use functional components with hooks
-- Follow Next.js App Router conventions
-- Use Tailwind utility classes for styling
-- Shadcn UI components for consistent design
-- Orange theme for primary color
-
-## Database Setup
-
-Refer to `../plan.md` Phase 10 for complete database schema and Supabase setup instructions.
-
-## Next Steps
-
-1. Set up Supabase project and get credentials
-2. Update `.env.local` with Supabase credentials
-3. Create database tables using SQL from plan.md
-4. Start building master modules
+Follow [SECURE_DEPLOYMENT.md](./SECURE_DEPLOYMENT.md). HTTPS, correct reverse
+proxy headers, firewall rules, backups, a process supervisor, and scheduled
+security-data cleanup are required for a production installation.
 
 ## License
 
-Proprietary - All rights reserved by Kayaar Exports Private Limited (2025-2026)
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Proprietary. All rights reserved by KR Exports.

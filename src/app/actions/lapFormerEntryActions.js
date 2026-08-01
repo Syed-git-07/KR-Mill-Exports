@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/lapFormerQueries'
 import { assertWorkingDate } from '@/lib/holidayValidation'
@@ -21,7 +23,7 @@ export async function getLapFormerShiftConfigAction(shift) {
       }
     }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -34,7 +36,7 @@ export async function getLapFormerProductionByDateShiftAction(date, shift) {
     const data = await queries.getLapFormerProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -44,7 +46,7 @@ export async function getOrCreateLapFormerHeaderAction(date, shift, supervisorId
     const data = await queries.getOrCreateLapFormerHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -53,7 +55,7 @@ export async function updateLapFormerHeaderAction(id, updates) {
     const data = await queries.updateLapFormerHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -66,7 +68,7 @@ export async function getLapFormerProductionDetailsAction(headerId) {
     const data = await queries.getLapFormerProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -75,7 +77,7 @@ export async function getLapFormerProductionWithSetupAction(headerId) {
     const data = await queries.getLapFormerProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -84,7 +86,7 @@ export async function initializeLapFormerDetailsAction(headerId) {
     const data = await queries.initializeLapFormerDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -93,7 +95,7 @@ export async function syncNewMachinesToLapFormerHeaderAction(headerId) {
     const data = await queries.syncNewMachinesToLapFormerHeader(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -102,7 +104,7 @@ export async function updateLapFormerDetailAction(id, updates) {
     const data = await queries.updateLapFormerDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -111,7 +113,7 @@ export async function bulkUpdateLapFormerDetailsAction(updates) {
     const data = await queries.bulkUpdateLapFormerDetails(updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -124,7 +126,7 @@ export async function getLapFormerStoppageEntriesAction(headerId) {
     const data = await queries.getLapFormerStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -133,7 +135,7 @@ export async function updateLapFormerStoppageEntryAction(id, updates) {
     const data = await queries.updateLapFormerStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -150,7 +152,7 @@ export async function applyLapFormerFullStoppageAction(headerId, stoppageId, sto
       }
     }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -167,7 +169,7 @@ export async function applyLapFormerPartialStoppageAction(headerId, fromMachine,
       }
     }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -176,7 +178,7 @@ export async function getLapFormerStoppageReasonsAction() {
     const data = await queries.getLapFormerStoppageReasons()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -189,7 +191,7 @@ export async function getLapFormerMachineSetupsAction(headerId = null) {
     const data = await queries.getLapFormerMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -198,7 +200,7 @@ export async function updateLapFormerMachineSetupAction(machineId, updates) {
     const data = await queries.updateLapFormerMachineSetup(machineId, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -207,7 +209,7 @@ export async function updateLapFormerMachineSpeedAction(machineId, newSpeed) {
     const data = await queries.updateLapFormerMachineSpeed(machineId, newSpeed)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -216,7 +218,7 @@ export async function getLapFormerMixingOptionsAction() {
     const data = await queries.getLapFormerMixingOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -225,7 +227,7 @@ export async function getLapFormerMachinesAction() {
     const data = await queries.getActiveLapFormerMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -234,7 +236,7 @@ export async function addLapFormerMachineAction(machineData) {
     const data = await queries.addLapFormerMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -243,7 +245,7 @@ export async function removeLapFormerMachineAction(machineId) {
     const data = await queries.removeLapFormerMachine(machineId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -252,7 +254,7 @@ export async function bulkUpdateLapFormerMachineMixingAction(machineIds, mixingV
     const data = await queries.bulkUpdateLapFormerMachineMixing(machineIds, mixingValue, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -261,7 +263,7 @@ export async function getSpinningCountOptionsAction() {
     const data = await queries.getSpinningCountOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -270,7 +272,7 @@ export async function lookupLapFormerMachineByNoAction(machineNo) {
     const data = await queries.lookupLapFormerMachineByNo(machineNo)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -283,7 +285,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -292,7 +294,7 @@ export async function copyLapFormerFromPreviousDateAction(targetDate, targetShif
     const data = await queries.copyLapFormerFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -301,7 +303,7 @@ export async function getLapFormerAvailableDatesAction(currentDate, shift) {
     const data = await queries.getLapFormerAvailableDates(currentDate, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -314,6 +316,6 @@ export async function calculateLapFormerValuesAction(actHank, actProdn, totalTim
     const data = queries.calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

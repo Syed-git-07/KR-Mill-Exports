@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import {
   getCompanies,
@@ -22,7 +24,7 @@ export async function getCompaniesAction() {
     const data = await getCompanies()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -35,7 +37,7 @@ export async function getHolidayListsAction(companyId) {
     if (message.includes("doesn't exist") || message.includes('does not exist') || message.includes('er_no_such_table') || message.includes('holiday_lists')) {
       return { success: true, data: [] }
     }
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -44,7 +46,7 @@ export async function searchHolidayListsAction(field, condition, value, companyI
     const data = await searchHolidayLists(field, condition, value, companyId ? Number(companyId) : null)
     return { success: true, data: serializeData(data || []) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -53,7 +55,7 @@ export async function createHolidayListAction(listData) {
     const data = await createHolidayList(listData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -62,7 +64,7 @@ export async function updateHolidayListAction(id, listData) {
     const data = await updateHolidayList(id, listData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -71,7 +73,7 @@ export async function deleteHolidayListAction(id) {
     const data = await deleteHolidayList(id)
     return { success: true, data }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -80,7 +82,7 @@ export async function getHolidaysByListIdAction(holidayListId) {
     const data = await getHolidaysByListId(Number(holidayListId))
     return { success: true, data: serializeData(data || []) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -89,7 +91,7 @@ export async function createHolidayAction(holidayData) {
     const data = await createHoliday(holidayData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -98,7 +100,7 @@ export async function updateHolidayAction(id, holidayData) {
     const data = await updateHoliday(id, holidayData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -107,7 +109,7 @@ export async function deleteHolidayAction(id) {
     const data = await deleteHoliday(id)
     return { success: true, data }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -116,7 +118,7 @@ export async function checkIsHolidayAction(dateString) {
     const data = await isHoliday(dateString)
     return { success: true, isHoliday: !!data, holiday: data }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -125,7 +127,7 @@ export async function getAllHolidayDatesAction() {
     const data = await getAllHolidayDates()
     return { success: true, data: serializeData(data || []) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -134,6 +136,6 @@ export async function bulkCreateHolidaysAction(holidayListId, records) {
     const insertedCount = await bulkCreateHolidays(holidayListId, records)
     return { success: true, count: insertedCount }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

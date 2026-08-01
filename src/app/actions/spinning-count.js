@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 
 import * as queries from '@/lib/queries/spinningCountQueries'
@@ -9,7 +11,7 @@ export async function getSpinningCountsAction() {
     const data = await queries.getSpinningCounts()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -18,7 +20,7 @@ export async function createSpinningCountAction(countData) {
     const data = await queries.createSpinningCount(countData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -27,7 +29,7 @@ export async function updateSpinningCountAction(id, countData) {
     const data = await queries.updateSpinningCount(id, countData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -36,7 +38,7 @@ export async function deleteSpinningCountAction(id) {
     const data = await queries.deleteSpinningCount(id)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -45,6 +47,6 @@ export async function searchSpinningCountsAction(field, condition, value) {
     const data = await queries.searchSpinningCounts(field, condition, value)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

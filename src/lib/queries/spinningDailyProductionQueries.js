@@ -179,7 +179,7 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
     console.error('Error fetching spinning daily production report:', error)
     return {
       success: false,
-      error: error.message
+      error: 'The report could not be generated. Please try again.'
     }
   }
 }

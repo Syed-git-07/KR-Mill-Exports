@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/comberEntryQueries'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
@@ -14,7 +16,7 @@ export async function getComberShiftConfigAction(shift) {
     const data = await queries.getComberShiftConfig(shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -25,7 +27,7 @@ export async function getComberShiftTimeAction(shift) {
   } catch (error) {
     return {
       success: false,
-      error: error.message,
+      error: safeActionError(error),
       data: resolveComberShiftFallbackTime(shift)
     }
   }
@@ -38,7 +40,7 @@ export async function getComberShiftConfigurationAction(shift) {
   } catch (error) {
     return {
       success: false,
-      error: error.message,
+      error: safeActionError(error),
       data: {
         totalTime: resolveComberShiftFallbackTime(shift)
       }
@@ -55,7 +57,7 @@ export async function getComberProductionByDateShiftAction(date, shift) {
     const data = await queries.getComberProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -65,7 +67,7 @@ export async function getOrCreateComberProductionHeaderAction(date, shift, super
     const data = await queries.getOrCreateComberProductionHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -74,7 +76,7 @@ export async function updateComberProductionHeaderAction(id, updates) {
     const data = await queries.updateComberProductionHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -87,7 +89,7 @@ export async function getComberProductionDetailsAction(headerId) {
     const data = await queries.getComberProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -101,7 +103,7 @@ export async function initializeComberProductionDetailsAction(headerId, shift = 
     )
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -110,7 +112,7 @@ export async function updateComberProductionDetailAction(id, updates) {
     const data = await queries.updateComberProductionDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -119,7 +121,7 @@ export async function bulkUpdateComberProductionDetailsAction(updates) {
     const data = await queries.bulkUpdateComberProductionDetails(updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -132,7 +134,7 @@ export async function getComberStoppageEntriesAction(headerId) {
     const data = await queries.getComberStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -141,7 +143,7 @@ export async function updateComberStoppageEntryAction(id, updates) {
     const data = await queries.updateComberStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -150,7 +152,7 @@ export async function getComberStoppageReasonsAction() {
     const data = await queries.getComberStoppageReasons()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -159,7 +161,7 @@ export async function syncNewMachinesToComberHeaderAction(headerId, shift = 1) {
     const data = await queries.syncNewMachinesToComberHeader(headerId, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -172,7 +174,7 @@ export async function getComberMachineSetupsAction(headerId = null) {
     const data = await queries.getComberMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -181,7 +183,7 @@ export async function updateComberMachineSetupAction(id, updates) {
     const data = await queries.updateComberMachineSetup(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -190,7 +192,7 @@ export async function addComberMachineAction(machineData) {
     const data = await queries.addComberMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -199,7 +201,7 @@ export async function removeComberMachineAction(machineId) {
     const data = await queries.removeComberMachine(machineId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -208,7 +210,7 @@ export async function updateComberMachineCountAction(machineId, newCount) {
     const data = await queries.updateComberMachineCount(machineId, newCount)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -217,7 +219,7 @@ export async function bulkUpdateComberMachineCountAction(machineIds, newCount, h
     const data = await queries.bulkUpdateComberMachineCount(machineIds, newCount, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -226,7 +228,7 @@ export async function getComberCountOptionsAction() {
     const data = await queries.getComberCountOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -235,7 +237,7 @@ export async function getComberMachinesAction() {
     const data = await queries.getComberMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -244,7 +246,7 @@ export async function getComberProductionWithSetupAction(headerId) {
     const data = await queries.getComberProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -253,7 +255,7 @@ export async function applyComberFullStoppageAction(headerId, stoppageId, stoppa
     const result = await queries.applyComberFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: result.success, data: serializeData(result.data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -270,7 +272,7 @@ export async function applyComberPartialStoppageAction(headerId, fromMachineNo, 
       }
     }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -283,7 +285,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -296,7 +298,7 @@ export async function getComberAvailablePreviousDatesAction(beforeDate, shift, l
     const data = await queries.getComberAvailableDates(beforeDate, shift, limit)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 

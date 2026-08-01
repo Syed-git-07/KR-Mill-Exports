@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/breakerDrawingQueries'
 import { assertWorkingDate } from '@/lib/holidayValidation'
@@ -21,7 +23,7 @@ export async function getBreakerDrawingShiftConfigAction(shift) {
       }
     }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -34,7 +36,7 @@ export async function getBreakerDrawingProductionByDateShiftAction(date, shift) 
     const data = await queries.getBreakerDrawingProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -44,7 +46,7 @@ export async function getOrCreateBreakerDrawingHeaderAction(date, shift, supervi
     const data = await queries.getOrCreateBreakerDrawingHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -53,7 +55,7 @@ export async function updateBreakerDrawingHeaderAction(id, updates) {
     const data = await queries.updateBreakerDrawingHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -66,7 +68,7 @@ export async function getBreakerDrawingProductionDetailsAction(headerId) {
     const data = await queries.getBreakerDrawingProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -75,7 +77,7 @@ export async function getBreakerDrawingProductionWithSetupAction(headerId) {
     const data = await queries.getBreakerDrawingProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -84,7 +86,7 @@ export async function initializeBreakerDrawingDetailsAction(headerId, shift = 1)
     const data = await queries.initializeBreakerDrawingDetails(headerId, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -93,7 +95,7 @@ export async function syncNewMachinesToHeaderAction(headerId, shift = 1) {
     const data = await queries.syncNewMachinesToBreakerDrawingHeader(headerId, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -105,7 +107,7 @@ export async function updateProductionDetailAction(id, updates) {
     const data = await queries.updateBreakerDrawingDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -121,7 +123,7 @@ export async function getBreakerDrawingStoppageEntriesAction(headerId) {
     const data = await queries.getBreakerDrawingStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -130,7 +132,7 @@ export async function updateStoppageEntryAction(id, updates) {
     const data = await queries.updateStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -139,7 +141,7 @@ export async function getBreakerDrawingStoppageReasonsAction() {
     const data = await queries.getBreakerDrawingStoppageReasons()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -161,7 +163,7 @@ export async function getBreakerDrawingMachineSetupsAction(shift = 1, headerId =
     
     return { success: true, data: serializeData(modifiedData) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -170,7 +172,7 @@ export async function updateMachineSetupAction(machineId, updates) {
     const data = await queries.updateMachineSetup(machineId, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -179,7 +181,7 @@ export async function upsertMachineSetupAction(machineId, setupData) {
     const data = await queries.upsertMachineSetup(machineId, setupData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -188,7 +190,7 @@ export async function getCountOptionsAction() {
     const data = await queries.getCountOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -197,7 +199,7 @@ export async function addBreakerDrawingMachineAction(machineData) {
     const data = await queries.addBreakerDrawingMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -206,7 +208,7 @@ export async function removeBreakerDrawingMachineAction(machineId) {
     const data = await queries.removeBreakerDrawingMachine(machineId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -215,7 +217,7 @@ export async function updateMachineCountAction(machineId, count) {
     const data = await queries.updateMachineCount(machineId, count)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -224,7 +226,7 @@ export async function bulkUpdateMachineCountAction(machineIds, count) {
     const data = await queries.bulkUpdateMachineCount(machineIds, count)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -234,7 +236,7 @@ export async function getMixingOptionsAction() {
     const data = await queries.getMixingOptions()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -244,7 +246,7 @@ export async function updateBreakerDrawingMachineMixingAction(machineId, mixing,
     const data = await queries.updateBreakerDrawingMachineMixing(machineId, mixing, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -254,7 +256,7 @@ export async function bulkUpdateBreakerDrawingMachineMixingAction(machineIds, mi
     const data = await queries.bulkUpdateBreakerDrawingMachineMixing(machineIds, mixing, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -267,7 +269,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -276,7 +278,7 @@ export async function copyBreakerDrawingFromPreviousDateAction(targetDate, targe
     const data = await queries.copyBreakerDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -285,7 +287,7 @@ export async function getBreakerDrawingAvailableDatesAction(currentDate, shift) 
     const data = await queries.getBreakerDrawingAvailableDates(currentDate, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -295,7 +297,7 @@ export async function getBreakerDrawingMachinesAction() {
     const data = await queries.getBreakerDrawingMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -305,7 +307,7 @@ export async function applyBreakerDrawingFullStoppageAction(headerId, stoppageId
     const data = await queries.applyBreakerDrawingFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -315,6 +317,6 @@ export async function applyBreakerDrawingPartialStoppageAction(headerId, fromMac
     const data = await queries.applyBreakerDrawingPartialStoppage(headerId, fromMachine, toMachine, stoppageId, stoppageTime)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

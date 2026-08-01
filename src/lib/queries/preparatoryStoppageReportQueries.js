@@ -367,7 +367,7 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
         code: dept.code,
         categories: {},
         netTotal: 0,
-        error: error.message
+        error: 'This department could not be included in the report.'
       }
     }
   }

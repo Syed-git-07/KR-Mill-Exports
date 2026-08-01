@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/spinningEntryQueries'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -24,7 +26,7 @@ export async function getSpinningShiftConfigAction(shift) {
     const fallbackShiftTime = resolveSpinningShiftFallbackTime(shift)
     return { 
       success: false, 
-      error: error.message,
+      error: safeActionError(error),
       data: {
         shiftTime: fallbackShiftTime,
         defaultStoppage: 0,
@@ -43,7 +45,7 @@ export async function getSpinningProductionByDateShiftAction(date, shift) {
     const data = await queries.getSpinningProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -53,7 +55,7 @@ export async function getOrCreateSpinningHeaderAction(date, shift, supervisorId,
     const data = await queries.getOrCreateSpinningHeader(date, shift, supervisorId, maisitryId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -62,7 +64,7 @@ export async function updateSpinningProductionHeaderAction(id, updates) {
     const data = await queries.updateSpinningProductionHeader(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -75,7 +77,7 @@ export async function getSpinningProductionDetailsAction(headerId) {
     const data = await queries.getSpinningProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -84,7 +86,7 @@ export async function syncNewMachinesToSpinningHeaderAction(headerId, shift = 1)
     const data = await queries.syncNewMachinesToSpinningHeader(headerId, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -93,7 +95,7 @@ export async function updateSpinningProductionDetailAction(id, updates) {
     const data = await queries.updateSpinningProductionDetail(id, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -102,7 +104,7 @@ export async function batchUpdateSpinningProductionDetailsAction(updates) {
     const data = await queries.batchUpdateSpinningProductionDetails(updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -112,7 +114,7 @@ export async function calculateSpinningProductionAction(params) {
     const result = queries.calculateSpinningProduction(params)
     return { success: true, data: result }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -125,7 +127,7 @@ export async function getSpinningStoppageEntriesAction(headerId) {
     const data = await queries.getSpinningStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -134,7 +136,7 @@ export async function updateSpinningStoppageEntryAction(stoppageId, updates) {
     const data = await queries.updateSpinningStoppageEntry(stoppageId, updates)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -143,7 +145,7 @@ export async function applySpinningFullStoppageAction(headerId, stoppageId, stop
     const data = await queries.applyFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -152,7 +154,7 @@ export async function applySpinningPartialStoppageAction(headerId, fromMachineNo
     const data = await queries.applyPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -161,7 +163,7 @@ export async function getSpinningStoppageReasonsAction() {
     const data = await queries.getSpinningStoppageReasons()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -170,7 +172,7 @@ export async function searchSpinningStoppageReasonsAction(searchTerm = '', limit
     const data = await queries.searchSpinningStoppageReasons(searchTerm, limit)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -192,7 +194,7 @@ export async function getSpinningMachineSetupsAction(shift = 1, entryDate) {
     
     return { success: true, data: serializeData(modifiedData) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -201,7 +203,7 @@ export async function updateSpinningMachineSetupAction(id, updates, shift = null
     const data = await queries.updateSpinningMachineSetup(id, updates, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -210,7 +212,7 @@ export async function upsertSpinningMachineSetupAction(machineId, entryDate, set
     const data = await queries.upsertSpinningMachineSetup(machineId, entryDate, setupData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -219,7 +221,7 @@ export async function batchUpdateSpinningMachineSetupsAction(updates, shift = nu
     const data = await queries.batchUpdateSpinningMachineSetups(updates, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -232,7 +234,7 @@ export async function getSpinningMachinesAction() {
     const data = await queries.getSpinningMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -241,7 +243,7 @@ export async function getAllSpinningMachinesAction() {
     const data = await queries.getAllSpinningMachines()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -250,7 +252,7 @@ export async function lookupSpinningMachineByNoAction(machineNo) {
     const data = await queries.lookupSpinningMachineByNo(machineNo)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -259,7 +261,7 @@ export async function getSpinningCountsAction() {
     const data = await queries.getSpinningCounts()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -268,7 +270,7 @@ export async function getSupervisorsAction() {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -277,7 +279,7 @@ export async function getMaisitriesAction() {
     const data = await queries.getMaisitries()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -290,7 +292,7 @@ export async function addSpinningMachineAction(machineData) {
     const data = await queries.addSpinningMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -299,7 +301,7 @@ export async function removeSpinningMachineAction(id) {
     const data = await queries.removeSpinningMachine(id)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -308,7 +310,7 @@ export async function removeSpinningMachineSetupsAction(setupIds) {
     const data = await queries.removeSpinningMachineSetups(setupIds)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -317,7 +319,7 @@ export async function applySpinningOptionCheckAction(payload) {
     const data = await queries.applySpinningOptionCheck(payload)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -330,7 +332,7 @@ export async function getSpinningAvailableDatesAction(beforeDate, shift, limit =
     const data = await queries.getSpinningAvailablePreviousDates(beforeDate, shift, limit)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }
 
@@ -339,6 +341,6 @@ export async function copySpinningFromPreviousDateAction(targetDate, targetShift
     const data = await queries.copySpinningFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: error.message }
+    return { success: false, error: safeActionError(error) }
   }
 }

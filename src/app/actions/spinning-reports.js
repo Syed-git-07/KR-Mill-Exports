@@ -1,5 +1,7 @@
 'use server'
 
+import { safeActionError } from '@/lib/security/errors'
+
 import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageReportQueries'
 
 /**
@@ -36,7 +38,7 @@ export async function generateSpinningStoppageReportAction(selectedDate) {
     console.error('Error in generateSpinningStoppageReportAction:', error)
     return {
       success: false,
-      message: error.message || 'Failed to generate report'
+      message: safeActionError(error)
     }
   }
 }
