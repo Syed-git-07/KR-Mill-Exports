@@ -15,6 +15,7 @@ import {
   searchStoppageHeadsAction
 } from '@/app/actions/stoppage-head';
 import { Plus, Trash2 } from 'lucide-react';
+import { assertAllActionsSucceeded } from '@/lib/actionResult';
 
 export default function StoppageHeadMaster() {
   const [stoppageHeads, setStoppageHeads] = useState([]);
@@ -119,7 +120,8 @@ export default function StoppageHeadMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteStoppageHeadAction(row.id)));
+        const results = await Promise.all(selectedRows.map(row => deleteStoppageHeadAction(row.id)));
+        assertAllActionsSucceeded(results, 'Failed to delete one or more stoppage heads');
         toast.success(`${selectedRows.length} stoppage head(s) deleted successfully`);
         setSelectedRows([]);
         setIsSelectMode(false);

@@ -3,7 +3,9 @@ import { resolveCardingShiftFallbackTime } from '../cardingShiftFallback'
 import { calculateCardingStdProdn, resolveCardingFormulaInputs } from '../cardingFormulaFallback'
 import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
-import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { buildStoppageUpdate, findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { assertActiveStoppageReasons } from './stoppageValidation'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 function isCardingMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
@@ -117,6 +119,10 @@ export async function getOrCreateProductionHeader(date, shift, supervisorId, mai
     })
     return data
   } catch (error) {
+    if (error?.code === 'P2002') {
+      const concurrentHeader = await getCardingProductionByDateShift(date, shift)
+      if (concurrentHeader) return concurrentHeader
+    }
     throw error
   }
 }
@@ -126,7 +132,7 @@ export async function updateProductionHeader(id, updates) {
   try {
     const data = await prisma.carding_production_header.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {
@@ -415,7 +421,8 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     })
 
     await prisma.carding_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details (only new ones)
@@ -434,7 +441,8 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     }))
 
     await prisma.carding_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     // Return all details (existing + new)
@@ -566,7 +574,8 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
     })
 
     await prisma.carding_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the newly created details
@@ -585,7 +594,8 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
     }))
 
     await prisma.carding_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return { added: createdDetails.length, machines: newMachines.map(m => m.machine_no) }
@@ -609,15 +619,11 @@ export async function updateProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateProductionDetails(updates) {
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.carding_production_detail.update({
-      where: { id },
-      data
-    })
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.carding_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   )
-
-  const results = await Promise.all(promises)
-  return results
 }
 
 // ============================================
@@ -746,48 +752,27 @@ export async function getCardingStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateStoppageEntry(id, updates) {
-  try {
-    // First, fetch the existing record to get current stoppage values
-    const existing = await prisma.carding_stoppage_entry.findUnique({
+  return prisma.$transaction(async tx => {
+    const existing = await tx.carding_stoppage_entry.findUnique({
       where: { id },
       select: {
+        production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     })
+    if (!existing) throw new Error(`Stoppage entry ${id} not found`)
 
-    if (!existing) {
-      throw new Error(`Stoppage entry ${id} not found`)
-    }
-
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    }
-
-    // Calculate total stoppage time from merged values
-    const total = mergedStoppages.stoppage1_time + 
-                  mergedStoppages.stoppage2_time + 
-                  mergedStoppages.stoppage3_time + 
-                  mergedStoppages.stoppage4_time
-
-    const data = await prisma.carding_stoppage_entry.update({
-      where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: total
-      }
-    })
-
-    // Resolve runtime using this entry's header shift (DB-first, guarded fallback).
-    const prodDetail = await prisma.carding_production_detail.findUnique({
-      where: { id: data.production_detail_id },
+    const stoppageUpdate = buildStoppageUpdate(existing, updates)
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['CARDING'])
+    const prodDetail = await tx.carding_production_detail.findUnique({
+      where: { id: existing.production_detail_id },
       select: {
         id: true,
         header_id: true,
@@ -797,49 +782,53 @@ export async function updateStoppageEntry(id, updates) {
         waste: true,
       }
     })
+    if (!prodDetail) throw new Error('The production row for this stoppage no longer exists')
 
-    const header = prodDetail?.header_id
-      ? await prisma.carding_production_header.findUnique({
-          where: { id: prodDetail.header_id },
-          select: { shift: true }
-        })
-      : null
+    const header = await tx.carding_production_header.findUnique({
+      where: { id: prodDetail.header_id },
+      select: { shift: true, entry_date: true }
+    })
+    if (!header) throw new Error('The production header for this stoppage no longer exists')
 
-    const totalTime = await getCardingShiftTime(header?.shift || 1)
+    const shiftConfig = await tx.shift_config.findFirst({
+      where: { department_code: 'CARDING', shift: header.shift, is_active: true },
+      select: { shift_time: true }
+    })
+    const totalTime = shiftConfig?.shift_time || resolveCardingShiftFallbackTime(header.shift)
+    if (stoppageUpdate.total_stoppage_time > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time')
+      error.code = 'INVALID_STOPPAGE'
+      throw error
+    }
 
-    // STEP-2/3/4/7 dynamic recalculation from formula flow:
-    // Std Prodn = setup/std baseline, Exp Prodn = Std * Work / Total,
-    // Effi% (Performance) = Act / Exp * 100, Waste% = Waste / Act * 100.
-    const setup = prodDetail?.machine_id
-      ? await prisma.carding_machine_setup.findFirst({
-          where: { machine_id: prodDetail.machine_id },
-          select: {
-            speed: true,
-            hank_constant: true,
-            std_efficiency_factor: true,
-            divisor_constant: true,
-            std_prodn: true,
-          }
-        })
-      : null
-
-    const stdProdnBaseline =
-      (prodDetail?.std_prodn ?? null) ||
-      (setup?.std_prodn ?? null) ||
-      calculateCardingStdProdn(setup || {}, totalTime)
-
-    const actProdn = Number.parseFloat(prodDetail?.act_prodn || 0)
-    const waste = Number.parseFloat(prodDetail?.waste || 0)
+    const setup = await tx.carding_machine_setup.findFirst({
+      where: {
+        machine_id: prodDetail.machine_id,
+        entry_date: header.entry_date,
+        shift: header.shift
+      },
+      select: {
+        speed: true,
+        hank_constant: true,
+        std_efficiency_factor: true,
+        divisor_constant: true,
+        std_prodn: true,
+      }
+    })
+    const standardProduction = prodDetail.std_prodn
+      ?? setup?.std_prodn
+      ?? calculateCardingStdProdn(setup || {}, totalTime)
     const metrics = calculateTimeAdjustedProductionMetrics({
-      actualProduction: actProdn,
-      standardProduction: stdProdnBaseline,
-      waste,
+      actualProduction: prodDetail.act_prodn,
+      standardProduction,
+      waste: prodDetail.waste,
       totalTime,
-      stoppageTime: total,
+      stoppageTime: stoppageUpdate.total_stoppage_time,
     })
 
-    await prisma.carding_production_detail.update({
-      where: { id: data.production_detail_id },
+    const data = await tx.carding_stoppage_entry.update({ where: { id }, data: stoppageUpdate })
+    await tx.carding_production_detail.update({
+      where: { id: existing.production_detail_id },
       data: {
         total_stoppage_mins: metrics.stoppageTime,
         work_time: metrics.workTime,
@@ -850,11 +839,8 @@ export async function updateStoppageEntry(id, updates) {
         waste_percent: metrics.wastePercent,
       }
     })
-
     return data
-  } catch (error) {
-    throw error
-  }
+  })
 }
 
 // Apply full stoppage to all machines
@@ -1418,10 +1404,20 @@ export async function getCardingAvailablePreviousDates(beforeDate, shift, limit 
 export async function copyCardingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
   return copyPreviousSpeeds({
     setupModel: prisma.carding_machine_setup,
+    headerModel: prisma.carding_production_header,
+    targetHeaderId,
     targetDate,
     targetShift,
     sourceDate,
-    updateSpeed: (setupId, speed) => updateMachineSetup(setupId, { speed })
+    buildUpdateData: (setup, speed) => {
+      const shiftTime = Number(setup.shift_time || 0)
+      return {
+        speed,
+        ...(shiftTime > 0
+          ? { std_prodn: Math.round(calculateCardingStdProdn({ ...setup, speed }, shiftTime) * 100) / 100 }
+          : {})
+      }
+    }
   })
 }
 

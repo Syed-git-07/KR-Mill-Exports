@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { deleteUnusedStoppageDetail } from './masterDeletion'
 
 /**
  * Get all stoppage details with joined data
@@ -167,11 +168,7 @@ export async function updateStoppageDetail(id, stoppageDetailData) {
  * Delete stoppage detail
  */
 export async function deleteStoppageDetail(id) {
-  await prisma.stoppage_details.delete({
-    where: { id }
-  });
-
-  return true
+  return deleteUnusedStoppageDetail(id)
 }
 
 /**

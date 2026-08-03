@@ -547,7 +547,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
       // Deactivate machines in master table (like Carding)
       const removePromises = machineIds.map(id => removeAutoconerMachineAction(id, entryDate))
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setRemoveDialog(false)

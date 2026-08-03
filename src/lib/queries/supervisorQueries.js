@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedSupervisor } from './masterDeletion';
 
 /**
  * Supervisor Master CRUD Operations
@@ -59,11 +60,7 @@ export async function updateSupervisor(id, supervisorData) {
 
 // Delete supervisor
 export async function deleteSupervisor(id) {
-  await prisma.supervisors.delete({
-    where: { id }
-  });
-
-  return true;
+  return deleteUnusedSupervisor(id);
 }
 
 // Search supervisors
@@ -157,6 +154,5 @@ export async function getDepartmentsForDropdown() {
     orderBy: { dept_name: 'asc' }
   });
 
-  console.log('Departments query result:', data);
   return data;
 }

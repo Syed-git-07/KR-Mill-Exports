@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 /**
  * Comber Machine Master - CRUD Operations
@@ -109,10 +110,13 @@ export async function updateComberMachine(id, machineData) {
 
 // Delete a comber machine
 export async function deleteComberMachine(id) {
-  await prisma.comber_machines.delete({
-    where: { id }
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'comber_machines',
+    setupModel: 'comber_machine_setup',
+    productionDetailModel: 'comber_production_detail',
+    label: 'comber machine'
   });
-  return true;
 }
 
 // Search comber machines (all machines)

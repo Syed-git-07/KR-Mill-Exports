@@ -9,7 +9,7 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
   getFinisherDrawingProductionDetailsAction,
-  updateFinisherDrawingDetailAction,
+  bulkUpdateFinisherDrawingDetailsAction,
   getFinisherDrawingMachineSetupsAction,
   syncFinisherDrawingNewMachinesToHeaderAction
 } from '@/app/actions/finisher-drawing-entry'
@@ -263,6 +263,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     try {
       // First, sync any new machines that were added after this header was created
       const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Finisher Drawing machines')
       if (syncResult.success && syncResult.data.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
@@ -484,7 +485,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const rowId = String(row.id)
         const changes = findDraftByKeys(pendingEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
@@ -516,7 +517,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         // Exclude waste and waste_percent from calculated, then add them explicitly to preserve edited waste value
         const { waste_percent: calculatedWastePercent, ...otherCalculated } = calculated
         
-        return updateFinisherDrawingDetailAction(rowId, {
+        return {
+          id: rowId,
           employee_name: changes.employee_name ?? row.employee_name,
           prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
@@ -524,15 +526,11 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
           ...otherCalculated,
           waste,
           waste_percent: calculatedWastePercent,
-        })
+        }
       }).filter(Boolean)
 
-      const results = await Promise.all(updatePromises)
-
-      const failed = results.find(result => !result?.success)
-      if (failed) {
-        throw new Error(failed.error || 'Failed to save one or more production rows')
-      }
+      const result = await bulkUpdateFinisherDrawingDetailsAction(updates)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       const savedCount = rowsToSave.length
       editedRowsRef.current = {}
       setEditedRows({})

@@ -16,6 +16,7 @@ import {
   getSimplexCountOptionsAction
 } from '@/app/actions/simplex-machine';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
+import { assertAllActionsSucceeded } from '@/lib/actionResult';
 
 export default function SimplexMachinePage() {
   const [machines, setMachines] = useState([]);
@@ -149,7 +150,8 @@ export default function SimplexMachinePage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteSimplexMachineAction(row.id)));
+        const results = await Promise.all(selectedRows.map(row => deleteSimplexMachineAction(row.id)));
+        assertAllActionsSucceeded(results, 'Failed to remove one or more machines');
         toast.success(`${selectedRows.length} machine(s) permanently removed`);
         setSelectedRows([]);
         setIsSelectMode(false);
@@ -191,7 +193,8 @@ export default function SimplexMachinePage() {
       if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
 
       try {
-        await Promise.all(activeRows.map(row => updateSimplexMachineAction(row.id, { is_active: false })));
+        const results = await Promise.all(activeRows.map(row => updateSimplexMachineAction(row.id, { is_active: false })));
+        assertAllActionsSucceeded(results, 'Failed to deactivate one or more machines');
         toast.success(`${activeRows.length} machine(s) deactivated`);
         setSelectedRows([]);
         setIsSelectMode(false);

@@ -2,7 +2,9 @@ import { prisma } from '../prisma'
 import { calculateSimplexProductionValues as calculateSimplexProductionValuesFromUtils } from '../utils/simplexCalculations'
 import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
-import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
+import { buildStoppageUpdate, findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
+import { assertActiveStoppageReasons } from './stoppageValidation'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null
@@ -126,6 +128,10 @@ export async function getOrCreateSimplexProductionHeader(date, shift, supervisor
     })
     return data
   } catch (error) {
+    if (error?.code === 'P2002') {
+      const concurrentHeader = await getSimplexProductionByDateShift(date, shift)
+      if (concurrentHeader) return concurrentHeader
+    }
     throw new Error(`Failed to create production header: ${error.message}`)
   }
 }
@@ -135,7 +141,7 @@ export async function updateSimplexProductionHeader(id, updates) {
   try {
     const data = await prisma.simplex_production_header.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {
@@ -328,7 +334,8 @@ export async function initializeSimplexProductionDetails(headerId) {
     })
 
     await prisma.simplex_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -347,7 +354,8 @@ export async function initializeSimplexProductionDetails(headerId) {
     }))
 
     await prisma.simplex_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -482,7 +490,8 @@ export async function addMissingSimplexProductionDetails(headerId) {
     })
 
     await prisma.simplex_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -504,7 +513,8 @@ export async function addMissingSimplexProductionDetails(headerId) {
     }))
 
     await prisma.simplex_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -528,15 +538,11 @@ export async function updateSimplexProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateSimplexProductionDetails(updates) {
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.simplex_production_detail.update({
-      where: { id },
-      data
-    })
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.simplex_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   )
-
-  const results = await Promise.all(promises)
-  return results
 }
 
 // ============================================
@@ -638,15 +644,20 @@ export async function getSimplexStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateSimplexStoppageEntry(id, updates) {
-  try {
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
-    const existing = await prisma.simplex_stoppage_entry.findUnique({
+    const existing = await tx.simplex_stoppage_entry.findUnique({
       where: { id },
       select: {
         production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     })
@@ -655,41 +666,27 @@ export async function updateSimplexStoppageEntry(id, updates) {
       throw new Error(`Stoppage entry ${id} not found`)
     }
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    }
+    const stoppageUpdate = buildStoppageUpdate(existing, updates)
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['SIMPLEX'])
+    const total = stoppageUpdate.total_stoppage_time
 
-    // Calculate total stoppage time from merged values
-    const total = mergedStoppages.stoppage1_time + 
-                  mergedStoppages.stoppage2_time + 
-                  mergedStoppages.stoppage3_time + 
-                  mergedStoppages.stoppage4_time
-
-    const data = await prisma.simplex_stoppage_entry.update({
+    const data = await tx.simplex_stoppage_entry.update({
       where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: total
-      }
+      data: stoppageUpdate
     })
 
     // Recalculate production values with the latest stoppage total.
     // Relations are not available in Prisma schema for this model, so fetch related rows manually.
-    const productionDetail = await prisma.simplex_production_detail.findUnique({
+    const productionDetail = await tx.simplex_production_detail.findUnique({
       where: { id: existing.production_detail_id }
     })
 
     if (!productionDetail) {
-      return data
+      throw new Error('The production row for this stoppage no longer exists')
     }
 
     const [header, machine] = await Promise.all([
-      prisma.simplex_production_header.findUnique({
+      tx.simplex_production_header.findUnique({
         where: { id: productionDetail.header_id },
         select: {
           total_time: true,
@@ -697,7 +694,7 @@ export async function updateSimplexStoppageEntry(id, updates) {
           entry_date: true
         }
       }),
-      prisma.simplex_machines.findUnique({
+      tx.simplex_machines.findUnique({
         where: { id: productionDetail.machine_id },
         select: {
           speed: true,
@@ -707,7 +704,9 @@ export async function updateSimplexStoppageEntry(id, updates) {
         }
       })
     ])
-    const setup = await prisma.simplex_machine_setup.findFirst({
+    if (!header) throw new Error('The production header for this stoppage no longer exists')
+
+    const setup = await tx.simplex_machine_setup.findFirst({
       where: {
         machine_id: productionDetail.machine_id,
         entry_date: header.entry_date,
@@ -717,6 +716,11 @@ export async function updateSimplexStoppageEntry(id, updates) {
 
     const shift = header?.shift
     const totalTime = header?.total_time || resolveSimplexShiftFallbackTime(shift)
+    if (total > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time')
+      error.code = 'INVALID_STOPPAGE'
+      throw error
+    }
 
     const calculated = calculateSimplexProductionValues({
       runHrs: productionDetail.run_hrs || 0,
@@ -731,9 +735,10 @@ export async function updateSimplexStoppageEntry(id, updates) {
       stoppageTime: total
     })
 
-    await prisma.simplex_production_detail.update({
+    await tx.simplex_production_detail.update({
       where: { id: existing.production_detail_id },
       data: {
+        total_stoppage_mins: total,
         run_time: totalTime,
         run_min: calculated.run_min,
         work_time: calculated.work_time,
@@ -746,9 +751,10 @@ export async function updateSimplexStoppageEntry(id, updates) {
     })
 
     return data
-  } catch (error) {
-    throw error
-  }
+    } catch (error) {
+      throw error
+    }
+  })
 }
 
 // Apply full stoppage to all machines and recalculate production

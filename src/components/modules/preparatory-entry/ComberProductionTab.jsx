@@ -10,7 +10,7 @@ import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import {
   getComberProductionWithSetupAction,
-  updateComberProductionDetailAction,
+  bulkUpdateComberProductionDetailsAction,
   getComberMachineSetupsAction,
   syncNewMachinesToComberHeaderAction
 } from '@/app/actions/comber-entry'
@@ -198,7 +198,8 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
     setIsLoading(true)
     try {
       // Sync new/removed machines before loading
-      await syncNewMachinesToComberHeaderAction(headerId)
+      const syncResult = await syncNewMachinesToComberHeaderAction(headerId)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Comber machines')
 
       const [detailsResult, setupsResult] = await Promise.all([
         getComberProductionWithSetupAction(headerId),
@@ -352,7 +353,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -374,22 +375,18 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
           setup
         )
 
-        return updateComberProductionDetailAction(row.id, {
+        return {
+          id: row.id,
           ...changes,
           ...calculated,
           act_hank: actHank,
           run_hrs: runHrs,
           waste: waste
-        })
+        }
       })
 
-      const results = await Promise.all(updatePromises)
-      
-      // Check if any failed
-      const failed = results.filter(r => !r.success)
-      if (failed.length > 0) {
-        throw new Error(failed[0].error || 'Failed to save')
-      }
+      const result = await bulkUpdateComberProductionDetailsAction(updates)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       
       const savedCount = rowsToSave.length
       setEditedRows({})

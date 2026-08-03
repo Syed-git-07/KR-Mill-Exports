@@ -15,6 +15,7 @@ import {
   searchSupervisorsAction
 } from '@/app/actions/supervisor';
 import { Plus, Trash2 } from 'lucide-react';
+import { assertAllActionsSucceeded } from '@/lib/actionResult';
 
 export default function SupervisorMaster() {
   const [supervisors, setSupervisors] = useState([]);
@@ -112,7 +113,8 @@ export default function SupervisorMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteSupervisorAction(row.id)));
+        const results = await Promise.all(selectedRows.map(row => deleteSupervisorAction(row.id)));
+        assertAllActionsSucceeded(results, 'Failed to delete one or more supervisors');
         toast.success(`${selectedRows.length} supervisor(s) deleted successfully`);
         setSelectedRows([]);
         setIsSelectMode(false);

@@ -21,7 +21,6 @@ import {
   updateStoppageEntryAction,
   getBreakerDrawingMachinesAction,
   getBreakerDrawingMachineSetupsAction,
-  updateBreakerDrawingDetailAction,
   syncNewMachinesToBreakerDrawingHeaderAction
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
@@ -288,7 +287,8 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     setIsLoading(true)
     try {
       // Sync any newly added machines to this header first
-      await syncNewMachinesToBreakerDrawingHeaderAction(headerId, shift)
+      const syncResult = await syncNewMachinesToBreakerDrawingHeaderAction(headerId, shift)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Breaker Drawing machines')
       
       const [stoppagesRes, reasonsRes, machineListRes, setupsRes] = await Promise.all([
         getBreakerDrawingStoppageEntriesAction(headerId),
@@ -531,51 +531,6 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Breaker Drawing stoppage row')
       }
-      
-      // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {
-        const stoppageRow = stoppageData.find(s => s.id === rowId)
-        if (!stoppageRow || !stoppageRow.production_detail) return null
-        
-        const prodDetail = stoppageRow.production_detail
-        const mergedProduction = mergeProductionDetailWithDraft(prodDetail)
-        const machineId = mergedProduction.machine_id
-        const setup = getEffectiveSetup(machineId)
-        // Setup speed first so unsaved setup edits are reflected dynamically.
-        const machineSpeed = setup?.speed ?? mergedProduction.machine?.speed ?? BREAKER_DRAWING_FORMULA_FALLBACK.speed
-        
-        // Calculate new total stoppage
-        const editedChanges = editedRows[rowId]
-        const newTotalStoppage = 
-          (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
-          (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
-          (editedChanges.stoppage3_time ?? stoppageRow.stoppage3_time ?? 0) +
-          (editedChanges.stoppage4_time ?? stoppageRow.stoppage4_time ?? 0)
-
-        const actHank = toNumber(mergedProduction.act_hank)
-        const actProdnInput = resolveActProdnInput(mergedProduction)
-        
-        // Recalculate production values with new stoppage and machine speed
-        const calculated = calculateBreakerDrawingValues(
-          actHank,
-          actProdnInput,
-          totalTime,
-          newTotalStoppage,
-          setup,
-          machineSpeed,  // Pass machine speed explicitly (source of truth)
-          mergedProduction.waste
-        )
-
-        const payload = {
-          ...calculated,
-          act_hank: actHank
-        }
-        
-        // Update production detail
-        return updateBreakerDrawingDetailAction(mergedProduction.id, payload)
-      })
-      
-      await Promise.all(productionUpdatePromises.filter(Boolean))
       
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})

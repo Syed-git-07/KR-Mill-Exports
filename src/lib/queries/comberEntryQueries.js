@@ -8,7 +8,10 @@ import {
 } from '../comberFormulaFallback'
 import { resolveProductionTime } from '../productionFormulaMath'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
-import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { buildStoppageUpdate, findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { assertActiveStoppageReasons } from './stoppageValidation'
+import { isUniqueConstraintError } from './databaseErrors'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 // ============================================
 // COMBER CONSTANTS
@@ -172,6 +175,10 @@ export async function getOrCreateComberProductionHeader(date, shift, supervisorI
     const data = await getComberProductionByDateShift(date, shift)
     return data
   } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const concurrentHeader = await getComberProductionByDateShift(date, shift)
+      if (concurrentHeader) return concurrentHeader
+    }
     throw error
   }
 }
@@ -181,7 +188,7 @@ export async function updateComberProductionHeader(id, updates) {
   try {
     const data = await prisma.comber_production_header.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {
@@ -376,7 +383,8 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
     })
 
     await prisma.comber_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -395,7 +403,8 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
     }))
 
     await prisma.comber_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -419,15 +428,11 @@ export async function updateComberProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateComberProductionDetails(updates) {
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.comber_production_detail.update({
-      where: { id },
-      data
-    })
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.comber_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   )
-
-  const results = await Promise.all(promises)
-  return results
 }
 
 // ============================================
@@ -569,15 +574,20 @@ export async function getComberStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateComberStoppageEntry(id, updates) {
-  try {
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
-    const existing = await prisma.comber_stoppage_entry.findUnique({
+    const existing = await tx.comber_stoppage_entry.findUnique({
       where: { id },
       select: {
         production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     })
@@ -586,31 +596,17 @@ export async function updateComberStoppageEntry(id, updates) {
       throw new Error(`Stoppage entry ${id} not found`)
     }
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    }
+    const stoppageUpdate = buildStoppageUpdate(existing, updates)
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['COMBER'])
+    const total = stoppageUpdate.total_stoppage_time
 
-    // Calculate total stoppage time from merged values
-    const total = mergedStoppages.stoppage1_time + 
-                  mergedStoppages.stoppage2_time + 
-                  mergedStoppages.stoppage3_time + 
-                  mergedStoppages.stoppage4_time
-
-    const data = await prisma.comber_stoppage_entry.update({
+    const data = await tx.comber_stoppage_entry.update({
       where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: total
-      }
+      data: stoppageUpdate
     })
 
     // Resolve shift time from shift_config (DB-first) using this detail's header shift.
-    const detail = await prisma.comber_production_detail.findUnique({
+    const detail = await tx.comber_production_detail.findUnique({
       where: { id: existing.production_detail_id },
       select: {
         id: true,
@@ -621,17 +617,28 @@ export async function updateComberStoppageEntry(id, updates) {
         waste: true
       }
     })
+    if (!detail) throw new Error('The production row for this stoppage no longer exists')
+
     const header = detail?.header_id
-      ? await prisma.comber_production_header.findUnique({
+      ? await tx.comber_production_header.findUnique({
           where: { id: detail.header_id },
           select: { shift: true, entry_date: true }
         })
       : null
+    if (!header) throw new Error('The production header for this stoppage no longer exists')
 
-    const shiftConfig = await getComberShiftConfiguration(header?.shift || 1)
-    const totalTime = shiftConfig.totalTime
+    const shiftConfig = await tx.shift_config.findFirst({
+      where: { department_code: 'COMBER', shift: header.shift, is_active: true },
+      select: { shift_time: true }
+    })
+    const totalTime = shiftConfig?.shift_time || resolveComberShiftFallbackTime(header.shift)
+    if (total > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time')
+      error.code = 'INVALID_STOPPAGE'
+      throw error
+    }
     const setup = detail?.machine_id
-      ? await prisma.comber_machine_setup.findFirst({
+      ? await tx.comber_machine_setup.findFirst({
           where: { machine_id: detail.machine_id, entry_date: header.entry_date, shift: header.shift }
         })
       : null
@@ -646,7 +653,7 @@ export async function updateComberStoppageEntry(id, updates) {
       setup
     )
 
-    await prisma.comber_production_detail.update({
+    await tx.comber_production_detail.update({
       where: { id: existing.production_detail_id },
       data: {
         total_stoppage_mins: total,
@@ -655,9 +662,10 @@ export async function updateComberStoppageEntry(id, updates) {
     })
 
     return data
-  } catch (error) {
-    throw error
-  }
+    } catch (error) {
+      throw error
+    }
+  })
 }
 
 // Apply full stoppage to all machines

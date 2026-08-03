@@ -178,6 +178,7 @@ function LapFormerEntryContent() {
         // Sync any newly added machines to this existing header
         try {
           const syncResult = await syncNewMachinesToLapFormerHeaderAction(result.data.id)
+          if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Lap Former machines')
           if (syncResult.success && syncResult.data.added > 0) {
             toast.success(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
           }

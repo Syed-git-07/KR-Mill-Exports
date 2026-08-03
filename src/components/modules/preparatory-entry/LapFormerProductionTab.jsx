@@ -9,7 +9,7 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
   getLapFormerProductionWithSetupAction,
-  updateLapFormerDetailAction,
+  bulkUpdateLapFormerDetailsAction,
   getLapFormerMachineSetupsAction
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
@@ -455,7 +455,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findSharedDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -485,7 +485,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
         const wastePercent = actProdn > 0 ? Math.round((waste / actProdn) * 100 * 100) / 100 : 0
 
-        return updateLapFormerDetailAction(row.id, {
+        return {
+          id: row.id,
           ...calculated,
           employee_name: changes.employee_name ?? row.employee_name,
           prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
@@ -493,14 +494,11 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           act_prodn: actProdn,
           waste,
           waste_percent: wastePercent
-        })
+        }
       })
 
-      const results = await Promise.all(updatePromises)
-      const failed = results.filter(r => !r.success)
-      if (failed.length > 0) {
-        throw new Error('Some updates failed')
-      }
+      const result = await bulkUpdateLapFormerDetailsAction(updates)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       
       const savedCount = rowsToSave.length
       setEditedRows({})

@@ -357,7 +357,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         return setup?.machine?.id
       }).filter(Boolean)
       
-      await bulkUpdateSimplexMachineCountAction(machineIds, countToSet)
+      const result = await bulkUpdateSimplexMachineCountAction(machineIds, countToSet)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update Simplex counts')
       toast.success(`Count updated for ${selectedRows.length} machine(s)`)
       setShowCountChangeDialog(false)
       setNewCount('')
@@ -444,7 +445,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       for (const rowId of selectedRows) {
         const machineSetup = setupData.find(s => s.id === rowId)
         if (machineSetup?.machine?.id) {
-          await removeSimplexMachineAction(machineSetup.machine.id)
+          const result = await removeSimplexMachineAction(machineSetup.machine.id)
+          if (!result?.success) throw new Error(result?.error || 'Failed to remove a Simplex machine')
         }
       }
       

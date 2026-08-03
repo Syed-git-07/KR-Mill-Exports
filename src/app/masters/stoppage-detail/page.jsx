@@ -9,6 +9,7 @@ import StoppageDetailForm from '@/components/modules/masters/StoppageDetailForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { assertAllActionsSucceeded } from '@/lib/actionResult'
 
 export default function StoppageDetailPage() {
   const [stoppageDetails, setStoppageDetails] = useState([])
@@ -88,7 +89,8 @@ export default function StoppageDetailPage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteStoppageDetailAction(row.id)))
+        const results = await Promise.all(selectedRows.map(row => deleteStoppageDetailAction(row.id)))
+        assertAllActionsSucceeded(results, 'Failed to delete one or more stoppage details')
         toast.success(`${selectedRows.length} stoppage detail(s) deleted successfully`)
         setSelectedRows([])
         setIsSelectMode(false)

@@ -2,6 +2,7 @@ const { spawn } = require("node:child_process");
 const assert = require("node:assert/strict");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const { PrismaClient } = require("@prisma/client");
+const appPaths = require("../.next/server/app-paths-manifest.json");
 
 const port = 3105;
 const origin = `http://127.0.0.1:${port}`;
@@ -116,6 +117,20 @@ async function main() {
     assert.match(html, /data-app-auth-header/);
   }
 
+  const authenticatedPageRoutes = Object.keys(appPaths)
+    .filter((route) => route.endsWith("/page"))
+    .map((route) => route.replace(/\/page$/, "") || "/")
+    .filter((route) => route !== "/_not-found" && route !== "/login")
+    .map((route) => route === "/" ? route : `${route}/`);
+
+  for (const route of authenticatedPageRoutes) {
+    const response = await fetch(`${origin}${route}`, {
+      headers: authenticatedHeaders,
+      redirect: "manual",
+    });
+    assert.equal(response.status, 200, `${route} must render for an authenticated administrator`);
+  }
+
   await prisma.auth_sessions.update({
     where: { id: smokeSession.id },
     data: { revoked_at: new Date() },
@@ -153,6 +168,7 @@ async function main() {
         "protected report asset",
         "all module routes require login",
         "compact navbar on every authenticated page and none on login",
+        `${authenticatedPageRoutes.length} compiled application pages render while authenticated`,
         "revoked session redirects back to login",
         "forged session rejection",
         "cross-origin POST rejection",

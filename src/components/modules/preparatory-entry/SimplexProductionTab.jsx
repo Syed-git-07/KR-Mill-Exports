@@ -11,7 +11,7 @@ import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import { 
   getSimplexProductionWithSetupAction,
   getSimplexMachineSetupsAction,
-  updateSimplexProductionDetailAction
+  bulkUpdateSimplexProductionDetailsAction
 } from '@/app/actions/simplexEntryActions'
 import { calculateSimplexProductionValues } from '@/lib/utils/simplexCalculations'
 import { NumberInput } from '@/components/ui/number-input'
@@ -279,7 +279,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
     setIsSaving(true)
     try {
-      for (const row of rowsToSave) {
+      const updates = rowsToSave.map(row => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const setup = mergeSetupDraft(
           machineSetups[row.machine_id],
@@ -311,7 +311,8 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           stoppageTime
         })
 
-        const result = await updateSimplexProductionDetailAction(row.id, {
+        return {
+          id: row.id,
           employee_name: effectiveRow.employee_name,
           run_hrs: effectiveRow.run_hrs,
           run_min: calculated.run_min,
@@ -324,11 +325,11 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           uti_percent: calculated.uti_percent,
           std_hrs: calculated.std_hrs,
           work_time: calculated.work_time
-        })
-        if (!result?.success) {
-          throw new Error(result?.error || `Failed to update simplex production row ${row.id}`)
         }
-      }
+      })
+
+      const result = await bulkUpdateSimplexProductionDetailsAction(updates)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
 
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)

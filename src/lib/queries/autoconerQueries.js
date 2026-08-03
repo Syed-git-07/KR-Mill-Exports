@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 /**
  * Autoconer Machine Master CRUD Operations
@@ -168,11 +169,13 @@ export async function updateAutoconerMachine(id, machineData) {
 
 // Delete autoconer machine
 export async function deleteAutoconerMachine(id) {
-  await prisma.autoconer_machines.delete({
-    where: { id }
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'autoconer_machines',
+    setupModel: 'autoconer_machine_setup',
+    productionDetailModel: 'autoconer_production_detail',
+    label: 'autoconer machine'
   });
-  
-  return true;
 }
 
 // Search autoconer machines (active only)

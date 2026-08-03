@@ -16,6 +16,7 @@ import {
 } from '@/app/actions/tpi-entry';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { assertAllActionsSucceeded } from '@/lib/actionResult';
 
 export default function TPIEntryMaster() {
   const [entries, setEntries] = useState([]);
@@ -165,7 +166,8 @@ export default function TPIEntryMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteTPIEntryAction(row.id)));
+        const results = await Promise.all(selectedRows.map(row => deleteTPIEntryAction(row.id)));
+        assertAllActionsSucceeded(results, 'Failed to delete one or more TPI entries');
         toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
         setSelectedRows([]);
         setIsSelectMode(false);

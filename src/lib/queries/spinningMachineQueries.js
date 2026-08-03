@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 const SPINNING_DEFAULT_SETUP_DATE = new Date('2026-04-01T00:00:00.000Z');
 
@@ -196,11 +197,13 @@ export async function activateSpinningMachine(id) {
 
 // Delete spinning machine
 export async function deleteSpinningMachine(id) {
-  await prisma.spinning_machines.delete({
-    where: { id }
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'spinning_machines',
+    setupModel: 'spinning_machine_setup',
+    productionDetailModel: 'spinning_production_detail',
+    label: 'spinning machine'
   });
-
-  return true;
 }
 
 // Search spinning machines

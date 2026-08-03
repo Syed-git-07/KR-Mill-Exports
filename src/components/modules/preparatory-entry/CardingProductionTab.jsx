@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getCardingProductionWithSetupAction,
-  updateProductionDetailAction,
+  bulkUpdateProductionDetailsAction,
   getCardingMachineSetupsAction,
   syncNewMachinesToHeaderAction
 } from '@/app/actions/carding-entry'
@@ -171,6 +171,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
     try {
       // First, sync any new machines that were added after this header was created
       const syncResult = await syncNewMachinesToHeaderAction(headerId)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Carding machines')
       if (syncResult.success && syncResult.data?.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
@@ -380,7 +381,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map(async (row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -410,7 +411,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         const finalExpProdn = toNumber(calculated.exp_prodn)
         const finalEffiPercent = finalExpProdn > 0 ? (toNumber(actProdn) / finalExpProdn) * 100 : 0
 
-        const result = await updateProductionDetailAction(row.id, {
+        return {
+          id: row.id,
           ...changes,
           ...calculatedWithoutWaste,
           act_hank: actHank,
@@ -419,14 +421,11 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
           waste_percent: wastePercent,
           exp_prodn: Math.round(finalExpProdn * 100) / 100,
           effi_percent: Math.round(finalEffiPercent * 100) / 100
-        })
-        if (!result?.success) {
-          throw new Error(result?.error || `Failed to update carding production row ${row.id}`)
         }
-        return result
       })
 
-      await Promise.all(updatePromises)
+      const result = await bulkUpdateProductionDetailsAction(updates)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {

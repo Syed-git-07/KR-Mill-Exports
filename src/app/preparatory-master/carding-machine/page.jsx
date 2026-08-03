@@ -16,6 +16,7 @@ import {
   getCardingCountOptionsAction
 } from '@/app/actions/carding-machine';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
+import { assertAllActionsSucceeded } from '@/lib/actionResult';
 
 export default function CardingMachinePage() {
   const [machines, setMachines] = useState([]);
@@ -134,7 +135,8 @@ export default function CardingMachinePage() {
       }
       if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
       try {
-        await Promise.all(activeRows.map(row => updateCardingMachineAction(row.id, { is_active: false })));
+        const results = await Promise.all(activeRows.map(row => updateCardingMachineAction(row.id, { is_active: false })));
+        assertAllActionsSucceeded(results, 'Failed to deactivate one or more machines');
         toast.success(`${activeRows.length} machine(s) deactivated`);
         setSelectedRows([]);
         setIsSelectMode(false);
@@ -178,7 +180,8 @@ export default function CardingMachinePage() {
         return;
       }
       try {
-        await Promise.all(selectedRows.map(row => deleteCardingMachineAction(row.id)));
+        const results = await Promise.all(selectedRows.map(row => deleteCardingMachineAction(row.id)));
+        assertAllActionsSucceeded(results, 'Failed to remove one or more machines');
         toast.success(`${selectedRows.length} machine(s) permanently removed`);
         setSelectedRows([]);
         setIsSelectMode(false);

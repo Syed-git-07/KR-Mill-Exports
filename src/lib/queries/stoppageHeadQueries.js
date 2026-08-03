@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedStoppageHead } from './masterDeletion';
 
 /**
  * Stoppage Head Master CRUD Operations
@@ -44,11 +45,7 @@ export async function updateStoppageHead(id, stoppageData) {
 
 // Delete stoppage head
 export async function deleteStoppageHead(id) {
-  await prisma.stoppage_heads.delete({
-    where: { id }
-  });
-
-  return true;
+  return deleteUnusedStoppageHead(id);
 }
 
 // Search stoppage heads

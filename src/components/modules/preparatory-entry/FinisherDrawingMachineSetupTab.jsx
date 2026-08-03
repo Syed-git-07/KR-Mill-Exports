@@ -453,7 +453,9 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       const removePromises = selectedRows.map(machineId => 
         removeFinisherDrawingMachineAction(machineId)
       )
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])

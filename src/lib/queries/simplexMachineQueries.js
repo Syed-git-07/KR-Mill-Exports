@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null;
@@ -154,8 +155,13 @@ export async function updateSimplexMachine(id, machineData) {
 
 // Delete a simplex machine permanently
 export async function deleteSimplexMachine(id) {
-  await prisma.simplex_machines.delete({ where: { id } });
-  return true;
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'simplex_machines',
+    setupModel: 'simplex_machine_setup',
+    productionDetailModel: 'simplex_production_detail',
+    label: 'simplex machine'
+  });
 }
 
 // Search simplex machines (only active ones)

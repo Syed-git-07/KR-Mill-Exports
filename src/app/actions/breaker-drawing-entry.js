@@ -111,6 +111,15 @@ export async function updateProductionDetailAction(id, updates) {
   }
 }
 
+export async function bulkUpdateBreakerDrawingDetailsAction(updates) {
+  try {
+    const data = await queries.bulkUpdateBreakerDrawingDetails(updates)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
 // Alias for backward compatibility
 export const updateBreakerDrawingDetailAction = updateProductionDetailAction
 

@@ -327,7 +327,7 @@ function SpinningEntryContent() {
       setCopyDialogOpen(false)
       
       // Refresh data and force tabs to reload
-      loadProductionHeader()
+      await loadProductionHeader()
       setRefreshKey(prev => prev + 1)
       
     } catch (error) {

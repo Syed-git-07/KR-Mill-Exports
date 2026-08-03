@@ -9,6 +9,7 @@ import DepartmentForm from '@/components/modules/masters/DepartmentForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { assertAllActionsSucceeded } from '@/lib/actionResult'
 
 export default function DepartmentPage() {
   const [departments, setDepartments] = useState([])
@@ -86,7 +87,8 @@ export default function DepartmentPage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteDepartmentAction(row.id)))
+        const results = await Promise.all(selectedRows.map(row => deleteDepartmentAction(row.id)))
+        assertAllActionsSucceeded(results, 'Failed to delete one or more departments')
         toast.success(`${selectedRows.length} department(s) deleted successfully`)
         setSelectedRows([])
         setIsSelectMode(false)

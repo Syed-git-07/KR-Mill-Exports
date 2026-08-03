@@ -46,6 +46,15 @@ const {
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
 } = await importSourceModule('../src/lib/productionFormulaMath.js')
+const {
+  buildStoppageUpdate
+} = await importSourceModule('../src/lib/stoppageSlotUtils.js')
+const {
+  assertAllActionsSucceeded
+} = await importSourceModule('../src/lib/actionResult.js')
+const {
+  sanitizeProductionDetailUpdate
+} = await importSourceModule('../src/lib/queries/productionDetailUpdate.js')
 
 const setup = {
   id: 'setup-1',
@@ -282,4 +291,99 @@ test('new date snapshots apply every present machine master value including zero
 
   assert.equal(snapshot.speed, 0)
   assert.equal(snapshot.std_prodn, 0)
+})
+
+test('stoppage updates normalize numeric values, clear orphaned minutes and reject invalid time', () => {
+  const update = buildStoppageUpdate({
+    stoppage1_id: 'reason-1',
+    stoppage1_time: 10,
+    stoppage2_id: 'reason-2',
+    stoppage2_time: 5,
+    stoppage3_time: 0,
+    stoppage4_time: 0
+  }, {
+    stoppage1_time: '20',
+    stoppage2_id: null
+  })
+
+  assert.equal(update.stoppage1_time, 20)
+  assert.equal(update.stoppage2_time, 0)
+  assert.equal(update.total_stoppage_time, 20)
+  assert.throws(
+    () => buildStoppageUpdate({}, { stoppage1_time: -1 }),
+    error => error?.code === 'INVALID_STOPPAGE'
+  )
+  assert.throws(
+    () => buildStoppageUpdate({}, { stoppage1_time: 1.5 }),
+    error => error?.code === 'INVALID_STOPPAGE'
+  )
+})
+
+test('resolved server-action failures cannot be mistaken for successful bulk operations', () => {
+  assert.doesNotThrow(() => assertAllActionsSucceeded([{ success: true }]))
+  assert.throws(
+    () => assertAllActionsSucceeded([
+      { success: true },
+      { success: false, error: 'Machine is in use' }
+    ]),
+    /Machine is in use/
+  )
+})
+
+test('production updates cannot reassign rows to another header or machine', () => {
+  assert.deepEqual(
+    sanitizeProductionDetailUpdate({
+      header_id: 'different-header',
+      machine_id: 'different-machine',
+      created_at: new Date(0),
+      updated_at: new Date(0),
+      act_prodn: 42
+    }),
+    { act_prodn: 42 }
+  )
+})
+
+test('all production modules use shared draft dependencies and local bulk-stoppage updates', async () => {
+  const moduleFiles = [
+    ['Breaker Drawing', '../src/components/modules/preparatory-entry/BreakerDrawingProductionTab.jsx', '../src/components/modules/preparatory-entry/BreakerDrawingStoppageTab.jsx'],
+    ['Carding', '../src/components/modules/preparatory-entry/CardingProductionTab.jsx', '../src/components/modules/preparatory-entry/CardingStoppageTab.jsx'],
+    ['Comber', '../src/components/modules/preparatory-entry/ComberProductionTab.jsx', '../src/components/modules/preparatory-entry/ComberStoppageTab.jsx'],
+    ['Finisher Drawing', '../src/components/modules/preparatory-entry/FinisherDrawingProductionTab.jsx', '../src/components/modules/preparatory-entry/FinisherDrawingStoppageTab.jsx'],
+    ['Lap Former', '../src/components/modules/preparatory-entry/LapFormerProductionTab.jsx', '../src/components/modules/preparatory-entry/LapFormerStoppageTab.jsx'],
+    ['Simplex', '../src/components/modules/preparatory-entry/SimplexProductionTab.jsx', '../src/components/modules/preparatory-entry/SimplexStoppageTab.jsx'],
+    ['Autoconer', '../src/components/modules/post-preparatory/autoconer/AutoconerProductionTab.jsx', '../src/components/modules/post-preparatory/autoconer/AutoconerStoppageTab.jsx'],
+    ['Spinning', '../src/components/modules/post-preparatory/spinning/SpinningProductionTab.jsx', '../src/components/modules/post-preparatory/spinning/SpinningStoppageTab.jsx']
+  ]
+
+  for (const [name, productionPath, stoppagePath] of moduleFiles) {
+    const [productionSource, stoppageSource] = await Promise.all([
+      readFile(new URL(productionPath, import.meta.url), 'utf8'),
+      readFile(new URL(stoppagePath, import.meta.url), 'utf8')
+    ])
+
+    assert.match(productionSource, /getEffectiveStoppageTotal/, `${name} must calculate from stoppage drafts`)
+    assert.match(productionSource, /selectRowsForDependentCommit/, `${name} must persist dependent production rows`)
+    assert.match(stoppageSource, /applyBulkStoppageDraft/, `${name} bulk stoppage must update local drafts immediately`)
+  }
+})
+
+test('all stoppage persistence paths validate input and update dependent production atomically', async () => {
+  const queryFiles = [
+    '../src/lib/queries/autoconerEntryQueries.js',
+    '../src/lib/queries/breakerDrawingQueries.js',
+    '../src/lib/queries/cardingEntryQueries.js',
+    '../src/lib/queries/comberEntryQueries.js',
+    '../src/lib/queries/finisherDrawingEntryQueries.js',
+    '../src/lib/queries/lapFormerQueries.js',
+    '../src/lib/queries/simplexEntryQueries.js',
+    '../src/lib/queries/spinningEntryQueries.js'
+  ]
+
+  for (const queryPath of queryFiles) {
+    const source = await readFile(new URL(queryPath, import.meta.url), 'utf8')
+    assert.match(source, /buildStoppageUpdate/, `${queryPath} must normalize stoppage values`)
+    assert.match(source, /assertActiveStoppageReasons/, `${queryPath} must reject invalid stoppage reasons`)
+    assert.match(source, /sanitizeProductionDetailUpdate/, `${queryPath} must protect production row ownership`)
+    assert.match(source, /\$transaction\(/, `${queryPath} must save stoppage and production atomically`)
+  }
 })

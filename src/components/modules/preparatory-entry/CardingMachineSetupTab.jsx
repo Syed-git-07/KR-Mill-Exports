@@ -449,7 +449,9 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     setIsSaving(true)
     try {
       const promises = selectedRows.map(id => removeCardingMachineAction(id))
-      await Promise.all(promises)
+      const results = await Promise.all(promises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -486,7 +488,8 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      await bulkUpdateMachineCountAction(selectedRows, countToSet, sliverHank)
+      const result = await bulkUpdateMachineCountAction(selectedRows, countToSet, sliverHank)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update Carding counts')
       toast.success(`Count updated for ${selectedRows.length} machine(s)`)
       setShowCountChangeDialog(false)
       setNewCount('')

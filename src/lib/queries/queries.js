@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedDepartment } from './masterDeletion';
 
 /**
  * Department Master CRUD Operations
@@ -51,14 +52,7 @@ export async function updateDepartment(id, departmentData) {
 
 // Delete department
 export async function deleteDepartment(id) {
-  try {
-    await prisma.departments.delete({
-      where: { id }
-    });
-    return true;
-  } catch (error) {
-    throw error;
-  }
+  return deleteUnusedDepartment(id);
 }
 
 // Search departments

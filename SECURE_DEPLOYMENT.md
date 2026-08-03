@@ -31,6 +31,26 @@ npm run user:create -- --username admin --name "System Administrator" --role ADM
 npm run build
 ```
 
+For the production-integrity upgrade in this release, first take a tested
+backup and run the read-only audit:
+
+```powershell
+npm run db:audit
+```
+
+Do not continue if `blockingIssues` is greater than zero. After duplicate rows
+have been resolved, apply the additive unique constraints and indexes once:
+
+```powershell
+npx prisma db execute --file prisma/migrations/20260802_production_integrity_indexes.sql --schema prisma/schema.prisma
+npx prisma generate
+```
+
+The audit also reports historical warnings such as deleted master references,
+orphan stoppages, and old derived totals. It intentionally does not modify or
+guess at customer production history. Review those rows against a backup with
+the customer before any cleanup.
+
 If this is the first secured release going onto an existing KR Production
 database that has no `_prisma_migrations` table, `migrate deploy` will stop with
 `P3005` to protect the existing schema. For this one initial upgrade only, apply

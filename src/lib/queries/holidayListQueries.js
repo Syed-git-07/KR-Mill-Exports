@@ -96,39 +96,28 @@ function isMissingTableError(error) {
 }
 
 export async function getCompanies() {
-  try {
-    const companies = await prisma.$queryRaw`
-      SELECT id, name
-      FROM companies
-      WHERE status = 'Active'
-      ORDER BY name ASC
-    `
-    return companies
-  } catch (error) {
-    if (isMissingTableError(error)) {
-      try {
-        // Try to locate holiday_lists in any accessible schema and query it explicitly
-        const [found] = await prisma.$queryRaw`
-          SELECT TABLE_SCHEMA as schema_name
-          FROM information_schema.tables
-          WHERE table_name = 'holiday_lists'
-          LIMIT 1
-        `
-        if (found && found.schema_name) {
-          const table = qualifiedTable(found.schema_name, 'holiday_lists')
-          const fallback = await prisma.$queryRaw(
-            Prisma.sql`SELECT DISTINCT companyId AS id, CAST(companyId AS CHAR) AS name FROM ${table} ORDER BY companyId ASC`
-          )
-          return fallback || []
-        }
-        return []
-      } catch (fallbackError) {
-        if (isMissingTableError(fallbackError)) return []
-        throw fallbackError
-      }
+  const schemaName = await findHolidayTablesSchema()
+
+  if (schemaName) {
+    const companiesTable = qualifiedTable(schemaName, 'companies')
+    try {
+      const companies = await prisma.$queryRaw(
+        Prisma.sql`SELECT id, name FROM ${companiesTable} WHERE status = 'Active' ORDER BY name ASC`
+      )
+      return companies || []
+    } catch (error) {
+      if (!isMissingTableError(error)) throw error
+
+      // Some legacy holiday schemas do not contain a companies master. Keep
+      // those installations usable, but only as a last-resort fallback.
+      const holidayListsTable = qualifiedTable(schemaName, 'holiday_lists')
+      return prisma.$queryRaw(
+        Prisma.sql`SELECT DISTINCT companyId AS id, CAST(companyId AS CHAR) AS name FROM ${holidayListsTable} ORDER BY companyId ASC`
+      )
     }
-    throw error
   }
+
+  return []
 }
 
 export async function getHolidayLists(companyId) {

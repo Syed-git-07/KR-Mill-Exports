@@ -9,7 +9,7 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import {
   getBreakerDrawingProductionWithSetupAction,
-  updateBreakerDrawingDetailAction,
+  bulkUpdateBreakerDrawingDetailsAction,
   getBreakerDrawingMachineSetupsAction,
   syncNewMachinesToBreakerDrawingHeaderAction
 } from '@/app/actions/breaker-drawing-entry'
@@ -216,6 +216,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
     try {
       // First, sync any new machines that were added after this header was created
       const syncResult = await syncNewMachinesToBreakerDrawingHeaderAction(headerId)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Breaker Drawing machines')
       if (syncResult?.success && syncResult?.data?.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
@@ -453,7 +454,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -484,22 +485,18 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
         calculated.waste = waste
         calculated.waste_percent = actProdn > 0 ? Math.round((((waste ?? 0) / actProdn) * 100) * 100) / 100 : 0
 
-        return updateBreakerDrawingDetailAction(row.id, {
+        return {
+          id: row.id,
           employee_name: changes.employee_name ?? row.employee_name,
           prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
           act_prodn: actProdn,
           ...calculated
-        })
+        }
       })
 
-      const results = await Promise.all(updatePromises)
-      
-      // Check if any updates failed
-      const failed = results.filter(r => !r?.success)
-      if (failed.length > 0) {
-        throw new Error(`Failed to update ${failed.length} record(s)`)
-      }
+      const result = await bulkUpdateBreakerDrawingDetailsAction(updates)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {

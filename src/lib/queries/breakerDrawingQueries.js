@@ -2,9 +2,11 @@ import { prisma } from '../prisma';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { resolveBreakerDrawingShiftFallbackTime } from '../breakerDrawingShiftFallback';
 import { calculateBreakerDrawingStdProdn, getBreakerDrawingActProdnConstant, resolveBreakerDrawingFormulaInputs, BREAKER_DRAWING_FORMULA_FALLBACK } from '../breakerDrawingFormulaFallback';
-import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
+import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
-import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { buildStoppageUpdate, findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { assertActiveStoppageReasons } from './stoppageValidation';
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -91,16 +93,22 @@ export async function getOrCreateBreakerDrawingHeader(date, shift, supervisorId,
   const shiftConfig = await getBreakerDrawingShiftConfiguration(shift);
 
   // Create new header
-  const data = await prisma.breaker_drawing_production_header.create({
-    data: {
-      entry_date: new Date(date),
-      shift: shift,
-      supervisor_id: supervisorId || null,
-      maisitry_id: maisitryId || null,
-      total_time: shiftConfig.totalTime
-    }
-  });
-  return data;
+  try {
+    return await prisma.breaker_drawing_production_header.create({
+      data: {
+        entry_date: new Date(date),
+        shift: shift,
+        supervisor_id: supervisorId || null,
+        maisitry_id: maisitryId || null,
+        total_time: shiftConfig.totalTime
+      }
+    });
+  } catch (error) {
+    if (error?.code !== 'P2002') throw error;
+    const concurrentHeader = await getBreakerDrawingProductionByDateShift(date, shift);
+    if (!concurrentHeader) throw error;
+    return concurrentHeader;
+  }
 }
 
 // Update production header
@@ -271,7 +279,8 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
   });
 
   await prisma.breaker_drawing_production_detail.createMany({
-    data: details
+    data: details,
+    skipDuplicates: true
   });
 
   const createdData = await prisma.breaker_drawing_production_detail.findMany({
@@ -289,7 +298,8 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
   }));
 
   await prisma.breaker_drawing_stoppage_entry.createMany({
-    data: stoppageEntries
+    data: stoppageEntries,
+    skipDuplicates: true
   });
 
   return createdData;
@@ -406,7 +416,8 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
   });
 
   await prisma.breaker_drawing_production_detail.createMany({
-    data: details
+    data: details,
+    skipDuplicates: true
   });
 
   const createdData = await prisma.breaker_drawing_production_detail.findMany({
@@ -427,7 +438,8 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
   }));
 
   await prisma.breaker_drawing_stoppage_entry.createMany({
-    data: stoppageEntries
+    data: stoppageEntries,
+    skipDuplicates: true
   });
 
   return createdData;
@@ -436,7 +448,7 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
 // Update production detail
 export async function updateBreakerDrawingDetail(id, updates) {
   // Remove any fields that shouldn't be updated (like speed from calculations)
-  const { speed, machine, stoppage, ...cleanUpdates } = updates;
+  const { speed, machine, stoppage, ...cleanUpdates } = sanitizeProductionDetailUpdate(updates);
   
   try {
     const data = await prisma.breaker_drawing_production_detail.update({
@@ -452,15 +464,11 @@ export async function updateBreakerDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateBreakerDrawingDetails(updates) {
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.breaker_drawing_production_detail.update({
-      where: { id },
-      data
-    })
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.breaker_drawing_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   );
-
-  const results = await Promise.all(promises);
-  return results;
 }
 
 // ============================================
@@ -470,11 +478,6 @@ export async function bulkUpdateBreakerDrawingDetails(updates) {
 // Get stoppage entries for a header
 // Speed is fetched from machine table (source of truth)
 export async function getBreakerDrawingStoppageEntries(headerId) {
-  const data = await prisma.breaker_drawing_stoppage_entry.findMany({
-    orderBy: { production_detail_id: 'asc' }
-  });
-
-  // Filter to only include entries for this header (no is_active filter — deactivated machines must still show in past entries)
   const details = await prisma.breaker_drawing_production_detail.findMany({
     where: {
       header_id: headerId
@@ -483,7 +486,12 @@ export async function getBreakerDrawingStoppageEntries(headerId) {
   });
 
   const detailIds = details?.map(d => d.id) || [];
-  const filtered = data?.filter(s => detailIds.includes(s.production_detail_id)) || [];
+  if (detailIds.length === 0) return [];
+
+  const filtered = await prisma.breaker_drawing_stoppage_entry.findMany({
+    where: { production_detail_id: { in: detailIds } },
+    orderBy: { production_detail_id: 'asc' }
+  });
 
   const productionDetails = detailIds.length > 0
     ? await prisma.breaker_drawing_production_detail.findMany({
@@ -546,71 +554,101 @@ export async function getBreakerDrawingStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateBreakerDrawingStoppageEntry(id, updates) {
-  try {
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values
-    const existing = await prisma.breaker_drawing_stoppage_entry.findUnique({
+    const existing = await tx.breaker_drawing_stoppage_entry.findUnique({
       where: { id },
       select: {
+        production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     });
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    };
+    if (!existing) throw new Error(`Stoppage entry ${id} not found`);
+    const stoppageUpdate = buildStoppageUpdate(existing, updates);
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['BREAKER DRAWING']);
+    const total = stoppageUpdate.total_stoppage_time;
 
-    // Calculate total stoppage time from merged values
-    const total = mergedStoppages.stoppage1_time + 
-                  mergedStoppages.stoppage2_time + 
-                  mergedStoppages.stoppage3_time + 
-                  mergedStoppages.stoppage4_time;
-
-    const data = await prisma.breaker_drawing_stoppage_entry.update({
+    const data = await tx.breaker_drawing_stoppage_entry.update({
       where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: total
+      data: stoppageUpdate
+    });
+
+    // Recalculate every field that depends on stoppage time in the same transaction.
+    const detail = await tx.breaker_drawing_production_detail.findUnique({
+      where: { id: existing.production_detail_id },
+      select: {
+        id: true,
+        header_id: true,
+        machine_id: true,
+        act_hank: true,
+        act_prodn: true,
+        waste: true,
+        run_time: true
       }
     });
+    if (!detail) throw new Error('The production row for this stoppage no longer exists');
 
-    // Also update the total_stoppage_mins, work_time, and uti_percent in production_detail
-    const detail = await prisma.breaker_drawing_production_detail.findUnique({
-      where: { id: data.production_detail_id },
-      select: { run_time: true, header_id: true }
-    });
     const header = detail?.header_id
-      ? await prisma.breaker_drawing_production_header.findUnique({
+      ? await tx.breaker_drawing_production_header.findUnique({
           where: { id: detail.header_id },
-          select: { total_time: true, shift: true }
+          select: { total_time: true, shift: true, entry_date: true }
         })
       : null
-    const totalTime = detail?.run_time || header?.total_time || resolveBreakerDrawingShiftFallbackTime(header?.shift)
-    const productionTime = resolveProductionTime(totalTime, total)
+    if (!header) throw new Error('The production header for this stoppage no longer exists');
 
-    await prisma.breaker_drawing_production_detail.update({
-      where: { id: data.production_detail_id },
+    const totalTime = detail?.run_time || header?.total_time || resolveBreakerDrawingShiftFallbackTime(header?.shift)
+    if (total > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time');
+      error.code = 'INVALID_STOPPAGE';
+      throw error;
+    }
+    const [setup, machine] = await Promise.all([
+      tx.breaker_drawing_machine_setup.findFirst({
+        where: {
+          machine_id: detail.machine_id,
+          entry_date: header.entry_date,
+          shift: header.shift
+        }
+      }),
+      tx.drawing_breaker_machines.findUnique({
+        where: { id: detail.machine_id },
+        select: { speed: true }
+      })
+    ])
+    const calculated = calculateBreakerDrawingValues(
+      detail.act_hank,
+      detail.act_prodn,
+      totalTime,
+      total,
+      setup,
+      machine?.speed,
+      detail.waste
+    )
+    delete calculated.speed
+
+    await tx.breaker_drawing_production_detail.update({
+      where: { id: detail.id },
       data: {
-        total_stoppage_mins: productionTime.stoppageTime,
-        work_time: productionTime.workTime,
-        uti_percent: productionTime.totalTime > 0
-          ? Math.round((productionTime.workTime / productionTime.totalTime) * 100 * 100) / 100
-          : 0
+        total_stoppage_mins: total,
+        ...calculated
       }
     });
 
     return data;
-  } catch (error) {
-    console.error('Error updating stoppage entry:', error);
-    throw new Error(`Failed to update stoppage entry: ${error.message}`);
-  }
+    } catch (error) {
+      console.error('Error updating stoppage entry:', error);
+      throw error;
+    }
+  })
 }
 
 // Apply full stoppage to all machines and recalculate production
@@ -1398,10 +1436,20 @@ export async function getBreakerDrawingAvailableDates(beforeDate, shift, limit =
 export async function copyBreakerDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
   return copyPreviousSpeeds({
     setupModel: prisma.breaker_drawing_machine_setup,
+    headerModel: prisma.breaker_drawing_production_header,
+    targetHeaderId,
     targetDate,
     targetShift,
     sourceDate,
-    updateSpeed: (setupId, speed) => updateBreakerDrawingMachineSetup(setupId, { speed })
+    buildUpdateData: (setup, speed) => {
+      const shiftTime = Number(setup.shift_time || 0)
+      return {
+        speed,
+        ...(shiftTime > 0
+          ? { std_prodn: Math.round(calculateBreakerDrawingStdProdn({ ...setup, speed }, shiftTime, speed) * 100) / 100 }
+          : {})
+      }
+    }
   });
 }
 

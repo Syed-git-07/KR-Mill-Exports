@@ -407,7 +407,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       const rowsToSave = stoppageData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
       
       for (const row of rowsToSave) {
-        await updateSimplexStoppageEntryAction(row.id, {
+        const result = await updateSimplexStoppageEntryAction(row.id, {
           stoppage1_id: row.stoppage1_id || null,
           stoppage1_time: row.stoppage1_id ? (row.stoppage1_time || 0) : 0,
           stoppage2_id: row.stoppage2_id || null,
@@ -417,6 +417,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
           stoppage4_id: row.stoppage4_id || null,
           stoppage4_time: row.stoppage4_id ? (row.stoppage4_time || 0) : 0
         })
+        if (!result?.success) throw new Error(result?.error || `Failed to save Simplex stoppage row ${row.id}`)
       }
 
       if (!suppressSuccessToast) {

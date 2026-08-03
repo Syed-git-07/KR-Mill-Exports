@@ -7,9 +7,12 @@ import {
   getLapFormerActProdnConstant,
   resolveLapFormerFormulaInputs,
 } from '../lapFormerFormulaFallback';
-import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
+import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
-import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { buildStoppageUpdate, findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { assertActiveStoppageReasons } from './stoppageValidation';
+import { deleteUnusedMachine } from './machineDeletion';
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 
 function compareLapFormerMachines(a, b) {
   const sortA = a?.sort_order ?? 9999;
@@ -169,10 +172,13 @@ export async function updateLapFormerMachine(id, machineData) {
 
 // Delete a lap former machine (Permanent delete from master screen)
 export async function deleteLapFormerMachine(id) {
-  await prisma.lap_former_machines.delete({
-    where: { id }
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'lap_former_machines',
+    setupModel: 'lap_former_machine_setup',
+    productionDetailModel: 'lap_former_production_detail',
+    label: 'lap former machine'
   });
-  return true;
 }
 
 // Search lap former machines
@@ -260,16 +266,22 @@ export async function getOrCreateLapFormerHeader(date, shift, supervisorId, mais
   const totalTime = await getLapFormerShiftTime(shift);
 
   // Create new header
-  const data = await prisma.lap_former_production_header.create({
-    data: {
-      entry_date: new Date(date),
-      shift: shift,
-      supervisor_id: supervisorId || null,
-      maisitry_id: maisitryId || null,
-      total_time: totalTime
-    }
-  });
-  return data;
+  try {
+    return await prisma.lap_former_production_header.create({
+      data: {
+        entry_date: new Date(date),
+        shift: shift,
+        supervisor_id: supervisorId || null,
+        maisitry_id: maisitryId || null,
+        total_time: totalTime
+      }
+    });
+  } catch (error) {
+    if (error?.code !== 'P2002') throw error;
+    const concurrentHeader = await getLapFormerProductionByDateShift(date, shift);
+    if (!concurrentHeader) throw error;
+    return concurrentHeader;
+  }
 }
 
 // Update production header
@@ -450,7 +462,8 @@ export async function initializeLapFormerDetails(headerId) {
   });
 
   const data = await prisma.lap_former_production_detail.createMany({
-    data: details
+    data: details,
+    skipDuplicates: true
   });
 
   // Get created details
@@ -472,7 +485,8 @@ export async function initializeLapFormerDetails(headerId) {
   }));
 
   await prisma.lap_former_stoppage_entry.createMany({
-    data: stoppageEntries
+    data: stoppageEntries,
+    skipDuplicates: true
   });
 
   return createdDetails;
@@ -587,7 +601,8 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
   });
 
   await prisma.lap_former_production_detail.createMany({
-    data: details
+    data: details,
+    skipDuplicates: true
   });
 
   const createdDetails = await prisma.lap_former_production_detail.findMany({
@@ -608,7 +623,8 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
   }));
 
   await prisma.lap_former_stoppage_entry.createMany({
-    data: stoppageEntries
+    data: stoppageEntries,
+    skipDuplicates: true
   });
 
   return createdDetails;
@@ -617,7 +633,7 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
 // Update production detail
 export async function updateLapFormerDetail(id, updates) {
   // Remove any fields that shouldn't be updated
-  const { speed, machine, stoppage, ...cleanUpdates } = updates;
+  const { speed, machine, stoppage, ...cleanUpdates } = sanitizeProductionDetailUpdate(updates);
   
   try {
     const data = await prisma.lap_former_production_detail.update({
@@ -633,15 +649,11 @@ export async function updateLapFormerDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateLapFormerDetails(updates) {
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.lap_former_production_detail.update({
-      where: { id },
-      data
-    })
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.lap_former_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   );
-
-  const results = await Promise.all(promises);
-  return results;
 }
 
 // ============================================
@@ -726,15 +738,20 @@ export async function getLapFormerStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateLapFormerStoppageEntry(id, updates) {
-  try {
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
-    const existing = await prisma.lap_former_stoppage_entry.findUnique({
+    const existing = await tx.lap_former_stoppage_entry.findUnique({
       where: { id },
       select: {
         production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     });
@@ -743,61 +760,87 @@ export async function updateLapFormerStoppageEntry(id, updates) {
       throw new Error(`Stoppage entry ${id} not found`);
     }
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    };
+    const stoppageUpdate = buildStoppageUpdate(existing, updates);
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['LAP FORMER']);
+    const total = stoppageUpdate.total_stoppage_time;
 
-    // Calculate total stoppage time from merged values
-    const total = mergedStoppages.stoppage1_time + 
-                  mergedStoppages.stoppage2_time + 
-                  mergedStoppages.stoppage3_time + 
-                  mergedStoppages.stoppage4_time;
-
-    const data = await prisma.lap_former_stoppage_entry.update({
+    const data = await tx.lap_former_stoppage_entry.update({
       where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: total
+      data: stoppageUpdate
+    });
+
+    // Recalculate every field that depends on stoppage time in the same transaction.
+    const detail = await tx.lap_former_production_detail.findUnique({
+      where: { id: existing.production_detail_id },
+      select: {
+        id: true,
+        header_id: true,
+        machine_id: true,
+        act_hank: true,
+        act_prodn: true,
+        waste: true
       }
     });
-
-    // Also update the total_stoppage_mins, work_time, and uti_percent in production_detail
-    const detail = await prisma.lap_former_production_detail.findUnique({
-      where: { id: existing.production_detail_id },
-      select: { header_id: true }
-    });
+    if (!detail) throw new Error('The production row for this stoppage no longer exists');
 
     const header = detail?.header_id
-      ? await prisma.lap_former_production_header.findUnique({
+      ? await tx.lap_former_production_header.findUnique({
           where: { id: detail.header_id },
-          select: { total_time: true, shift: true }
+          select: { total_time: true, shift: true, entry_date: true }
         })
       : null;
+    if (!header) throw new Error('The production header for this stoppage no longer exists');
 
-    const totalTime = Number(header?.total_time) || await getLapFormerShiftTime(header?.shift || 1)
-    const productionTime = resolveProductionTime(totalTime, total)
+    const shiftConfig = await tx.shift_config.findFirst({
+      where: { department_code: 'LAPFORMER', shift: header.shift, is_active: true },
+      select: { shift_time: true }
+    })
+    const totalTime = Number(header.total_time)
+      || shiftConfig?.shift_time
+      || resolveLapFormerShiftFallbackTime(header.shift)
+    if (total > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time');
+      error.code = 'INVALID_STOPPAGE';
+      throw error;
+    }
+    const [setup, machine] = await Promise.all([
+      tx.lap_former_machine_setup.findFirst({
+        where: {
+          machine_id: detail.machine_id,
+          entry_date: header.entry_date,
+          shift: header.shift
+        }
+      }),
+      tx.lap_former_machines.findUnique({
+        where: { id: detail.machine_id },
+        select: { speed: true }
+      })
+    ])
+    const calculated = calculateLapFormerValues(
+      detail.act_hank,
+      detail.act_prodn,
+      totalTime,
+      total,
+      setup,
+      machine?.speed,
+      detail.waste
+    )
+    delete calculated.speed
 
-    await prisma.lap_former_production_detail.update({
-      where: { id: existing.production_detail_id },
+    await tx.lap_former_production_detail.update({
+      where: { id: detail.id },
       data: {
-        total_stoppage_mins: productionTime.stoppageTime,
-        work_time: productionTime.workTime,
-        uti_percent: productionTime.totalTime > 0
-          ? Math.round((productionTime.workTime / productionTime.totalTime) * 100 * 100) / 100
-          : 0
+        total_stoppage_mins: total,
+        ...calculated
       }
     });
 
     return data;
-  } catch (error) {
-    console.error('Error updating stoppage entry:', error);
-    throw new Error(`Failed to fetch/update stoppage entry: ${error.message}`);
-  }
+    } catch (error) {
+      console.error('Error updating stoppage entry:', error);
+      throw error;
+    }
+  })
 }
 
 // Apply full stoppage to all machines and recalculate production
@@ -1324,9 +1367,9 @@ export async function getSupervisors() {
 //
 // KEY DIFFERENCE: Lap Former uses Hank = 0.0082 (not 0.14 like Breaker Drawing)
 
-export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null) {
+export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = null) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(setup, machineSpeed);
-  const waste = setup?.default_waste ?? null;
+  const waste = currentWaste ?? setup?.default_waste ?? null;
 
   // Constant = 1 / 2.20456 / Hank
   const constst = getLapFormerActProdnConstant({ hank_constant: hankConstant });
@@ -1406,10 +1449,20 @@ export async function getLapFormerAvailableDates(beforeDate, shift, limit = 30) 
 export async function copyLapFormerFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
   return copyPreviousSpeeds({
     setupModel: prisma.lap_former_machine_setup,
+    headerModel: prisma.lap_former_production_header,
+    targetHeaderId,
     targetDate,
     targetShift,
     sourceDate,
-    updateSpeed: (setupId, speed) => updateLapFormerMachineSetup(setupId, { speed })
+    buildUpdateData: (setup, speed) => {
+      const shiftTime = Number(setup.shift_time || resolveLapFormerShiftFallbackTime(targetShift))
+      return {
+        speed,
+        std_prodn: Math.round(
+          calculateLapFormerStdProdn({ ...setup, speed }, shiftTime, speed) * 100
+        ) / 100
+      }
+    }
   });
 }
 

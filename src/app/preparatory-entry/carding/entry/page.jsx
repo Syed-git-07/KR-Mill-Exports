@@ -219,7 +219,8 @@ function CardingEntryContent() {
       }
       
       // Initialize details for all machines (pass shift for shift-based runtime)
-      await initializeProductionDetailsAction(headerResult.data.id, parseInt(shift))
+      const initializeResult = await initializeProductionDetailsAction(headerResult.data.id, parseInt(shift))
+      if (!initializeResult?.success) throw new Error(initializeResult?.error || 'Failed to initialize Carding machines')
       
       setHeaderId(headerResult.data.id)
       toast.success('Production entry initialized successfully')
@@ -415,7 +416,7 @@ function CardingEntryContent() {
       setCopyDialogOpen(false)
       
       // Refresh data and force tabs to reload
-      loadProductionHeader()
+      await loadProductionHeader()
       setRefreshKey(prev => prev + 1)
       
     } catch (error) {

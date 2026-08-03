@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 /**
  * Carding Machine Master - CRUD Operations
@@ -151,11 +152,13 @@ export async function getCardingCountOptions() {
 
 // Delete a carding machine
 export async function deleteCardingMachine(id) {
-  await prisma.carding_machines.delete({
-    where: { id }
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'carding_machines',
+    setupModel: 'carding_machine_setup',
+    productionDetailModel: 'carding_production_detail',
+    label: 'carding machine'
   });
-  
-  return true;
 }
 
 // Search carding machines

@@ -16,6 +16,54 @@ export function getStoppageTotal(entry) {
   )
 }
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key)
+
+function invalidStoppage(message) {
+  const error = new Error(message)
+  error.code = 'INVALID_STOPPAGE'
+  return error
+}
+
+/**
+ * Whitelists and normalizes a stoppage-row update. In particular, this avoids
+ * string concatenation in totals and prevents a crafted server-action payload
+ * from changing production_detail_id or other protected columns.
+ */
+export function buildStoppageUpdate(existing = {}, updates = {}) {
+  const data = {}
+
+  for (let slot = 1; slot <= 4; slot += 1) {
+    const idField = `stoppage${slot}_id`
+    const timeField = `stoppage${slot}_time`
+
+    if (hasOwn(updates, idField)) {
+      const rawId = updates[idField]
+      data[idField] = rawId === '' || rawId === 'NONE' || rawId == null
+        ? null
+        : String(rawId)
+    }
+
+    const reasonWasCleared = hasOwn(data, idField) && data[idField] === null
+    const rawTime = reasonWasCleared
+      ? 0
+      : (hasOwn(updates, timeField) ? updates[timeField] : existing[timeField])
+    const time = rawTime === '' || rawTime == null ? 0 : Number(rawTime)
+
+    if (!Number.isFinite(time) || !Number.isInteger(time) || time < 0) {
+      throw invalidStoppage(`Stoppage ${slot} time must be a non-negative whole number of minutes.`)
+    }
+    data[timeField] = time
+  }
+
+  if (hasOwn(updates, 'is_full_stoppage')) {
+    const rawValue = updates.is_full_stoppage
+    data.is_full_stoppage = rawValue === true || rawValue === 1 || rawValue === '1' || rawValue === 'true'
+  }
+
+  data.total_stoppage_time = getStoppageTotal(data)
+  return data
+}
+
 /**
  * Applies a full/partial stoppage to local row drafts only.
  * Nothing is persisted until the entry page's final Update action saves the drafts.

@@ -20,8 +20,7 @@ import {
   updateLapFormerStoppageEntryAction,
   getLapFormerStoppageReasonsAction,
   getLapFormerMachinesAction,
-  getLapFormerMachineSetupsAction,
-  updateLapFormerDetailAction
+  getLapFormerMachineSetupsAction
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
 import { getLapFormerActProdnConstant, resolveLapFormerFormulaInputs } from '@/lib/lapFormerFormulaFallback'
@@ -458,52 +457,6 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       if (failed.length > 0) {
         throw new Error('Some stoppage updates failed')
       }
-      
-      // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {
-        const stoppageRow = stoppageData.find(s => s.id === rowId)
-        if (!stoppageRow || !stoppageRow.production_detail) return null
-        
-        const prodDetail = stoppageRow.production_detail
-        const machineId = prodDetail.machine_id
-        const setup = getEffectiveSetup(machineId) || machineSetups[machineId]
-        // Speed from machine table (source of truth)
-        const { speed: machineSpeed } = resolveLapFormerFormulaInputs(setup, prodDetail.machine?.speed)
-        
-        // Calculate new total stoppage (all 4 stoppages)
-        const editedChanges = editedRows[rowId]
-        const newTotalStoppage = 
-          (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
-          (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
-          (editedChanges.stoppage3_time ?? stoppageRow.stoppage3_time ?? 0) +
-          (editedChanges.stoppage4_time ?? stoppageRow.stoppage4_time ?? 0)
-        
-        // Recalculate production values with new stoppage and machine speed
-        const calculated = calculateLapFormerValues(
-          prodDetail.act_hank || 0,
-          prodDetail.act_prodn || 0,
-          totalTime,
-          newTotalStoppage,
-          setup,
-          machineSpeed  // Pass machine speed explicitly (source of truth)
-        )
-
-        // Update only stoppage-dependent calculated fields; preserve production quantity and waste fields.
-        const recalculatedFields = {
-          std_prodn: calculated.std_prodn,
-          exp_prodn: calculated.exp_prodn,
-          effi_percent: calculated.effi_percent,
-          uti_percent: calculated.uti_percent,
-          run_time: calculated.run_time,
-          work_time: calculated.work_time,
-          total_stoppage_mins: newTotalStoppage
-        }
-
-        // Update production detail
-        return updateLapFormerDetailAction(prodDetail.id, recalculatedFields)
-      })
-      
-      await Promise.all(productionUpdatePromises.filter(Boolean))
       
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})

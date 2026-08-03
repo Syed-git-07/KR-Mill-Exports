@@ -187,7 +187,8 @@ function ComberEntryContent() {
       }
       
       // Initialize details for all machines
-      await initializeComberProductionDetailsAction(headerResult.data.id, parseInt(shift))
+      const initializeResult = await initializeComberProductionDetailsAction(headerResult.data.id, parseInt(shift))
+      if (!initializeResult?.success) throw new Error(initializeResult?.error || 'Failed to initialize Comber machines')
       
       setHeaderId(headerResult.data.id)
       toast.success('Production entry initialized successfully')

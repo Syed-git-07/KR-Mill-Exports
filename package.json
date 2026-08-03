@@ -11,6 +11,7 @@
     "user:create": "node scripts/create-app-user.js",
     "security:cleanup": "node scripts/cleanup-security-data.js",
     "security:smoke": "node scripts/smoke-auth-runtime.js",
+    "db:audit": "node scripts/audit-production-integrity.js",
     "schema:extract-structure": "powershell -ExecutionPolicy Bypass -File schema/schema-structure/extract-structure.ps1"
   },
   "dependencies": {

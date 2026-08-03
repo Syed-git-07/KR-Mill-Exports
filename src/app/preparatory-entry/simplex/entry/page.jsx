@@ -135,7 +135,8 @@ function SimplexEntryContent() {
         // Note: totalTime is set from shift config, not from header
         
         // Add missing production details for any newly added machines
-        await addMissingSimplexProductionDetailsAction(existing.id)
+        const syncResult = await addMissingSimplexProductionDetailsAction(existing.id)
+        if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Simplex machines')
         
         // Load production details
         const detailsResult = await getSimplexProductionWithSetupAction(existing.id)
@@ -252,7 +253,8 @@ function SimplexEntryContent() {
       const header = headerResult.data
       
       // Initialize details for all machines
-      await initializeSimplexProductionDetailsAction(header.id)
+      const initializeResult = await initializeSimplexProductionDetailsAction(header.id)
+      if (!initializeResult?.success) throw new Error(initializeResult?.error || 'Failed to initialize Simplex machines')
       
       setHeaderId(header.id)
       toast.success('Production entry initialized successfully')

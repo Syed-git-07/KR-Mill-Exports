@@ -171,6 +171,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       // First, sync any new machines that were added after this header was created
       // This also initializes production details if header exists but has no details
       const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Autoconer machines')
       if (syncResult.success && syncResult.data && syncResult.data.length > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.length} machine(s) for this shift`)
         hasShownInitToast.current = true

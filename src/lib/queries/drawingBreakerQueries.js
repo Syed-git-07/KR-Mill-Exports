@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 /**
  * Drawing Breaker Machine Master - CRUD Operations
@@ -161,8 +162,13 @@ export async function updateDrawingBreakerMachine(id, machineData) {
 
 // Delete a drawing breaker machine
 export async function deleteDrawingBreakerMachine(id) {
-  await prisma.drawing_breaker_machines.delete({ where: { id } });
-  return true;
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'drawing_breaker_machines',
+    setupModel: 'breaker_drawing_machine_setup',
+    productionDetailModel: 'breaker_drawing_production_detail',
+    label: 'breaker drawing machine'
+  });
 }
 
 // Search drawing breaker machines (all, no is_active filter)

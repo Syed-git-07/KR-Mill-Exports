@@ -9,6 +9,7 @@ import SpinningCountForm from '@/components/modules/masters/SpinningCountForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { assertAllActionsSucceeded } from '@/lib/actionResult'
 
 export default function SpinningCountPage() {
   const [spinningCounts, setSpinningCounts] = useState([])
@@ -86,7 +87,8 @@ export default function SpinningCountPage() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteSpinningCountAction(row.id)))
+        const results = await Promise.all(selectedRows.map(row => deleteSpinningCountAction(row.id)))
+        assertAllActionsSucceeded(results, 'Failed to delete one or more spinning counts')
         toast.success(`${selectedRows.length} spinning count(s) deleted successfully`)
         setSelectedRows([])
         setIsSelectMode(false)

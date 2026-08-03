@@ -82,6 +82,9 @@ model autoconer_production_detail {
   is_verified         Boolean?  @default(false)
   created_at          DateTime? @default(now()) @db.DateTime(0)
   updated_at          DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([header_id, machine_id], name: "uk_autoconer_detail_header_machine")
+  @@index([machine_id], name: "idx_autoconer_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -96,6 +99,8 @@ model autoconer_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_autoconer_header_date_shift")
 }
 
 model autoconer_stoppage_entry {
@@ -114,6 +119,8 @@ model autoconer_stoppage_entry {
   is_full_stoppage     Boolean?  @default(false)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_autoconer_stoppage_detail")
 }
 
 model breaker_drawing_machine_setup {
@@ -158,6 +165,9 @@ model breaker_drawing_production_detail {
   created_at          DateTime? @default(now()) @db.DateTime(0)
   updated_at          DateTime? @default(now()) @db.DateTime(0)
   total_stoppage_mins Int?      @default(0)
+
+  @@unique([header_id, machine_id], name: "uk_breaker_detail_header_machine")
+  @@index([machine_id], name: "idx_breaker_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -173,6 +183,8 @@ model breaker_drawing_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_breaker_header_date_shift")
 }
 
 model breaker_drawing_stoppage_entry {
@@ -190,6 +202,8 @@ model breaker_drawing_stoppage_entry {
   is_full_stoppage     Boolean?  @default(false)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_breaker_stoppage_detail")
 }
 
 model carding_machine_setup {
@@ -255,6 +269,9 @@ model carding_production_detail {
   created_at          DateTime? @default(now()) @db.DateTime(0)
   updated_at          DateTime? @default(now()) @db.DateTime(0)
   total_stoppage_mins Int?      @default(135)
+
+  @@unique([header_id, machine_id], name: "uk_carding_detail_header_machine")
+  @@index([machine_id], name: "idx_carding_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -270,6 +287,8 @@ model carding_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_carding_header_date_shift")
 }
 
 model carding_stoppage_entry {
@@ -287,6 +306,8 @@ model carding_stoppage_entry {
   is_full_stoppage     Boolean?  @default(false)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_carding_stoppage_detail")
 }
 
 model comber_machine_setup {
@@ -355,6 +376,9 @@ model comber_production_detail {
   created_at          DateTime? @default(now()) @db.DateTime(0)
   updated_at          DateTime? @default(now()) @db.DateTime(0)
   total_stoppage_mins Int?      @default(0)
+
+  @@unique([header_id, machine_id], name: "uk_comber_detail_header_machine")
+  @@index([machine_id], name: "idx_comber_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -370,6 +394,8 @@ model comber_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_comber_header_date_shift")
 }
 
 model comber_stoppage_entry {
@@ -387,6 +413,8 @@ model comber_stoppage_entry {
   is_full_stoppage     Boolean?  @default(false)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_comber_stoppage_detail")
 }
 
 model departments {
@@ -489,6 +517,9 @@ model finisher_drawing_production_detail {
   created_at          DateTime? @default(now()) @db.DateTime(0)
   updated_at          DateTime? @default(now()) @db.DateTime(0)
   total_stoppage_mins Int?      @default(0)
+
+  @@unique([header_id, machine_id], name: "uk_finisher_detail_header_machine")
+  @@index([machine_id], name: "idx_finisher_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -504,6 +535,8 @@ model finisher_drawing_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_finisher_header_date_shift")
 }
 
 model finisher_drawing_stoppage_entry {
@@ -521,6 +554,8 @@ model finisher_drawing_stoppage_entry {
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
   is_full_stoppage     Boolean?  @default(false)
+
+  @@unique([production_detail_id], name: "uk_finisher_stoppage_detail")
 }
 
 model hok_strength_detail {
@@ -607,6 +642,9 @@ model lap_former_production_detail {
   created_at          DateTime? @default(now()) @db.DateTime(0)
   updated_at          DateTime? @default(now()) @db.DateTime(0)
   total_stoppage_mins Int?      @default(0)
+
+  @@unique([header_id, machine_id], name: "uk_lap_detail_header_machine")
+  @@index([machine_id], name: "idx_lap_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -622,6 +660,8 @@ model lap_former_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_lap_header_date_shift")
 }
 
 model lap_former_stoppage_entry {
@@ -639,6 +679,8 @@ model lap_former_stoppage_entry {
   is_full_stoppage     Boolean?  @default(false)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_lap_stoppage_detail")
 }
 
 model simplex_machine_setup {
@@ -708,6 +750,9 @@ model simplex_production_detail {
   remarks          String?   @db.Text
   created_at       DateTime? @default(now()) @db.DateTime(0)
   updated_at       DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([header_id, machine_id], name: "uk_simplex_detail_header_machine")
+  @@index([machine_id], name: "idx_simplex_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -723,6 +768,8 @@ model simplex_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_simplex_header_date_shift")
 }
 
 model simplex_stoppage_entry {
@@ -739,6 +786,8 @@ model simplex_stoppage_entry {
   total_stoppage_time  Int?      @default(0)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_simplex_stoppage_detail")
 }
 
 model spinning_counts {
@@ -841,6 +890,9 @@ model spinning_production_detail {
   sider2_name         String?   @db.VarChar(100)
   work_time           Int?      @default(500)
   run_time            Int?      @default(510)
+
+  @@unique([header_id, machine_id], name: "uk_spinning_detail_header_machine")
+  @@index([machine_id], name: "idx_spinning_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -856,6 +908,8 @@ model spinning_production_header {
   is_locked     Boolean?  @default(false)
   created_at    DateTime? @default(now()) @db.DateTime(0)
   updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([entry_date, shift], name: "uk_spinning_header_date_shift")
 }
 
 model spinning_stoppage_entry {
@@ -874,6 +928,8 @@ model spinning_stoppage_entry {
   is_full_stoppage     Boolean?  @default(false)
   created_at           DateTime? @default(now()) @db.DateTime(0)
   updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+  @@unique([production_detail_id], name: "uk_spinning_stoppage_detail")
 }
 
 model stoppage_details {

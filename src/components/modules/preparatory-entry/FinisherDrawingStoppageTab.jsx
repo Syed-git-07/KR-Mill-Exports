@@ -17,18 +17,14 @@ import {
 } from "@/components/ui/select"
 import {
   getFinisherDrawingStoppageEntriesAction,
-  getFinisherDrawingProductionDetailsAction,
   updateFinisherDrawingStoppageEntryAction,
   getFinisherDrawingStoppageReasonsAction,
   getFinisherDrawingMachinesAction,
   getFinisherDrawingMachineSetupsAction,
-  updateFinisherDrawingDetailAction,
   syncFinisherDrawingNewMachinesToHeaderAction
 } from '@/app/actions/finisher-drawing-entry'
-import { calculateFinisherDrawingValues } from '@/lib/queries/finisherDrawingEntryQueries'
 import {
   FINISHER_DRAWING_FORMULA_FALLBACK,
-  resolveFinisherDrawingFormulaInputs,
   calculateFinisherDrawingStdProdn,
 } from '@/lib/finisherDrawingFormulaFallback'
 import { NumberInput } from '@/components/ui/number-input'
@@ -307,7 +303,8 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     setIsLoading(true)
     try {
       // First, sync any new machines that were added after this header was created
-      await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
+      const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Finisher Drawing machines')
 
       const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
         getFinisherDrawingStoppageEntriesAction(headerId),
@@ -508,56 +505,6 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Finisher Drawing stoppage row')
       }
-      
-      // Now recalculate production details based on updated stoppages
-      const latestDetailsResult = await getFinisherDrawingProductionDetailsAction(headerId)
-      const latestDetails = latestDetailsResult.success ? (latestDetailsResult.data || []) : []
-      const latestDetailMap = {}
-      latestDetails.forEach(detail => {
-        latestDetailMap[detail.id] = detail
-      })
-
-      const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {
-        const stoppageRow = stoppageData.find(s => s.id === rowId)
-        if (!stoppageRow || !stoppageRow.production_detail) return null
-        
-        const prodDetail = stoppageRow.production_detail
-        const latestProdDetail = latestDetailMap[prodDetail.id] || prodDetail
-        const machineId = prodDetail.machine_id
-        const setup = getEffectiveSetup(machineId)
-        // Keep setup draft speed authoritative for modify-9 dynamic consistency.
-        const machineSpeed = setup?.speed ?? prodDetail.machine?.speed ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
-        
-        // Calculate new total stoppage (4 slots for Finisher Drawing)
-        const editedChanges = editedRows[rowId]
-        const newTotalStoppage = 
-          (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
-          (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
-          (editedChanges.stoppage3_time ?? stoppageRow.stoppage3_time ?? 0) +
-          (editedChanges.stoppage4_time ?? stoppageRow.stoppage4_time ?? 0)
-        
-        // Recalculate production values with new stoppage and machine speed
-        const calculated = calculateFinisherDrawingValues(
-          latestProdDetail.act_hank || 0,
-          latestProdDetail.act_prodn || 0,
-          totalTime,
-          newTotalStoppage,
-          setup,
-          machineSpeed
-        )
-
-        const preservedWaste = latestProdDetail.waste ?? prodDetail.waste ?? 0
-        const actProdn = latestProdDetail.act_prodn || 0
-        calculated.waste = preservedWaste
-        calculated.waste_percent = actProdn > 0
-          ? Math.round((preservedWaste / actProdn) * 100 * 100) / 100
-          : 0
-        
-        // Update production detail
-        return updateFinisherDrawingDetailAction(prodDetail.id, calculated)
-      })
-      
-      await Promise.all(productionUpdatePromises.filter(Boolean))
       
       const savedCount = Object.keys(editedRows).length
       setEditedRows({})

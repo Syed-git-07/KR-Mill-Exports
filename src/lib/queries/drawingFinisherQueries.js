@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { deleteUnusedMachine } from './machineDeletion';
 
 /**
  * Drawing Finisher Machine Master - CRUD Operations
@@ -132,10 +133,13 @@ export async function updateDrawingFinisherMachine(id, machineData) {
 
 // Delete a drawing finisher machine
 export async function deleteDrawingFinisherMachine(id) {
-  await prisma.drawing_finisher_machines.delete({
-    where: { id }
+  return deleteUnusedMachine({
+    id,
+    machineModel: 'drawing_finisher_machines',
+    setupModel: 'finisher_drawing_machine_setup',
+    productionDetailModel: 'finisher_drawing_production_detail',
+    label: 'finisher drawing machine'
   });
-  return true;
 }
 
 // Search drawing finisher machines (active + inactive)

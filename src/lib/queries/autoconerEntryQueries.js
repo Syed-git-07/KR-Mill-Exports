@@ -11,8 +11,10 @@
 
 import { prisma } from '../prisma'
 import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
-import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { buildStoppageUpdate, findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
+import { assertActiveStoppageReasons } from './stoppageValidation'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -115,7 +117,7 @@ export async function updateAutoconerProductionHeader(id, updates) {
   try {
     const data = await prisma.autoconer_production_header.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {
@@ -131,15 +133,21 @@ export async function getOrCreateAutoconerHeader(date, shift, supervisorId = nul
     // Get shift configuration for total_time from database
     const shiftConfig = await getAutoconerShiftConfiguration(shift)
     
-    header = await createAutoconerProductionHeader({
-      entry_date: new Date(date),
-      shift,
-      supervisor_id: supervisorId,
-      total_time: shiftConfig.totalTime
-    })
-    
-    // Initialize production details for all active machines with shift-specific times
-    await initializeAutoconerProductionDetails(header.id, shift)
+    try {
+      header = await createAutoconerProductionHeader({
+        entry_date: new Date(date),
+        shift,
+        supervisor_id: supervisorId,
+        total_time: shiftConfig.totalTime
+      })
+
+      // Initialize production details only for the request that created the header.
+      await initializeAutoconerProductionDetails(header.id, shift)
+    } catch (error) {
+      if (error?.code !== 'P2002') throw error
+      header = await getAutoconerProductionByDateShift(date, shift)
+      if (!header) throw error
+    }
   }
   
   return header
@@ -295,7 +303,8 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     })
 
     await prisma.autoconer_production_detail.createMany({
-      data: detailInserts
+      data: detailInserts,
+      skipDuplicates: true
     })
 
     // Get the created details to create stoppage entries
@@ -314,7 +323,8 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     }))
 
     await prisma.autoconer_stoppage_entry.createMany({
-      data: stoppageInserts
+      data: stoppageInserts,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -428,7 +438,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
       }
     })
 
-    await prisma.autoconer_production_detail.createMany({ data: detailInserts })
+    await prisma.autoconer_production_detail.createMany({ data: detailInserts, skipDuplicates: true })
 
     const createdDetails = await prisma.autoconer_production_detail.findMany({
       where: { header_id: headerId, machine_id: { in: newMachines.map(m => m.id) } }
@@ -440,7 +450,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
       total_stoppage_time: defaultStoppage
     }))
 
-    await prisma.autoconer_stoppage_entry.createMany({ data: stoppageInserts })
+    await prisma.autoconer_stoppage_entry.createMany({ data: stoppageInserts, skipDuplicates: true })
 
     return createdDetails
   } catch (error) {
@@ -558,10 +568,11 @@ export async function updateAutoconerProductionDetail(id, updates) {
 
 // Batch update production details
 export async function batchUpdateAutoconerProductionDetails(updates) {
-  const promises = updates.map(({ id, ...data }) => 
-    updateAutoconerProductionDetail(id, data)
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.autoconer_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   )
-  return Promise.all(promises)
 }
 
 // ============================================
@@ -693,15 +704,20 @@ export async function getAutoconerStoppageEntries(headerId) {
 
 // Update stoppage entry - merges with existing values like Carding
 export async function updateAutoconerStoppageEntry(id, updates) {
-  try {
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values
-    const existing = await prisma.autoconer_stoppage_entry.findUnique({
+    const existing = await tx.autoconer_stoppage_entry.findUnique({
       where: { id },
       select: {
         production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     })
@@ -710,59 +726,76 @@ export async function updateAutoconerStoppageEntry(id, updates) {
       throw new Error(`Stoppage entry ${id} not found`)
     }
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    }
+    const stoppageUpdate = buildStoppageUpdate(existing, updates)
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['AUTOCONER'])
+    const totalStoppage = stoppageUpdate.total_stoppage_time
 
-    // Calculate total stoppage time from merged values
-    const totalStoppage = 
-      mergedStoppages.stoppage1_time + 
-      mergedStoppages.stoppage2_time + 
-      mergedStoppages.stoppage3_time + 
-      mergedStoppages.stoppage4_time
-
-    const data = await prisma.autoconer_stoppage_entry.update({
+    const data = await tx.autoconer_stoppage_entry.update({
       where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: totalStoppage
-      }
+      data: stoppageUpdate
     })
 
     // Resolve shift runtime from shift_config via this entry's header shift.
     // Fallback behavior remains centralized in getAutoconerShiftTime().
-    const detail = await prisma.autoconer_production_detail.findUnique({
+    const detail = await tx.autoconer_production_detail.findUnique({
       where: { id: existing.production_detail_id },
-      select: { header_id: true }
+      select: {
+        id: true,
+        header_id: true,
+        machine_id: true,
+        act_prodn: true,
+        waste_kg: true,
+        idle_drum: true
+      }
     })
 
+    if (!detail) throw new Error('The production row for this stoppage no longer exists')
+
     const header = detail?.header_id
-      ? await prisma.autoconer_production_header.findUnique({
+      ? await tx.autoconer_production_header.findUnique({
           where: { id: detail.header_id },
           select: { shift: true }
         })
       : null
 
-    const totalTime = await getAutoconerShiftTime(header?.shift || 1)
-    const workTime = Math.max(totalTime - totalStoppage, 0)
+    if (!header) throw new Error('The production header for this stoppage no longer exists')
 
-    await prisma.autoconer_production_detail.update({
+    const shiftConfig = await tx.shift_config.findFirst({
+      where: { department_code: 'AUTOCONER', shift: header.shift, is_active: true },
+      select: { shift_time: true }
+    })
+    const totalTime = shiftConfig?.shift_time || resolveAutoconerShiftFallbackTime(header.shift)
+    if (totalStoppage > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time')
+      error.code = 'INVALID_STOPPAGE'
+      throw error
+    }
+    const machine = await tx.autoconer_machines.findUnique({
+      where: { id: detail.machine_id },
+      select: { no_of_drums: true }
+    })
+    const calculated = calculateAutoconerProductionValues(
+      detail.act_prodn,
+      detail.waste_kg,
+      detail.idle_drum,
+      machine?.no_of_drums ?? 0,
+      totalStoppage,
+      totalTime
+    )
+    const persistedValues = { ...calculated }
+    delete persistedValues._idleDrumPercent
+    delete persistedValues._drumEfficiency
+
+    await tx.autoconer_production_detail.update({
       where: { id: existing.production_detail_id },
-      data: {
-        total_stoppage_mins: totalStoppage,
-        work_time: workTime
-      }
+      data: persistedValues
     })
 
     return data
-  } catch (error) {
-    throw error
-  }
+    } catch (error) {
+      throw error
+    }
+  })
 }
 
 // Apply full stoppage to all machines (with slot selection like Carding)

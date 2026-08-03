@@ -163,6 +163,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     try {
       // Sync any new machines
       const syncResult = await syncNewMachinesToSpinningHeaderAction(headerId, shiftNo)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Spinning machines')
       if (syncResult.success && syncResult.data?.added > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.added} machine(s) for this shift`)
         hasShownInitToast.current = true

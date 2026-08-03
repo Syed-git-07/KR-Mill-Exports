@@ -148,7 +148,8 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     try {
       // First, sync any new machines that were added after this header was created
       // This also initializes stoppage entries if header exists but has no details
-      await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
+      const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Autoconer machines')
 
       const [stoppagesResult, reasonsResult, machinesResult] = await Promise.all([
         getAutoconerStoppageEntriesAction(headerId),

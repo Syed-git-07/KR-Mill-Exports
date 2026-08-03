@@ -381,7 +381,9 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       const removePromises = selectedRows.map(machineId => 
         removeBreakerDrawingMachineAction(machineId)
       )
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -413,7 +415,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      await bulkUpdateBreakerDrawingMachineMixingAction(selectedRows, mixingValue, headerId)
+      const result = await bulkUpdateBreakerDrawingMachineMixingAction(selectedRows, mixingValue, headerId)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update Breaker Drawing mixing')
       toast.success(`Mixing updated for ${selectedRows.length} machine(s)`)
       setShowMixingChangeDialog(false)
       setNewMixing('')

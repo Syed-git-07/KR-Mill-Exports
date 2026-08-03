@@ -1,8 +1,10 @@
 import { prisma } from '../prisma'
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
-import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { buildStoppageUpdate, findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { resolveProductionTime } from '../productionFormulaMath'
+import { assertActiveStoppageReasons } from './stoppageValidation'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 const SPINNING_DEFAULT_SETUP_DATE_KEY = '2026-04-01'
 const SPINNING_DEFAULT_SETUP_DATE = new Date(`${SPINNING_DEFAULT_SETUP_DATE_KEY}T00:00:00.000Z`)
@@ -304,16 +306,22 @@ export async function getOrCreateSpinningHeader(date, shift, supervisorId = null
     // Get shift configuration for total_time from database
     const shiftConfig = await getSpinningShiftConfiguration(shift)
     
-    header = await createSpinningProductionHeader({
-      entry_date: new Date(date),
-      shift,
-      supervisor_id: supervisorId,
-      maisitry_id: maisitryId,
-      total_time: shiftConfig.totalTime
-    })
-    
-    // Initialize production details for all active machines
-    await initializeSpinningProductionDetails(header.id, shift)
+    try {
+      header = await createSpinningProductionHeader({
+        entry_date: new Date(date),
+        shift,
+        supervisor_id: supervisorId,
+        maisitry_id: maisitryId,
+        total_time: shiftConfig.totalTime
+      })
+
+      // Initialize production details only for the request that created the header.
+      await initializeSpinningProductionDetails(header.id, shift)
+    } catch (error) {
+      if (error?.code !== 'P2002') throw error
+      header = await getSpinningProductionByDateShift(date, shift)
+      if (!header) throw error
+    }
   }
   
   return header
@@ -482,7 +490,8 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
     })
 
     await prisma.spinning_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get created details
@@ -505,7 +514,8 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
     }))
 
     await prisma.spinning_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return await prisma.spinning_production_detail.findMany({
@@ -626,7 +636,8 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
     })
 
     await prisma.spinning_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get created details
@@ -645,7 +656,8 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
     }))
 
     await prisma.spinning_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return { 
@@ -663,7 +675,7 @@ export async function updateSpinningProductionDetail(id, updates) {
     const data = await prisma.spinning_production_detail.update({
       where: { id },
       data: {
-        ...updates,
+        ...sanitizeProductionDetailUpdate(updates),
         updated_at: new Date()
       }
     })
@@ -675,23 +687,15 @@ export async function updateSpinningProductionDetail(id, updates) {
 
 // Batch update production details
 export async function batchUpdateSpinningProductionDetails(updates) {
-  try {
-    const results = []
-    for (const update of updates) {
-      const { id, ...data } = update
-      const result = await prisma.spinning_production_detail.update({
+  const updatedAt = new Date()
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.spinning_production_detail.update({
         where: { id },
-        data: {
-          ...data,
-          updated_at: new Date()
-        }
+        data: { ...sanitizeProductionDetailUpdate(data), updated_at: updatedAt }
       })
-      results.push(result)
-    }
-    return results
-  } catch (error) {
-    throw error
-  }
+    )
+  )
 }
 
 // ============================================
@@ -842,25 +846,13 @@ export async function getSpinningStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateSpinningStoppageEntry(stoppageId, updates) {
-  try {
-    const normalizedUpdates = { ...updates }
-    ;[1, 2, 3, 4].forEach((slot) => {
-      const idField = `stoppage${slot}_id`
-      const timeField = `stoppage${slot}_time`
-      const rawId = normalizedUpdates[idField]
-      const isClearing = rawId === 'NONE' || rawId === '' || rawId === null
-      if (isClearing) {
-        normalizedUpdates[idField] = null
-        if (normalizedUpdates[timeField] === undefined) {
-          normalizedUpdates[timeField] = 0
-        }
-      }
-    })
-
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values (like Carding module)
-    const existing = await prisma.spinning_stoppage_entry.findUnique({
+    const existing = await tx.spinning_stoppage_entry.findUnique({
       where: { id: stoppageId },
       select: {
+        production_detail_id: true,
         stoppage1_id: true,
         stoppage1_time: true,
         stoppage2_id: true,
@@ -876,74 +868,84 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
       throw new Error(`Stoppage entry ${stoppageId} not found`)
     }
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: normalizedUpdates.stoppage1_time ?? existing.stoppage1_time ?? 0,
-      stoppage2_time: normalizedUpdates.stoppage2_time ?? existing.stoppage2_time ?? 0,
-      stoppage3_time: normalizedUpdates.stoppage3_time ?? existing.stoppage3_time ?? 0,
-      stoppage4_time: normalizedUpdates.stoppage4_time ?? existing.stoppage4_time ?? 0
-    }
+    const stoppageUpdate = buildStoppageUpdate(existing, updates)
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['SPINNING'])
+    const totalStoppageTime = stoppageUpdate.total_stoppage_time
 
-    // Calculate total stoppage time from merged values
-    const totalStoppageTime = 
-      (parseInt(mergedStoppages.stoppage1_time) || 0) +
-      (parseInt(mergedStoppages.stoppage2_time) || 0) +
-      (parseInt(mergedStoppages.stoppage3_time) || 0) +
-      (parseInt(mergedStoppages.stoppage4_time) || 0)
-
-    const data = await prisma.spinning_stoppage_entry.update({
+    const data = await tx.spinning_stoppage_entry.update({
       where: { id: stoppageId },
       data: {
-        ...normalizedUpdates,
-        ...mergedStoppages,
-        total_stoppage_time: totalStoppageTime,
+        ...stoppageUpdate,
         updated_at: new Date()
       }
     })
 
     // Recalculate stopped_spindles and worked_spindles in production detail
     // Get production detail with header to know shift
-    const prodDetail = await prisma.spinning_production_detail.findUnique({
+    const prodDetail = await tx.spinning_production_detail.findUnique({
       where: { id: data.production_detail_id }
     })
-    if (prodDetail) {
-      const header = await prisma.spinning_production_header.findUnique({
+    if (!prodDetail) throw new Error('The production row for this stoppage no longer exists')
+
+      const header = await tx.spinning_production_header.findUnique({
         where: { id: prodDetail.header_id }
       })
-      const setup = await prisma.spinning_machine_setup.findFirst({
+      if (!header) throw new Error('The production header for this stoppage no longer exists')
+      const setup = await tx.spinning_machine_setup.findFirst({
         where: { 
           machine_id: prodDetail.machine_id,
-          entry_date: header?.entry_date || new Date(),
-          shift: header?.shift || 1
+          entry_date: header.entry_date,
+          shift: header.shift
         }
       })
-      const machine = await prisma.spinning_machines.findUnique({
+      const machine = await tx.spinning_machines.findUnique({
         where: { id: prodDetail.machine_id }
       })
       const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
-      const shift = header?.shift || 1
+      const shift = header.shift
       const runTime = prodDetail.run_time ?? resolveSpinningShiftFallbackTime(shift)
+      if (totalStoppageTime > runTime) {
+        const error = new Error('Stoppage time cannot exceed the shift time')
+        error.code = 'INVALID_STOPPAGE'
+        throw error
+      }
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
       // STOPPED SPL = (Total Stoppage Mins / Total Min) × No of Spindles
-      const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       // WORKED SPL = No of Spindles - STOPPED SPL
-      const workedSpl = noOfSpindles - stoppedSpl
+      const calculated = calculateSpinningProduction({
+        actHank: prodDetail.act_hank,
+        waste: prodDetail.waste,
+        actCount: setup?.act_count,
+        allocatedSpindles,
+        shift,
+        stoppageMins: totalStoppageTime,
+        runTime,
+        efficiency: setup?.efficiency,
+        speed: setup?.speed,
+        tpi: setup?.tpi,
+        count: setup?.act_count
+      })
 
-      await prisma.spinning_production_detail.update({
+      await tx.spinning_production_detail.update({
         where: { id: data.production_detail_id },
         data: {
           total_stoppage_mins: totalStoppageTime,
-          stopped_spindles: Math.round(stoppedSpl * 100) / 100,
-          worked_spindles: workedSpl,
+          work_time: Math.max(Number(runTime) - totalStoppageTime, 0),
+          act_prodn: calculated.actProdn,
+          waste_percent: calculated.wastePercent,
+          stopped_spindles: calculated.stoppedSpindles,
+          worked_spindles: calculated.workedSpindles,
+          gps: calculated.gps,
+          exp_gps: calculated.expGps,
           updated_at: new Date()
         }
       })
-    }
 
     return data
-  } catch (error) {
-    throw error
-  }
+    } catch (error) {
+      throw error
+    }
+  })
 }
 
 // Apply full stoppage to all machines
@@ -1835,10 +1837,11 @@ export async function getSpinningAvailablePreviousDates(beforeDate, shift, limit
 export async function copySpinningFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
   return copyPreviousSpeeds({
     setupModel: prisma.spinning_machine_setup,
+    headerModel: prisma.spinning_production_header,
+    targetHeaderId,
     targetDate,
     targetShift,
-    sourceDate,
-    updateSpeed: (setupId, speed) => updateSpinningMachineSetup(setupId, { speed }, targetShift)
+    sourceDate
   })
 }
 

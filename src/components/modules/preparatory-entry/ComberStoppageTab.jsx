@@ -277,7 +277,8 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
     setIsLoading(true)
     try {
       // Sync new/removed machines before loading
-      await syncNewMachinesToComberHeaderAction(headerId)
+      const syncResult = await syncNewMachinesToComberHeaderAction(headerId)
+      if (!syncResult?.success) throw new Error(syncResult?.error || 'Failed to synchronize Comber machines')
 
       const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
         getComberStoppageEntriesAction(headerId),

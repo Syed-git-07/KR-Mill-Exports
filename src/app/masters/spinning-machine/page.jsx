@@ -16,6 +16,7 @@ import {
   getSpinningMachineWithSetupAction
 } from '@/app/actions/spinning-machine';
 import { Plus, Pencil, Trash2, PowerOff } from 'lucide-react';
+import { assertAllActionsSucceeded } from '@/lib/actionResult';
 
 export default function SpinningMachineMaster() {
   const [machines, setMachines] = useState([]);
@@ -142,7 +143,8 @@ export default function SpinningMachineMaster() {
       }
       if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
       try {
-        await Promise.all(activeRows.map(row => updateSpinningMachineAction(row.id, { is_active: false })));
+        const results = await Promise.all(activeRows.map(row => updateSpinningMachineAction(row.id, { is_active: false })));
+        assertAllActionsSucceeded(results, 'Failed to deactivate one or more machines');
         toast.success(`${activeRows.length} machine(s) deactivated`);
         setSelectedRows([]);
         setIsSelectMode(false);
@@ -188,7 +190,8 @@ export default function SpinningMachineMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteSpinningMachineAction(row.id)));
+        const results = await Promise.all(selectedRows.map(row => deleteSpinningMachineAction(row.id)));
+        assertAllActionsSucceeded(results, 'Failed to remove one or more machines');
         toast.success(`${selectedRows.length} machine(s) permanently removed`);
         setSelectedRows([]);
         setIsSelectMode(false);

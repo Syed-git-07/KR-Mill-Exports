@@ -216,7 +216,8 @@ function BreakerDrawingEntryContent() {
       const header = result.data
       
       // Initialize details for all machines with shift parameter
-      await initializeBreakerDrawingDetailsAction(header.id, parseInt(shift))
+      const initializeResult = await initializeBreakerDrawingDetailsAction(header.id, parseInt(shift))
+      if (!initializeResult?.success) throw new Error(initializeResult?.error || 'Failed to initialize Breaker Drawing machines')
       
       setHeaderId(header.id)
       toast.success('Production entry initialized successfully')
@@ -294,7 +295,7 @@ function BreakerDrawingEntryContent() {
       setCopyDialogOpen(false)
       
       // Refresh data
-      loadProductionHeader()
+      await loadProductionHeader()
       setRefreshKey(prev => prev + 1)
       
     } catch (error) {

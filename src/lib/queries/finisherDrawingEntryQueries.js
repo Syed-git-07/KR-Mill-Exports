@@ -5,10 +5,13 @@ import {
   resolveFinisherDrawingFormulaInputs,
   calculateFinisherDrawingStdProdn,
 } from '../finisherDrawingFormulaFallback';
-import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
+import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
-import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { buildStoppageUpdate, findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { assertActiveStoppageReasons } from './stoppageValidation';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
+import { isUniqueConstraintError } from './databaseErrors';
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -217,6 +220,10 @@ export async function getOrCreateFinisherDrawingHeader(date, shift, supervisorId
     const data = await getFinisherDrawingProductionByDateShift(date, shift)
     return data
   } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const concurrentHeader = await getFinisherDrawingProductionByDateShift(date, shift)
+      if (concurrentHeader) return concurrentHeader
+    }
     throw error
   }
 }
@@ -456,7 +463,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
     })
 
     await prisma.finisher_drawing_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -479,7 +487,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
     }))
 
     await prisma.finisher_drawing_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -603,7 +612,8 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     })
 
     await prisma.finisher_drawing_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the newly created details
@@ -629,7 +639,8 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     }))
 
     await prisma.finisher_drawing_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return { added: createdDetails.length, machines: newMachines.map(m => m.machine_no) }
@@ -642,7 +653,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
 export async function updateFinisherDrawingDetail(id, updates) {
   try {
     // Remove any fields that shouldn't be updated
-    const { speed, machine, stoppage, ...cleanUpdates } = updates
+    const { speed, machine, stoppage, ...cleanUpdates } = sanitizeProductionDetailUpdate(updates)
     
     const data = await prisma.finisher_drawing_production_detail.update({
       where: { id },
@@ -657,15 +668,11 @@ export async function updateFinisherDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateFinisherDrawingDetails(updates) {
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.finisher_drawing_production_detail.update({
-      where: { id },
-      data
-    })
+  return prisma.$transaction(
+    updates.map(({ id, ...data }) =>
+      prisma.finisher_drawing_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+    )
   )
-
-  const results = await Promise.all(promises)
-  return results
 }
 
 // ============================================
@@ -774,15 +781,20 @@ export async function getFinisherDrawingStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateFinisherDrawingStoppageEntry(id, updates) {
-  try {
+  return prisma.$transaction(async tx => {
+    try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
-    const existing = await prisma.finisher_drawing_stoppage_entry.findUnique({
+    const existing = await tx.finisher_drawing_stoppage_entry.findUnique({
       where: { id },
       select: {
         production_detail_id: true,
+        stoppage1_id: true,
         stoppage1_time: true,
+        stoppage2_id: true,
         stoppage2_time: true,
+        stoppage3_id: true,
         stoppage3_time: true,
+        stoppage4_id: true,
         stoppage4_time: true
       }
     })
@@ -791,63 +803,87 @@ export async function updateFinisherDrawingStoppageEntry(id, updates) {
       throw new Error(`Stoppage entry ${id} not found`)
     }
 
-    // Merge existing values with updates - use updated value if provided, else keep existing
-    const mergedStoppages = {
-      stoppage1_time: updates.stoppage1_time ?? existing?.stoppage1_time ?? 0,
-      stoppage2_time: updates.stoppage2_time ?? existing?.stoppage2_time ?? 0,
-      stoppage3_time: updates.stoppage3_time ?? existing?.stoppage3_time ?? 0,
-      stoppage4_time: updates.stoppage4_time ?? existing?.stoppage4_time ?? 0
-    }
+    const stoppageUpdate = buildStoppageUpdate(existing, updates)
+    await assertActiveStoppageReasons(tx, stoppageUpdate, ['Finisher Drawing', 'FINISHER DRAWING'])
+    const total = stoppageUpdate.total_stoppage_time
 
-    // Calculate total stoppage time from merged values
-    const total = mergedStoppages.stoppage1_time + 
-                  mergedStoppages.stoppage2_time + 
-                  mergedStoppages.stoppage3_time + 
-                  mergedStoppages.stoppage4_time
-
-    const data = await prisma.finisher_drawing_stoppage_entry.update({
+    const data = await tx.finisher_drawing_stoppage_entry.update({
       where: { id },
-      data: {
-        ...updates,
-        ...mergedStoppages,
-        total_stoppage_time: total
-      }
+      data: stoppageUpdate
     })
 
-    // Also update the total_stoppage_mins and work_time in finisher_drawing_production_detail
-    const detail = await prisma.finisher_drawing_production_detail.findUnique({
+    // Recalculate every field that depends on stoppage time in the same transaction.
+    const detail = await tx.finisher_drawing_production_detail.findUnique({
       where: { id: existing.production_detail_id },
       select: {
+        id: true,
+        machine_id: true,
+        act_hank: true,
+        act_prodn: true,
+        waste: true,
         run_time: true,
         header_id: true,
       }
     })
+    if (!detail) throw new Error('The production row for this stoppage no longer exists')
+
     const header = detail?.header_id
-      ? await prisma.finisher_drawing_production_header.findUnique({
+      ? await tx.finisher_drawing_production_header.findUnique({
           where: { id: detail.header_id },
-          select: { shift: true, total_time: true }
+          select: { shift: true, total_time: true, entry_date: true }
         })
       : null
-    const shiftTime = await getFinisherDrawingShiftTime(header?.shift || 1)
-    const totalTime = header?.total_time || detail?.run_time || shiftTime
-    const productionTime = resolveProductionTime(totalTime, total)
+    if (!header) throw new Error('The production header for this stoppage no longer exists')
 
-    await prisma.finisher_drawing_production_detail.update({
-      where: { id: existing.production_detail_id },
+    const shiftConfig = await tx.shift_config.findFirst({
+      where: { department_code: 'FINISHER_DRAWING', shift: header.shift, is_active: true },
+      select: { shift_time: true }
+    })
+    const shiftTime = shiftConfig?.shift_time || resolveFinisherDrawingShiftFallbackTime(header.shift)
+    const totalTime = header?.total_time || detail?.run_time || shiftTime
+    if (total > totalTime) {
+      const error = new Error('Stoppage time cannot exceed the shift time')
+      error.code = 'INVALID_STOPPAGE'
+      throw error
+    }
+    const [setup, machine] = await Promise.all([
+      tx.finisher_drawing_machine_setup.findFirst({
+        where: {
+          machine_id: detail.machine_id,
+          entry_date: header.entry_date,
+          shift: header.shift
+        }
+      }),
+      tx.drawing_finisher_machines.findUnique({
+        where: { id: detail.machine_id },
+        select: { speed: true }
+      })
+    ])
+    const calculated = calculateFinisherDrawingValues(
+      detail.act_hank,
+      detail.act_prodn,
+      totalTime,
+      total,
+      setup,
+      machine?.speed,
+      detail.waste
+    )
+    delete calculated.speed
+
+    await tx.finisher_drawing_production_detail.update({
+      where: { id: detail.id },
       data: {
-        total_stoppage_mins: productionTime.stoppageTime,
-        work_time: productionTime.workTime,
-        uti_percent: productionTime.totalTime > 0
-          ? Math.round((productionTime.workTime / productionTime.totalTime) * 100 * 100) / 100
-          : 0
+        total_stoppage_mins: total,
+        ...calculated
       }
     })
 
     return data
-  } catch (error) {
-    console.error('updateFinisherDrawingStoppageEntry error:', error)
-    throw new Error(`Failed to update stoppage entry: ${error.message || JSON.stringify(error)}`)
-  }
+    } catch (error) {
+      console.error('updateFinisherDrawingStoppageEntry error:', error)
+      throw error
+    }
+  })
 }
 
 // Apply full stoppage to all machines and recalculate production
@@ -1539,10 +1575,20 @@ export async function getFinisherDrawingAvailableDates(beforeDate, shift, limit 
 export async function copyFinisherDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
   return copyPreviousSpeeds({
     setupModel: prisma.finisher_drawing_machine_setup,
+    headerModel: prisma.finisher_drawing_production_header,
+    targetHeaderId,
     targetDate,
     targetShift,
     sourceDate,
-    updateSpeed: (setupId, speed) => updateFinisherDrawingMachineSetup(setupId, { speed })
+    buildUpdateData: (setup, speed) => {
+      const shiftTime = Number(setup.shift_time || resolveFinisherDrawingShiftFallbackTime(targetShift))
+      return {
+        speed,
+        std_prodn: Math.round(
+          calculateFinisherDrawingStdProdn({ ...setup, speed }, shiftTime, speed) * 100
+        ) / 100
+      }
+    }
   });
 }
 

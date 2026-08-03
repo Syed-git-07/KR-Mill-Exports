@@ -451,7 +451,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      await addLapFormerMachineAction({
+      const result = await addLapFormerMachineAction({
         machine_no: newMachine.machine_no,
         description: newMachine.description,
         make_name: newMachine.make_name,
@@ -465,6 +465,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         delivery: LAP_FORMER_FORMULA_FALLBACK.delivery,
         shift_time: totalTime
       })
+      if (!result?.success) throw new Error(result?.error || 'Failed to add the Lap Former machine')
       toast.success('New machine added successfully')
       setShowAddDialog(false)
       setNewMachine({
@@ -504,7 +505,9 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       const removePromises = selectedRows.map(machineId => 
         removeLapFormerMachineAction(machineId)
       )
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -536,7 +539,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      await bulkUpdateLapFormerMachineMixingAction(selectedRows, mixingValue, headerId)
+      const result = await bulkUpdateLapFormerMachineMixingAction(selectedRows, mixingValue, headerId)
+      if (!result?.success) throw new Error(result?.error || 'Failed to update Lap Former mixing')
       toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
       setShowMixingChangeDialog(false)
       setNewMixing('')

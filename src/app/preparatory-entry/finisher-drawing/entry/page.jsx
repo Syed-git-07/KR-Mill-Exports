@@ -217,7 +217,8 @@ function FinisherDrawingEntryContent() {
       }
       
       // Initialize details for all machines
-      await initializeFinisherDrawingDetailsAction(headerResult.data.id)
+      const initializeResult = await initializeFinisherDrawingDetailsAction(headerResult.data.id)
+      if (!initializeResult?.success) throw new Error(initializeResult?.error || 'Failed to initialize Finisher Drawing machines')
       
       setHeaderId(headerResult.data.id)
       setHeaderData(headerResult.data)
