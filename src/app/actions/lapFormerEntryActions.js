@@ -231,18 +231,27 @@ export async function getLapFormerMachinesAction() {
   }
 }
 
-export async function addLapFormerMachineAction(machineData) {
+export async function addLapFormerMachineAction(machineData, entryContext) {
   try {
-    const data = await queries.addLapFormerMachine(machineData)
+    const data = await queries.addLapFormerMachine(machineData, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeLapFormerMachineAction(machineId) {
+export async function removeLapFormerMachineAction(machineId, entryContext) {
   try {
-    const data = await queries.removeLapFormerMachine(machineId)
+    const data = await queries.removeLapFormerMachine(machineId, entryContext)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function removeLapFormerMachinesAction(machineIds, entryContext) {
+  try {
+    const data = await queries.removeLapFormerMachines(machineIds, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

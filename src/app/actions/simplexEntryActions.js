@@ -311,9 +311,9 @@ export async function getSimplexCountOptionsAction() {
   }
 }
 
-export async function addSimplexMachineAction(machineData) {
+export async function addSimplexMachineAction(machineData, entryContext) {
   try {
-    const data = await queries.addSimplexMachine(machineData)
+    const data = await queries.addSimplexMachine(machineData, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -329,9 +329,18 @@ export async function lookupSimplexMachineByNoAction(machineNo) {
   }
 }
 
-export async function removeSimplexMachineAction(machineId) {
+export async function removeSimplexMachineAction(machineId, entryContext) {
   try {
-    const data = await queries.removeSimplexMachine(machineId)
+    const data = await queries.removeSimplexMachine(machineId, entryContext)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function removeSimplexMachinesAction(machineIds, entryContext) {
+  try {
+    const data = await queries.removeSimplexMachines(machineIds, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

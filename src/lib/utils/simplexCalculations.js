@@ -5,16 +5,29 @@
 
 import { resolveSimplexFormulaInputs } from '@/lib/simplexFormulaFallback'
 import { resolveProductionTime } from '@/lib/productionFormulaMath'
+import {
+  minutesToRunHours as formatMinutesAsRunHours,
+  parseRunHoursToMinutes as parseRunHours
+} from '@/lib/runHoursMath'
+
+const toNonNegativeFiniteNumber = (value) => {
+  const parsed = Number(value?.toString?.() ?? value)
+  return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
+}
+
+const roundFinite = (value, decimals = 2) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  const factor = 10 ** decimals
+  return Math.round(parsed * factor) / factor
+}
 
 /**
  * Parse run hours from HH.MM format to total minutes
  * e.g., 7.45 = 7 hours 45 minutes = 465 minutes
  */
 export function parseRunHoursToMinutes(runHrs) {
-  if (!runHrs || isNaN(runHrs)) return 0
-  const hrs = Math.floor(runHrs)
-  const mins = Math.round((runHrs - hrs) * 100)
-  return hrs * 60 + mins
+  return parseRunHours(runHrs)
 }
 
 /**
@@ -22,10 +35,7 @@ export function parseRunHoursToMinutes(runHrs) {
  * e.g., 465 minutes = 7.45
  */
 export function minutesToRunHours(minutes) {
-  if (!minutes || isNaN(minutes)) return 0
-  const hrs = Math.floor(minutes / 60)
-  const mins = minutes % 60
-  return parseFloat(`${hrs}.${mins.toString().padStart(2, '0')}`)
+  return formatMinutesAsRunHours(minutes)
 }
 
 /**
@@ -62,23 +72,33 @@ export function calculateSimplexProductionValues(params) {
   })
 
   // Step 1: Convert Run Hours (HH.MM) to Run Minutes
-  const runMin = parseRunHoursToMinutes(runHrs)
-
-  // Step 2: Calculate Work Time
   const productionTime = resolveProductionTime(totalTime, stoppageTime)
   const workTime = productionTime.workTime
 
+  // Step 1: Convert Run Hours (HH.MM) to Run Minutes. Actual running time
+  // cannot exceed the stoppage-adjusted available time.
+  const runMin = Math.min(parseRunHoursToMinutes(runHrs), workTime)
+
   // Step 3: Calculate Standard Hours
-  const stdHrs = workTime * (formula.mcEffiPercent / 100)
+  const mcEffiPercent = toNonNegativeFiniteNumber(formula.mcEffiPercent)
+  const stdHrs = workTime * (mcEffiPercent / 100)
 
   // Step 4: Calculate Active Spindles (UNIQUE to Simplex)
-  const activeSpindles = formula.totalSpindles - idleSpindles
+  const totalSpindlesValue = toNonNegativeFiniteNumber(formula.totalSpindles)
+  const effectiveIdleSpindles = Math.min(
+    Math.floor(toNonNegativeFiniteNumber(idleSpindles)),
+    totalSpindlesValue
+  )
+  const activeSpindles = totalSpindlesValue - effectiveIdleSpindles
 
   // Step 5: Calculate Actual Production using Simplex formula
   // Act.Prodn = (Speed / TPI / 39.3 / 1693 / Hank) × RunMin × Active Spindles
   let actProdn = 0
-  if (formula.speed > 0 && formula.tpi > 0 && formula.slHank > 0 && runMin > 0 && activeSpindles > 0) {
-    const baseRate = formula.speed / formula.tpi / formula.divisorA / formula.divisorB / formula.slHank
+  const speedValue = toNonNegativeFiniteNumber(formula.speed)
+  const tpiValue = toNonNegativeFiniteNumber(formula.tpi)
+  const hankValue = toNonNegativeFiniteNumber(formula.slHank)
+  if (speedValue > 0 && tpiValue > 0 && hankValue > 0 && runMin > 0 && activeSpindles > 0) {
+    const baseRate = speedValue / tpiValue / formula.divisorA / formula.divisorB / hankValue
     actProdn = baseRate * runMin * activeSpindles
   }
 
@@ -88,7 +108,8 @@ export function calculateSimplexProductionValues(params) {
 
   // Step 7: Calculate Waste Percentage
   // Waste % = (Waste / Act.Prodn) × 100
-  const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
+  const wasteValue = toNonNegativeFiniteNumber(waste)
+  const wastePercent = actProdn > 0 ? (wasteValue / actProdn) * 100 : 0
 
   // Step 8: Calculate Utilization
   // UTI % = (WorkTime / TotalTime) × 100
@@ -99,10 +120,10 @@ export function calculateSimplexProductionValues(params) {
   return {
     run_min: runMin,
     work_time: workTime,
-    std_hrs: Math.round(stdHrs * 10) / 10,
-    act_prodn: Math.round(actProdn * 100) / 100,
-    act_effi_percent: Math.round(actEffiPercent * 100) / 100,
-    waste_percent: Math.round(wastePercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100
+    std_hrs: roundFinite(stdHrs, 1),
+    act_prodn: roundFinite(actProdn),
+    act_effi_percent: roundFinite(actEffiPercent),
+    waste_percent: roundFinite(wastePercent),
+    uti_percent: roundFinite(utiPercent)
   }
 }

@@ -47,6 +47,8 @@ function SimplexEntryContent() {
   const [supervisors, setSupervisors] = useState([])
   const [headerId, setHeaderId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [headerLoadError, setHeaderLoadError] = useState(false)
+  const headerLoadRequestRef = useRef(0)
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
   const [isSavingAll, setIsSavingAll] = useState(false)
@@ -57,6 +59,7 @@ function SimplexEntryContent() {
     stoppage: {},
     setup: {}
   })
+  const sharedDraftsRef = useRef(sharedDrafts)
 
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
@@ -122,12 +125,16 @@ function SimplexEntryContent() {
 
   // Load or create production header when date/shift changes
   const loadProductionHeader = useCallback(async () => {
+    const requestId = ++headerLoadRequestRef.current
     setIsLoading(true)
     try {
       const dateStr = format(date, 'yyyy-MM-dd')
       const result = await getSimplexProductionByDateShiftAction(dateStr, shift)
+      if (requestId !== headerLoadRequestRef.current) return
+      if (!result?.success) throw new Error(result?.error || 'Failed to load Simplex production header')
+      setHeaderLoadError(false)
       
-      if (result.success && result.data) {
+      if (result.data) {
         const existing = result.data
         setHeaderId(existing.id)
         setSupervisorId(existing.supervisor_id || '')
@@ -155,10 +162,15 @@ function SimplexEntryContent() {
         setMaisitryId('')
       }
     } catch (error) {
+      if (requestId !== headerLoadRequestRef.current) return
+      setHeaderLoadError(true)
+      setHeaderId(null)
+      setSupervisorId('')
+      setMaisitryId('')
       console.error('Error loading production header:', error)
       toast.error('Failed to load production data')
     } finally {
-      setIsLoading(false)
+      if (requestId === headerLoadRequestRef.current) setIsLoading(false)
     }
   }, [date, shift])
 
@@ -166,21 +178,39 @@ function SimplexEntryContent() {
     loadProductionHeader()
   }, [loadProductionHeader])
 
+  const updateTabDrafts = useCallback((tabKey, nextDraftOrUpdater) => {
+    const currentDrafts = sharedDraftsRef.current
+    const currentTabDrafts = currentDrafts?.[tabKey] || {}
+    const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
+      ? nextDraftOrUpdater(currentTabDrafts)
+      : (nextDraftOrUpdater || {})
+    if (nextTabDrafts === currentTabDrafts) return
+
+    const nextDrafts = {
+      ...currentDrafts,
+      [tabKey]: nextTabDrafts
+    }
+    sharedDraftsRef.current = nextDrafts
+    setSharedDrafts(nextDrafts)
+  }, [])
+
   const clearSharedDrafts = useCallback(() => {
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+    const emptyDrafts = { header: {}, production: {}, stoppage: {}, setup: {} }
+    sharedDraftsRef.current = emptyDrafts
+    setSharedDrafts(emptyDrafts)
   }, [])
 
   const setProductionDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, production: updates || {} }))
-  }, [])
+    updateTabDrafts('production', updates)
+  }, [updateTabDrafts])
 
   const setStoppageDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, stoppage: updates || {} }))
-  }, [])
+    updateTabDrafts('stoppage', updates)
+  }, [updateTabDrafts])
 
   const setSetupDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, setup: updates || {} }))
-  }, [])
+    updateTabDrafts('setup', updates)
+  }, [updateTabDrafts])
 
   const editedCounts = {
     header: Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0,
@@ -274,10 +304,7 @@ function SimplexEntryContent() {
   const handleSupervisorChange = (value) => {
     setSupervisorId(value)
     if (headerId) {
-      setSharedDrafts(prev => ({
-        ...prev,
-        header: { ...prev.header, supervisor_id: value || null }
-      }))
+      updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
     }
   }
 
@@ -285,10 +312,7 @@ function SimplexEntryContent() {
   const handleMaisitryChange = (value) => {
     setMaisitryId(value)
     if (headerId) {
-      setSharedDrafts(prev => ({
-        ...prev,
-        header: { ...prev.header, maisitry_id: value || null }
-      }))
+      updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
     }
   }
 
@@ -307,72 +331,91 @@ function SimplexEntryContent() {
   }, [confirmUnsavedDiscard, totalEditedCount, discardAllTabChanges, loadProductionHeader])
 
   const handleSaveAllChanges = useCallback(async () => {
-    if (totalEditedCount === 0) {
+    if (!headerId || isSavingAll) return
+
+    const draftSnapshot = sharedDraftsRef.current
+    const snapshotEditedCounts = {
+      header: Object.keys(draftSnapshot.header || {}).length > 0 ? 1 : 0,
+      production: Object.keys(draftSnapshot.production || {}).length,
+      stoppage: Object.keys(draftSnapshot.stoppage || {}).length,
+      setup: Object.keys(draftSnapshot.setup || {}).length
+    }
+    const snapshotTotal = Object.values(snapshotEditedCounts).reduce((sum, count) => sum + count, 0)
+
+    if (snapshotTotal === 0) {
       toast.info('No changes to save')
+      return
+    }
+
+    const requiredTabs = [
+      { label: 'Machine Setup', tab: setupTabRef.current },
+      { label: 'Stoppage', tab: stoppageTabRef.current },
+      { label: 'Production', tab: productionTabRef.current }
+    ]
+    const unavailableTab = requiredTabs.find(({ tab }) => typeof tab?.saveChanges !== 'function')
+    if (unavailableTab) {
+      toast.error(`${unavailableTab.label} is not ready. Wait for all tabs to finish loading, then retry Update.`)
       return
     }
 
     setIsSavingAll(true)
     try {
-      if (editedCounts.header > 0) {
-        const headerResult = await updateSimplexProductionHeaderAction(headerId, sharedDrafts.header)
-        if (!headerResult?.success) {
-          throw new Error(headerResult?.error || 'Failed to update entry header')
-        }
-      }
-
-      const hasDependentProductionChanges = editedCounts.setup > 0 || editedCounts.stoppage > 0
+      const hasDependentProductionChanges = snapshotEditedCounts.setup > 0 || snapshotEditedCounts.stoppage > 0
       const tabSaves = [
-        { key: 'Machine Setup', count: editedCounts.setup, ref: setupTabRef.current },
-        { key: 'Stoppage', count: editedCounts.stoppage, ref: stoppageTabRef.current },
+        { key: 'Machine Setup', count: snapshotEditedCounts.setup, ref: setupTabRef.current },
+        { key: 'Stoppage', count: snapshotEditedCounts.stoppage, ref: stoppageTabRef.current },
         {
           key: 'Production',
-          count: editedCounts.production + (hasDependentProductionChanges ? 1 : 0),
+          count: snapshotEditedCounts.production + (hasDependentProductionChanges ? 1 : 0),
           ref: productionTabRef.current
         }
       ].filter(tab => tab.count > 0)
 
       let totalSaved = 0
-      const failures = []
 
       for (const tab of tabSaves) {
-        const result = await tab.ref?.saveChanges?.({
+        const result = await tab.ref.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
         })
 
-        if (result?.success) {
-          totalSaved += result.saved || 0
-        } else {
-          failures.push(tab.key)
+        if (!result?.success) {
+          const detail = tab.key === 'Stoppage'
+            ? ' Production was not saved.'
+            : ''
+          toast.error(`Update stopped at ${tab.key}.${detail} Drafts were kept for retry.`)
+          return
         }
+        totalSaved += result.saved || 0
+      }
+
+      // Save the header last so a dependent tab failure cannot leave only the
+      // supervisor/maisitry update committed.
+      if (snapshotEditedCounts.header > 0) {
+        const headerResult = await updateSimplexProductionHeaderAction(headerId, draftSnapshot.header)
+        if (!headerResult?.success) {
+          toast.error('Entry header could not be saved. Drafts were kept for retry.')
+          return
+        }
+        totalSaved += 1
       }
 
       if (totalSaved > 0) {
         toast.success(`Saved ${totalSaved} row(s) across tabs`)
       }
 
-      if (failures.length > 0) {
-        toast.error(`Failed to save: ${failures.join(', ')}`)
-      } else {
-        router.push('/preparatory-entry/simplex')
-        return
-      }
-
-      await Promise.all([
-        productionTabRef.current?.refreshData?.() || Promise.resolve(),
-        stoppageTabRef.current?.refreshData?.() || Promise.resolve(),
-        setupTabRef.current?.refreshData?.() || Promise.resolve()
-      ])
+      clearSharedDrafts()
+      router.push('/preparatory-entry/simplex')
     } catch (error) {
       console.error('Error saving all changes:', error)
-      toast.error('Failed to save all changes')
+      toast.error('Update failed. Drafts were kept for retry.')
     } finally {
       setIsSavingAll(false)
     }
-  }, [totalEditedCount, editedCounts, router])
+  }, [headerId, isSavingAll, clearSharedDrafts, router])
 
   const handleCancelAllChanges = useCallback(async () => {
     if (totalEditedCount === 0) {
@@ -487,7 +530,7 @@ function SimplexEntryContent() {
             </div>
 
             {/* Initialize Button */}
-            {!headerId && !isLoading && (
+            {!headerId && !isLoading && !headerLoadError && (
               <Button 
                 onClick={handleInitialize}
                 disabled={isInitializing}
@@ -524,7 +567,7 @@ function SimplexEntryContent() {
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
           <span className="ml-2">Loading...</span>
         </div>
-      ) : headerId ? (
+          ) : headerId && !headerLoadError ? (
         <Card>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">
@@ -579,6 +622,8 @@ function SimplexEntryContent() {
                 <SimplexMachineSetupTab 
                   ref={setupTabRef}
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
+                  shift={parseInt(shift)}
                   totalTime={totalTime}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.setup}

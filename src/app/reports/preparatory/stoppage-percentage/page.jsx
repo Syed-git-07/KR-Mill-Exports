@@ -46,7 +46,10 @@ export default function PreparatoryStoppageReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generatePreparatoryStoppageReportAction(fromDate, toDate)
+      const result = await generatePreparatoryStoppageReportAction(
+        format(fromDate, 'yyyy-MM-dd'),
+        format(toDate, 'yyyy-MM-dd')
+      )
       
       if (result.success) {
         setReportData(result.data)

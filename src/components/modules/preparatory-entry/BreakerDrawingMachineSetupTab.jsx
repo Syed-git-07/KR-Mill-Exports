@@ -28,7 +28,7 @@ import {
   getBreakerDrawingMachineSetupsAction,
   updateMachineSetupAction,
   addBreakerDrawingMachineAction,
-  removeBreakerDrawingMachineAction,
+  removeBreakerDrawingMachinesAction,
   updateBreakerDrawingMachineMixingAction,
   bulkUpdateBreakerDrawingMachineMixingAction,
   getMixingOptionsAction
@@ -36,6 +36,7 @@ import {
 import { lookupDrawingBreakerMachineByNoAction } from '@/app/actions/drawing-breaker'
 import { NumberInput } from '@/components/ui/number-input'
 import { BREAKER_DRAWING_FORMULA_FALLBACK, resolveBreakerDrawingFormulaInputs } from '@/lib/breakerDrawingFormulaFallback'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 // Helper to convert Prisma Decimal to number
 const toNumber = (value) => {
@@ -55,6 +56,7 @@ const formatNumber = (value, decimals = 2) => {
 
 const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineSetupTab({
   headerId = null,
+  entryDate = '',
   shift = 1,
   totalTime = 0,
   onRefresh,
@@ -67,6 +69,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
@@ -74,6 +77,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -81,8 +85,10 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -136,7 +142,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       delivery: d.delivery != null ? parseFloat(d.delivery) : prev.delivery,
     }))
     if (d.has_setup) {
-      toast.info(`Machine ${val} found – it will be reactivated with existing setup`, { id: toastId })
+      toast.info(`Machine ${val} found - its values will seed a new lifecycle`, { id: toastId })
     } else {
       toast.success(`Machine ${val} details filled`, { id: toastId })
     }
@@ -156,7 +162,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     description: '',
     make_name: '',
     model: '',
-    installed_date: '',
+    installed_date: entryDate,
     prodn_mixing: '',
     speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed,
     shift_time: totalTime,
@@ -164,6 +170,10 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
     delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery
   })
+
+  useEffect(() => {
+    setNewMachine(previous => ({ ...previous, installed_date: entryDate }))
+  }, [entryDate])
 
   // Mixing change form
   const [newMixing, setNewMixing] = useState('')
@@ -248,8 +258,9 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -258,7 +269,6 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const currentEdits = editedRowsRef.current || editedRows || {}
       const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => 
         updateMachineSetupAction(rowId, changes)
       )
@@ -267,7 +277,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a machine setup row')
       const savedCount = Object.keys(currentEdits).length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
       }
@@ -337,19 +347,19 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const response = await addBreakerDrawingMachineAction(newMachine)
+      const response = await addBreakerDrawingMachineAction(newMachine, { headerId, entryDate, shift })
       if (!response?.success) {
         throw new Error(response?.error || 'Failed to add machine')
       }
       const result = response.data
-      toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+      toast.success('New machine lifecycle added successfully')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
         description: '',
         make_name: '',
         model: '',
-        installed_date: '',
+        installed_date: entryDate,
         prodn_mixing: '',
         speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed,
         shift_time: totalTime,
@@ -378,12 +388,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const removePromises = selectedRows.map(machineId => 
-        removeBreakerDrawingMachineAction(machineId)
-      )
-      const results = await Promise.all(removePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
+      const result = await removeBreakerDrawingMachinesAction(selectedRows, { headerId, entryDate, shift })
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove machines')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])

@@ -19,9 +19,16 @@ import {
   findDraftByKeys,
   getEffectiveStoppageTotal,
   mergeSetupDraft,
+  resolveCommitDrafts,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
-import { resolveProductionTime } from '@/lib/productionFormulaMath'
+import { calculateSpinningGpsMetrics } from '@/lib/productionFormulaMath'
+
+const toFiniteNumber = (value, fallback = 0) => {
+  if (value === null || value === undefined || value === '') return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
 
 /**
  * Spinning Production Entry Tab
@@ -53,6 +60,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const hasShownInitToast = useRef(false)
 
   const setEditedRows = useCallback((updater) => {
@@ -61,6 +69,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -68,8 +77,10 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   // Reset toast flag when headerId changes
   useEffect(() => {
@@ -100,57 +111,54 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       ? Number(setup.efficiency)
       : 0.95
     const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
-    const productionTime = resolveProductionTime(effectiveTotalTime, requestedStoppageMins)
-    const stoppageMins = productionTime.stoppageTime
-    const runTime = productionTime.totalTime
 
     // Get values needed for Exp GPS calculation (from machine setup, sourced from spinning_counts master)
     const speed = parseInt(setup.speed) || 0
     const tpi = parseFloat(setup.tpi) || 0
     // Use act_count from machine setup for Exp GPS calculation
-    const count = actCount
 
     // Calculate No of Spindles based on shift
     // Shift 1 & 2: allocated / 8 * 8.5, Shift 3: allocated / 8 * 7
-    const multiplier = shiftNo === 3 ? 7 : 8.5
-    const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
 
     // Calculate constant (uses fixed 0.985 efficiency, NOT the setup efficiency)
-    const CONSTANT_EFFICIENCY = 0.985
-    const constant = actCount > 0
-      ? (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
-      : 0
 
     const actHank = parseFloat(updates.act_hank ?? row.act_hank) || 0
-    const actProdn = actHank * constant
 
     const waste = parseFloat(updates.waste ?? row.waste) || 0
 
     // Calculate waste percentage
-    const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
 
     // Calculate stopped and worked spindles
     // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
-    const stoppedSpindles = runTime > 0 ? (stoppageMins / runTime) * totalSpindles : 0
     // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
-    const workedSpindles = Math.max(totalSpindles - stoppedSpindles, 0)
 
     // Calculate GPS = (ACL_Prod / Worked_Spl) × 1000
-    const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
 
     // Calculate Expected GPS = 7.2 × Speed / TPI / Count × Effi
-    const expGps = speed && tpi && count ? ((7.2 * speed / tpi / count) * efficiency) : 0
+
+    const spinningMetrics = calculateSpinningGpsMetrics({
+      actHank,
+      actCount,
+      allocatedSpindles,
+      efficiency,
+      speed,
+      tpi,
+      waste,
+      totalTime: effectiveTotalTime,
+      stoppageTime: requestedStoppageMins,
+      shiftNo
+    })
 
     const result = {
-      act_prodn: Math.round(actProdn * 100) / 100,
-      waste_percent: Math.round(wastePercent * 100) / 100,
-      stopped_spindles: Math.round(stoppedSpindles * 100) / 100,
-      worked_spindles: workedSpindles,
-      gps: Math.round(gps * 100) / 100,
-      exp_gps: Math.round(expGps * 100) / 100,
-      work_time: runTime - stoppageMins,
-      _constant: Math.round(constant * 1000) / 1000,
-      _totalSpindles: totalSpindles
+      act_prodn: spinningMetrics.actualProduction,
+      waste_percent: spinningMetrics.wastePercent,
+      stopped_spindles: spinningMetrics.stoppedSpindles,
+      worked_spindles: spinningMetrics.workedSpindles,
+      gps: spinningMetrics.gps,
+      exp_gps: spinningMetrics.expectedGps,
+      work_time: spinningMetrics.workTime,
+      _constant: spinningMetrics.constant,
+      _totalSpindles: spinningMetrics.totalSpindles
     }
     return result
   }, [effectiveTotalTime, shiftNo])
@@ -334,9 +342,10 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'production', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
     const rowsToSave = selectRowsForDependentCommit(
@@ -372,12 +381,13 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         // Resolve act_hank: prefer explicitly edited value, then back-calculated (when act_prodn was edited),
         // then the row's stored value. Preserve 0 (don't use || null which would coerce 0 → null).
         const rawHank = edits.act_hank ?? calculated.act_hank ?? row.act_hank
-        const savedHank = rawHank != null ? parseFloat(rawHank) : null
+        const parsedHank = toFiniteNumber(rawHank, Number.NaN)
+        const savedHank = Number.isFinite(parsedHank) ? parsedHank : null
         
         return {
           id,
           act_hank: savedHank,
-          waste: parseFloat(edits.waste ?? row.waste) ?? 0,
+          waste: toFiniteNumber(edits.waste ?? row.waste, 0),
           act_prodn: calculated.act_prodn,
           waste_percent: calculated.waste_percent,
           stopped_spindles: calculated.stopped_spindles,
@@ -385,6 +395,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           gps: calculated.gps,
           exp_gps: calculated.exp_gps,
           work_time: calculated.work_time,
+          run_time: effectiveTotalTime,
+          total_stoppage_mins: totalStoppageMins,
           sider1_name: edits.sider1_name ?? row.sider1_name,
           sider2_name: edits.sider2_name ?? row.sider2_name
         }
@@ -396,7 +408,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         if (!suppressSuccessToast) {
           toast.success(`Saved ${updates.length} production record(s)`)
         }
-        setEditedRows({})
+        if (!preserveDrafts) setEditedRows({})
         if (!skipParentRefresh) {
           await loadData()
           onRefresh?.()

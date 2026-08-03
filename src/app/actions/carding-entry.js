@@ -272,27 +272,28 @@ export async function getCountOptionsAction() {
   }
 }
 
-export async function addCardingMachineAction(machineData) {
+export async function addCardingMachineAction(machineData, entryDate, shift = 1) {
   try {
-    const data = await queries.addCardingMachine(machineData)
+    if (!entryDate) throw new Error('Carding entry date is required')
+    const data = await queries.addCardingMachine(machineData, entryDate, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function lookupCardingMachineByNoAction(machineNo) {
+export async function lookupCardingMachineByNoAction(machineNo, entryDate = null, shift = null) {
   try {
-    const data = await queries.lookupCardingMachineByNo(machineNo)
+    const data = await queries.lookupCardingMachineByNo(machineNo, entryDate, shift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeCardingMachineAction(machineId) {
+export async function removeCardingMachineAction(machineId, entryDate = null) {
   try {
-    const data = await queries.removeCardingMachine(machineId)
+    const data = await queries.removeCardingMachine(machineId, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

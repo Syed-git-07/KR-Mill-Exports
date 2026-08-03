@@ -48,6 +48,8 @@ function AutoconerEntryContent() {
   const [supervisors, setSupervisors] = useState([])
   const [headerId, setHeaderId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [headerLoadError, setHeaderLoadError] = useState(false)
+  const headerLoadRequestRef = useRef(0)
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
@@ -55,28 +57,31 @@ function AutoconerEntryContent() {
   
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const sharedDraftsRef = useRef(sharedDrafts)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
 
   const updateTabDrafts = useCallback((tabKey, nextDraftOrUpdater) => {
-    setSharedDrafts(prev => {
-      const currentTabDrafts = prev?.[tabKey] || {}
-      const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
-        ? nextDraftOrUpdater(currentTabDrafts)
-        : (nextDraftOrUpdater || {})
-      if (nextTabDrafts === currentTabDrafts) {
-        return prev
-      }
-      return {
-        ...prev,
-        [tabKey]: nextTabDrafts
-      }
-    })
+    const currentDrafts = sharedDraftsRef.current
+    const currentTabDrafts = currentDrafts?.[tabKey] || {}
+    const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
+      ? nextDraftOrUpdater(currentTabDrafts)
+      : (nextDraftOrUpdater || {})
+    if (nextTabDrafts === currentTabDrafts) return
+
+    const nextDrafts = {
+      ...currentDrafts,
+      [tabKey]: nextTabDrafts
+    }
+    sharedDraftsRef.current = nextDrafts
+    setSharedDrafts(nextDrafts)
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+    const emptyDrafts = { header: {}, production: {}, stoppage: {}, setup: {} }
+    sharedDraftsRef.current = emptyDrafts
+    setSharedDrafts(emptyDrafts)
   }, [])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
@@ -91,18 +96,18 @@ function AutoconerEntryContent() {
     updateTabDrafts('setup', nextDrafts)
   }, [updateTabDrafts])
 
-  const getUnsavedEditCount = useCallback(() => {
-    const productionShared = Object.keys(sharedDrafts.production || {}).length
-    const stoppageShared = Object.keys(sharedDrafts.stoppage || {}).length
-    const setupShared = Object.keys(sharedDrafts.setup || {}).length
-    const headerShared = Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0
+  const getUnsavedEditCount = useCallback((drafts = sharedDraftsRef.current) => {
+    const productionShared = Object.keys(drafts.production || {}).length
+    const stoppageShared = Object.keys(drafts.stoppage || {}).length
+    const setupShared = Object.keys(drafts.setup || {}).length
+    const headerShared = Object.keys(drafts.header || {}).length > 0 ? 1 : 0
 
     const productionCount = productionShared || (productionTabRef.current?.getEditedCount?.() || 0)
     const stoppageCount = stoppageShared || (stoppageTabRef.current?.getEditedCount?.() || 0)
     const setupCount = setupShared || (setupTabRef.current?.getEditedCount?.() || 0)
 
     return headerShared + productionCount + stoppageCount + setupCount
-  }, [sharedDrafts])
+  }, [])
 
   // Load supervisors
   useEffect(() => {
@@ -140,12 +145,16 @@ function AutoconerEntryContent() {
 
   // Load or create production header when date/shift changes
   const loadProductionHeader = useCallback(async () => {
+    const requestId = ++headerLoadRequestRef.current
     setIsLoading(true)
     try {
       const dateStr = format(date, 'yyyy-MM-dd')
       const result = await getAutoconerProductionByDateShiftAction(dateStr, parseInt(shift))
+      if (requestId !== headerLoadRequestRef.current) return
+      if (!result?.success) throw new Error(result?.error || 'Failed to load Autoconer production header')
+      setHeaderLoadError(false)
       
-      if (result.success && result.data) {
+      if (result.data) {
         setHeaderId(result.data.id)
         setSupervisorId(result.data.supervisor_id || '')
       } else {
@@ -153,10 +162,14 @@ function AutoconerEntryContent() {
         setSupervisorId('')
       }
     } catch (error) {
+      if (requestId !== headerLoadRequestRef.current) return
+      setHeaderLoadError(true)
+      setHeaderId(null)
+      setSupervisorId('')
       console.error('Error loading production header:', error)
       toast.error('Failed to load production data')
     } finally {
-      setIsLoading(false)
+      if (requestId === headerLoadRequestRef.current) setIsLoading(false)
     }
   }, [date, shift])
 
@@ -230,57 +243,79 @@ function AutoconerEntryContent() {
   const handleSaveAllTabs = async () => {
     if (!headerId || isSavingAll) return
 
-    const totalPending = getUnsavedEditCount()
+    const draftSnapshot = sharedDraftsRef.current
+    const totalPending = getUnsavedEditCount(draftSnapshot)
 
     if (totalPending === 0) {
       toast.info('No changes to save')
       return
     }
 
+    const requiredTabs = [
+      { label: 'Machine Setup', tab: setupTabRef.current },
+      { label: 'Stoppage', tab: stoppageTabRef.current },
+      { label: 'Production', tab: productionTabRef.current }
+    ]
+    const unavailableTab = requiredTabs.find(({ tab }) => typeof tab?.saveChanges !== 'function')
+    if (unavailableTab) {
+      toast.error(`${unavailableTab.label} is not ready. Wait for all tabs to finish loading, then retry Update.`)
+      return
+    }
+
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
-      const setupResult = await (
-        setupTabRef.current?.saveChanges?.({
+      const setupResult = await setupTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-      const stoppageResult = await (
-        stoppageTabRef.current?.saveChanges?.({
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
+        })
+      if (!setupResult?.success) {
+        toast.error('Update stopped at Machine Setup. Drafts were kept for retry.')
+        return
+      }
+      const stoppageResult = await stoppageTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-      const prodResult = await (
-        productionTabRef.current?.saveChanges?.({
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
+        })
+      if (!stoppageResult?.success) {
+        toast.error('Update stopped at Stoppage. Production was not saved; drafts were kept for retry.')
+        return
+      }
+      const prodResult = await productionTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
-        ? await updateAutoconerProductionHeaderAction(headerId, sharedDrafts.header)
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
+        })
+      if (!prodResult?.success) {
+        toast.error('Update stopped at Production. Drafts were kept for retry.')
+        return
+      }
+      const headerResult = Object.keys(draftSnapshot.header || {}).length > 0
+        ? await updateAutoconerProductionHeaderAction(headerId, draftSnapshot.header)
         : { success: true, saved: 0 }
-
-      const results = [prodResult, stoppageResult, setupResult, headerResult]
-      const failures = results.filter(r => !r?.success)
-      const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
-
-      if (failures.length > 0) {
-        toast.error(`Saved ${totalSaved} change(s), but ${failures.length} tab(s) failed`)
-      } else {
-        toast.success(`Saved ${totalSaved} change(s) across all tabs`)
-        router.push('/post-preparatory/autoconer')
+      if (!headerResult?.success) {
+        toast.error('Entry header could not be saved. Drafts were kept for retry.')
         return
       }
 
-      handleRefresh()
+      const results = [prodResult, stoppageResult, setupResult]
+      const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0) +
+        (Object.keys(draftSnapshot.header || {}).length > 0 ? 1 : 0)
+
+      toast.success(`Saved ${totalSaved} change(s) across all tabs`)
+      clearAllDrafts()
+      router.push('/post-preparatory/autoconer')
+    } catch (error) {
+      console.error('Failed to update Autoconer entry:', error)
+      toast.error('Update failed. Drafts were kept for retry.')
     } finally {
       setIsSavingAll(false)
     }
@@ -391,7 +426,7 @@ function AutoconerEntryContent() {
             </div>
 
             {/* Initialize Button */}
-            {!headerId && (
+            {!headerId && !headerLoadError && (
               <Button 
                 onClick={handleInitialize}
                 disabled={isInitializing}
@@ -414,7 +449,7 @@ function AutoconerEntryContent() {
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
           <span className="ml-2">Loading...</span>
         </div>
-      ) : headerId ? (
+          ) : headerId && !headerLoadError ? (
         <Card>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">

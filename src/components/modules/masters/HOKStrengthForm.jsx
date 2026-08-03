@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getDepartmentsForDropdownAction, getHOKEntryByIdAction } from '@/app/actions/hok-strength';
@@ -17,20 +16,19 @@ const hokStrengthSchema = z.object({
     shift1: z.number().min(0),
     shift2: z.number().min(0),
     shift3: z.number().min(0),
-  })),
+  })).min(1, 'At least one department is required'),
 });
 
-export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
-  const [departments, setDepartments] = useState([]);
+export default function HOKStrengthForm({ initialData, onSubmit }) {
   const [gridData, setGridData] = useState([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [hokId, setHokId] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const {
-    register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    setValue,
+    formState: { errors },
   } = useForm({
     resolver: zodResolver(hokStrengthSchema),
     defaultValues: {
@@ -40,14 +38,12 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   });
 
   useEffect(() => {
-    console.log('🔵 HOKStrengthForm mounted/updated with initialData:', initialData);
     loadDepartmentsAndData();
   }, [initialData?.hok_id]); // Only re-run when hok_id changes
 
   const loadDepartmentsAndData = async () => {
     try {
       setLoading(true);
-      console.log('🔵 HOKStrengthForm - Loading data, initialData:', initialData);
       
       const deptResult = await getDepartmentsForDropdownAction();
       if (!deptResult.success) {
@@ -56,8 +52,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
       }
       
       const deptData = deptResult.data;
-      console.log('🔵 Loaded', deptData.length, 'departments:', deptData.map(d => d.dept_name));
-      setDepartments(deptData);
       
       // Initialize grid with one row per department
       const initialGrid = deptData.map(dept => ({
@@ -70,7 +64,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
       
       // If editing, load the edit data
       if (initialData?.hok_id) {
-        console.log('🟡 EDIT MODE - Loading data for HOK ID:', initialData.hok_id);
         const editResult = await getHOKEntryByIdAction(initialData.hok_id);
         
         if (!editResult.success) {
@@ -80,27 +73,32 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
         }
         
         const editData = editResult.data;
-        console.log('🟡 Loaded edit data - Header:', editData.header);
-        console.log('🟡 Loaded edit data - Details:', editData.details);
         
         if (editData) {
           setHokId(editData.header.hok_id);
           // Format date for date input (yyyy-MM-dd)
           const formattedDate = format(new Date(editData.header.date), 'yyyy-MM-dd');
           setSelectedDate(formattedDate);
+          setValue('date', formattedDate, { shouldValidate: true });
+
+          // Keep inactive departments that are already part of this historical
+          // entry. Dropping them from the edit grid would delete saved shifts.
+          const activeIds = new Set(initialGrid.map(row => row.department_id));
+          const historicalRows = editData.details
+            .filter(detail => !activeIds.has(detail.department_id))
+            .map(detail => ({
+              department_id: detail.department_id,
+              dept_name: detail.departments?.dept_name || 'Inactive department',
+              shift1: 0,
+              shift2: 0,
+              shift3: 0,
+            }));
+          const completeGrid = [...initialGrid, ...historicalRows];
           
           // Populate grid with existing detail values
-          const populatedGrid = initialGrid.map(row => {
+          const populatedGrid = completeGrid.map(row => {
             const detail = editData.details.find(d => d.department_id === row.department_id);
             if (detail) {
-              console.log('  ✓ Found data for', row.dept_name, ':', {
-                shift1: detail.shift1,
-                shift2: detail.shift2,
-                shift3: detail.shift3,
-                shift1_type: typeof detail.shift1,
-                shift2_type: typeof detail.shift2,
-                shift3_type: typeof detail.shift3
-              });
               return {
                 ...row,
                 shift1: Number(detail.shift1) || 0,
@@ -108,16 +106,14 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                 shift3: Number(detail.shift3) || 0,
               };
             }
-            console.log('  ⚠ No data for', row.dept_name);
             return row;
           });
-          console.log('🟢 Grid populated with', populatedGrid.length, 'rows');
-          console.log('🟢 First row sample:', populatedGrid[0]);
           setGridData(populatedGrid);
+          setValue('entries', populatedGrid, { shouldValidate: true });
         }
       } else {
-        console.log('🟢 CREATE MODE - Initializing empty grid with', initialGrid.length, 'departments');
         setGridData(initialGrid);
+        setValue('entries', initialGrid, { shouldValidate: true });
       }
     } catch (error) {
       console.error('❌ Error loading departments and data:', error);
@@ -127,19 +123,26 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   };
 
   const handleGridChange = (deptId, field, value) => {
-    setGridData(prev => prev.map(row => {
-      if (row.department_id === deptId) {
-        return { ...row, [field]: parseFloat(value) || 0 };
-      }
-      return row;
-    }));
+    const parsedValue = Number.parseFloat(value) || 0;
+    const rowIndex = gridData.findIndex(row => row.department_id === deptId);
+    if (rowIndex >= 0) {
+      setValue(`entries.${rowIndex}.${field}`, parsedValue, { shouldValidate: true });
+    }
+    setGridData(prev => {
+      return prev.map(row => {
+        if (row.department_id === deptId) {
+          return { ...row, [field]: parsedValue };
+        }
+        return row;
+      });
+    });
   };
 
   const calculateTotals = (field) => {
     return gridData.reduce((sum, row) => sum + (row[field] || 0), 0);
   };
 
-  const handleFormSubmit = async (formData) => {
+  const handleFormSubmit = async () => {
     const submissionData = {
       date: selectedDate,
       hok_id: hokId,
@@ -173,7 +176,10 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
             id="date"
             type="date"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              setValue('date', e.target.value, { shouldValidate: true });
+            }}
           />
           {errors.date && (
             <p className="text-sm text-red-500">{errors.date.message}</p>
@@ -202,6 +208,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                   <td className="px-4 py-2 border-r border-gray-200">
                     <Input
                       type="number"
+                      min="0"
                       step="0.1"
                       value={row.shift1}
                       onChange={(e) =>
@@ -213,6 +220,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                   <td className="px-4 py-2 border-r border-gray-200">
                     <Input
                       type="number"
+                      min="0"
                       step="0.1"
                       value={row.shift2}
                       onChange={(e) =>
@@ -224,6 +232,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                   <td className="px-4 py-2">
                     <Input
                       type="number"
+                      min="0"
                       step="0.1"
                       value={row.shift3}
                       onChange={(e) =>
@@ -253,6 +262,11 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
           </table>
         </div>
       </div>
+      {errors.entries && (
+        <p className="text-sm text-red-500" role="alert">
+          Every shift value must be a non-negative number.
+        </p>
+      )}
     </form>
   );
 }

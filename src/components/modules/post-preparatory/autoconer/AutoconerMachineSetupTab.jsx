@@ -23,10 +23,11 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, RefreshCw, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { format } from 'date-fns'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getAutoconerMachineSetupsAction,
-  updateAutoconerMachineSetupAction,
+  batchUpdateAutoconerMachineSetupsAction,
   upsertAutoconerMachineSetupAction,
   getSpinningCountsAction,
   getAutoconerMachinesAction,
@@ -35,6 +36,9 @@ import {
   removeAutoconerMachineAction,
   removeAutoconerMachineSetupsAction
 } from '@/app/actions/autoconerEntryActions'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
+
+const localToday = () => format(new Date(), 'yyyy-MM-dd')
 
 /**
  * Autoconer Machine Setup Tab
@@ -58,18 +62,26 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = sharedDraftEdits ?? localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const setEditedRows = useCallback((updater) => {
-    const applyUpdate = (current) => (typeof updater === 'function' ? updater(current) : updater)
-    setLocalEditedRows(prev => applyUpdate(prev))
+    const previous = editedRowsRef.current || {}
+    const next = typeof updater === 'function' ? updater(previous) : (updater || {})
+    if (next === previous) return
+    editedRowsRef.current = next
     if (onSharedDraftEditsChange) {
-      onSharedDraftEditsChange(prev => applyUpdate(prev || {}))
+      publishedDraftsRef.current.add(next)
+      onSharedDraftEditsChange(next)
+    } else {
+      setLocalEditedRows(next)
     }
   }, [onSharedDraftEditsChange])
   const [selectedRows, setSelectedRows] = useState([])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows || {}
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   // Table ref for Enter/Arrow row navigation
   const tableRef = useRef(null)
@@ -129,7 +141,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     speed: '',
     count: '',
     act_effi: '',
-    installed_date: new Date().toISOString().split('T')[0],
+    installed_date: localToday(),
     // Setup fields
     count_id: '',
     count_name: '',
@@ -192,7 +204,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     const derivedActEffi = found.act_effi ?? matchedCount?.effi_actual_prodn ?? matchedCount?.auto_effi
     const dateStr = found.installed_date
       ? String(found.installed_date).split('T')[0]
-      : new Date().toISOString().split('T')[0]
+      : localToday()
     setNewMachineData(prev => ({
       ...prev,
       machine_no: found.machine_no,
@@ -339,8 +351,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
   }
 
   // Save all changes
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -349,15 +362,11 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) =>
-        updateAutoconerMachineSetupAction(rowId, changes, shift)
-      )
-
-      const results = await Promise.all(updatePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to save an Autoconer setup row')
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const updates = Object.entries(currentEdits).map(([id, changes]) => ({ id, ...changes }))
+      const result = await batchUpdateAutoconerMachineSetupsAction(updates, shift)
+      if (!result?.success) throw new Error(result?.error || 'Failed to save Autoconer setup rows')
+      const savedCount = Object.keys(currentEdits).length
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Setup data saved successfully')
       }
@@ -369,7 +378,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       return { success: true, saved: savedCount }
     } catch (error) {
       console.error('Error saving setup data:', error)
-      toast.error('Failed to save setup data')
+      toast.error(error.message || 'Failed to save setup data')
       return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)
@@ -445,7 +454,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
-      toast.error('Failed to add machine')
+      toast.error(error.message || 'Failed to add machine')
     } finally {
       setIsSaving(false)
     }
@@ -512,7 +521,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         speed: '',
         count: '',
         act_effi: '',
-        installed_date: new Date().toISOString().split('T')[0],
+        installed_date: localToday(),
         count_id: '',
         count_name: '',
         session_no: 1,
@@ -558,7 +567,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
-      toast.error('Failed to remove machines')
+      toast.error(error.message || 'Failed to remove machines')
     } finally {
       setIsSaving(false)
     }

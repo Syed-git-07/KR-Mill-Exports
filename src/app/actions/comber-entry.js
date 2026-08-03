@@ -187,27 +187,36 @@ export async function updateComberMachineSetupAction(id, updates) {
   }
 }
 
-export async function addComberMachineAction(machineData) {
+export async function addComberMachineAction(machineData, entryContext) {
   try {
-    const data = await queries.addComberMachine(machineData)
+    const data = await queries.addComberMachine(machineData, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeComberMachineAction(machineId) {
+export async function removeComberMachineAction(machineId, entryContext) {
   try {
-    const data = await queries.removeComberMachine(machineId)
+    const data = await queries.removeComberMachine(machineId, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function updateComberMachineCountAction(machineId, newCount) {
+export async function removeComberMachinesAction(machineIds, entryContext) {
   try {
-    const data = await queries.updateComberMachineCount(machineId, newCount)
+    const data = await queries.removeComberMachines(machineIds, entryContext)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function updateComberMachineCountAction(machineId, newCount, headerId = null) {
+  try {
+    const data = await queries.updateComberMachineCount(machineId, newCount, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

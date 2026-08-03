@@ -6,24 +6,29 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const stoppageHeadSchema = z.object({
   code: z.number().optional(),
   stoppage_head_name: z.string().min(1, 'Stoppage Head Name is required'),
-  description: z.string().optional().nullable()
+  description: z.string().optional().nullable(),
+  is_active: z.boolean().default(true)
 });
 
 export default function StoppageHeadForm({ initialData, onSubmit }) {
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting }
   } = useForm({
     resolver: zodResolver(stoppageHeadSchema),
     defaultValues: initialData || {
       code: null,
       stoppage_head_name: '',
-      description: ''
+      description: '',
+      is_active: true
     }
   });
 
@@ -75,6 +80,15 @@ export default function StoppageHeadForm({ initialData, onSubmit }) {
           rows={3}
           className="resize-none"
         />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="is_active"
+          checked={watch('is_active')}
+          onCheckedChange={(checked) => setValue('is_active', checked === true)}
+        />
+        <Label htmlFor="is_active">Active</Label>
       </div>
     </form>
   );

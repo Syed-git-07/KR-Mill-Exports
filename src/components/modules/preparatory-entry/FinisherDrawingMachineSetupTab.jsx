@@ -22,7 +22,7 @@ import {
   getFinisherDrawingMachineSetupsAction,
   updateFinisherDrawingMachineSetupAction,
   addFinisherDrawingMachineAction,
-  removeFinisherDrawingMachineAction,
+  removeFinisherDrawingMachinesAction,
   bulkUpdateFinisherDrawingMachineMixingAction,
   getFinisherDrawingMixingOptionsAction,
   getSpinningCountOptionsAction,
@@ -33,9 +33,11 @@ import {
   resolveFinisherDrawingFormulaInputs,
   calculateFinisherDrawingStdProdn,
 } from '@/lib/finisherDrawingFormulaFallback'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachineSetupTab({
   headerId = null,
+  entryDate = '',
   shift = 1,
   totalTime = 0,
   onRefresh,
@@ -51,6 +53,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
   const [mixingOptions, setMixingOptions] = useState([])
   const [spinningCountOptions, setSpinningCountOptions] = useState([])
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const lastLoadKeyRef = useRef('')
 
   const setEditedRows = useCallback((updater) => {
@@ -61,6 +64,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         return
       }
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -68,8 +72,10 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -82,7 +88,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     description: '',
     make_name: '',
     model: '',
-    installed_date: '',
+    installed_date: entryDate,
     prodn_mixing: '',
     speed: FINISHER_DRAWING_FORMULA_FALLBACK.speed,
     prodn_effi: 90,
@@ -91,6 +97,10 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     std_efficiency_factor: FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
     delivery: 1
   })
+
+  useEffect(() => {
+    setNewMachine(previous => ({ ...previous, installed_date: entryDate }))
+  }, [entryDate])
 
   // Mixing change form
   const [newMixing, setNewMixing] = useState('')
@@ -128,7 +138,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         : (d.prodn_efficiency != null ? parseFloat(d.prodn_efficiency) / 100 : prev.std_efficiency_factor),
     }))
     if (d.has_setup) {
-      toast.info(`Machine ${val} found — it will be reactivated with existing setup`, { id: toastId })
+      toast.info(`Machine ${val} found - its values will seed a new lifecycle`, { id: toastId })
     } else {
       toast.success(`Machine ${val} details filled`, { id: toastId })
     }
@@ -283,8 +293,8 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    const pendingEdits = editedRowsRef.current || editedRows || {}
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const pendingEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
 
     if (Object.keys(pendingEdits).length === 0) {
       if (!suppressNoChangesToast) {
@@ -326,7 +336,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       }
 
       const savedCount = updateResults.length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
       }
@@ -410,16 +420,16 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         hank_constant: newMachine.hank_constant,
         std_efficiency_factor: newMachine.std_efficiency_factor,
         delivery: newMachine.delivery
-      })
+      }, { headerId, entryDate, shift })
       if (result.success) {
-        toast.success(result.data.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+        toast.success('New machine lifecycle added successfully')
         setShowAddDialog(false)
         setNewMachine({
           machine_no: '',
           description: '',
           make_name: '',
           model: '',
-          installed_date: '',
+          installed_date: entryDate,
           prodn_mixing: '',
           speed: FINISHER_DRAWING_FORMULA_FALLBACK.speed,
           prodn_effi: 90,
@@ -450,12 +460,8 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
     setIsSaving(true)
     try {
-      const removePromises = selectedRows.map(machineId => 
-        removeFinisherDrawingMachineAction(machineId)
-      )
-      const results = await Promise.all(removePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
+      const result = await removeFinisherDrawingMachinesAction(selectedRows, { headerId, entryDate, shift })
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove machines')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])

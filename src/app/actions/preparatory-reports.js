@@ -5,6 +5,31 @@ import { safeActionError } from '@/lib/security/errors'
 import { generatePreparatoryStoppageReport, getPreparatoryDateRange } from '@/lib/queries/preparatoryStoppageReportQueries'
 import { generatePreparatoryWasteReport } from '@/lib/queries/preparatoryWasteReportQueries'
 import { generatePreparatorySiderPerformanceReport } from '@/lib/queries/preparatorySiderPerformanceReportQueries'
+import { parseStrictDate } from '@/lib/strictDate'
+
+function normalizeReportDate(value, label) {
+  if (!(value instanceof Date)) return parseStrictDate(value, label)
+  if (Number.isNaN(value.getTime())) return parseStrictDate('', label)
+  const localDateKey = [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0')
+  ].join('-')
+  return parseStrictDate(localDateKey, label)
+}
+
+function normalizeReportRange(fromDate, toDate) {
+  const from = normalizeReportDate(fromDate, 'From date')
+  const toDateOnly = normalizeReportDate(toDate, 'To date')
+  if (from > toDateOnly) {
+    const error = new Error('From date cannot be after to date')
+    error.code = 'INVALID_DATE'
+    throw error
+  }
+  const to = new Date(toDateOnly)
+  to.setUTCHours(23, 59, 59, 999)
+  return { from, to }
+}
 
 /**
  * Server action to generate preparatory stoppage percentage report
@@ -14,29 +39,7 @@ import { generatePreparatorySiderPerformanceReport } from '@/lib/queries/prepara
  */
 export async function generatePreparatoryStoppageReportAction(fromDate, toDate) {
   try {
-    // Convert strings to Date objects if needed
-    let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
-    let to = typeof toDate === 'string' ? new Date(toDate) : toDate
-    
-    // Create date-only values for MySQL DATE comparison (no timezone conversion)
-    // Extract year, month, day and create new Date in UTC
-    const fromYear = from.getFullYear()
-    const fromMonth = from.getMonth()
-    const fromDay = from.getDate()
-    
-    const toYear = to.getFullYear()
-    const toMonth = to.getMonth()
-    const toDay = to.getDate()
-    
-    // Create dates at midnight UTC to match MySQL DATE storage
-    const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
-    const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
+    const { from: normalizedFrom, to: normalizedTo } = normalizeReportRange(fromDate, toDate)
 
     const report = await generatePreparatoryStoppageReport(normalizedFrom, normalizedTo)
     
@@ -82,29 +85,7 @@ export async function getPreparatoryDateRangeAction() {
  */
 export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
   try {
-    // Convert strings to Date objects if needed
-    let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
-    let to = typeof toDate === 'string' ? new Date(toDate) : toDate
-    
-    // Create date-only values for MySQL DATE comparison (no timezone conversion)
-    // Extract year, month, day and create new Date in UTC
-    const fromYear = from.getFullYear()
-    const fromMonth = from.getMonth()
-    const fromDay = from.getDate()
-    
-    const toYear = to.getFullYear()
-    const toMonth = to.getMonth()
-    const toDay = to.getDate()
-    
-    // Create dates at midnight UTC to match MySQL DATE storage
-    const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
-    const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Waste Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
+    const { from: normalizedFrom, to: normalizedTo } = normalizeReportRange(fromDate, toDate)
 
     const report = await generatePreparatoryWasteReport(normalizedFrom, normalizedTo)
     
@@ -129,29 +110,7 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
  */
 export async function generatePreparatorySiderPerformanceReportAction(fromDate, toDate) {
   try {
-    // Convert strings to Date objects if needed
-    let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
-    let to = typeof toDate === 'string' ? new Date(toDate) : toDate
-    
-    // Create date-only values for MySQL DATE comparison (no timezone conversion)
-    // Extract year, month, day and create new Date in UTC
-    const fromYear = from.getFullYear()
-    const fromMonth = from.getMonth()
-    const fromDay = from.getDate()
-    
-    const toYear = to.getFullYear()
-    const toMonth = to.getMonth()
-    const toDay = to.getDate()
-    
-    // Create dates at midnight UTC to match MySQL DATE storage
-    const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
-    const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Sider Performance Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
+    const { from: normalizedFrom, to: normalizedTo } = normalizeReportRange(fromDate, toDate)
 
     const report = await generatePreparatorySiderPerformanceReport(normalizedFrom, normalizedTo)
     

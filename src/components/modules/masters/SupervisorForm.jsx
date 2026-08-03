@@ -4,15 +4,16 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getDepartmentsAction } from '@/app/actions/supervisor';
 
 const supervisorSchema = z.object({
   supervisor_name: z.string().min(2, 'Supervisor name must be at least 2 characters'),
   department_id: z.string().uuid('Please select a department').optional().nullable(),
+  is_active: z.boolean().default(true),
 });
 
 export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
@@ -28,7 +29,8 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
     resolver: zodResolver(supervisorSchema),
     defaultValues: initialData || {
       supervisor_name: '',
-      department_id: ''
+      department_id: '',
+      is_active: true
     }
   });
 
@@ -42,6 +44,7 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
     if (initialData) {
       setValue('supervisor_name', initialData.supervisor_name || '');
       setValue('department_id', initialData.department_id || '');
+      setValue('is_active', initialData.is_active ?? true);
     }
   }, [initialData, setValue]);
 
@@ -49,7 +52,6 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
     try {
       const result = await getDepartmentsAction();
       if (result.success) {
-        console.log('Departments loaded:', result.data);
         setDepartments(result.data);
       } else {
         console.error('Failed to load departments:', result.error);
@@ -62,7 +64,8 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
   const onFormSubmit = async (data) => {
     const formattedData = {
       supervisor_name: data.supervisor_name,
-      department_id: data.department_id || null
+      department_id: data.department_id || null,
+      is_active: data.is_active
     };
     
     await onSubmit(formattedData);
@@ -110,8 +113,12 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
           </SelectTrigger>
           <SelectContent>
             {departments.map((dept) => (
-              <SelectItem key={dept.id} value={dept.id}>
-                {dept.dept_name}
+              <SelectItem
+                key={dept.id}
+                value={dept.id}
+                disabled={!dept.is_active && dept.id !== initialData?.department_id}
+              >
+                {dept.dept_name}{!dept.is_active ? ' (Inactive)' : ''}
               </SelectItem>
             ))}
           </SelectContent>
@@ -119,6 +126,15 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
         {errors.department_id && (
           <p className="text-xs text-red-500">{errors.department_id.message}</p>
         )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="is_active"
+          checked={watch('is_active')}
+          onCheckedChange={(checked) => setValue('is_active', checked === true)}
+        />
+        <Label htmlFor="is_active">Active</Label>
       </div>
     </form>
   );

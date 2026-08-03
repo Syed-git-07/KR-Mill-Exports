@@ -25,6 +25,8 @@ import {
   syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { calculateAutoconerProductionValues } from '@/lib/queries/autoconerEntryQueries'
+import { findDraftByKeys, findSetupDraft as findMachineSetupDraft, resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 // Helper function to safely convert any value to a number
 const toNumber = (value) => {
@@ -70,18 +72,26 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = sharedDraftEdits ?? localEditedRows
   const editedRowsRef = useRef(editedRows)
+  const publishedDraftsRef = useRef(new WeakSet())
   const shiftTimeVal = totalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
 
   useEffect(() => {
-    editedRowsRef.current = editedRows || {}
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const setEditedRows = useCallback((updater) => {
-    const applyUpdate = (current) => (typeof updater === 'function' ? updater(current) : updater)
-    setLocalEditedRows(prev => applyUpdate(prev))
+    const previous = editedRowsRef.current || {}
+    const next = typeof updater === 'function' ? updater(previous) : (updater || {})
+    if (next === previous) return
+    editedRowsRef.current = next
     if (onSharedDraftEditsChange) {
-      onSharedDraftEditsChange(prev => applyUpdate(prev || {}))
+      publishedDraftsRef.current.add(next)
+      onSharedDraftEditsChange(next)
+    } else {
+      setLocalEditedRows(next)
     }
   }, [onSharedDraftEditsChange])
 
@@ -122,6 +132,30 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     time: ''
   })
 
+  const calculateDisplayEfficiency = useCallback((row, totalStoppage) => {
+    const productionDetail = row?.production_detail || {}
+    const productionDraft = findDraftByKeys(productionDraftEdits, productionDetail.id) || {}
+    const effectiveProduction = { ...productionDetail, ...productionDraft }
+    const machine = productionDetail.machine || {}
+    const setupDraft = findMachineSetupDraft(
+      setupDraftEdits,
+      effectiveProduction.setup_id,
+      effectiveProduction.machine_id ?? machine.id
+    ) || {}
+    const totalDrums =
+      toNumber(setupDraft.no_of_drums ?? setupDraft.total_drums) ||
+      toNumber(machine.no_of_drums)
+
+    return calculateAutoconerProductionValues(
+      effectiveProduction.act_prodn,
+      effectiveProduction.waste_kg,
+      effectiveProduction.idle_drum,
+      totalDrums,
+      totalStoppage,
+      totalTime
+    ).prodn_effi
+  }, [productionDraftEdits, setupDraftEdits, totalTime])
+
   const mergeServerRowsWithDrafts = useCallback((rows = []) => {
     const drafts = editedRowsRef.current || {}
     return rows.map((row) => {
@@ -135,10 +169,11 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
 
       return {
         ...merged,
-        total_stoppage_time: totalStoppage
+        total_stoppage_time: totalStoppage,
+        prodn_effi: calculateDisplayEfficiency(merged, totalStoppage)
       }
     })
-  }, [])
+  }, [calculateDisplayEfficiency])
 
   // Load data
   const loadData = useCallback(async () => {
@@ -212,7 +247,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     if (!stoppageData.length) return
 
     setStoppageData(prev => mergeServerRowsWithDrafts(prev))
-  }, [productionDraftEdits, setupDraftEdits, mergeServerRowsWithDrafts, stoppageData.length])
+  }, [sharedDraftEdits, localEditedRows, productionDraftEdits, setupDraftEdits, mergeServerRowsWithDrafts, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -235,6 +270,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
           toNumber(updatedRow.stoppage2_time) +
           toNumber(updatedRow.stoppage3_time) +
           toNumber(updatedRow.stoppage4_time)
+        updatedRow.prodn_effi = calculateDisplayEfficiency(updatedRow, updatedRow.total_stoppage_time)
         return updatedRow
       }
       return row
@@ -277,6 +313,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
           toNumber(updatedRow.stoppage2_time) +
           toNumber(updatedRow.stoppage3_time) +
           toNumber(updatedRow.stoppage4_time)
+        updatedRow.prodn_effi = calculateDisplayEfficiency(updatedRow, updatedRow.total_stoppage_time)
         return updatedRow
       }
       return row
@@ -309,12 +346,12 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
   }, [setEditedRows])
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    const draftRows = editedRowsRef.current || {}
+    const draftRows = resolveCommitDrafts({ dependencyDrafts, tabKey: 'stoppage', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     if (Object.keys(draftRows).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
@@ -331,8 +368,8 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save an Autoconer stoppage row')
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const savedCount = Object.keys(draftRows).length
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved successfully')
       }
@@ -395,7 +432,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: fullStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -433,7 +470,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: partialStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -508,6 +545,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36">Stoppage 4</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16">S.Time4</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16">Total Stopp</th>
+                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Prodn Effi %</th>
               </tr>
             </thead>
             <tbody>
@@ -648,6 +686,9 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-center text-orange-600 font-medium tabular-nums whitespace-nowrap">
                       {totalStoppage || row.total_stoppage_time || 0}
+                    </td>
+                    <td className="border border-gray-300 px-2 py-1 text-right tabular-nums font-semibold whitespace-nowrap">
+                      {formatNumber(row.prodn_effi)}
                     </td>
                   </tr>
                 )

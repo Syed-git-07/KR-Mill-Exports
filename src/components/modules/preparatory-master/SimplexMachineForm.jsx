@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
+import { format } from 'date-fns';
 
 // VB6 Form Fields: M/C No., M/c ID, Description, Make Name, Model, 
 // ProdnMixing, Speed, Prodn Effi., M/c Effi., TPI, No. of Spindles,
@@ -19,7 +20,7 @@ const formatDateForInput = (date) => {
   if (!date) return '';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';
-  return d.toISOString().split('T')[0];
+  return format(d, 'yyyy-MM-dd');
 };
 
 const formSchema = z.object({

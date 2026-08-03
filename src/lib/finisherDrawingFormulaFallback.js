@@ -39,13 +39,17 @@ export function resolveFinisherDrawingFormulaInputs(setup = {}, machineSpeed = n
 export function calculateFinisherDrawingStdProdn(setup, totalTime, machineSpeed = null) {
   const safeTotalTime = toNumber(totalTime)
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveFinisherDrawingFormulaInputs(setup, machineSpeed)
-  if (!safeTotalTime || !hankConstant || !divisorConstant) return 0
+  if (
+    safeTotalTime === null || safeTotalTime <= 0 ||
+    speed <= 0 || hankConstant <= 0 || stdEfficiencyFactor <= 0 ||
+    divisorConstant <= 0 || delivery <= 0
+  ) return 0
   return (speed / divisorConstant / hankConstant) * safeTotalTime * stdEfficiencyFactor * delivery
 }
 
 export function getFinisherDrawingActProdnConstant(setup = {}) {
   const { hankConstant } = resolveFinisherDrawingFormulaInputs(setup)
   const divisor = FINISHER_DRAWING_FORMULA_FALLBACK.poundsPerKg * hankConstant
-  if (!divisor) return 0
+  if (divisor <= 0) return 0
   return 1 / divisor
 }

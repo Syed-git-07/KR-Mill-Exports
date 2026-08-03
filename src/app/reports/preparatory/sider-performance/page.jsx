@@ -37,7 +37,10 @@ export default function PreparatorySiderPerformanceReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generatePreparatorySiderPerformanceReportAction(fromDate, toDate)
+      const result = await generatePreparatorySiderPerformanceReportAction(
+        format(fromDate, 'yyyy-MM-dd'),
+        format(toDate, 'yyyy-MM-dd')
+      )
       
       if (result.success) {
         setReportData(result.data)

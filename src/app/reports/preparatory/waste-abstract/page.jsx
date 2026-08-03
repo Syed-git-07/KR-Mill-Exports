@@ -37,7 +37,10 @@ export default function PreparatoryWasteReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generatePreparatoryWasteReportAction(fromDate, toDate)
+      const result = await generatePreparatoryWasteReportAction(
+        format(fromDate, 'yyyy-MM-dd'),
+        format(toDate, 'yyyy-MM-dd')
+      )
       
       if (result.success) {
         setReportData(result.data)

@@ -16,6 +16,7 @@ import {
 } from '@/app/actions/autoconer';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 import { assertAllActionsSucceeded } from '@/lib/actionResult';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function AutoconerMaster() {
   const [machines, setMachines] = useState([]);
@@ -26,6 +27,14 @@ export default function AutoconerMaster() {
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [selectedRows, setSelectedRows] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: machines, setRows: setMachines,
+    selectedId: selectedRowId, setSelectedId: setSelectedRowId,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    editingItem: editingMachine, setEditingItem: setEditingMachine,
+    setIsModalOpen
+  });
 
   const searchFields = ['machine_no', 'description', 'make_name'];
   const searchConditions = ['Like', 'Equal', 'Not Equal', 'Greater', 'Less'];
@@ -43,53 +52,52 @@ export default function AutoconerMaster() {
   }, []);
 
   const loadMachines = async () => {
-    try {
-      setLoading(true);
-      const result = await getAutoconerMachinesAction();
-      
-      if (result.success) {
-        const formattedData = result.data.map(machine => ({
-          ...machine,
-          act_effi: machine.act_effi || 0
-        }));
-        
-        setMachines(formattedData);
-        setError(null);
-      } else {
-        setError('Failed to load machines: ' + result.error);
-        toast.error('Failed to load machines: ' + result.error);
+    await runLatestRowsRequest(
+      () => getAutoconerMachinesAction(),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(machine => ({
+            ...machine,
+            act_effi: machine.act_effi || 0
+          })));
+          setError(null);
+        },
+        onError: err => {
+          console.error('Error loading machines:', err);
+          setError('Failed to load machines. Please check your database connection.');
+          toast.error('Failed to load machines');
+        },
+        onFinally: () => setLoading(false)
       }
-    } catch (err) {
-      console.error('Error loading machines:', err);
-      setError('Failed to load machines. Please check your database connection.');
-      toast.error('Failed to load machines');
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
-    try {
-      setLoading(true);
-      const result = await searchAutoconerMachinesAction(field, condition, value);
-      
-      if (result.success) {
-        const formattedData = result.data.map(machine => ({
-          ...machine,
-          act_effi: machine.act_effi || 0
-        }));
-        
-        setMachines(formattedData);
-        toast.success(`Found ${result.data.length} machine(s)`);
-      } else {
-        toast.error('Search failed: ' + result.error);
-      }
-    } catch (err) {
-      console.error('Error searching machines:', err);
-      toast.error('Search failed');
-    } finally {
-      setLoading(false);
+    if (!String(value ?? '').trim()) {
+      await loadMachines();
+      return;
     }
+    await runLatestRowsRequest(
+      () => searchAutoconerMachinesAction(field, condition, value),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(machine => ({
+            ...machine,
+            act_effi: machine.act_effi || 0
+          })));
+          toast.success(`Found ${(result.data || []).length} machine(s)`);
+        },
+        onError: err => {
+          console.error('Error searching machines:', err);
+          toast.error('Search failed');
+        },
+        onFinally: () => setLoading(false)
+      }
+    );
   };
 
   const handleReset = () => {
@@ -98,10 +106,12 @@ export default function AutoconerMaster() {
   };
 
   const handleRowClick = (machine) => {
+    if (isSelectMode) return;
     setSelectedRowId(machine.id);
   };
 
   const handleRowDoubleClick = (machine) => {
+    if (isSelectMode) return;
     // Open edit modal on double click (like VB6 app behavior)
     const editData = {
       ...machine,
@@ -116,46 +126,23 @@ export default function AutoconerMaster() {
       installed_date: machine.installed_date || null,
       direct_prod_entry: machine.direct_prod_entry || false
     };
-    setSelectedRowId(machine.id);
-    setEditingMachine(editData);
-    setIsModalOpen(true);
+    openRowEditor(machine, { editingItem: editData });
   };
 
   const handleNew = () => {
+    resetInteractionState();
     setEditingMachine(null);
+    setSelectedRowId(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsModalOpen(true);
-  };
-
-  const handleEdit = () => {
-    if (!selectedRowId) {
-      toast.warning('Please select a machine to edit');
-      return;
-    }
-    
-    const machineToEdit = machines.find(m => m.id === selectedRowId);
-    if (machineToEdit) {
-      // Prepare data for form with all fields
-      const editData = {
-        ...machineToEdit,
-        mc_id: machineToEdit.mc_id || null,
-        group_id: machineToEdit.group_id || 1,
-        model: machineToEdit.model || '',
-        from_drum: machineToEdit.from_drum || null,
-        to_drum: machineToEdit.to_drum || null,
-        no_of_drums: machineToEdit.no_of_drums || 0,
-        speed: machineToEdit.speed ?? null,
-        count: machineToEdit.count || '',
-        installed_date: machineToEdit.installed_date || null,
-        direct_prod_entry: machineToEdit.direct_prod_entry || false
-      };
-      setEditingMachine(editData);
-      setIsModalOpen(true);
-    }
   };
 
   const handleDeactivate = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      const activeRows = selectedRows.filter(r => r.is_active);
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected machines are no longer in the current list');
+      const activeRows = currentSelectedRows.filter(r => r.is_active);
       if (activeRows.length === 0) {
         toast.info('All selected machines are already inactive');
         return;
@@ -165,19 +152,20 @@ export default function AutoconerMaster() {
         const results = await Promise.all(activeRows.map(row => updateAutoconerMachineAction(row.id, { is_active: false })));
         assertAllActionsSucceeded(results, 'Failed to deactivate one or more machines');
         toast.success(`${activeRows.length} machine(s) deactivated`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadMachines();
       } catch (error) {
         toast.error('Failed to deactivate: ' + error.message);
+      } finally {
+        loadMachines();
       }
     } else {
-      const targetId = editingMachine?.id || selectedRowId;
-      if (!targetId) {
+      const machine = getCurrentRow(editingMachine?.id || selectedRowId);
+      if (!machine) {
         toast.warning('Please select a machine to deactivate');
         return;
       }
-      const machine = machines.find(m => m.id === targetId) || editingMachine;
       if (!machine?.is_active) {
         toast.info('Machine is already inactive');
         return;
@@ -185,9 +173,10 @@ export default function AutoconerMaster() {
       const machineName = machine?.machine_no || 'this machine';
       if (!confirm(`Deactivate machine "${machineName}"?\n\nIt will be hidden from new production entries.`)) return;
       try {
-        const result = await updateAutoconerMachineAction(targetId, { is_active: false });
+        const result = await updateAutoconerMachineAction(machine.id, { is_active: false });
         if (result.success) {
           toast.success('Machine deactivated');
+          resetInteractionState({ closeModal: true });
           setIsModalOpen(false);
           setEditingMachine(null);
           setSelectedRowId(null);
@@ -204,32 +193,38 @@ export default function AutoconerMaster() {
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk permanent delete
-      if (!confirm(`Permanently remove ${selectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected machines are no longer in the current list');
+      if (!confirm(`Permanently remove ${currentSelectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteAutoconerMachineAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteAutoconerMachineAction(row.id)));
         assertAllActionsSucceeded(results, 'Failed to remove one or more machines');
-        toast.success(`${selectedRows.length} machine(s) permanently removed`);
+        toast.success(`${currentSelectedRows.length} machine(s) permanently removed`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadMachines();
       } catch (error) {
         toast.error('Failed to remove machines: ' + error.message);
+      } finally {
+        loadMachines();
       }
     } else if (!isSelectMode && (selectedRowId || editingMachine?.id)) {
       // Single permanent delete
-      const targetId = editingMachine?.id || selectedRowId;
-      const machineName = machines.find(m => m.id === targetId)?.machine_no || editingMachine?.machine_no || 'this machine';
+      const currentMachine = getCurrentRow(editingMachine?.id || selectedRowId);
+      if (!currentMachine) return toast.warning('The selected machine is no longer in the current list');
+      const machineName = currentMachine.machine_no || 'this machine';
       if (!confirm(`Permanently remove machine "${machineName}"?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        const result = await deleteAutoconerMachineAction(targetId);
+        const result = await deleteAutoconerMachineAction(currentMachine.id);
         if (result.success) {
           toast.success('Machine permanently removed');
+          resetInteractionState({ closeModal: true });
           setSelectedRowId(null);
           setIsModalOpen(false);
           setEditingMachine(null);
@@ -266,16 +261,20 @@ export default function AutoconerMaster() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleSave = async (machineData) => {
     try {
       if (editingMachine) {
-        const result = await updateAutoconerMachineAction(editingMachine.id, machineData);
+        const currentMachine = getCurrentRow(editingMachine);
+        if (!currentMachine) throw new Error('This machine is no longer in the current list');
+        const result = await updateAutoconerMachineAction(currentMachine.id, machineData);
         if (result.success) {
           toast.success('Machine updated successfully');
+          resetInteractionState({ closeModal: true });
           setIsModalOpen(false);
           setEditingMachine(null);
           loadMachines();
@@ -286,6 +285,7 @@ export default function AutoconerMaster() {
         const result = await createAutoconerMachineAction(machineData);
         if (result.success) {
           toast.success('Machine created successfully');
+          resetInteractionState({ closeModal: true });
           setIsModalOpen(false);
           setEditingMachine(null);
           loadMachines();
@@ -378,6 +378,7 @@ export default function AutoconerMaster() {
           onRowDoubleClick={handleRowDoubleClick}
           onContextMenu={(row, e) => {
             e.preventDefault();
+            if (isSelectMode) return;
             handleRowDoubleClick(row);
           }}
         />

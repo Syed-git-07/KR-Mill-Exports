@@ -16,6 +16,7 @@ import {
 } from '@/app/actions/twc-entry';
 import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function TWCEntryMaster() {
   const [entries, setEntries] = useState([]);
@@ -27,6 +28,15 @@ export default function TWCEntryMaster() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: entries, setRows: setEntries,
+    selectedItem: selectedRow, setSelectedItem: setSelectedRow,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    editingItem: editingEntry, setEditingItem: setEditingEntry,
+    setIsEditing,
+    setIsModalOpen
+  });
 
   // VB6 search: id field with = condition
   const searchFields = [
@@ -48,31 +58,27 @@ export default function TWCEntryMaster() {
   }, []);
 
   const loadEntries = async () => {
-    try {
-      setLoading(true);
-      const result = await getTWCEntriesAction();
-      
-      if (!result.success) {
-        toast.error(result.error || 'Failed to load TWC entries');
-        return;
+    await runLatestRowsRequest(
+      () => getTWCEntriesAction(),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error || 'Failed to load TWC entries');
+          replaceRows((result.data || []).map(entry => ({
+            ...entry,
+            entry_id: entry.entry_id || entry.id,
+            sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
+            countname: entry.spinning_counts?.count_name || 'N/A',
+            twc_display: entry.twc_value ? Number(entry.twc_value).toFixed(2) : '0.00',
+          })));
+        },
+        onError: err => {
+          console.error('Error loading TWC entries:', err);
+          toast.error('Failed to load TWC entries: ' + err.message);
+        },
+        onFinally: () => setLoading(false)
       }
-      
-      // Format data for VB6-style display
-      const formattedData = result.data.map(entry => ({
-        ...entry,
-        entry_id: entry.entry_id || entry.id,
-        sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
-        countname: entry.spinning_counts?.count_name || 'N/A',
-        twc_display: entry.twc_value ? Number(entry.twc_value).toFixed(2) : '0.00',
-      }));
-      
-      setEntries(formattedData);
-    } catch (err) {
-      console.error('Error loading TWC entries:', err);
-      toast.error('Failed to load TWC entries: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
@@ -81,28 +87,26 @@ export default function TWCEntryMaster() {
       return;
     }
     
-    try {
-      const result = await searchTWCEntriesAction(field, condition, value);
-      
-      if (!result.success) {
-        toast.error(result.error || 'Search failed');
-        return;
+    await runLatestRowsRequest(
+      () => searchTWCEntriesAction(field, condition, value),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error || 'Search failed');
+          replaceRows((result.data || []).map(entry => ({
+            ...entry,
+            entry_id: entry.entry_id || entry.id,
+            sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
+            countname: entry.spinning_counts?.count_name || 'N/A',
+            twc_display: entry.twc_value ? Number(entry.twc_value).toFixed(2) : '0.00',
+          })));
+          toast.success(`Found ${(result.data || []).length} result(s)`);
+        },
+        onError: err => {
+          console.error('Search error:', err);
+          toast.error('Search failed: ' + err.message);
+        }
       }
-      
-      const formattedData = result.data.map(entry => ({
-        ...entry,
-        entry_id: entry.entry_id || entry.id,
-        sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
-        countname: entry.spinning_counts?.count_name || 'N/A',
-        twc_display: entry.twc_value ? Number(entry.twc_value).toFixed(2) : '0.00',
-      }));
-      
-      setEntries(formattedData);
-      toast.success(`Found ${result.data.length} result(s)`);
-    } catch (err) {
-      console.error('Search error:', err);
-      toast.error('Search failed: ' + err.message);
-    }
+    );
   };
 
   const handleShowAll = () => {
@@ -110,29 +114,30 @@ export default function TWCEntryMaster() {
   };
 
   const handleRowClick = (entry) => {
+    if (isSelectMode) return;
     setSelectedRow(entry);
   };
 
   const handleAdd = () => {
+    resetInteractionState();
     setEditingEntry(null);
+    setSelectedRow(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsEditing(false);
     setIsModalOpen(true);
   };
 
-  const handleEdit = () => {
-    if (!selectedRow) {
-      toast.error('Please select an entry to edit');
-      return;
-    }
-    
+  const openEditForm = (entry) => {
+    if (isSelectMode) return;
+    const currentEntry = getCurrentRow(entry);
+    if (!currentEntry) return;
     const editData = {
-      ...selectedRow,
-      twc_value: parseFloat(selectedRow.twc_display),
+      ...currentEntry,
+      twc_value: parseFloat(currentEntry.twc_display),
     };
-    
-    setEditingEntry(editData);
-    setIsEditing(true);
-    setIsModalOpen(true);
+
+    openRowEditor(currentEntry, { editingItem: editData });
   };
 
   const handleSelectRow = (row) => {
@@ -155,44 +160,52 @@ export default function TWCEntryMaster() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} entry(ies)?`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected TWC entries are no longer in the current list');
+      if (!confirm(`Are you sure you want to delete ${currentSelectedRows.length} entry(ies)?`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteTWCEntryAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteTWCEntryAction(row.id)));
         const failed = results.filter(r => !r.success);
         if (failed.length > 0) {
           toast.error(`Failed to delete ${failed.length} entry(ies)`);
         } else {
-          toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
+          toast.success(`${currentSelectedRows.length} entry(ies) deleted successfully`);
         }
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadEntries();
       } catch (error) {
         toast.error('Failed to delete entries: ' + error.message);
+      } finally {
+        loadEntries();
       }
     } else if (!isSelectMode && selectedRow) {
       // Single delete from modal
+      const currentEntry = getCurrentRow(selectedRow);
+      if (!currentEntry) return toast.warning('The selected TWC entry is no longer in the current list');
       if (!confirm(`Are you sure you want to delete this TWC entry?`)) {
         return;
       }
 
       try {
-        const result = await deleteTWCEntryAction(selectedRow.id);
+        const result = await deleteTWCEntryAction(currentEntry.id);
         if (!result.success) {
           toast.error(result.error || 'Failed to delete entry');
           return;
         }
         toast.success('Entry deleted successfully');
+        resetInteractionState({ closeModal: true });
         setSelectedRow(null);
         setIsModalOpen(false);
         loadEntries();
@@ -209,7 +222,9 @@ export default function TWCEntryMaster() {
     try {
       let result;
       if (isEditing && editingEntry) {
-        result = await updateTWCEntryAction(editingEntry.id, formData);
+        const currentEntry = getCurrentRow(editingEntry);
+        if (!currentEntry) throw new Error('This TWC entry is no longer in the current list');
+        result = await updateTWCEntryAction(currentEntry.id, formData);
       } else {
         result = await createTWCEntryAction(formData);
       }
@@ -220,6 +235,7 @@ export default function TWCEntryMaster() {
       }
       
       toast.success(isEditing ? 'Entry updated successfully' : 'Entry created successfully');
+      resetInteractionState({ closeModal: true });
       setIsModalOpen(false);
       setEditingEntry(null);
       setSelectedRow(null);
@@ -259,7 +275,7 @@ export default function TWCEntryMaster() {
             disabled={isSelectMode ? selectedRows.length === 0 : !selectedRow}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -291,16 +307,10 @@ export default function TWCEntryMaster() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
+          onRowDoubleClick={openEditForm}
           onContextMenu={(row, e) => {
             e.preventDefault();
-            const editData = {
-              ...row,
-              twc_value: parseFloat(row.twc_display),
-            };
-            setSelectedRow(row);
-            setEditingEntry(editData);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            openEditForm(row);
           }}
         />
       )}
@@ -318,12 +328,19 @@ export default function TWCEntryMaster() {
       {/* Form Modal */}
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) {
+            setEditingEntry(null);
+            setIsEditing(false);
+          }
+        }}
         title="TWC Entry Master"
         description={isEditing ? "Update TWC entry details" : "Add a new TWC entry"}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingEntry(null);
+          setIsEditing(false);
         }}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

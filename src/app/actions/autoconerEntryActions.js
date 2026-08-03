@@ -259,6 +259,7 @@ export async function getSpinningCountsAction() {
 
 export async function addAutoconerMachineAction(machineData) {
   try {
+    if (!machineData?.entryDate) throw new Error('Autoconer entry date is required')
     const data = await queries.addAutoconerMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {

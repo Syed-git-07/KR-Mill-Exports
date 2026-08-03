@@ -219,7 +219,7 @@ export async function updateFinisherDrawingMachineSpeedAction(machineId, newSpee
 export async function getFinisherDrawingMixingOptionsAction() {
   try {
     const data = await queries.getFinisherDrawingMixingOptions()
-    return { success: true, data: data }
+    return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
@@ -234,18 +234,27 @@ export async function getFinisherDrawingMachinesAction() {
   }
 }
 
-export async function addFinisherDrawingMachineAction(machineData) {
+export async function addFinisherDrawingMachineAction(machineData, entryContext) {
   try {
-    const data = await queries.addFinisherDrawingMachine(machineData)
+    const data = await queries.addFinisherDrawingMachine(machineData, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeFinisherDrawingMachineAction(machineId) {
+export async function removeFinisherDrawingMachineAction(machineId, entryContext) {
   try {
-    const data = await queries.removeFinisherDrawingMachine(machineId)
+    const data = await queries.removeFinisherDrawingMachine(machineId, entryContext)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function removeFinisherDrawingMachinesAction(machineIds, entryContext) {
+  try {
+    const data = await queries.removeFinisherDrawingMachines(machineIds, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

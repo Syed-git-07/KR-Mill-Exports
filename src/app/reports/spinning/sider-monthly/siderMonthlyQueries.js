@@ -2,6 +2,14 @@
 
 import { prisma } from '@/lib/prisma'
 import { format } from 'date-fns'
+import { finiteNumber, percentageOf } from '@/lib/reportMath'
+
+function formatDoj(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return format(date, 'dd-MMM-yy')
+}
 
 /**
  * Fetch sider monthly report data
@@ -17,18 +25,13 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
         COALESCE(spd.sider1_name, 'NIL') as sider1_name,
         em.doj,
         sph.shift,
-        SUM(spd.act_prodn) as total_production,
-        SUM(spd.waste) as total_waste,
-        COALESCE(
-          AVG(spd.waste_percent),
-          (SUM(spd.waste) / NULLIF(SUM(spd.act_prodn), 0)) * 100
-        ) as avg_waste_percent
+        spd.act_prodn as production,
+        spd.waste as waste
       FROM spinning_production_detail spd
       INNER JOIN spinning_production_header sph ON spd.header_id = sph.id
       INNER JOIN spinning_machines sm ON spd.machine_id = sm.id
       LEFT JOIN employee_master em ON spd.sider1_name = em.emp_name
       WHERE sph.entry_date BETWEEN ${format(fromDate, 'yyyy-MM-dd')} AND ${format(toDate, 'yyyy-MM-dd')}
-      GROUP BY sm.id, sm.description, spd.sider1_name, em.doj, sph.shift
       ORDER BY 
         CASE 
           WHEN sm.description REGEXP '^RF[0-9]+$' THEN CAST(SUBSTRING(sm.description, 3) AS UNSIGNED)
@@ -43,15 +46,17 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
     const frameMap = new Map()
 
     for (const row of productionData) {
-      const frameKey = row.frame_no
+      // A machine lifecycle row is the stable key. Reusing a displayed frame
+      // number after deactivation must not merge two historical machines.
+      const frameKey = row.machine_id
       
       if (!frameMap.has(frameKey)) {
         frameMap.set(frameKey, {
           frameNo: row.frame_no,
           shifts: {
-            1: { siderName: null, waste: 0, wastePercent: 0, doj: null },
-            2: { siderName: null, waste: 0, wastePercent: 0, doj: null },
-            3: { siderName: null, waste: 0, wastePercent: 0, doj: null }
+            1: { siders: new Map(), production: 0, waste: 0 },
+            2: { siders: new Map(), production: 0, waste: 0 },
+            3: { siders: new Map(), production: 0, waste: 0 }
           }
         })
       }
@@ -60,64 +65,55 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       const shift = row.shift
 
       if (frame.shifts[shift]) {
-        frame.shifts[shift].siderName = row.sider1_name || 'NIL'
-        frame.shifts[shift].waste = parseFloat(row.total_waste || 0)
-        frame.shifts[shift].wastePercent = parseFloat(row.avg_waste_percent || 0)
-        // Format DOJ as dd-MMM-yy (e.g., "02-Sep-24")
-        if (row.doj) {
-          const dojDate = new Date(row.doj)
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-          const day = String(dojDate.getDate()).padStart(2, '0')
-          const month = months[dojDate.getMonth()]
-          const year = String(dojDate.getFullYear()).slice(-2)
-          frame.shifts[shift].doj = `${day}-${month}-${year}`
-        } else {
-          frame.shifts[shift].doj = '01-Jan-00'
+        const shiftData = frame.shifts[shift]
+        const siderName = row.sider1_name || 'NIL'
+        if (!shiftData.siders.has(siderName)) {
+          shiftData.siders.set(siderName, formatDoj(row.doj))
         }
+        shiftData.production += finiteNumber(row.production)
+        shiftData.waste += finiteNumber(row.waste)
       }
     }
 
-    // Convert map to array
-    const reportData = Array.from(frameMap.values())
+    // Convert accumulators into the shape consumed by the report. Multiple
+    // siders on the same frame/shift are retained instead of the last one
+    // overwriting all earlier rows.
+    const reportData = Array.from(frameMap.values()).map(frame => ({
+      frameNo: frame.frameNo,
+      shifts: Object.fromEntries([1, 2, 3].map(shift => {
+        const data = frame.shifts[shift]
+        const names = [...data.siders.keys()]
+        const dojs = [...new Set([...data.siders.values()].filter(Boolean))]
+        return [shift, {
+          siderName: names.length > 0 ? names.join(', ') : 'NIL',
+          doj: dojs.length > 0 ? dojs.join(', ') : '-',
+          production: data.production,
+          waste: data.waste,
+          wastePercent: percentageOf(data.waste, data.production),
+        }]
+      }))
+    }))
 
     // Calculate totals for each shift
     const totals = {
-      shift1: { waste: 0, wastePercent: 0 },
-      shift2: { waste: 0, wastePercent: 0 },
-      shift3: { waste: 0, wastePercent: 0 }
+      shift1: { production: 0, waste: 0, wastePercent: 0 },
+      shift2: { production: 0, waste: 0, wastePercent: 0 },
+      shift3: { production: 0, waste: 0, wastePercent: 0 }
     }
 
-    let shift1Count = 0
-    let shift2Count = 0
-    let shift3Count = 0
-
     reportData.forEach(frame => {
-      if (frame.shifts[1].waste > 0) {
-        totals.shift1.waste += frame.shifts[1].waste
-        totals.shift1.wastePercent += frame.shifts[1].wastePercent
-        shift1Count++
-      }
-      if (frame.shifts[2].waste > 0) {
-        totals.shift2.waste += frame.shifts[2].waste
-        totals.shift2.wastePercent += frame.shifts[2].wastePercent
-        shift2Count++
-      }
-      if (frame.shifts[3].waste > 0) {
-        totals.shift3.waste += frame.shifts[3].waste
-        totals.shift3.wastePercent += frame.shifts[3].wastePercent
-        shift3Count++
+      for (const shift of [1, 2, 3]) {
+        const target = totals[`shift${shift}`]
+        target.production += frame.shifts[shift].production
+        target.waste += frame.shifts[shift].waste
       }
     })
 
-    // Calculate averages
-    if (shift1Count > 0) {
-      totals.shift1.wastePercent = totals.shift1.wastePercent / shift1Count
-    }
-    if (shift2Count > 0) {
-      totals.shift2.wastePercent = totals.shift2.wastePercent / shift2Count
-    }
-    if (shift3Count > 0) {
-      totals.shift3.wastePercent = totals.shift3.wastePercent / shift3Count
+    // A total percentage must be recomputed from total kilograms, not averaged
+    // from per-frame percentages (which weights small and large frames equally).
+    for (const shift of [1, 2, 3]) {
+      const target = totals[`shift${shift}`]
+      target.wastePercent = percentageOf(target.waste, target.production)
     }
 
     return {

@@ -38,13 +38,17 @@ export function resolveLapFormerFormulaInputs(setup = {}, machineSpeed = null) {
 export function calculateLapFormerStdProdn(setup, totalTime, machineSpeed = null) {
   const safeTotalTime = toNumber(totalTime)
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(setup, machineSpeed)
-  if (!safeTotalTime || !hankConstant || !divisorConstant) return 0
+  if (
+    safeTotalTime === null || safeTotalTime <= 0 ||
+    speed <= 0 || hankConstant <= 0 || stdEfficiencyFactor <= 0 ||
+    divisorConstant <= 0 || delivery <= 0
+  ) return 0
   return (speed / divisorConstant / hankConstant) * safeTotalTime * stdEfficiencyFactor * delivery
 }
 
 export function getLapFormerActProdnConstant(setup = {}) {
   const { hankConstant } = resolveLapFormerFormulaInputs(setup)
   const divisor = LAP_FORMER_FORMULA_FALLBACK.poundsPerKg * hankConstant
-  if (!divisor) return 0
+  if (divisor <= 0) return 0
   return 1 / divisor
 }

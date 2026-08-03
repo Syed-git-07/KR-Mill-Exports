@@ -14,8 +14,9 @@ import {
   deleteStoppageHeadAction,
   searchStoppageHeadsAction
 } from '@/app/actions/stoppage-head';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Ban } from 'lucide-react';
 import { assertAllActionsSucceeded } from '@/lib/actionResult';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function StoppageHeadMaster() {
   const [stoppageHeads, setStoppageHeads] = useState([]);
@@ -25,6 +26,15 @@ export default function StoppageHeadMaster() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: stoppageHeads, setRows: setStoppageHeads,
+    selectedItem: selectedStoppageHead, setSelectedItem: setSelectedStoppageHead,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    setIsEditing,
+    setIsModalOpen,
+    closeModalWhenSelectedItemStale: isEditing
+  });
 
   const searchFields = ['code', 'stoppage_head_name'];
   const searchConditions = ['Like', 'Equal', 'Not Equal', 'Greater', 'Less'];
@@ -39,30 +49,34 @@ export default function StoppageHeadMaster() {
   }, []);
 
   const loadStoppageHeads = async () => {
-    try {
-      const result = await getStoppageHeadsAction();
-      if (result.success) {
-        setStoppageHeads(result.data);
-      } else {
-        toast.error('Failed to load stoppage heads: ' + result.error);
+    await runLatestRowsRequest(
+      () => getStoppageHeadsAction(),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows(result.data || []);
+        },
+        onError: error => toast.error('Failed to load stoppage heads: ' + error.message)
       }
-    } catch (error) {
-      toast.error('Failed to load stoppage heads: ' + error.message);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
-    try {
-      const result = await searchStoppageHeadsAction(field, condition, value);
-      if (result.success) {
-        setStoppageHeads(result.data);
-        toast.success(`Found ${result.data.length} stoppage head(s)`);
-      } else {
-        toast.error('Search failed: ' + result.error);
-      }
-    } catch (error) {
-      toast.error('Search failed: ' + error.message);
+    if (!String(value ?? '').trim()) {
+      await loadStoppageHeads();
+      return;
     }
+    await runLatestRowsRequest(
+      () => searchStoppageHeadsAction(field, condition, value),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows(result.data || []);
+          toast.success(`Found ${(result.data || []).length} stoppage head(s)`);
+        },
+        onError: error => toast.error('Search failed: ' + error.message)
+      }
+    );
   };
 
   const handleReset = () => {
@@ -76,7 +90,10 @@ export default function StoppageHeadMaster() {
   };
 
   const handleAdd = () => {
+    resetInteractionState();
     setSelectedStoppageHead(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsEditing(false);
     setIsModalOpen(true);
   };
@@ -85,9 +102,12 @@ export default function StoppageHeadMaster() {
     try {
       setIsLoading(true);
       if (isEditing && selectedStoppageHead) {
-        const result = await updateStoppageHeadAction(selectedStoppageHead.id, data);
+        const currentHead = getCurrentRow(selectedStoppageHead);
+        if (!currentHead) throw new Error('This stoppage head is no longer in the current list');
+        const result = await updateStoppageHeadAction(currentHead.id, data);
         if (result.success) {
           toast.success('Stoppage head updated successfully');
+          resetInteractionState({ closeModal: true });
           setIsModalOpen(false);
           setSelectedStoppageHead(null);
           loadStoppageHeads();
@@ -98,6 +118,7 @@ export default function StoppageHeadMaster() {
         const result = await createStoppageHeadAction(data);
         if (result.success) {
           toast.success('Stoppage head created successfully');
+          resetInteractionState({ closeModal: true });
           setIsModalOpen(false);
           setSelectedStoppageHead(null);
           loadStoppageHeads();
@@ -115,30 +136,37 @@ export default function StoppageHeadMaster() {
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} stoppage head(s)?`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected stoppage heads are no longer in the current list');
+      if (!confirm(`Are you sure you want to delete ${currentSelectedRows.length} stoppage head(s)?`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteStoppageHeadAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteStoppageHeadAction(row.id)));
         assertAllActionsSucceeded(results, 'Failed to delete one or more stoppage heads');
-        toast.success(`${selectedRows.length} stoppage head(s) deleted successfully`);
+        toast.success(`${currentSelectedRows.length} stoppage head(s) deleted successfully`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadStoppageHeads();
       } catch (error) {
         toast.error('Failed to delete stoppage heads: ' + error.message);
+      } finally {
+        loadStoppageHeads();
       }
     } else if (!isSelectMode && selectedStoppageHead) {
       // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedStoppageHead.stoppage_head_name}"?`)) {
+      const currentHead = getCurrentRow(selectedStoppageHead);
+      if (!currentHead) return toast.warning('The selected stoppage head is no longer in the current list');
+      if (!confirm(`Are you sure you want to delete "${currentHead.stoppage_head_name}"?`)) {
         return;
       }
 
       try {
-        const result = await deleteStoppageHeadAction(selectedStoppageHead.id);
+        const result = await deleteStoppageHeadAction(currentHead.id);
         if (result.success) {
           toast.success('Stoppage head deleted successfully');
+          resetInteractionState({ closeModal: true });
           setSelectedStoppageHead(null);
           setIsModalOpen(false);
           loadStoppageHeads();
@@ -150,6 +178,25 @@ export default function StoppageHeadMaster() {
       }
     } else {
       toast.error('Please select stoppage head(s) to delete');
+    }
+  };
+
+  const handleDeactivate = async () => {
+    const currentTargets = isSelectMode ? getCurrentRows(selectedRows) : getCurrentRows(selectedStoppageHead);
+    const targets = currentTargets.filter(row => row.is_active);
+    if (!targets.length) return toast.info('Select at least one active stoppage head');
+    if (!confirm(`Deactivate ${targets.length} stoppage head(s) and hide their details from new entries?`)) return;
+    try {
+      const results = await Promise.all(targets.map(row => updateStoppageHeadAction(row.id, { is_active: false })));
+      assertAllActionsSucceeded(results, 'Failed to deactivate one or more stoppage heads');
+      toast.success(`${targets.length} stoppage head(s) deactivated`);
+      resetInteractionState({ closeModal: true });
+      setSelectedRows([]);
+      setSelectedStoppageHead(null);
+    } catch (error) {
+      toast.error('Failed to deactivate stoppage heads: ' + error.message);
+    } finally {
+      loadStoppageHeads();
     }
   };
 
@@ -173,8 +220,9 @@ export default function StoppageHeadMaster() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   return (
@@ -197,6 +245,15 @@ export default function StoppageHeadMaster() {
           >
             <span className="text-xs sm:text-sm">{isSelectMode ? 'Cancel' : 'Select'}</span>
           </Button>
+          <Button
+            onClick={handleDeactivate}
+            variant="outline"
+            className="border-orange-500 text-orange-600 hover:bg-orange-50 flex-1 sm:flex-none"
+            disabled={isSelectMode ? !selectedRows.some(row => row.is_active) : !selectedStoppageHead?.is_active}
+          >
+            <Ban className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Deactivate</span>
+          </Button>
           <Button 
             onClick={handleDelete} 
             variant="outline"
@@ -204,7 +261,7 @@ export default function StoppageHeadMaster() {
             disabled={isSelectMode ? selectedRows.length === 0 : !selectedStoppageHead}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -227,21 +284,31 @@ export default function StoppageHeadMaster() {
         selectedRows={selectedRows}
         onSelectRow={handleSelectRow}
         onSelectAll={handleSelectAll}
+        getRowClassName={(row) => !row.is_active ? '!bg-red-100 hover:!bg-red-200 text-red-700' : '!bg-white hover:!bg-yellow-100'}
+        onRowDoubleClick={(row) => {
+          if (isSelectMode) return;
+          openRowEditor(row);
+        }}
         onContextMenu={(row, e) => {
           e.preventDefault();
-          setSelectedStoppageHead(row);
-          setIsEditing(true);
-          setIsModalOpen(true);
+          if (isSelectMode) return;
+          openRowEditor(row);
         }}
       />
 
       {/* Form Modal */}
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) setIsEditing(false);
+        }}
         title="Stoppage Head Master"
         description={isEditing ? "Modify stoppage head details" : "Add new stoppage head"}
-        onCancel={() => setIsModalOpen(false)}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setIsEditing(false);
+        }}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}
         isLoading={isLoading}

@@ -19,6 +19,7 @@ import {
   findDraftByKeys,
   getEffectiveStoppageTotal,
   mergeSetupDraft,
+  resolveCommitDrafts,
   rowHasDependencyDraft,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
@@ -46,6 +47,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const lastLoadKeyRef = useRef('')
 
   const setEditedRows = useCallback((updater) => {
@@ -54,6 +56,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -61,8 +64,10 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -259,9 +264,10 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'production', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
     const rowsToSave = selectRowsForDependentCommit(
@@ -334,7 +340,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
       }
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       
       if (!skipParentRefresh) {
         await loadData({ force: true })

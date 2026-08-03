@@ -1,46 +1,247 @@
 import { prisma } from '../prisma'
+import { parseStrictDate } from '../strictDate.js'
+
+const BASELINE_GROUPS = 13
+const BASELINE_POSITIONS = 5
+
+const naturalCompare = (left, right) => String(left).localeCompare(String(right), undefined, {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+const mostFrequentValue = (counts, fallback = 'UNKNOWN') => {
+  const entries = [...counts.entries()].sort((left, right) => {
+    const frequencyDifference = right[1] - left[1]
+    return frequencyDifference || naturalCompare(left[0], right[0])
+  })
+
+  return entries[0]?.[0] || fallback
+}
 
 /**
- * Generate Autoconer Efficiency Report
- * Shows efficiency grid with machine groups as columns and positions as rows
- * 
- * @param {Date} selectedDate - Date for the report
- * @returns {Promise<Object>} Report data with grid structure for all shifts
+ * Normalize a report date without JavaScript's permissive date rollover or
+ * local-time conversion. Database DATE columns are compared at UTC midnight.
+ */
+export function normalizeAutoconerEfficiencyDate(value) {
+  const parsed = parseStrictDate(value, 'Report date')
+  return new Date(Date.UTC(
+    parsed.getUTCFullYear(),
+    parsed.getUTCMonth(),
+    parsed.getUTCDate()
+  ))
+}
+
+export function autoconerEfficiencyDateKey(value) {
+  return normalizeAutoconerEfficiencyDate(value).toISOString().slice(0, 10)
+}
+
+/**
+ * Resolve a machine into a report group and position.
+ *
+ * Standard names (AC1-1) retain the legacy numeric headers. Other persisted
+ * names are still represented: a numeric suffix is used as the position and
+ * the preceding text as the group; a name without a numeric suffix receives
+ * its own group at position 1.
+ */
+export function parseAutoconerEfficiencyMachine(machineNumber) {
+  const machineNo = String(machineNumber ?? '').trim()
+  if (!machineNo) {
+    return {
+      groupKey: 'machine:UNNAMED',
+      groupName: 'UNNAMED',
+      groupNumber: null,
+      position: 1,
+      isBaseline: false,
+    }
+  }
+
+  const standardMatch = /^AC(\d+)-(\d+)$/i.exec(machineNo)
+  if (standardMatch) {
+    const groupNumber = Number(standardMatch[1])
+    const position = Number(standardMatch[2])
+    return {
+      groupKey: `AC${groupNumber}`,
+      groupName: `AC${groupNumber}`,
+      groupNumber,
+      position: position > 0 ? position : 1,
+      isBaseline: groupNumber >= 1 && groupNumber <= BASELINE_GROUPS,
+    }
+  }
+
+  const suffixedMatch = /^(.*?)-(\d+)$/.exec(machineNo)
+  if (suffixedMatch && suffixedMatch[1].trim()) {
+    const groupName = suffixedMatch[1].trim()
+    const position = Number(suffixedMatch[2])
+    return {
+      groupKey: `group:${groupName}`,
+      groupName,
+      groupNumber: null,
+      position: position > 0 ? position : 1,
+      isBaseline: false,
+    }
+  }
+
+  return {
+    groupKey: `machine:${machineNo}`,
+    groupName: machineNo,
+    groupNumber: null,
+    position: 1,
+    isBaseline: false,
+  }
+}
+
+/**
+ * Build a complete display grid from persisted production rows. The legacy
+ * AC1..AC13 and positions 1..5 remain present, while additional groups,
+ * positions and coordinate collisions are appended instead of being dropped.
+ */
+export function buildAutoconerEfficiencyShifts(productionRows = [], supervisorRows = []) {
+  const supervisorMap = new Map()
+  for (const row of supervisorRows) {
+    const shiftKey = String(row.shift)
+    const supervisor = String(row.supervisor_name ?? '').trim()
+    if (!supervisorMap.has(shiftKey) || supervisorMap.get(shiftKey) === 'N/A') {
+      supervisorMap.set(shiftKey, supervisor || 'N/A')
+    }
+  }
+
+  const shifts = new Map()
+
+  for (const row of productionRows) {
+    const shiftKey = String(row.shift)
+    if (!shifts.has(shiftKey)) {
+      const groups = new Map()
+      for (let groupNumber = 1; groupNumber <= BASELINE_GROUPS; groupNumber += 1) {
+        groups.set(`AC${groupNumber}`, {
+          groupKey: `AC${groupNumber}`,
+          groupName: `AC${groupNumber}`,
+          groupNumber,
+          isBaseline: true,
+          counts: new Map(),
+          machinesByPosition: new Map(),
+        })
+      }
+
+      shifts.set(shiftKey, {
+        shift: row.shift,
+        supervisor_name: supervisorMap.get(shiftKey) || 'N/A',
+        counts: new Map(),
+        groups,
+        positions: new Set(Array.from({ length: BASELINE_POSITIONS }, (_, index) => index + 1)),
+      })
+    }
+
+    const shift = shifts.get(shiftKey)
+    const countName = String(row.count_name ?? '').trim() || 'UNKNOWN'
+    shift.counts.set(countName, (shift.counts.get(countName) || 0) + 1)
+
+    const coordinate = parseAutoconerEfficiencyMachine(row.machine_no)
+    if (!shift.groups.has(coordinate.groupKey)) {
+      shift.groups.set(coordinate.groupKey, {
+        ...coordinate,
+        counts: new Map(),
+        machinesByPosition: new Map(),
+      })
+    }
+
+    const group = shift.groups.get(coordinate.groupKey)
+    group.counts.set(countName, (group.counts.get(countName) || 0) + 1)
+    shift.positions.add(coordinate.position)
+
+    if (!group.machinesByPosition.has(coordinate.position)) {
+      group.machinesByPosition.set(coordinate.position, [])
+    }
+
+    const parsedEfficiency = Number(row.prodn_effi)
+    group.machinesByPosition.get(coordinate.position).push({
+      position: coordinate.position,
+      machine_no: String(row.machine_no ?? '').trim() || 'UNNAMED',
+      efficiency: Number.isFinite(parsedEfficiency) ? parsedEfficiency : 0,
+      count: countName,
+    })
+  }
+
+  return [...shifts.values()]
+    .sort((left, right) => Number(left.shift) - Number(right.shift) || naturalCompare(left.shift, right.shift))
+    .map(shift => {
+      const primaryCount = mostFrequentValue(shift.counts)
+      const groups = [...shift.groups.values()].sort((left, right) => {
+        if (left.isBaseline !== right.isBaseline) return left.isBaseline ? -1 : 1
+        if (left.groupNumber !== null && right.groupNumber !== null) {
+          return left.groupNumber - right.groupNumber
+        }
+        return naturalCompare(left.groupName, right.groupName)
+      })
+
+      const positions = [...shift.positions].sort((left, right) => left - right)
+      const positionRows = []
+      for (const position of positions) {
+        const occurrences = Math.max(
+          1,
+          ...groups.map(group => group.machinesByPosition.get(position)?.length || 0)
+        )
+        for (let occurrence = 0; occurrence < occurrences; occurrence += 1) {
+          positionRows.push({
+            position,
+            occurrence,
+            label: occurrence === 0 ? String(position) : `${position} (${occurrence + 1})`,
+          })
+        }
+      }
+
+      return {
+        shift: shift.shift,
+        supervisor_name: shift.supervisor_name,
+        primary_count: primaryCount,
+        positionRows,
+        groups: groups.map(group => ({
+          groupKey: group.groupKey,
+          groupNumber: group.groupNumber,
+          groupName: group.groupName,
+          headerLabel: group.groupNumber === null
+            ? group.groupName
+            : String(group.groupNumber),
+          isBaseline: group.isBaseline,
+          count: mostFrequentValue(group.counts, primaryCount),
+          machines: positionRows.map(({ position, occurrence }) => (
+            group.machinesByPosition.get(position)?.[occurrence] || null
+          )),
+        })),
+      }
+    })
+}
+
+/**
+ * Generate Autoconer Efficiency Report.
+ * Shows an efficiency grid with machine groups as columns and positions as rows.
  */
 export async function generateAutoconerEfficiencyReport(selectedDate) {
   try {
-    if (!selectedDate) {
-      throw new Error('Date is required')
-    }
+    const date = normalizeAutoconerEfficiencyDate(selectedDate)
+    const dateKey = date.toISOString().slice(0, 10)
 
-    const date = new Date(selectedDate)
-
-    // Get all production data for the selected date (all shifts)
     const productionData = await prisma.$queryRaw`
-      SELECT 
+      SELECT
         aph.shift,
         am.machine_no,
         apd.count_name,
-        apd.prodn_effi,
-        SUBSTRING_INDEX(am.machine_no, '-', 1) as machine_group,
-        CAST(SUBSTRING_INDEX(am.machine_no, '-', -1) AS UNSIGNED) as machine_position
+        apd.prodn_effi
       FROM autoconer_production_detail apd
       JOIN autoconer_production_header aph ON apd.header_id = aph.id
       JOIN autoconer_machines am ON apd.machine_id = am.id
       WHERE aph.entry_date = ${date}
-      ORDER BY aph.shift, machine_group, machine_position
+      ORDER BY aph.shift, am.machine_no
     `
 
-    if (!productionData || productionData.length === 0) {
+    if (!productionData?.length) {
       return {
         success: false,
-        message: `No production data found for ${date.toLocaleDateString()}`
+        message: `No production data found for ${dateKey}`,
       }
     }
 
-    // Get supervisor names for each shift
     const supervisorData = await prisma.$queryRaw`
-      SELECT 
+      SELECT
         aph.shift,
         s.supervisor_name
       FROM autoconer_production_header aph
@@ -49,129 +250,18 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
       ORDER BY aph.shift
     `
 
-    // Create supervisor map
-    const supervisorMap = {}
-    supervisorData.forEach(s => {
-      supervisorMap[s.shift] = s.supervisor_name || 'N/A'
-    })
-
-    // Group data by shift
-    const shiftDataMap = {}
-    
-    productionData.forEach(row => {
-      const shift = row.shift
-      
-      if (!shiftDataMap[shift]) {
-        shiftDataMap[shift] = {
-          shift: shift,
-          supervisor_name: supervisorMap[shift] || 'N/A',
-          counts: {}, // Track different counts used
-          grid: {} // Machine grid data
-        }
-      }
-
-      const shiftData = shiftDataMap[shift]
-      const countName = row.count_name || 'UNKNOWN'
-      
-      // Track count usage
-      if (!shiftData.counts[countName]) {
-        shiftData.counts[countName] = 0
-      }
-      shiftData.counts[countName]++
-
-      // Extract group number (AC1 -> 1, AC10 -> 10, etc.)
-      const groupMatch = row.machine_group.match(/AC(\d+)/)
-      if (!groupMatch) return
-
-      const groupNum = parseInt(groupMatch[1])
-      const position = parseInt(row.machine_position)
-      const efficiency = parseFloat(row.prodn_effi) || 0
-
-      // Initialize group if not exists
-      if (!shiftData.grid[groupNum]) {
-        shiftData.grid[groupNum] = {
-          groupName: row.machine_group,
-          groupNumber: groupNum,
-          count: countName,
-          machines: {}
-        }
-      }
-
-      // Store efficiency value at position
-      shiftData.grid[groupNum].machines[position] = {
-        machine_no: row.machine_no,
-        efficiency: efficiency,
-        count: countName
-      }
-    })
-
-    // Convert map to array and ensure proper structure
-    const shifts = Object.keys(shiftDataMap)
-      .sort((a, b) => parseInt(a) - parseInt(b))
-      .map(shiftKey => {
-        const shift = shiftDataMap[shiftKey]
-        
-        // Determine primary count (most used count in this shift)
-        const primaryCount = Object.keys(shift.counts).reduce((a, b) => 
-          shift.counts[a] > shift.counts[b] ? a : b
-        )
-
-        // Convert grid to array format
-        const groups = []
-        for (let groupNum = 1; groupNum <= 13; groupNum++) {
-          const groupData = shift.grid[groupNum]
-          
-          if (groupData) {
-            // Build machines array (positions 1-5)
-            const machines = []
-            for (let pos = 1; pos <= 5; pos++) {
-              if (groupData.machines[pos]) {
-                machines.push({
-                  position: pos,
-                  machine_no: groupData.machines[pos].machine_no,
-                  efficiency: groupData.machines[pos].efficiency,
-                  count: groupData.machines[pos].count
-                })
-              } else {
-                machines.push(null) // Empty position
-              }
-            }
-
-            groups.push({
-              groupNumber: groupNum,
-              groupName: groupData.groupName,
-              count: groupData.count,
-              machines: machines
-            })
-          } else {
-            // Empty group
-            groups.push({
-              groupNumber: groupNum,
-              groupName: `AC${groupNum}`,
-              count: primaryCount,
-              machines: [null, null, null, null, null]
-            })
-          }
-        }
-
-        return {
-          shift: shift.shift,
-          supervisor_name: shift.supervisor_name,
-          primary_count: primaryCount,
-          groups: groups
-        }
-      })
-
     return {
       success: true,
-      date: date,
-      shifts: shifts
+      date,
+      shifts: buildAutoconerEfficiencyShifts(productionData, supervisorData),
     }
   } catch (error) {
     console.error('Error generating autoconer efficiency report:', error)
     return {
       success: false,
-      message: 'The report could not be generated. Please try again.'
+      message: error?.code === 'INVALID_DATE'
+        ? error.message
+        : 'The report could not be generated. Please try again.',
     }
   }
 }

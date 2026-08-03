@@ -28,6 +28,8 @@ import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { COMBER_FORMULA_FALLBACK, resolveComberMcEffiFactor } from '@/lib/comberFormulaFallback'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
+import { parseRunHoursToMinutes } from '@/lib/runHoursMath'
 
 // Helper function to safely convert Prisma Decimal to number
 const toNumber = (value) => {
@@ -44,14 +46,6 @@ const formatNumber = (value, decimals = 2) => {
   return toNumber(value).toFixed(decimals)
 }
 
-const calculateRunMin = (runHrs) => {
-  const hoursValue = toNumber(runHrs)
-  if (hoursValue <= 0) return 0
-  const hours = Math.floor(hoursValue)
-  const minutes = Math.round((hoursValue - hours) * 100)
-  return (hours * 60) + minutes
-}
-
 const recalcProductionFromStoppage = (productionDetail, totalStoppageTime, totalTime, setup) => {
   const safeTotalTime = Math.max(toNumber(totalTime), 0)
   if (safeTotalTime <= 0) {
@@ -66,8 +60,8 @@ const recalcProductionFromStoppage = (productionDetail, totalStoppageTime, total
   const mcEffiFactor = resolveComberMcEffiFactor(
     setup?.mc_effi ?? productionDetail?.mc_effi ?? COMBER_FORMULA_FALLBACK.mcEffiFactor
   )
-  const runMin = calculateRunMin(productionDetail?.run_hrs)
   const workTime = Math.max(safeTotalTime - toNumber(totalStoppageTime), 0)
+  const runMin = Math.min(parseRunHoursToMinutes(productionDetail?.run_hrs), workTime)
   const stdHrs = workTime * mcEffiFactor
   const utiPercent = (workTime / safeTotalTime) * 100
   const actEffiPercent = stdHrs > 0 ? (runMin / stdHrs) * 100 : 0
@@ -133,6 +127,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const shiftTimeVal = totalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
 
@@ -141,6 +136,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
       const prev = editedRowsRef.current || {}
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -148,8 +144,10 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -359,7 +357,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
         }
       }
     }))
-  }, [productionDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, stoppageData.length, resolveEffectiveSetup])
+  }, [sharedDraftEdits, localEditedRows, productionDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, stoppageData.length, resolveEffectiveSetup])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -455,12 +453,13 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'stoppage', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -469,15 +468,15 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
         updateComberStoppageEntryAction(rowId, changes)
       )
 
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Comber stoppage row')
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const savedCount = Object.keys(currentEdits).length
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved successfully')
       }
@@ -540,7 +539,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: fullStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -578,7 +577,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: partialStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,

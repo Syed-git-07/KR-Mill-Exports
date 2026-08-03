@@ -50,7 +50,11 @@ export default function AutoconerParticularSiderReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generateAutoconerParticularSiderReportAction(empName, fromDate, toDate)
+      const result = await generateAutoconerParticularSiderReportAction(
+        empName,
+        format(fromDate, 'yyyy-MM-dd'),
+        format(toDate, 'yyyy-MM-dd')
+      )
       
       if (!result.success) {
         toast.error(result.message || 'Failed to generate report')

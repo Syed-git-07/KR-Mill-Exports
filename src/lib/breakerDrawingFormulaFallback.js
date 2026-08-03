@@ -42,6 +42,11 @@ export function getBreakerDrawingActProdnConstant(setup = {}) {
 
 export function calculateBreakerDrawingStdProdn(setup, totalTime, machineSpeed = null) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(setup, machineSpeed)
-  if (!totalTime || !hankConstant || !divisorConstant) return 0
-  return (speed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor * delivery
+  const safeTotalTime = toNumber(totalTime)
+  if (
+    safeTotalTime === null || safeTotalTime <= 0 ||
+    speed <= 0 || hankConstant <= 0 || stdEfficiencyFactor <= 0 ||
+    divisorConstant <= 0 || delivery <= 0
+  ) return 0
+  return (speed / divisorConstant / hankConstant) * safeTotalTime * stdEfficiencyFactor * delivery
 }

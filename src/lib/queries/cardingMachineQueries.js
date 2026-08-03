@@ -1,5 +1,13 @@
 import { prisma } from '../prisma';
 import { deleteUnusedMachine } from './machineDeletion';
+import { buildMachineLifecycleUpdate, normalizeMachineMasterData } from './machineMasterValidation';
+
+const CARDING_MASTER_NUMBERS = {
+  speed: { label: 'Speed', required: true, max: 1000000 },
+  prodn_effi: { label: 'Production efficiency', required: true, max: 100 },
+  hank_constant: { label: 'Hank constant', max: 1000 },
+  mc_id: { label: 'Machine id number', max: 1000000, integer: true }
+};
 
 /**
  * Carding Machine Master - CRUD Operations
@@ -31,43 +39,18 @@ export async function getCardingMachineById(id) {
 
 // Create a new carding machine
 export async function createCardingMachine(machineData) {
-  // Convert date string to Date object if needed
-  let installedDate = machineData.installed_date;
-  if (installedDate && typeof installedDate === 'string') {
-    installedDate = new Date(installedDate);
-  }
+  machineData = normalizeMachineMasterData(machineData, CARDING_MASTER_NUMBERS);
+  const installedDate = machineData.installed_date;
 
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
 
-  // If a machine with the same machine_no exists (inactive), reactivate it
+  // A reused number starts a new lifecycle row; historical rows stay immutable.
   const existing = await prisma.carding_machines.findFirst({
-    where: { machine_no: machineData.machine_no }
+    where: { machine_no: machineData.machine_no, is_active: true }
   });
   if (existing) {
-    if (!existing.is_active) {
-      return await prisma.carding_machines.update({
-        where: { id: existing.id },
-        data: {
-          machine_no: machineData.machine_no,
-          mc_id: mcId,
-          description: machineData.description,
-          make_name: machineData.make_name,
-          model: machineData.model,
-          prodn_mixing: machineData.prodn_mixing,
-          speed: machineData.speed,
-          prodn_efficiency: machineData.prodn_effi,
-          installed_date: installedDate,
-          is_active: true,
-          direct_hank_entry: machineData.direct_hank_entry ?? false,
-          direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-          activated_at: new Date(),
-          deactivated_at: null,
-        }
-      });
-    } else {
-      throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
-    }
+    throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
   }
 
   // Fetch max sort_order so new machine goes to the end
@@ -99,11 +82,16 @@ export async function createCardingMachine(machineData) {
 
 // Update an existing carding machine
 export async function updateCardingMachine(id, machineData) {
-  // Convert date string to Date object if needed
-  let installedDate = machineData.installed_date;
-  if (installedDate && typeof installedDate === 'string') {
-    installedDate = new Date(installedDate);
-  }
+  machineData = normalizeMachineMasterData(machineData, CARDING_MASTER_NUMBERS);
+  const installedDate = machineData.installed_date;
+  const existing = await prisma.carding_machines.findUnique({ where: { id }, select: { is_active: true } });
+  if (!existing) throw new Error('Carding machine not found');
+  const duplicate = await prisma.carding_machines.findFirst({
+    where: { id: { not: id }, machine_no: machineData.machine_no, is_active: true },
+    select: { id: true }
+  });
+  if (duplicate) throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
+  const lifecycleUpdate = buildMachineLifecycleUpdate(existing.is_active, machineData.is_active);
 
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
@@ -122,14 +110,11 @@ export async function updateCardingMachine(id, machineData) {
       hank_constant: machineData.hank_constant != null ? machineData.hank_constant : undefined,
       installed_date: installedDate,
       // Only update is_active / mc_id if explicitly provided (undefined = preserve existing)
-      ...(machineData.is_active !== undefined && { is_active: machineData.is_active }),
+      ...lifecycleUpdate,
       ...(machineData.mc_id !== undefined && machineData.mc_id !== null && { mc_id: parseInt(machineData.mc_id, 10) }),
       direct_hank_entry: machineData.direct_hank_entry,
       direct_kgs_entry: machineData.direct_kgs_entry,
       updated_at: new Date(),
-      // Handle is_active as boolean OR numeric (0/1) from any code path
-      ...((machineData.is_active === true  || machineData.is_active === 1)  && { activated_at: new Date(), deactivated_at: null }),
-      ...((machineData.is_active === false || machineData.is_active === 0) && { deactivated_at: new Date() }),
     }
   });
   

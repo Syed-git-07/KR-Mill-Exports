@@ -21,6 +21,7 @@ import {
   findDraftByKeys,
   getEffectiveStoppageTotal,
   mergeSetupDraft,
+  resolveCommitDrafts,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
 import { NumberInput } from '@/components/ui/number-input'
@@ -56,12 +57,14 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
       const prev = editedRowsRef.current || {}
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -69,8 +72,10 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -331,9 +336,10 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'production', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
     const rowsToSave = selectRowsForDependentCommit(
@@ -389,7 +395,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
       if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       
       const savedCount = rowsToSave.length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
       }

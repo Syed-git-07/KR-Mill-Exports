@@ -1,15 +1,25 @@
 import { prisma } from '../prisma';
 import { deleteUnusedMachine } from './machineDeletion';
+import { parseStrictDate } from '../strictDate';
 
 const SPINNING_DEFAULT_SETUP_DATE = new Date('2026-04-01T00:00:00.000Z');
+const MACHINE_FIELDS = new Set([
+  'machine_no', 'description', 'make_name', 'model', 'allocated_spindles',
+  'installed_date', 'is_active', 'production_kgs_manual_entry', 'direct_hank_entry'
+]);
+const SETUP_FIELDS = new Set(['speed', 'count_name', 'act_count', 'tpi']);
+const BOOLEAN_FIELDS = new Set([
+  'is_active', 'production_kgs_manual_entry', 'direct_hank_entry'
+]);
 
-async function upsertDefaultSpinningSetup(machineId, setupFields) {
+async function upsertDefaultSpinningSetup(machineId, setupFields, client = prisma) {
   const data = Object.fromEntries(
     Object.entries(setupFields).filter(([, value]) => value !== undefined)
   );
   if (Object.keys(data).length === 0) return null;
+  data.updated_at = new Date();
 
-  return prisma.spinning_machine_setup.upsert({
+  return client.spinning_machine_setup.upsert({
     where: {
       idx_spinning_machine_setup_date: {
         machine_id: machineId,
@@ -25,6 +35,91 @@ async function upsertDefaultSpinningSetup(machineId, setupFields) {
       ...data,
     }
   });
+}
+
+function lifecycleReactivationError() {
+  const error = new Error(
+    'An inactive machine is a historical lifecycle record and cannot be reactivated in place. Use Add New with the same machine number to create the new lifecycle.'
+  );
+  error.code = 'MACHINE_REACTIVATION_REQUIRES_NEW';
+  return error;
+}
+
+function optionalNonNegativeNumber(value, label, { integer = false } = {}) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || (integer && !Number.isInteger(number))) {
+    throw new Error(`${label} must be a non-negative ${integer ? 'whole ' : ''}number`);
+  }
+  return number;
+}
+
+function cleanSpinningMachineInput(machineData = {}, { creating = false } = {}) {
+  const machineFields = {};
+  const setupFields = {};
+
+  for (const [key, value] of Object.entries(machineData)) {
+    if (MACHINE_FIELDS.has(key)) {
+      if (key === 'machine_no') machineFields.machine_no = normalizeMachineNumber(value);
+      else if (key === 'description') {
+        machineFields.description = String(value ?? '').trim();
+        if (!machineFields.description) throw new Error('Description is required');
+      } else if (key === 'make_name') {
+        machineFields.make_name = String(value ?? '').trim() || 'LMW';
+      } else if (key === 'model') {
+        machineFields.model = value == null || value === '' ? null : String(value).trim();
+      } else if (key === 'allocated_spindles') {
+        machineFields.allocated_spindles = optionalNonNegativeNumber(
+          value,
+          'Allocated spindles',
+          { integer: true }
+        );
+        if (machineFields.allocated_spindles == null) {
+          throw new Error('Allocated spindles is required');
+        }
+      } else if (key === 'installed_date') {
+        machineFields.installed_date = value == null || value === ''
+          ? null
+          : parseStrictDate(value, 'Installed date');
+      } else if (BOOLEAN_FIELDS.has(key)) {
+        if (typeof value !== 'boolean') throw new Error(`${key} must be true or false`);
+        machineFields[key] = value;
+      }
+    } else if (SETUP_FIELDS.has(key)) {
+      if (key === 'count_name') {
+        setupFields.count_name = value == null || value === '' ? null : String(value).trim();
+      } else {
+        setupFields[key] = optionalNonNegativeNumber(value, key, {
+          integer: key === 'speed'
+        });
+      }
+    }
+  }
+
+  if (creating) {
+    if (!machineFields.machine_no) throw new Error('Machine number is required');
+    if (!machineFields.description) throw new Error('Description is required');
+    if (machineFields.allocated_spindles == null) machineFields.allocated_spindles = 1104;
+    if (machineFields.is_active === undefined) machineFields.is_active = true;
+  }
+
+  return { machineFields, setupFields };
+}
+
+function normalizeMachineNumber(value) {
+  const machineNo = String(value ?? '').trim()
+  if (!machineNo) throw new Error('Machine number is required')
+  return machineNo
+}
+
+async function findMachineNumberDuplicates(client, machineNo, excludeId = null) {
+  return client.spinning_machines.findMany({
+    where: {
+      machine_no: { equals: machineNo },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true, is_active: true },
+  })
 }
 
 /**
@@ -69,63 +164,38 @@ function sortMachinesByNumber(machines) {
 // Create new spinning machine
 export async function createSpinningMachine(machineData) {
   try {
-    // Extract setup-specific fields so they don't land in spinning_machines
-    const { speed, count_name, act_count, tpi, ...machineFields } = machineData;
+    const { machineFields, setupFields } = cleanSpinningMachineInput(machineData, { creating: true });
 
-    const processedData = { ...machineFields };
-    if (processedData.installed_date && typeof processedData.installed_date === 'string') {
-      processedData.installed_date = new Date(processedData.installed_date);
-    }
-
-    // Check for an existing machine with the same machine_no to avoid duplicates
-    const existing = await prisma.spinning_machines.findFirst({
-      where: { machine_no: { equals: processedData.machine_no } }
-    });
-
-    if (existing) {
-      if (!existing.is_active) {
-        // Reactivate the inactive machine instead of creating a duplicate
-        const reactivated = await prisma.spinning_machines.update({
-          where: { id: existing.id },
-          data: {
-            ...processedData,
-            is_active: true,
-            activated_at: new Date(),
-            deactivated_at: null,
-          }
-        });
-        await upsertDefaultSpinningSetup(reactivated.id, {
-          speed,
-          count_name,
-          act_count,
-          tpi,
-          allocated_spindles: processedData.allocated_spindles,
-        });
-        return reactivated;
-      } else {
-        throw new Error(`Machine ${processedData.machine_no} already exists and is active`);
+    return await prisma.$transaction(async transaction => {
+      const duplicates = await findMachineNumberDuplicates(
+        transaction,
+        machineFields.machine_no,
+      );
+      const activeDuplicate = duplicates.find(machine => machine.is_active);
+      if (activeDuplicate) {
+        throw new Error(`Machine ${machineFields.machine_no} already exists and is active`);
       }
-    }
 
-    // Fetch max sort_order so new machine goes to the end
-    const maxSortResult = await prisma.spinning_machines.aggregate({ _max: { sort_order: true } });
-    const nextSortOrder = (maxSortResult._max.sort_order ?? 0) + 1;
-
-    const machine = await prisma.spinning_machines.create({
-      data: { ...processedData, activated_at: new Date(), sort_order: nextSortOrder }
-    });
-
-    // Keep the baseline setup in sync with the master. New dated entries clone
-    // this row and then refresh count-controlled values from the counts master.
-    await upsertDefaultSpinningSetup(machine.id, {
-      speed,
-      count_name,
-      act_count,
-      tpi,
-      allocated_spindles: processedData.allocated_spindles,
-    });
-
-    return machine;
+      const maxSortResult = await transaction.spinning_machines.aggregate({ _max: { sort_order: true } });
+      const nextSortOrder = (maxSortResult._max.sort_order ?? 0) + 1;
+      const now = new Date();
+      const isActive = machineFields.is_active !== false;
+      const machine = await transaction.spinning_machines.create({
+        data: {
+          ...machineFields,
+          is_active: isActive,
+          activated_at: isActive ? now : null,
+          deactivated_at: isActive ? null : now,
+          sort_order: nextSortOrder,
+          updated_at: now,
+        }
+      });
+      await upsertDefaultSpinningSetup(machine.id, {
+        ...setupFields,
+        allocated_spindles: machineFields.allocated_spindles,
+      }, transaction);
+      return machine;
+    }, { isolationLevel: 'Serializable' });
   } catch (error) {
     console.error('Prisma error creating spinning machine:', error);
     throw new Error(error.message || 'Failed to create spinning machine');
@@ -134,35 +204,42 @@ export async function createSpinningMachine(machineData) {
 
 // Update spinning machine
 export async function updateSpinningMachine(id, machineData) {
+  if (!id) throw new Error('Machine ID is required');
   // Extract setup-specific fields — they don't exist as columns in spinning_machines
-  const { speed, count_name, act_count, tpi, ...restData } = machineData;
+  const { machineFields, setupFields } = cleanSpinningMachineInput(machineData);
 
-  const processedData = { ...restData };
-  if (processedData.installed_date && typeof processedData.installed_date === 'string') {
-    processedData.installed_date = new Date(processedData.installed_date);
-  }
+  return prisma.$transaction(async transaction => {
+    const existing = await transaction.spinning_machines.findUnique({
+      where: { id },
+      select: { id: true, machine_no: true, is_active: true },
+    });
+    if (!existing) throw new Error('Spinning machine not found');
 
-  const data = await prisma.spinning_machines.update({
-    where: { id },
-    data: {
-      ...processedData,
-      // When toggling is_active, update the timestamps accordingly
-      ...(processedData.is_active === true  && { activated_at: new Date(), deactivated_at: null }),
-      ...(processedData.is_active === false && { deactivated_at: new Date() }),
+    if (machineFields.machine_no && machineFields.machine_no !== existing.machine_no) {
+      throw new Error('Machine number is an immutable lifecycle key and cannot be changed');
     }
-  });
+    if (!existing.is_active && machineFields.is_active === true) {
+      throw lifecycleReactivationError();
+    }
 
-  // Update or create the baseline setup so master speed/TPI/count/spindles are
-  // the source for newly-created dated entries. Explicit zero is valid.
-  await upsertDefaultSpinningSetup(id, {
-    speed,
-    count_name,
-    act_count,
-    tpi,
-    allocated_spindles: processedData.allocated_spindles,
+    const now = new Date();
+    const isDeactivating = existing.is_active !== false && machineFields.is_active === false;
+    const data = await transaction.spinning_machines.update({
+      where: { id },
+      data: {
+        ...machineFields,
+        updated_at: now,
+        ...(isDeactivating ? { deactivated_at: now } : {}),
+      }
+    });
+    await upsertDefaultSpinningSetup(id, {
+      ...setupFields,
+      ...(machineFields.allocated_spindles !== undefined
+        ? { allocated_spindles: machineFields.allocated_spindles }
+        : {}),
+    }, transaction);
+    return data;
   });
-
-  return data;
 }
 
 // Get spinning machine with its setup data (for the edit form)
@@ -189,10 +266,61 @@ export async function getSpinningMachineWithSetup(id) {
 
 // Activate (reactivate) a spinning machine
 export async function activateSpinningMachine(id) {
-  return await prisma.spinning_machines.update({
-    where: { id },
-    data: { is_active: true, activated_at: new Date(), deactivated_at: null }
-  });
+  if (!id) throw new Error('Machine ID is required');
+  return prisma.$transaction(async transaction => {
+    const existing = await transaction.spinning_machines.findUnique({ where: { id } });
+    if (!existing) throw new Error('Spinning machine not found');
+    if (existing.is_active) return existing;
+
+    const duplicates = await findMachineNumberDuplicates(transaction, existing.machine_no, id);
+    if (duplicates.some(machine => machine.is_active)) {
+      throw new Error(`Machine ${existing.machine_no} already exists and is active`);
+    }
+
+    const maxSortResult = await transaction.spinning_machines.aggregate({ _max: { sort_order: true } });
+    const historicalId = existing.id;
+    const copy = {
+      machine_no: existing.machine_no,
+      description: existing.description,
+      make_name: existing.make_name,
+      allocated_spindles: existing.allocated_spindles,
+      remarks: existing.remarks,
+      frame_no: existing.frame_no,
+      mc_id: existing.mc_id,
+      model: existing.model,
+      group_no: existing.group_no,
+      installed_date: existing.installed_date,
+      production_kgs_manual_entry: existing.production_kgs_manual_entry,
+      direct_hank_entry: existing.direct_hank_entry,
+    };
+    const now = new Date();
+    const machine = await transaction.spinning_machines.create({
+      data: {
+        ...copy,
+        is_active: true,
+        activated_at: now,
+        deactivated_at: null,
+        sort_order: (maxSortResult._max.sort_order ?? 0) + 1,
+        created_at: now,
+        updated_at: now,
+      }
+    });
+
+    const baseline = await transaction.spinning_machine_setup.findFirst({
+      where: { machine_id: historicalId },
+      orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }],
+    });
+    if (baseline) {
+      await upsertDefaultSpinningSetup(machine.id, {
+        speed: baseline.speed,
+        count_name: baseline.count_name,
+        act_count: baseline.act_count,
+        tpi: baseline.tpi,
+        allocated_spindles: baseline.allocated_spindles,
+      }, transaction);
+    }
+    return machine;
+  }, { isolationLevel: 'Serializable' });
 }
 
 // Delete spinning machine
@@ -208,39 +336,29 @@ export async function deleteSpinningMachine(id) {
 
 // Search spinning machines
 export async function searchSpinningMachines(field, condition, value) {
+  const allowedFields = new Set(['machine_no', 'description', 'make_name']);
+  const allowedConditions = new Set(['Like', 'Equal', 'Not Equal', 'Greater', 'Less']);
+  if (!allowedFields.has(field)) throw new Error('Unsupported spinning machine search field');
+  if (!allowedConditions.has(condition)) throw new Error('Unsupported spinning machine search condition');
   let whereClause = {};
 
-  if (value && value.trim() !== '') {
+  const trimmedValue = String(value ?? '').trim();
+  if (trimmedValue !== '') {
     switch (condition) {
       case 'Like':
-        // MySQL doesn't support mode: 'insensitive', but string comparisons are case-insensitive by default
-        whereClause[field] = { contains: value };
+        whereClause[field] = { contains: trimmedValue };
         break;
       case 'Equal':
-        if (field === 'allocated_spindles') {
-          whereClause[field] = parseInt(value);
-        } else if (field === 'is_active') {
-          whereClause[field] = value.toLowerCase() === 'true';
-        } else {
-          whereClause[field] = value;
-        }
+        whereClause[field] = trimmedValue;
         break;
       case 'Not Equal':
-        if (field === 'allocated_spindles') {
-          whereClause[field] = { not: parseInt(value) };
-        } else {
-          whereClause[field] = { not: value };
-        }
+        whereClause[field] = { not: trimmedValue };
         break;
       case 'Greater':
-        if (field === 'allocated_spindles') {
-          whereClause[field] = { gt: parseInt(value) };
-        }
+        whereClause[field] = { gt: trimmedValue };
         break;
       case 'Less':
-        if (field === 'allocated_spindles') {
-          whereClause[field] = { lt: parseInt(value) };
-        }
+        whereClause[field] = { lt: trimmedValue };
         break;
     }
   }

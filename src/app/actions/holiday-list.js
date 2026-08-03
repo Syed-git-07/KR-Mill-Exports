@@ -71,7 +71,7 @@ export async function updateHolidayListAction(id, listData) {
 export async function deleteHolidayListAction(id) {
   try {
     const data = await deleteHolidayList(id)
-    return { success: true, data }
+    return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
@@ -107,7 +107,7 @@ export async function updateHolidayAction(id, holidayData) {
 export async function deleteHolidayAction(id) {
   try {
     const data = await deleteHoliday(id)
-    return { success: true, data }
+    return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
@@ -116,7 +116,7 @@ export async function deleteHolidayAction(id) {
 export async function checkIsHolidayAction(dateString) {
   try {
     const data = await isHoliday(dateString)
-    return { success: true, isHoliday: !!data, holiday: data }
+    return { success: true, isHoliday: !!data, holiday: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }

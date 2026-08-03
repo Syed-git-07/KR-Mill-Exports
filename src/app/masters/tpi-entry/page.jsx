@@ -14,9 +14,10 @@ import {
   deleteTPIEntryAction,
   searchTPIEntriesAction
 } from '@/app/actions/tpi-entry';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { assertAllActionsSucceeded } from '@/lib/actionResult';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function TPIEntryMaster() {
   const [entries, setEntries] = useState([]);
@@ -28,6 +29,15 @@ export default function TPIEntryMaster() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: entries, setRows: setEntries,
+    selectedItem: selectedRow, setSelectedItem: setSelectedRow,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    editingItem: editingEntry, setEditingItem: setEditingEntry,
+    setIsEditing,
+    setIsModalOpen
+  });
 
   // VB6 search: id field with = condition
   const searchFields = [
@@ -49,30 +59,27 @@ export default function TPIEntryMaster() {
   }, []);
 
   const loadEntries = async () => {
-    try {
-      setLoading(true);
-      const result = await getTPIEntriesAction();
-      
-      if (result.success) {
-        // Format data for VB6-style display
-        const formattedData = result.data.map(entry => ({
-          ...entry,
-          entry_id: entry.entry_id || entry.id,
-          sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
-          countname: entry.spinning_counts?.count_name || 'N/A',
-          tpi_display: entry.tpi_value ? Number(entry.tpi_value).toFixed(2) : '0.00',
-        }));
-        
-        setEntries(formattedData);
-      } else {
-        toast.error('Failed to load TPI entries: ' + result.error);
+    await runLatestRowsRequest(
+      () => getTPIEntriesAction(),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(entry => ({
+            ...entry,
+            entry_id: entry.entry_id || entry.id,
+            sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
+            countname: entry.spinning_counts?.count_name || 'N/A',
+            tpi_display: entry.tpi_value ? Number(entry.tpi_value).toFixed(2) : '0.00',
+          })));
+        },
+        onError: err => {
+          console.error('Error loading TPI entries:', err);
+          toast.error('Failed to load TPI entries: ' + err.message);
+        },
+        onFinally: () => setLoading(false)
       }
-    } catch (err) {
-      console.error('Error loading TPI entries:', err);
-      toast.error('Failed to load TPI entries: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
@@ -81,27 +88,26 @@ export default function TPIEntryMaster() {
       return;
     }
     
-    try {
-      const result = await searchTPIEntriesAction(field, condition, value);
-      
-      if (result.success) {
-        const formattedData = result.data.map(entry => ({
-          ...entry,
-          entry_id: entry.entry_id || entry.id,
-          sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
-          countname: entry.spinning_counts?.count_name || 'N/A',
-          tpi_display: entry.tpi_value ? Number(entry.tpi_value).toFixed(2) : '0.00',
-        }));
-        
-        setEntries(formattedData);
-        toast.success(`Found ${result.data.length} result(s)`);
-      } else {
-        toast.error('Search failed: ' + result.error);
+    await runLatestRowsRequest(
+      () => searchTPIEntriesAction(field, condition, value),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(entry => ({
+            ...entry,
+            entry_id: entry.entry_id || entry.id,
+            sdate: format(new Date(entry.entry_date), 'dd-MMM-yy'),
+            countname: entry.spinning_counts?.count_name || 'N/A',
+            tpi_display: entry.tpi_value ? Number(entry.tpi_value).toFixed(2) : '0.00',
+          })));
+          toast.success(`Found ${(result.data || []).length} result(s)`);
+        },
+        onError: err => {
+          console.error('Search error:', err);
+          toast.error('Search failed: ' + err.message);
+        }
       }
-    } catch (err) {
-      console.error('Search error:', err);
-      toast.error('Search failed: ' + err.message);
-    }
+    );
   };
 
   const handleShowAll = () => {
@@ -109,29 +115,30 @@ export default function TPIEntryMaster() {
   };
 
   const handleRowClick = (entry) => {
+    if (isSelectMode) return;
     setSelectedRow(entry);
   };
 
   const handleAdd = () => {
+    resetInteractionState();
     setEditingEntry(null);
+    setSelectedRow(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsEditing(false);
     setIsModalOpen(true);
   };
 
-  const handleEdit = () => {
-    if (!selectedRow) {
-      toast.error('Please select an entry to edit');
-      return;
-    }
-    
+  const openEditForm = (entry) => {
+    if (isSelectMode) return;
+    const currentEntry = getCurrentRow(entry);
+    if (!currentEntry) return;
     const editData = {
-      ...selectedRow,
-      tpi_value: parseFloat(selectedRow.tpi_display),
+      ...currentEntry,
+      tpi_value: parseFloat(currentEntry.tpi_display),
     };
-    
-    setEditingEntry(editData);
-    setIsEditing(true);
-    setIsModalOpen(true);
+
+    openRowEditor(currentEntry, { editingItem: editData });
   };
 
   const handleSelectRow = (row) => {
@@ -154,37 +161,45 @@ export default function TPIEntryMaster() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} entry(ies)?`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected TPI entries are no longer in the current list');
+      if (!confirm(`Are you sure you want to delete ${currentSelectedRows.length} entry(ies)?`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteTPIEntryAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteTPIEntryAction(row.id)));
         assertAllActionsSucceeded(results, 'Failed to delete one or more TPI entries');
-        toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
+        toast.success(`${currentSelectedRows.length} entry(ies) deleted successfully`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadEntries();
       } catch (error) {
         toast.error('Failed to delete entries: ' + error.message);
+      } finally {
+        loadEntries();
       }
     } else if (!isSelectMode && selectedRow) {
       // Single delete from modal
+      const currentEntry = getCurrentRow(selectedRow);
+      if (!currentEntry) return toast.warning('The selected TPI entry is no longer in the current list');
       if (!confirm(`Are you sure you want to delete this TPI entry?`)) {
         return;
       }
 
       try {
-        const result = await deleteTPIEntryAction(selectedRow.id);
+        const result = await deleteTPIEntryAction(currentEntry.id);
         if (result.success) {
           toast.success('Entry deleted successfully');
+          resetInteractionState({ closeModal: true });
           setSelectedRow(null);
           setIsModalOpen(false);
           loadEntries();
@@ -203,7 +218,9 @@ export default function TPIEntryMaster() {
     setIsLoading(true);
     try {
       if (isEditing && editingEntry) {
-        const result = await updateTPIEntryAction(editingEntry.id, formData);
+        const currentEntry = getCurrentRow(editingEntry);
+        if (!currentEntry) throw new Error('This TPI entry is no longer in the current list');
+        const result = await updateTPIEntryAction(currentEntry.id, formData);
         if (result.success) {
           toast.success('Entry updated successfully');
         } else {
@@ -219,6 +236,7 @@ export default function TPIEntryMaster() {
           return;
         }
       }
+      resetInteractionState({ closeModal: true });
       setIsModalOpen(false);
       setEditingEntry(null);
       setSelectedRow(null);
@@ -258,7 +276,7 @@ export default function TPIEntryMaster() {
             disabled={isSelectMode ? selectedRows.length === 0 : !selectedRow}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -290,16 +308,10 @@ export default function TPIEntryMaster() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
+          onRowDoubleClick={openEditForm}
           onContextMenu={(row, e) => {
             e.preventDefault();
-            const editData = {
-              ...row,
-              tpi_value: parseFloat(row.tpi_display),
-            };
-            setSelectedRow(row);
-            setEditingEntry(editData);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            openEditForm(row);
           }}
         />
       )}
@@ -317,12 +329,19 @@ export default function TPIEntryMaster() {
       {/* Form Modal */}
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) {
+            setEditingEntry(null);
+            setIsEditing(false);
+          }
+        }}
         title="TPI Entry Master"
         description={isEditing ? "Update TPI entry details" : "Add a new TPI entry"}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingEntry(null);
+          setIsEditing(false);
         }}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

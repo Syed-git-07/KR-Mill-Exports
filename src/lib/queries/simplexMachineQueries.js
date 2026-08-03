@@ -1,5 +1,15 @@
 import { prisma } from '../prisma';
 import { deleteUnusedMachine } from './machineDeletion';
+import { buildMachineLifecycleUpdate, normalizeMachineMasterData } from './machineMasterValidation';
+
+const SIMPLEX_MASTER_NUMBERS = {
+  mc_id: { label: 'Machine id number', max: 1000000, integer: true },
+  speed: { label: 'Speed', required: true, max: 1000000 },
+  prodn_effi: { label: 'Production efficiency', max: 100 },
+  mc_effi: { label: 'Machine efficiency', required: true, max: 100 },
+  tpi: { label: 'TPI', required: true, max: 1000 },
+  no_of_spindles: { label: 'Number of spindles', required: true, max: 100000, integer: true }
+};
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null;
@@ -42,48 +52,22 @@ export async function getSimplexMachineById(id) {
 
 // Create a new simplex machine
 export async function createSimplexMachine(machineData) {
-  // Convert date string to Date object if needed
-  let installedDate = machineData.installed_date;
-  if (installedDate && typeof installedDate === 'string') {
-    installedDate = new Date(installedDate);
-  }
+  const parsedCountTpi = parseCountTpi(machineData.count_tpi);
+  machineData = normalizeMachineMasterData({
+    ...machineData,
+    tpi: machineData.tpi ?? parsedCountTpi
+  }, SIMPLEX_MASTER_NUMBERS);
+  const installedDate = machineData.installed_date;
 
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
-  const parsedCountTpi = parseCountTpi(machineData.count_tpi);
-  const effectiveTpi = machineData.tpi ?? parsedCountTpi;
+  const effectiveTpi = machineData.tpi;
 
   const existing = await prisma.simplex_machines.findFirst({
-    where: { machine_no: machineData.machine_no }
+    where: { machine_no: machineData.machine_no, is_active: true }
   });
 
   if (existing) {
-    if (!existing.is_active) {
-      return await prisma.simplex_machines.update({
-        where: { id: existing.id },
-        data: {
-          machine_no: machineData.machine_no,
-          mc_id: mcId,
-          description: machineData.description,
-          make_name: machineData.make_name,
-          model: machineData.model,
-          prodn_mixing: machineData.prodn_mixing,
-          speed: machineData.speed,
-          prodn_efficiency: machineData.prodn_effi,
-          mc_effi: machineData.mc_effi,
-          tpi: effectiveTpi,
-          no_of_spindles: machineData.no_of_spindles,
-          installed_date: installedDate,
-          is_active: true,
-          activated_at: new Date(),
-          deactivated_at: null,
-          direct_hank_entry: machineData.direct_hank_entry ?? false,
-          direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-          updated_at: new Date(),
-        }
-      });
-    }
-
     throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
   }
 
@@ -116,16 +100,23 @@ export async function createSimplexMachine(machineData) {
 
 // Update an existing simplex machine
 export async function updateSimplexMachine(id, machineData) {
-  // Convert date string to Date object if needed
-  let installedDate = machineData.installed_date;
-  if (installedDate && typeof installedDate === 'string') {
-    installedDate = new Date(installedDate);
-  }
+  const parsedCountTpi = parseCountTpi(machineData.count_tpi);
+  machineData = normalizeMachineMasterData({
+    ...machineData,
+    tpi: machineData.tpi ?? parsedCountTpi
+  }, SIMPLEX_MASTER_NUMBERS);
+  const installedDate = machineData.installed_date;
+  const existing = await prisma.simplex_machines.findUnique({ where: { id }, select: { is_active: true } });
+  if (!existing) throw new Error('Simplex machine not found');
+  const duplicate = await prisma.simplex_machines.findFirst({
+    where: { id: { not: id }, machine_no: machineData.machine_no, is_active: true },
+    select: { id: true }
+  });
+  if (duplicate) throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
 
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
-  const parsedCountTpi = parseCountTpi(machineData.count_tpi);
-  const effectiveTpi = machineData.tpi ?? parsedCountTpi;
+  const effectiveTpi = machineData.tpi;
 
   const data = await prisma.simplex_machines.update({
     where: { id },
@@ -142,9 +133,7 @@ export async function updateSimplexMachine(id, machineData) {
       tpi: effectiveTpi,
       no_of_spindles: machineData.no_of_spindles, // Number of Spindles (NEW)
       installed_date: installedDate,
-      is_active: machineData.is_active,
-      ...(machineData.is_active === true && { activated_at: new Date(), deactivated_at: null }),
-      ...(machineData.is_active === false && { deactivated_at: new Date() }),
+      ...buildMachineLifecycleUpdate(existing.is_active, machineData.is_active),
       direct_hank_entry: machineData.direct_hank_entry,
       direct_kgs_entry: machineData.direct_kgs_entry,
       updated_at: new Date(),

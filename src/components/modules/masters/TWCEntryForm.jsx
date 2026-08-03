@@ -57,7 +57,7 @@ export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
 
   const loadCounts = async () => {
     try {
-      const result = await getCountsForDropdownAction();
+      const result = await getCountsForDropdownAction(initialData?.spinning_count_id || null);
       if (result.success) {
         setCounts(result.data);
       } else {
@@ -111,7 +111,7 @@ export default function TWCEntryForm({ initialData, onSubmit, isLoading }) {
           <SelectContent>
             {counts.map((count) => (
               <SelectItem key={count.id} value={count.id}>
-                {count.count_name}
+                {count.count_name}{count.is_active ? '' : ' (Inactive - historical)'}
               </SelectItem>
             ))}
           </SelectContent>

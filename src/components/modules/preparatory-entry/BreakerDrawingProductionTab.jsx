@@ -24,6 +24,7 @@ import {
   findDraftByKeys,
   getEffectiveStoppageTotal,
   mergeSetupDraft,
+  resolveCommitDrafts,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
 
@@ -66,6 +67,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const lastLoadKeyRef = useRef('')
 
   const setEditedRows = useCallback((updater) => {
@@ -74,6 +76,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -81,8 +84,10 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -432,9 +437,10 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'production', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
     const rowsToSave = selectRowsForDependentCommit(
@@ -498,7 +504,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       const result = await bulkUpdateBreakerDrawingDetailsAction(updates)
       if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       const savedCount = rowsToSave.length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
       }

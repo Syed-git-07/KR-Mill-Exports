@@ -1,5 +1,16 @@
 import { prisma } from '../prisma';
 import { deleteUnusedMachine } from './machineDeletion';
+import { parseStrictDate } from '../strictDate';
+
+const AUTOCONER_FIELDS = new Set([
+  'machine_no', 'description', 'make_name', 'act_effi', 'is_active', 'mc_id',
+  'group_id', 'model', 'from_drum', 'to_drum', 'no_of_drums', 'speed',
+  'count', 'installed_date', 'direct_prod_entry'
+]);
+const AUTOCONER_BOOLEAN_FIELDS = new Set(['is_active', 'direct_prod_entry']);
+const AUTOCONER_INTEGER_FIELDS = new Set([
+  'act_effi', 'mc_id', 'group_id', 'from_drum', 'to_drum', 'no_of_drums', 'speed'
+]);
 
 /**
  * Autoconer Machine Master CRUD Operations
@@ -57,31 +68,120 @@ export async function getNextMcId() {
   return data && data.mc_id ? data.mc_id + 1 : 1;
 }
 
+function normalizeMachineNumber(value) {
+  const machineNo = String(value ?? '').trim();
+  if (!machineNo) throw new Error('Machine number is required');
+  return machineNo;
+}
+
+async function findMachineNumberDuplicates(client, machineNo, excludeId = null) {
+  return client.autoconer_machines.findMany({
+    where: {
+      machine_no: { equals: machineNo },
+      ...(excludeId ? { id: { not: excludeId } } : {})
+    },
+    select: { id: true, is_active: true }
+  });
+}
+
+function lifecycleReactivationError() {
+  const error = new Error(
+    'An inactive machine is a historical lifecycle record and cannot be reactivated in place. Use Add New with the same machine number to create the new lifecycle.'
+  );
+  error.code = 'MACHINE_REACTIVATION_REQUIRES_NEW';
+  return error;
+}
+
+export function cleanAutoconerMachineInput(machineData = {}, { creating = false } = {}) {
+  const data = {};
+  for (const [key, value] of Object.entries(machineData)) {
+    if (!AUTOCONER_FIELDS.has(key) || value === undefined) continue;
+
+    if (key === 'machine_no') data.machine_no = normalizeMachineNumber(value);
+    else if (key === 'description') {
+      data.description = String(value ?? '').trim();
+      if (!data.description) throw new Error('Description is required');
+    } else if (key === 'make_name') {
+      data.make_name = String(value ?? '').trim() || 'MURT';
+    } else if (key === 'model' || key === 'count') {
+      data[key] = value == null || value === '' ? null : String(value).trim();
+    } else if (key === 'installed_date') {
+      data.installed_date = value == null || value === ''
+        ? null
+        : parseStrictDate(value, 'Installed date');
+    } else if (AUTOCONER_BOOLEAN_FIELDS.has(key)) {
+      if (typeof value !== 'boolean') throw new Error(`${key} must be true or false`);
+      data[key] = value;
+    } else if (AUTOCONER_INTEGER_FIELDS.has(key)) {
+      if (value == null || value === '') data[key] = null;
+      else {
+        const number = Number(value);
+        if (!Number.isInteger(number) || number < 0) {
+          throw new Error(`${key} must be a non-negative whole number`);
+        }
+        data[key] = number;
+      }
+    }
+  }
+
+  if (data.group_id != null && data.group_id < 1) throw new Error('Group ID must be at least 1');
+  if (data.mc_id != null && data.mc_id < 1) throw new Error('Machine ID must be at least 1');
+  if (data.act_effi != null && data.act_effi > 100) throw new Error('Actual efficiency cannot exceed 100');
+
+  const hasFrom = data.from_drum != null;
+  const hasTo = data.to_drum != null;
+  if (hasFrom || hasTo) {
+    if (!hasFrom || !hasTo) data.no_of_drums = 0;
+    else {
+      if (data.to_drum < data.from_drum) throw new Error('To drum must be greater than or equal to From drum');
+      data.no_of_drums = data.to_drum - data.from_drum + 1;
+    }
+  }
+
+  if (creating) {
+    if (!data.machine_no) throw new Error('Machine number is required');
+    if (!data.description) throw new Error('Description is required');
+    if (data.is_active === undefined) data.is_active = true;
+  }
+  return data;
+}
+
 // Create new autoconer machine (with setup and add to existing headers)
 export async function createAutoconerMachine(machineData) {
-  // Auto-generate mc_id if not provided
-  if (!machineData.mc_id) {
-    machineData.mc_id = await getNextMcId();
-  }
-
-  // Convert date string to Date object if it exists
-  const processedData = { ...machineData };
-  if (processedData.installed_date && typeof processedData.installed_date === 'string') {
-    processedData.installed_date = new Date(processedData.installed_date);
-  }
-  // Set activated_at to today when creating a new machine
-  processedData.activated_at = new Date();
+  const processedData = cleanAutoconerMachineInput(machineData, { creating: true });
 
   try {
-    const newMachine = await prisma.autoconer_machines.create({
-      data: processedData
-    });
+    return await prisma.$transaction(async transaction => {
+      const duplicates = await findMachineNumberDuplicates(
+        transaction,
+        processedData.machine_no
+      );
+      if (duplicates.some(machine => machine.is_active)) {
+        throw new Error(`Machine ${processedData.machine_no} already exists and is active`);
+      }
+      if (!processedData.mc_id) {
+        const latest = await transaction.autoconer_machines.findFirst({
+          orderBy: { mc_id: 'desc' },
+          select: { mc_id: true }
+        });
+        processedData.mc_id = (latest?.mc_id ?? 0) + 1;
+      }
 
-    // NOTE: Machine setup and production entries are NOT created here.
-    // They are only created when the machine is explicitly added via the
-    // Machine Setup tab in the production entry page.
-
-    return newMachine;
+      // An inactive row is a completed lifecycle snapshot referenced by past
+      // production. Reactivation therefore creates a new row instead of
+      // rewriting its activation window and changing historical visibility.
+      const now = new Date();
+      const isActive = processedData.is_active !== false;
+      return transaction.autoconer_machines.create({
+        data: {
+          ...processedData,
+          is_active: isActive,
+          activated_at: isActive ? now : null,
+          deactivated_at: isActive ? null : now,
+          updated_at: now,
+        }
+      });
+    }, { isolationLevel: 'Serializable' });
   } catch (error) {
     console.error('Prisma error creating autoconer machine:', error);
     throw new Error(error.message || 'Failed to create autoconer machine');
@@ -145,26 +245,34 @@ async function addMachineToExistingProductionHeaders(machineId, machineData) {
 
 // Update autoconer machine
 export async function updateAutoconerMachine(id, machineData) {
-  // Convert date string to Date object if it exists
-  const processedData = { ...machineData };
-  if (processedData.installed_date && typeof processedData.installed_date === 'string') {
-    processedData.installed_date = new Date(processedData.installed_date);
-  }
-  
-  // Set activated_at / deactivated_at when is_active changes
-  if (processedData.is_active === true) {
-    processedData.activated_at = new Date();
-    processedData.deactivated_at = null;
-  } else if (processedData.is_active === false) {
-    processedData.deactivated_at = new Date();
-  }
+  if (!id) throw new Error('Machine ID is required');
+  const processedData = cleanAutoconerMachineInput(machineData);
 
-  const data = await prisma.autoconer_machines.update({
-    where: { id },
-    data: processedData
+  return prisma.$transaction(async transaction => {
+    const existing = await transaction.autoconer_machines.findUnique({
+      where: { id },
+      select: { id: true, machine_no: true, is_active: true }
+    });
+    if (!existing) throw new Error('Autoconer machine not found');
+
+    if (processedData.machine_no && processedData.machine_no !== existing.machine_no) {
+      throw new Error('Machine number is an immutable lifecycle key and cannot be changed');
+    }
+    if (!existing.is_active && processedData.is_active === true) {
+      throw lifecycleReactivationError();
+    }
+
+    const now = new Date();
+    const isDeactivating = existing.is_active !== false && processedData.is_active === false;
+    return transaction.autoconer_machines.update({
+      where: { id },
+      data: {
+        ...processedData,
+        updated_at: now,
+        ...(isDeactivating ? { deactivated_at: now } : {}),
+      }
+    });
   });
-  
-  return data;
 }
 
 // Delete autoconer machine
@@ -180,63 +288,22 @@ export async function deleteAutoconerMachine(id) {
 
 // Search autoconer machines (active only)
 export async function searchAutoconerMachines(field, condition, value) {
-  // Define numeric fields for proper type conversion
-  const numericFields = ['mc_id', 'group_id', 'from_drum', 'to_drum', 'no_of_drums', 'act_effi'];
-  const decimalFields = ['speed'];
-  const booleanFields = ['is_active', 'direct_prod_entry'];
-  const dateFields = ['installed_date'];
+  const searchableFields = new Set(['machine_no', 'description', 'make_name']);
+  const supportedConditions = new Set(['Like', 'Equal', 'Not Equal', 'Greater', 'Less']);
+  if (!searchableFields.has(field)) throw new Error('Unsupported Autoconer search field');
+  if (!supportedConditions.has(condition)) throw new Error('Unsupported Autoconer search condition');
 
+  const searchValue = String(value ?? '').trim();
   let whereClause = {};
-
-  if (value && value.trim() !== '') {
-    switch (condition) {
-      case 'Like':
-        // MySQL doesn't support mode: 'insensitive', but string comparisons are case-insensitive by default
-        whereClause[field] = { contains: value };
-        break;
-      case 'Equal':
-        if (numericFields.includes(field)) {
-          whereClause[field] = parseInt(value);
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = parseFloat(value);
-        } else if (booleanFields.includes(field)) {
-          whereClause[field] = value.toLowerCase() === 'true' || value.toLowerCase() === 'yes';
-        } else if (dateFields.includes(field)) {
-          whereClause[field] = new Date(value);
-        } else {
-          whereClause[field] = value;
-        }
-        break;
-      case 'Not Equal':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { not: parseInt(value) };
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = { not: parseFloat(value) };
-        } else if (booleanFields.includes(field)) {
-          whereClause[field] = { not: value.toLowerCase() === 'true' || value.toLowerCase() === 'yes' };
-        } else {
-          whereClause[field] = { not: value };
-        }
-        break;
-      case 'Greater':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { gt: parseInt(value) };
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = { gt: parseFloat(value) };
-        } else if (dateFields.includes(field)) {
-          whereClause[field] = { gt: new Date(value) };
-        }
-        break;
-      case 'Less':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { lt: parseInt(value) };
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = { lt: parseFloat(value) };
-        } else if (dateFields.includes(field)) {
-          whereClause[field] = { lt: new Date(value) };
-        }
-        break;
-    }
+  if (searchValue) {
+    const filters = {
+      Like: { contains: searchValue },
+      Equal: { equals: searchValue },
+      'Not Equal': { not: searchValue },
+      Greater: { gt: searchValue },
+      Less: { lt: searchValue },
+    };
+    whereClause = { [field]: filters[condition] };
   }
 
   const data = await prisma.autoconer_machines.findMany({

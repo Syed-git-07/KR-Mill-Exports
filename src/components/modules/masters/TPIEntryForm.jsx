@@ -24,6 +24,14 @@ export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
   const [counts, setCounts] = useState([]);
   const [selectedCount, setSelectedCount] = useState(initialData?.spinning_count_id || '');
 
+  const formatDateForInput = (date) => {
+    if (!date) return format(new Date(), 'yyyy-MM-dd');
+    const parsed = new Date(date);
+    return Number.isNaN(parsed.getTime())
+      ? format(new Date(), 'yyyy-MM-dd')
+      : format(parsed, 'yyyy-MM-dd');
+  };
+
   const {
     register,
     handleSubmit,
@@ -31,12 +39,12 @@ export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(tpiEntrySchema),
-    defaultValues: initialData || {
-      entry_date: format(new Date(), 'yyyy-MM-dd'),
-      spinning_count_id: '',
-      tpi_value: 0,
-      shift: null,
-      remarks: null,
+    defaultValues: {
+      entry_date: formatDateForInput(initialData?.entry_date),
+      spinning_count_id: initialData?.spinning_count_id || '',
+      tpi_value: initialData?.tpi_value ?? 0,
+      shift: initialData?.shift || null,
+      remarks: initialData?.remarks || null,
     },
   });
 
@@ -46,7 +54,7 @@ export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
 
   const loadCounts = async () => {
     try {
-      const result = await getCountsForDropdownAction();
+      const result = await getCountsForDropdownAction(initialData?.spinning_count_id || null);
       if (result.success) {
         setCounts(result.data);
       } else {
@@ -103,7 +111,7 @@ export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
           <SelectContent>
             {counts.map((count) => (
               <SelectItem key={count.id} value={count.id}>
-                {count.count_name}
+                {count.count_name}{count.is_active ? '' : ' (Inactive - historical)'}
               </SelectItem>
             ))}
           </SelectContent>

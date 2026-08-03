@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { calculateAutoconerPerformance, finiteNumber } from '../reportMath'
 
 /**
  * Generate Autoconer Particular Sider Report
@@ -28,11 +29,11 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
       throw new Error('From date must be before or equal to to date')
     }
 
-    // Get employee master data
+    // Historical production remains reportable after a sider is deactivated.
+    // The master row is optional because old production can outlive the master.
     const employeeData = await prisma.employee_master.findFirst({
       where: {
-        emp_name: empName,
-        is_active: true
+        emp_name: empName
       },
       select: {
         emp_name: true,
@@ -42,10 +43,6 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
         designation: true
       }
     })
-
-    if (!employeeData) {
-      throw new Error(`Employee "${empName}" not found`)
-    }
 
     // Get all production details for this employee in the date range
     const productionDetails = await prisma.$queryRaw`
@@ -98,13 +95,14 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
         }
       }
 
-      const drums = parseInt(detail.total_drums) || 0
-      const idleDrums = parseInt(detail.idle_drum) || 0
-      const workingDrums = drums - idleDrums
-      const actProdn = parseFloat(detail.act_prodn) || 0
-      const workTime = parseInt(detail.work_time) || 0
-      const runTime = parseInt(detail.run_time) || 510
-      const redLight = parseFloat(detail.red_light) || 0
+      const drums = Math.max(0, finiteNumber(detail.total_drums))
+      const idleDrums = Math.max(0, finiteNumber(detail.idle_drum))
+      const workingDrums = Math.max(0, drums - idleDrums)
+      const actProdn = finiteNumber(detail.act_prodn)
+      const workTime = Math.max(0, finiteNumber(detail.work_time))
+      // An explicit zero is data, not a signal to substitute a 510-minute shift.
+      const runTime = Math.max(0, finiteNumber(detail.run_time))
+      const redLight = finiteNumber(detail.red_light)
 
       dailyData[dateKey].drums += workingDrums
       dailyData[dateKey].prod_kgs += actProdn
@@ -122,35 +120,22 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
       .map(dateKey => {
         const day = dailyData[dateKey]
         
-        // Calculate Efficiency %
-        // Effi % = (work_time / run_time) × drum_efficiency
-        // drum_efficiency = 100 - (idle_drums / total_drums × 100)
-        const drumEfficiency = day.total_drums_capacity > 0 
-          ? 100 - ((day.total_idle_drums / day.total_drums_capacity) * 100)
-          : 0
-        
-        const effi_percent = day.total_run_time > 0
-          ? (day.total_work_time / day.total_run_time) * drumEfficiency
-          : 0
-
-        // Calculate Utilization %
-        // UTI % = (work_time / run_time) × 100
-        const uti_percent = day.total_run_time > 0
-          ? (day.total_work_time / day.total_run_time) * 100
-          : 0
-
-        // Average red light across machines
-        const avg_red_light = day.machine_count > 0
-          ? day.red_light / day.machine_count
-          : 0
+        const performance = calculateAutoconerPerformance({
+          workTime: day.total_work_time,
+          runTime: day.total_run_time,
+          idleDrums: day.total_idle_drums,
+          drumCapacity: day.total_drums_capacity,
+          redLight: day.red_light,
+          machineCount: day.machine_count,
+        })
 
         return {
           date: day.date,
           drum: day.drums,
           prod_kgs: day.prod_kgs,
-          effi_percent: parseFloat(effi_percent.toFixed(2)),
-          uti_percent: parseFloat(uti_percent.toFixed(2)),
-          red_light: parseFloat(avg_red_light.toFixed(2))
+          effi_percent: parseFloat(performance.efficiencyPercent.toFixed(2)),
+          uti_percent: parseFloat(performance.utilizationPercent.toFixed(2)),
+          red_light: parseFloat(performance.averageRedLight.toFixed(2))
         }
       })
 
@@ -163,28 +148,38 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
       red_light: 0
     }
 
-    // Calculate weighted averages for totals
-    if (performanceData.length > 0) {
-      totals.effi_percent = parseFloat(
-        (performanceData.reduce((sum, d) => sum + d.effi_percent, 0) / performanceData.length).toFixed(2)
-      )
-      totals.uti_percent = parseFloat(
-        (performanceData.reduce((sum, d) => sum + d.uti_percent, 0) / performanceData.length).toFixed(2)
-      )
-      totals.red_light = parseFloat(
-        (performanceData.reduce((sum, d) => sum + d.red_light, 0) / performanceData.length).toFixed(2)
-      )
-    }
+    // Recalculate totals from their underlying quantities. Averaging daily
+    // percentages gives a short/partial day the same weight as a full day.
+    const aggregate = Object.values(dailyData).reduce((sum, day) => ({
+      workTime: sum.workTime + day.total_work_time,
+      runTime: sum.runTime + day.total_run_time,
+      idleDrums: sum.idleDrums + day.total_idle_drums,
+      drumCapacity: sum.drumCapacity + day.total_drums_capacity,
+      redLight: sum.redLight + day.red_light,
+      machineCount: sum.machineCount + day.machine_count,
+    }), {
+      workTime: 0,
+      runTime: 0,
+      idleDrums: 0,
+      drumCapacity: 0,
+      redLight: 0,
+      machineCount: 0,
+    })
+
+    const aggregatePerformance = calculateAutoconerPerformance(aggregate)
+    totals.effi_percent = parseFloat(aggregatePerformance.efficiencyPercent.toFixed(2))
+    totals.uti_percent = parseFloat(aggregatePerformance.utilizationPercent.toFixed(2))
+    totals.red_light = parseFloat(aggregatePerformance.averageRedLight.toFixed(2))
 
     return {
       success: true,
       data: {
         employee: {
-          name: employeeData.emp_name,
-          emp_code: employeeData.emp_code || 'N/A',
-          doj: employeeData.doj,
-          department: employeeData.department,
-          designation: employeeData.designation
+          name: employeeData?.emp_name || empName,
+          emp_code: employeeData?.emp_code || 'N/A',
+          doj: employeeData?.doj || null,
+          department: employeeData?.department || 'N/A',
+          designation: employeeData?.designation || 'N/A'
         },
         period: {
           from: from,

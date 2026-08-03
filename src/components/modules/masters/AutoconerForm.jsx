@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
 import { getSpinningCountsAction } from '@/app/actions/spinning-entry'
+import { format } from 'date-fns'
 
 const autoconerSchema = z.object({
   group_id: z.preprocess(
@@ -78,7 +79,7 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
       act_effi: initialData?.act_effi ?? 0,
       installed_date: initialData?.installed_date
         ? String(initialData.installed_date).split('T')[0]
-        : new Date().toISOString().split('T')[0],
+        : format(new Date(), 'yyyy-MM-dd'),
       is_active: initialData?.is_active ?? true,
       direct_prod_entry: initialData?.direct_prod_entry ?? false,
     },
@@ -93,6 +94,7 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
   const speed        = watch('speed')
   const actEffi      = watch('act_effi')
   const isActive     = watch('is_active')
+  const isHistoricalInactive = initialData?.is_active === false
   const directProdEntry = watch('direct_prod_entry')
 
   // Auto-fill dependent values from selected spinning count
@@ -363,12 +365,19 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
           <Checkbox
             id="is_active"
             checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
+            disabled={isHistoricalInactive}
+            onCheckedChange={(checked) => setValue('is_active', checked === true)}
           />
           <Label htmlFor="is_active" className="cursor-pointer text-sm">
             Active (Yes / No)
           </Label>
         </div>
+
+        {isHistoricalInactive && (
+          <p className="col-span-2 text-xs text-amber-700">
+            This inactive machine is retained for production history. Use Add New with the same machine number to create a new lifecycle.
+          </p>
+        )}
 
         <div className="flex items-center gap-2 pt-4">
           <Checkbox

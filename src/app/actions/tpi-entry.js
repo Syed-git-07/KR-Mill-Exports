@@ -51,9 +51,9 @@ export async function searchTPIEntriesAction(field, condition, value) {
   }
 }
 
-export async function getCountsForDropdownAction() {
+export async function getCountsForDropdownAction(includeCountId = null) {
   try {
-    const data = await queries.getCountsForDropdown()
+    const data = await queries.getCountsForDropdown(includeCountId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

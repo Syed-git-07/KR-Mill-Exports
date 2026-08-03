@@ -17,6 +17,7 @@ import {
 } from '@/app/actions/lap-former';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 import { assertAllActionsSucceeded } from '@/lib/actionResult';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function LapFormerPage() {
   const [machines, setMachines] = useState([]);
@@ -28,6 +29,14 @@ export default function LapFormerPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [editingMachine, setEditingMachine] = useState(null);
   const [countOptions, setCountOptions] = useState([]);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: machines, setRows: setMachines,
+    selectedId: selectedRowId, setSelectedId: setSelectedRowId,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    editingItem: editingMachine, setEditingItem: setEditingMachine,
+    setIsModalOpen
+  });
 
   // VB6 search fields: Mcno
   const searchFields = [
@@ -51,36 +60,27 @@ export default function LapFormerPage() {
   }, []);
 
   const loadMachines = async () => {
-    try {
-      setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getLapFormerMachinesAction(),
-        getLapFormerCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
+    await runLatestRowsRequest(
+      () => Promise.all([getLapFormerMachinesAction(), getLapFormerCountOptionsAction()]),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: ([result, countRes], { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          if (countRes?.success) setCountOptions(countRes.data || []);
+          replaceRows((result.data || []).map(machine => ({
+            ...machine,
+            prodn_mixing: machine.prodn_mixing || '-',
+            make_name: machine.make_name || '-',
+            speed: machine.speed || 0
+          })));
+        },
+        onError: err => {
+          console.error('Error loading lap former machines:', err);
+          toast.error('Failed to load lap former machines: ' + err.message);
+        },
+        onFinally: () => setLoading(false)
       }
-      
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      // Format data for display
-      const formattedData = (result.data || []).map(machine => ({
-        ...machine,
-        prodn_mixing: machine.prodn_mixing || '-',
-        make_name: machine.make_name || '-',
-        speed: machine.speed || 0
-      }));
-      
-      setMachines(formattedData);
-    } catch (err) {
-      console.error('Error loading lap former machines:', err);
-      toast.error('Failed to load lap former machines: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
@@ -89,26 +89,25 @@ export default function LapFormerPage() {
       return;
     }
     
-    try {
-      const result = await searchLapFormerMachinesAction(field, condition, value);
-      
-      if (!result.success) {
-        throw new Error(result.error);
+    await runLatestRowsRequest(
+      () => searchLapFormerMachinesAction(field, condition, value),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(machine => ({
+            ...machine,
+            prodn_mixing: machine.prodn_mixing || '-',
+            make_name: machine.make_name || '-',
+            speed: machine.speed || 0
+          })));
+          toast.success(`Found ${(result.data || []).length} result(s)`);
+        },
+        onError: err => {
+          console.error('Search error:', err);
+          toast.error('Search failed: ' + err.message);
+        }
       }
-      
-      const formattedData = result.data.map(machine => ({
-        ...machine,
-        prodn_mixing: machine.prodn_mixing || '-',
-        make_name: machine.make_name || '-',
-        speed: machine.speed || 0
-      }));
-      
-      setMachines(formattedData);
-      toast.success(`Found ${result.data.length} result(s)`);
-    } catch (err) {
-      console.error('Search error:', err);
-      toast.error('Search failed: ' + err.message);
-    }
+    );
   };
 
   const handleShowAll = () => {
@@ -116,23 +115,29 @@ export default function LapFormerPage() {
   };
 
   const handleRowClick = (machine) => {
+    if (isSelectMode) return;
     setSelectedRowId(machine.id);
   };
 
   const openEditForm = (machine) => {
-    setEditingMachine(machine);
-    setSelectedRowId(machine.id);
-    setIsModalOpen(true);
+    if (isSelectMode) return;
+    openRowEditor(machine);
   };
 
   const handleAdd = () => {
+    resetInteractionState();
     setEditingMachine(null);
+    setSelectedRowId(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsModalOpen(true);
   };
 
   const handleDeactivate = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      const activeRows = selectedRows.filter(r => r.is_active);
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected machines are no longer in the current list');
+      const activeRows = currentSelectedRows.filter(r => r.is_active);
       if (activeRows.length === 0) {
         toast.info('All selected machines are already inactive');
         return;
@@ -142,6 +147,7 @@ export default function LapFormerPage() {
         const results = await Promise.all(activeRows.map(row => updateLapFormerMachineAction(row.id, { is_active: false })));
         assertAllActionsSucceeded(results, 'Failed to deactivate one or more machines');
         toast.success(`${activeRows.length} machine(s) deactivated`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
         loadMachines();
@@ -149,12 +155,11 @@ export default function LapFormerPage() {
         toast.error('Failed to deactivate: ' + error.message);
       }
     } else {
-      const targetId = editingMachine?.id || selectedRowId;
-      if (!targetId) {
+      const machine = getCurrentRow(editingMachine?.id || selectedRowId);
+      if (!machine) {
         toast.warning('Please select a machine to deactivate');
         return;
       }
-      const machine = machines.find(m => m.id === targetId) || editingMachine;
       if (!machine?.is_active) {
         toast.info('Machine is already inactive');
         return;
@@ -162,9 +167,10 @@ export default function LapFormerPage() {
       const machineName = machine?.machine_no || 'this machine';
       if (!confirm(`Deactivate machine "${machineName}"?\n\nIt will be hidden from new production entries.`)) return;
       try {
-        const result = await updateLapFormerMachineAction(targetId, { is_active: false });
+        const result = await updateLapFormerMachineAction(machine.id, { is_active: false });
         if (result.success) {
           toast.success('Machine deactivated');
+          resetInteractionState({ closeModal: true });
           setIsModalOpen(false);
           setEditingMachine(null);
           setSelectedRowId(null);
@@ -180,14 +186,17 @@ export default function LapFormerPage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      if (!confirm(`Permanently remove ${selectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected machines are no longer in the current list');
+      if (!confirm(`Permanently remove ${currentSelectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteLapFormerMachineAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteLapFormerMachineAction(row.id)));
         assertAllActionsSucceeded(results, 'Failed to remove one or more machines');
-        toast.success(`${selectedRows.length} machine(s) permanently removed`);
+        toast.success(`${currentSelectedRows.length} machine(s) permanently removed`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
         loadMachines();
@@ -195,18 +204,20 @@ export default function LapFormerPage() {
         toast.error('Failed to remove machines: ' + error.message);
       }
     } else if (!isSelectMode && selectedRowId) {
-      const machine = machines.find(m => m.id === selectedRowId);
+      const machine = getCurrentRow(selectedRowId);
+      if (!machine) return toast.warning('The selected machine is no longer in the current list');
       const machineName = machine?.machine_no || 'this machine';
       if (!confirm(`Permanently remove machine "${machineName}"?\n\nThis cannot be undone.`)) {
         return;
       }
 
       try {
-        const result = await deleteLapFormerMachineAction(selectedRowId);
+        const result = await deleteLapFormerMachineAction(machine.id);
         if (!result.success) {
           throw new Error(result.error);
         }
         toast.success('Machine permanently removed');
+        resetInteractionState({ closeModal: true });
         setSelectedRowId(null);
         setIsModalOpen(false);
         setEditingMachine(null);
@@ -239,8 +250,9 @@ export default function LapFormerPage() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleSave = async (formData) => {
@@ -248,7 +260,9 @@ export default function LapFormerPage() {
     try {
       let result;
       if (editingMachine) {
-        result = await updateLapFormerMachineAction(editingMachine.id, formData);
+        const currentMachine = getCurrentRow(editingMachine);
+        if (!currentMachine) throw new Error('This machine is no longer in the current list');
+        result = await updateLapFormerMachineAction(currentMachine.id, formData);
         if (!result.success) {
           throw new Error(result.error);
         }
@@ -260,6 +274,7 @@ export default function LapFormerPage() {
         }
         toast.success('Machine created successfully');
       }
+      resetInteractionState({ closeModal: true });
       setIsModalOpen(false);
       setEditingMachine(null);
       loadMachines();
@@ -350,6 +365,7 @@ export default function LapFormerPage() {
           onRowDoubleClick={openEditForm}
           onContextMenu={(row, e) => {
             e.preventDefault();
+            if (isSelectMode) return;
             openEditForm(row);
           }}
         />
@@ -367,7 +383,10 @@ export default function LapFormerPage() {
       {/* Form Modal */}
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) setEditingMachine(null);
+        }}
         title="Lap Former M/C Master"
         description={editingMachine ? "Modify machine make details" : "Add new machine make details"}
         onCancel={() => {

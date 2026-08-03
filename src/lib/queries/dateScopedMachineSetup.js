@@ -6,6 +6,30 @@ function numberOrFallback(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+export function positiveNumberOrFallback(value, fallback) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+export function efficiencyFactorOrFallback(value, fallback) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+
+  const normalized = parsed > 1 ? parsed / 100 : parsed
+  return normalized > 0 && normalized <= 1 ? normalized : fallback
+}
+
+export function assertPositiveSetupFields(setup, fields, label = 'Machine setup') {
+  for (const field of fields) {
+    const value = Number(setup?.[field])
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new TypeError(`${label} requires a positive ${field}`)
+    }
+  }
+
+  return setup
+}
+
 export function buildMachineSetupOverrides(machine, fieldMap) {
   if (!machine) return {}
   return Object.fromEntries(
@@ -44,6 +68,51 @@ export function cloneDateScopedSetup(row, entryDate, shift, setupOverrides = {})
   return cloned
 }
 
+export function buildDefaultDateScopedSetup({
+  machineId,
+  entryDate,
+  shift,
+  totalTime,
+  setupOverrides = {},
+  defaultSetupFactory,
+  validateDefaultSetup
+}) {
+  if (typeof defaultSetupFactory !== 'function') return null
+
+  const generated = defaultSetupFactory({ machineId, entryDate, shift, totalTime })
+  if (!generated || typeof generated !== 'object' || Array.isArray(generated)) {
+    throw new TypeError(`Default setup factory did not return an object for machine ${machineId}`)
+  }
+  if (generated.machine_id != null && generated.machine_id !== machineId) {
+    throw new TypeError(`Default setup factory returned the wrong machine_id for machine ${machineId}`)
+  }
+
+  const overrides = { ...setupOverrides }
+  if ('shift_time' in generated && Number.isFinite(Number(totalTime)) && Number(totalTime) > 0) {
+    overrides.shift_time = Number(totalTime)
+  }
+
+  const setup = cloneDateScopedSetup(
+    { ...generated, machine_id: machineId },
+    entryDate,
+    shift,
+    overrides
+  )
+
+  for (const [field, value] of Object.entries(setup)) {
+    if (value === undefined) delete setup[field]
+  }
+
+  if (typeof validateDefaultSetup === 'function') {
+    const validationResult = validateDefaultSetup(setup, { machineId, entryDate, shift, totalTime })
+    if (validationResult === false) {
+      throw new TypeError(`Default setup validation failed for machine ${machineId}`)
+    }
+  }
+
+  return setup
+}
+
 /**
  * Materializes an independent setup snapshot for one production header.
  * A new header inherits the most recent earlier date/shift, but an existing
@@ -55,7 +124,9 @@ export async function getOrCreateDateScopedSetups({
   headerId,
   machineIds = null,
   machineSpeedMap = null,
-  machineSetupOverridesMap = null
+  machineSetupOverridesMap = null,
+  defaultSetupFactory = null,
+  validateDefaultSetup = null
 }) {
   if (!headerId) {
     // Legacy callers (master lookup/add-machine flows) use the baseline rows.
@@ -73,6 +144,12 @@ export async function getOrCreateDateScopedSetups({
 
   const entryDate = header.entry_date
   const shift = Number(header.shift)
+  if (!(entryDate instanceof Date) || Number.isNaN(entryDate.getTime())) {
+    throw new TypeError(`Production header ${headerId} has an invalid entry date`)
+  }
+  if (!Number.isInteger(shift) || shift <= 0) {
+    throw new TypeError(`Production header ${headerId} has an invalid shift`)
+  }
   const machineFilter = machineIds ? { machine_id: { in: machineIds } } : {}
   let targetRows = await setupModel.findMany({
     where: { ...machineFilter, entry_date: entryDate, shift },
@@ -83,8 +160,8 @@ export async function getOrCreateDateScopedSetups({
   const missingIds = machineIds?.filter(id => !existingIds.has(id)) || []
   if (targetRows.length && !missingIds.length) return targetRows
 
-  const idsToMaterialize = targetRows.length ? missingIds : machineIds
-  const sourceRows = (await Promise.all((idsToMaterialize || []).map(machineId =>
+  const idsToMaterialize = [...new Set((targetRows.length ? missingIds : machineIds) || [])]
+  const sourceRows = (await Promise.all(idsToMaterialize.map(machineId =>
     setupModel.findFirst({
       where: {
         machine_id: machineId,
@@ -96,22 +173,54 @@ export async function getOrCreateDateScopedSetups({
       orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }]
     })
   ))).filter(Boolean)
+  const sourceByMachine = new Map(sourceRows.map(row => [row.machine_id, row]))
 
-  if (sourceRows.length) {
+  const buildOverrides = (row, machineId) => {
+    const overrides = {
+      ...(machineSetupOverridesMap?.[machineId] || {})
+    }
+    const defaultSpeed = machineSpeedMap?.[machineId]
+    if ('speed' in row && defaultSpeed !== null && defaultSpeed !== undefined) {
+      overrides.speed = defaultSpeed
+    }
+    if ('shift_time' in row && Number.isFinite(Number(header.total_time)) && Number(header.total_time) > 0) {
+      overrides.shift_time = Number(header.total_time)
+    }
+    return overrides
+  }
+
+  const rowsToCreate = idsToMaterialize.map(machineId => {
+    const source = sourceByMachine.get(machineId)
+    if (source) {
+      return cloneDateScopedSetup(
+        source,
+        entryDate,
+        shift,
+        buildOverrides(source, machineId)
+      )
+    }
+
+    const generated = buildDefaultDateScopedSetup({
+      machineId,
+      entryDate,
+      shift,
+      totalTime: header.total_time,
+      setupOverrides: machineSetupOverridesMap?.[machineId] || {},
+      defaultSetupFactory,
+      validateDefaultSetup
+    })
+    if (!generated) return null
+
+    const defaultSpeed = machineSpeedMap?.[machineId]
+    if ('speed' in generated && defaultSpeed !== null && defaultSpeed !== undefined) {
+      generated.speed = defaultSpeed
+    }
+    return generated
+  }).filter(Boolean)
+
+  if (rowsToCreate.length) {
     await setupModel.createMany({
-      data: sourceRows.map(row => {
-        const overrides = {
-          ...(machineSetupOverridesMap?.[row.machine_id] || {})
-        }
-        const defaultSpeed = machineSpeedMap?.[row.machine_id]
-        if ('speed' in row && defaultSpeed !== null && defaultSpeed !== undefined) {
-          overrides.speed = defaultSpeed
-        }
-        if ('shift_time' in row && header.total_time !== null && header.total_time !== undefined) {
-          overrides.shift_time = header.total_time
-        }
-        return cloneDateScopedSetup(row, entryDate, shift, overrides)
-      }),
+      data: rowsToCreate,
       skipDuplicates: true
     })
     targetRows = await setupModel.findMany({

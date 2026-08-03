@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { averagePresent } from '@/lib/reportMath'
 
 /**
  * Format date to DD-MMM-YY format for display
@@ -42,6 +43,7 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
       SELECT 
         h.entry_date,
         h.shift,
+        m.id as machine_id,
         m.machine_no,
         m.sort_order,
         d.exp_gps,
@@ -61,25 +63,27 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
     const machineMap = new Map()
     
     rawData.forEach(row => {
-      const machineNo = row.machine_no
+      const machineKey = row.machine_id
       
-      if (!machineMap.has(machineNo)) {
-        machineMap.set(machineNo, {
-          machineNo: machineNo,
+      if (!machineMap.has(machineKey)) {
+        machineMap.set(machineKey, {
+          machineId: row.machine_id,
+          machineNo: row.machine_no,
           sortOrder: row.sort_order || 0,
           shifts: {
-            1: { expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 },
-            2: { expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 },
-            3: { expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 }
+            1: { present: false, expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 },
+            2: { present: false, expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 },
+            3: { present: false, expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 }
           }
         })
       }
       
-      const machine = machineMap.get(machineNo)
+      const machine = machineMap.get(machineKey)
       const shift = row.shift
       
       if (shift >= 1 && shift <= 3) {
         machine.shifts[shift] = {
+          present: true,
           expGps: row.exp_gps !== null ? parseFloat(row.exp_gps) : 0,
           achievedGps: row.achieved_gps !== null ? parseFloat(row.achieved_gps) : 0,
           production: row.act_prodn !== null ? parseFloat(row.act_prodn) : 0,
@@ -91,7 +95,7 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
 
     // Convert map to array and calculate totals
     const machineData = []
-    let shiftTotals = {
+    const shiftTotals = {
       1: 0,
       2: 0,
       3: 0
@@ -105,16 +109,25 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
       // Calculate totals for this machine
       const totalProduction = shift1.production + shift2.production + shift3.production
       
-      // Calculate average waste (average of all 3 shifts, treating 0 as 0)
-      const avgWaste = (shift1.waste + shift2.waste + shift3.waste) / 3
+      // Missing shifts are not zero-valued observations. Explicit zeroes from
+      // shifts that do exist remain part of the average.
+      const avgWaste = averagePresent([
+        shift1.present ? shift1.waste : null,
+        shift2.present ? shift2.waste : null,
+        shift3.present ? shift3.waste : null,
+      ])
 
       // Total stoppage minutes
       const totalStoppage = shift1.stoppage + shift2.stoppage + shift3.stoppage
 
-      // Calculate average achieved GPS (average of all 3 shifts)
-      const avgAchievedGps = (shift1.achievedGps + shift2.achievedGps + shift3.achievedGps) / 3
+      const avgAchievedGps = averagePresent([
+        shift1.present ? shift1.achievedGps : null,
+        shift2.present ? shift2.achievedGps : null,
+        shift3.present ? shift3.achievedGps : null,
+      ])
 
       machineData.push({
+        machineId: machine.machineId,
         machineNo: machine.machineNo,
         sortOrder: machine.sortOrder,
         // Expected GPS

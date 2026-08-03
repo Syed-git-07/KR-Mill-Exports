@@ -27,6 +27,7 @@ import {
   findDraftByKeys,
   findSetupDraft as findMachineSetupDraft,
   getEffectiveStoppageTotal,
+  resolveCommitDrafts,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
 
@@ -58,16 +59,24 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   const [idleReasons, setIdleReasons] = useState([])
   const hasShownInitToast = useRef(false)
   const editedRowsRef = useRef(editedRows)
+  const publishedDraftsRef = useRef(new WeakSet())
 
   useEffect(() => {
-    editedRowsRef.current = editedRows || {}
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const setEditedRows = useCallback((updater) => {
-    const applyUpdate = (current) => (typeof updater === 'function' ? updater(current) : updater)
-    setLocalEditedRows(prev => applyUpdate(prev))
+    const previous = editedRowsRef.current || {}
+    const next = typeof updater === 'function' ? updater(previous) : (updater || {})
+    if (next === previous) return
+    editedRowsRef.current = next
     if (onSharedDraftEditsChange) {
-      onSharedDraftEditsChange(prev => applyUpdate(prev || {}))
+      publishedDraftsRef.current.add(next)
+      onSharedDraftEditsChange(next)
+    } else {
+      setLocalEditedRows(next)
     }
   }, [onSharedDraftEditsChange])
 
@@ -277,9 +286,10 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
-    const draftRows = editedRowsRef.current || {}
+    const draftRows = resolveCommitDrafts({ dependencyDrafts, tabKey: 'production', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
     const rowsToSave = selectRowsForDependentCommit(
@@ -345,7 +355,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       if (!result.success) throw new Error(result.error)
       
       const savedCount = updates.length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
       }

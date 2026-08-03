@@ -30,6 +30,7 @@ import {
 import { NumberInput } from '@/components/ui/number-input'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0
@@ -133,6 +134,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const shiftTimeVal = totalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
 
@@ -144,6 +146,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         return
       }
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -151,8 +154,10 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const lastLoadKeyRef = useRef('')
@@ -381,7 +386,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         }
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, getEffectiveSetup, stoppageData.length])
+  }, [sharedDraftEdits, localEditedRows, productionDraftEdits, setupDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, getEffectiveSetup, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -481,12 +486,13 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'stoppage', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -496,7 +502,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
         updateFinisherDrawingStoppageEntryAction(rowId, changes)
       )
 
@@ -506,8 +512,8 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         throw new Error(failedStoppage.error || 'Failed to save a Finisher Drawing stoppage row')
       }
       
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const savedCount = Object.keys(currentEdits).length
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved and production recalculated')
       }
@@ -571,7 +577,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: fullStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -609,7 +615,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: partialStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,

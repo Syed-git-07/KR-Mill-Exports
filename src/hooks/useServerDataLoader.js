@@ -12,6 +12,9 @@ import { useEffect, useRef } from 'react'
 
 export function useServerDataLoader(loadData, scopeValues = []) {
   const loaderRef = useRef(loadData)
+  const requestedVersionRef = useRef(0)
+  const runningRef = useRef(false)
+  const mountedRef = useRef(true)
   const scopeKey = JSON.stringify(scopeValues)
 
   useEffect(() => {
@@ -19,6 +22,35 @@ export function useServerDataLoader(loadData, scopeValues = []) {
   }, [loadData])
 
   useEffect(() => {
-    loaderRef.current()
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    requestedVersionRef.current += 1
+
+    const runLatest = async () => {
+      if (runningRef.current || !mountedRef.current) return
+      runningRef.current = true
+
+      while (mountedRef.current) {
+        const runningVersion = requestedVersionRef.current
+        try {
+          await loaderRef.current()
+        } catch (error) {
+          // Loaders normally surface their own UI error. Keep this final guard so
+          // an unexpected rejection does not prevent the newest scope loading.
+          console.error('Server data loader failed:', error)
+        }
+
+        if (runningVersion === requestedVersionRef.current) break
+      }
+
+      runningRef.current = false
+    }
+
+    runLatest()
   }, [scopeKey])
 }

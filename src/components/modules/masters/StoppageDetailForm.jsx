@@ -7,6 +7,7 @@ import * as z from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ const stoppageDetailSchema = z.object({
   department_id: z.string().min(1, 'Department is required'),
   stoppage_head_id: z.string().min(1, 'Stoppage head is required'),
   full_stoppage_name: z.string().nullable().optional(),
+  is_active: z.boolean().default(true),
 })
 
 export default function StoppageDetailForm({ initialData, onSubmit }) {
@@ -50,6 +52,7 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
       department_id: initialData?.department_id || '',
       stoppage_head_id: initialData?.stoppage_head_id || '',
       full_stoppage_name: initialData?.full_stoppage_name || '',
+      is_active: initialData?.is_active ?? true,
     },
   })
 
@@ -179,8 +182,12 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
             </SelectTrigger>
             <SelectContent>
               {departments.map((dept) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  {dept.dept_name}
+                <SelectItem
+                  key={dept.id}
+                  value={dept.id}
+                  disabled={!dept.is_active && dept.id !== initialData?.department_id}
+                >
+                  {dept.dept_name}{!dept.is_active ? ' (Inactive)' : ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -204,8 +211,12 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
             </SelectTrigger>
             <SelectContent>
               {stoppageHeads.map((head) => (
-                <SelectItem key={head.id} value={head.id}>
-                  {head.stoppage_head_name}
+                <SelectItem
+                  key={head.id}
+                  value={head.id}
+                  disabled={!head.is_active && head.id !== initialData?.stoppage_head_id}
+                >
+                  {head.stoppage_head_name}{!head.is_active ? ' (Inactive)' : ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -228,6 +239,15 @@ export default function StoppageDetailForm({ initialData, onSubmit }) {
           {errors.full_stoppage_name && (
             <p className="text-sm text-red-500">{errors.full_stoppage_name.message}</p>
           )}
+        </div>
+
+        <div className="flex items-center gap-2 col-span-2">
+          <Checkbox
+            id="is_active"
+            checked={watch('is_active')}
+            onCheckedChange={(checked) => setValue('is_active', checked === true)}
+          />
+          <Label htmlFor="is_active">Active</Label>
         </div>
       </div>
     </form>

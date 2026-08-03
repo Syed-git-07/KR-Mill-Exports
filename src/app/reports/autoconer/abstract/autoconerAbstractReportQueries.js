@@ -11,9 +11,9 @@
  *   UP TO DATE: CountName | UProdnkgs | UEffi
  *
  * Formulas (from autoconer-formula.md):
- *   EFFI      = AVG( (run_time / work_time) × ((no_of_drums − idle_drum) / no_of_drums) × 100 )
+ *   EFFI      = AVG( (work_time / run_time) × ((no_of_drums − idle_drum) / no_of_drums) × 100 )
  *               → "Adjusted UTI %" = Production Efficiency
- *   UTTI      = AVG( (run_time / work_time) × 100 )
+ *   UTTI      = AVG( (work_time / run_time) × 100 )
  *               → Basic utilisation
  *   RED Light = AVG( red_light )  [red_light % already stored per machine]
  *   PROD(KGS) = SUM( act_prodn )
@@ -57,13 +57,13 @@ async function getAutoconerAbstractReport(date) {
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
         )                                                                             AS effi,
         ROUND(AVG(d.red_light), 2)                                                   AS red_light,
-        ROUND(AVG((d.run_time / d.work_time) * 100), 2)                              AS utti
+        ROUND(AVG((d.work_time / NULLIF(d.run_time, 0)) * 100), 2)                  AS utti
       FROM autoconer_production_header h
       JOIN autoconer_production_detail d ON d.header_id = h.id
       JOIN autoconer_machines          m ON m.id         = d.machine_id
@@ -82,13 +82,13 @@ async function getAutoconerAbstractReport(date) {
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
         )                                                                             AS effi,
         ROUND(AVG(d.red_light), 2)                                                   AS red_light,
-        ROUND(AVG((d.run_time / d.work_time) * 100), 2)                              AS utti
+        ROUND(AVG((d.work_time / NULLIF(d.run_time, 0)) * 100), 2)                  AS utti
       FROM autoconer_production_header h
       JOIN autoconer_production_detail d ON d.header_id = h.id
       JOIN autoconer_machines          m ON m.id         = d.machine_id
@@ -106,18 +106,8 @@ async function getAutoconerAbstractReport(date) {
         COALESCE(d.count_name, 'UNKNOWN')                                            AS count_name,
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
-          (SUM(d.act_prodn) /
-            NULLIF(
-              SUM((m.no_of_drums - d.idle_drum) * d.run_time
-                  / m.no_of_drums / d.work_time
-                  * d.act_prodn / NULLIF(d.act_prodn, 0)),
-              0
-            )
-          ) * 100, 2
-        )                                                                             AS effi_raw,
-        ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
@@ -142,7 +132,7 @@ async function getAutoconerAbstractReport(date) {
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
@@ -166,10 +156,10 @@ async function getAutoconerAbstractReport(date) {
         const r = raw.find(x => Number(x.shift) === shiftNo)
         return {
           shift:     `${shiftNo}.00`,
-          prod_kgs:  r ? parseFloat(r.prod_kgs)  : 0,
-          effi:      r ? parseFloat(r.effi)       : 0,
-          red_light: r ? parseFloat(r.red_light)  : 0,
-          utti:      r ? parseFloat(r.utti)       : 0,
+          prod_kgs:  r ? Number(r.prod_kgs) || 0  : 0,
+          effi:      r ? Number(r.effi) || 0      : 0,
+          red_light: r ? Number(r.red_light) || 0 : 0,
+          utti:      r ? Number(r.utti) || 0      : 0,
         }
       })
       return rows
@@ -205,8 +195,8 @@ async function getAutoconerAbstractReport(date) {
     const buildCountRows = (raw) =>
       raw.map(r => ({
         count_name: r.count_name,
-        prod_kgs:   parseFloat(r.prod_kgs),
-        effi:       parseFloat(r.effi),
+        prod_kgs:   Number(r.prod_kgs) || 0,
+        effi:       Number(r.effi) || 0,
       }))
 
     const addCountTotal = (rows) => {

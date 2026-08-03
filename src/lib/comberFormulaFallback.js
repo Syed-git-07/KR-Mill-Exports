@@ -17,7 +17,7 @@ const toNumber = (value) => {
 
 export function calculateComberConstantFromSlHank(slHank) {
   const hank = toNumber(slHank)
-  if (!hank) return 0
+  if (hank === null || hank <= 0) return 0
   return 1 / 2.20456 / hank
 }
 
@@ -25,7 +25,7 @@ export function calculateComberConstantFromSlHank(slHank) {
 export function resolveComberMcEffiFactor(value) {
   const n = toNumber(value)
   if (n === null) return COMBER_FORMULA_FALLBACK.mcEffiFactor
-  return n > 1 ? (n / 100) : n
+  return Math.max(n > 1 ? (n / 100) : n, 0)
 }
 
 export function resolveComberFormulaInputs(setup = {}, machine = null) {

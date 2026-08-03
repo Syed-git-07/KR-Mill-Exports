@@ -21,7 +21,7 @@ import {
   getComberMachineSetupsAction,
   updateComberMachineSetupAction,
   addComberMachineAction,
-  removeComberMachineAction,
+  removeComberMachinesAction,
   getComberMachinesAction,
   getComberCountOptionsAction,
   bulkUpdateComberMachineCountAction,
@@ -31,9 +31,11 @@ import { lookupComberMachineByNoAction } from '@/app/actions/comber-machine'
 import { NumberInput } from '@/components/ui/number-input'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { COMBER_FORMULA_FALLBACK } from '@/lib/comberFormulaFallback'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   headerId = null,
+  entryDate = '',
   shift = 1,
   onRefresh,
   sharedDraftEdits,
@@ -46,12 +48,14 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const [selectedRows, setSelectedRows] = useState([])
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
       const prev = editedRowsRef.current || {}
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -59,8 +63,10 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -99,8 +105,12 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     cc_time: 0,
     sl_hank: COMBER_FORMULA_FALLBACK.slHank,
     mc_effi: COMBER_FORMULA_FALLBACK.mcEffiFactor,
-    installed_date: ''
+    installed_date: entryDate
   })
+
+  useEffect(() => {
+    setNewMachine(previous => ({ ...previous, installed_date: entryDate }))
+  }, [entryDate])
 
   // Count change form
   const [newCount, setNewCount] = useState('')
@@ -224,8 +234,9 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -234,7 +245,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
         updateComberMachineSetupAction(rowId, changes)
       )
 
@@ -242,8 +253,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const savedCount = Object.keys(currentEdits).length
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
       }
@@ -352,9 +363,9 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         mc_effi: newMachine.mc_effi,
         installed_date: newMachine.installed_date || null,
         shift
-      })
+      }, { headerId, entryDate, shift })
       if (!result.success) throw new Error(result.error)
-      toast.success(result.data?.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+      toast.success('New machine lifecycle added successfully')
       setShowAddDialog(false)
       setAddCountSearch('')
       setShowAddCountDrop(false)
@@ -369,7 +380,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         cc_time: 0,
         sl_hank: COMBER_FORMULA_FALLBACK.slHank,
         mc_effi: COMBER_FORMULA_FALLBACK.mcEffiFactor,
-        installed_date: ''
+        installed_date: entryDate
       })
       await loadData()
       onRefresh?.()
@@ -392,10 +403,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const promises = selectedRows.map(id => removeComberMachineAction(id))
-      const results = await Promise.all(promises)
-      const failed = results.filter(r => !r.success)
-      if (failed.length > 0) throw new Error(failed[0].error)
+      const result = await removeComberMachinesAction(selectedRows, { headerId, entryDate, shift })
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove machines')
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])

@@ -17,6 +17,7 @@ import { Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
+import { calculateSpinningGpsMetrics } from '@/lib/productionFormulaMath'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
   getSpinningStoppageEntriesAction,
@@ -25,6 +26,7 @@ import {
   getSpinningMachinesAction
 } from '@/app/actions/spinning-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 /**
  * Spinning Stoppage Entry Tab
@@ -54,6 +56,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const shiftTimeVal = effectiveTotalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
 
@@ -63,6 +66,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -70,8 +74,10 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   // Ref for table container (Enter-to-next-row navigation)
   const tableRef = useRef(null)
@@ -148,8 +154,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const calculateStoppageValues = useCallback((row, totalStoppageTime) => {
     const setupDraft = findSetupDraftForMachine(row.machine_id)
     const allocatedSpindles = setupDraft?.allocated_spindles ?? row.total_spindles ?? 1104
-    const runTime = effectiveTotalTime
-    const actCount = setupDraft?.act_count ?? row.act_count ?? 0
+    const actCount = Number(setupDraft?.act_count ?? row.act_count ?? 0)
     const efficiency = setupDraft?.efficiency ?? row.efficiency ?? 0.95
     const productionDraft = productionDraftEdits?.[row.id] || productionDraftEdits?.[String(row.id)]
     const actHank = productionDraft?.act_hank ?? row.act_hank ?? 0
@@ -158,36 +163,38 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     const speed = parseInt(setupDraft?.speed ?? row.speed) || 0
     const tpi = parseFloat(setupDraft?.tpi ?? row.tpi) || 0
     // Use act_count from machine setup for Exp GPS calculation
-    const count = actCount
 
     // Calculate No of Spindles based on shift
     // Shift 1 & 2: allocated / 8 * 8.5, Shift 3: allocated / 8 * 7
-    const multiplier = shiftNo === 3 ? 7 : 8.5
-    const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
 
     // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
-    const stoppedSpindles = runTime > 0 ? (totalStoppageTime / runTime) * totalSpindles : 0
     // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
-    const workedSpindles = totalSpindles - stoppedSpindles
 
     // Calculate constant (uses fixed 0.985 efficiency, NOT the setup efficiency)
-    const CONSTANT_EFFICIENCY = 0.985
-    const constant = (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
 
     // GPS = (Act Prodn / Worked Spl) × 1000
-    const actProdn = actHank * constant
-    const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
 
     // Expected GPS = 7.2 × Speed / TPI / Count × Effi
-    const expGps = speed && tpi && count ? ((7.2 * speed / tpi / count) * efficiency) : 0
+
+    const spinningMetrics = calculateSpinningGpsMetrics({
+      actHank,
+      actCount,
+      allocatedSpindles,
+      efficiency,
+      speed,
+      tpi,
+      totalTime: effectiveTotalTime,
+      stoppageTime: totalStoppageTime,
+      shiftNo
+    })
 
     return {
-      stoppedSpindles: Math.round(stoppedSpindles * 100) / 100,
-      workedSpindles: Math.round(workedSpindles * 100) / 100,
-      gps: Math.round(gps * 100) / 100,
-      expGps: Math.round(expGps * 100) / 100
+      stoppedSpindles: spinningMetrics.stoppedSpindles,
+      workedSpindles: spinningMetrics.workedSpindles,
+      gps: spinningMetrics.gps,
+      expGps: spinningMetrics.expectedGps
     }
-  }, [effectiveTotalTime, findSetupDraftForMachine, productionDraftEdits])
+  }, [effectiveTotalTime, shiftNo, findSetupDraftForMachine, productionDraftEdits])
 
   // Load data
   const loadData = useCallback(async () => {
@@ -274,7 +281,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
         ...calculated
       }
     }))
-  }, [setupDraftEdits, productionDraftEdits, calculateStoppageValues, effectiveTotalTime, stoppageData.length])
+  }, [sharedDraftEdits, localEditedRows, setupDraftEdits, productionDraftEdits, calculateStoppageValues, effectiveTotalTime, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -346,12 +353,13 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'stoppage', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -361,8 +369,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     setIsSaving(true)
     try {
       // Map editedRows (keyed by production_detail id) to use the correct stoppage_entry_id
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
-        const row = stoppageData.find(r => r.id === rowId)
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+        const row = stoppageData.find(r => String(r.id) === String(rowId))
         const stoppageEntryId = row?.stoppage_entry_id
         if (!stoppageEntryId) {
           console.error('No stoppage_entry_id found for row:', rowId)
@@ -384,8 +392,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
         }
       }
       
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const savedCount = Object.keys(currentEdits).length
+      if (!preserveDrafts) setEditedRows({})
       if (!skipParentRefresh) {
         await loadData()
         onRefresh?.()
@@ -444,7 +452,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: fullStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -482,7 +490,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: partialStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,

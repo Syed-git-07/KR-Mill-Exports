@@ -6,12 +6,27 @@ import {
   calculateComberConstantFromSlHank,
   resolveComberFormulaInputs,
 } from '../comberFormulaFallback'
-import { resolveProductionTime } from '../productionFormulaMath'
-import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
+import { resolveProductionTime, roundProductionValue } from '../productionFormulaMath'
+import { parseRunHoursToMinutes } from '../runHoursMath'
+import {
+  assertPositiveSetupFields,
+  getOrCreateDateScopedSetups,
+  positiveNumberOrFallback
+} from './dateScopedMachineSetup'
 import { buildStoppageUpdate, findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
-import { assertActiveStoppageReasons } from './stoppageValidation'
+import { assertActiveStoppageReasons, filterReasonsWithActiveHeads } from './stoppageValidation'
 import { isUniqueConstraintError } from './databaseErrors'
-import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { sanitizeProductionDetailUpdate, sanitizeProductionHeaderUpdate } from './productionDetailUpdate'
+import { assertMachineUpdateCount, normalizeMixingValue, resolveMachineMixingContext } from './machineMixingUpdate'
+import { buildMachineVisibilityWhere, isMachineVisibleOnDate as isLifecycleMachineVisibleOnDate } from './machineDateVisibility'
+import { sanitizeComberSetupUpdate } from '../preparatorySetupValidation'
+import {
+  assertLifecycleCanStart,
+  deactivateEntryMachines,
+  normalizeMachineNumber,
+  resolveEntryMachineContext,
+  validateInstalledDateForActivation
+} from './entryMachineLifecycle'
 
 // ============================================
 // COMBER CONSTANTS
@@ -36,16 +51,7 @@ export const COMBER_STOPPAGE_REASONS = [
 ]
 
 function isMachineVisibleOnDate(machine, entryDate) {
-  if (!machine) return false
-  const date = entryDate ? new Date(entryDate) : null
-  if (!date) return true
-
-  const activated = machine.activated_at ? new Date(machine.activated_at) : null
-  const deactivated = machine.deactivated_at ? new Date(machine.deactivated_at) : null
-
-  if (activated && activated > date) return false
-  if (deactivated && deactivated <= date) return false
-  return true
+  return isLifecycleMachineVisibleOnDate(machine, entryDate)
 }
 
 // ============================================
@@ -188,7 +194,10 @@ export async function updateComberProductionHeader(id, updates) {
   try {
     const data = await prisma.comber_production_header.update({
       where: { id },
-      data: sanitizeProductionDetailUpdate(updates)
+      data: {
+        ...sanitizeProductionHeaderUpdate('comber_production_header', updates),
+        updated_at: new Date()
+      }
     })
     return data
   } catch (error) {
@@ -259,6 +268,11 @@ export async function getComberProductionWithSetup(headerId) {
 
     const machineIds = [...new Set((data || []).map(d => d.machine_id).filter(Boolean))]
     const detailIds = (data || []).map(d => d.id)
+    const header = await prisma.comber_production_header.findUnique({
+      where: { id: headerId },
+      select: { entry_date: true }
+    })
+    const entryDate = header?.entry_date || null
 
     const [machines, stoppages] = await Promise.all([
       machineIds.length > 0
@@ -309,11 +323,13 @@ export async function getComberProductionWithSetup(headerId) {
       stoppageMap[s.production_detail_id].push(s)
     })
 
-    const enriched = (data || []).map(d => ({
-      ...d,
-      machine: machineMap[d.machine_id] || null,
-      stoppage: stoppageMap[d.id] || []
-    }))
+    const enriched = (data || [])
+      .map(d => ({
+        ...d,
+        machine: machineMap[d.machine_id] || null,
+        stoppage: stoppageMap[d.id] || []
+      }))
+      .filter(detail => !entryDate || isMachineVisibleOnDate(detail.machine, entryDate))
 
     // Sort by natural machine number order (CO1, CO2, ... CO10, CO11)
     return enriched?.sort((a, b) => {
@@ -333,23 +349,20 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
     // Get entry date from header for date-visibility filter
     const header = await prisma.comber_production_header.findUnique({
       where: { id: headerId },
-      select: { entry_date: true }
+      select: { entry_date: true, shift: true }
     })
-    const entryDate = header?.entry_date || new Date()
+    if (!header) throw new Error(`Comber production header ${headerId} not found`)
+    const entryDate = header.entry_date
+    const shiftConfig = await getComberShiftConfiguration(header.shift)
+    totalTime = shiftConfig.totalTime
 
     // Get machines visible on this date and keep setup-only machines
     const [allVisibleMachines, setups] = await Promise.all([
       prisma.comber_machines.findMany({
-        where: {
-          activated_at: { lte: entryDate },
-          OR: [
-            { deactivated_at: null },
-            { deactivated_at: { gt: entryDate } }
-          ]
-        },
+        where: buildMachineVisibilityWhere(entryDate),
         orderBy: { sort_order: 'asc' }
       }),
-      prisma.comber_machine_setup.findMany()
+      getComberMachineSetups(headerId)
     ])
 
     const setupMachineIds = new Set((setups || []).map(s => s.machine_id))
@@ -382,32 +395,28 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
       }
     })
 
-    await prisma.comber_production_detail.createMany({
-      data: details,
-      skipDuplicates: true
+    return await prisma.$transaction(async tx => {
+      if (details.length > 0) {
+        await tx.comber_production_detail.createMany({ data: details, skipDuplicates: true })
+      }
+      const createdDetails = await tx.comber_production_detail.findMany({
+        where: { header_id: headerId, machine_id: { in: machines.map(machine => machine.id) } }
+      })
+      const existingStoppages = createdDetails.length > 0
+        ? await tx.comber_stoppage_entry.findMany({
+            where: { production_detail_id: { in: createdDetails.map(detail => detail.id) } },
+            select: { production_detail_id: true }
+          })
+        : []
+      const stoppedIds = new Set(existingStoppages.map(entry => entry.production_detail_id))
+      const missingStoppages = createdDetails
+        .filter(detail => !stoppedIds.has(detail.id))
+        .map(detail => ({ production_detail_id: detail.id, total_stoppage_time: 0, is_full_stoppage: false }))
+      if (missingStoppages.length > 0) {
+        await tx.comber_stoppage_entry.createMany({ data: missingStoppages, skipDuplicates: true })
+      }
+      return createdDetails
     })
-
-    // Get the created details
-    const createdDetails = await prisma.comber_production_detail.findMany({
-      where: { header_id: headerId }
-    })
-
-    // Initialize stoppage entries for each detail with 0 stoppage (user enters manually)
-    const stoppageEntries = createdDetails.map(detail => ({
-      production_detail_id: detail.id,
-      stoppage1_time: 0,
-      stoppage2_time: 0,
-      stoppage3_time: 0,
-      stoppage4_time: 0,
-      total_stoppage_time: 0
-    }))
-
-    await prisma.comber_stoppage_entry.createMany({
-      data: stoppageEntries,
-      skipDuplicates: true
-    })
-
-    return createdDetails
   } catch (error) {
     throw error
   }
@@ -418,7 +427,10 @@ export async function updateComberProductionDetail(id, updates) {
   try {
     const data = await prisma.comber_production_detail.update({
       where: { id },
-      data: updates
+      data: {
+        ...sanitizeProductionDetailUpdate('comber_production_detail', updates),
+        updated_at: new Date()
+      }
     })
     return data
   } catch (error) {
@@ -428,9 +440,16 @@ export async function updateComberProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateComberProductionDetails(updates) {
+  const updatedAt = new Date()
   return prisma.$transaction(
     updates.map(({ id, ...data }) =>
-      prisma.comber_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+      prisma.comber_production_detail.update({
+        where: { id },
+        data: {
+          ...sanitizeProductionDetailUpdate('comber_production_detail', data),
+          updated_at: updatedAt
+        }
+      })
     )
   )
 }
@@ -657,7 +676,8 @@ export async function updateComberStoppageEntry(id, updates) {
       where: { id: existing.production_detail_id },
       data: {
         total_stoppage_mins: total,
-        ...recalculated
+        ...recalculated,
+        updated_at: new Date()
       }
     })
 
@@ -725,10 +745,7 @@ export async function applyComberPartialStoppage(headerId, fromMachineNo, toMach
     const machineIds = [...new Set((details || []).map(d => d.machine_id).filter(Boolean))]
     const machines = machineIds.length > 0
       ? await prisma.comber_machines.findMany({
-          where: {
-            id: { in: machineIds },
-            is_active: true
-          },
+          where: { id: { in: machineIds } },
           select: {
             id: true,
             machine_no: true,
@@ -821,17 +838,43 @@ export async function applyComberPartialStoppage(headerId, fromMachineNo, toMach
 export async function getComberMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
+    const header = validHeaderId
+      ? await prisma.comber_production_header.findUnique({
+          where: { id: validHeaderId },
+          select: { entry_date: true }
+        })
+      : null
+    if (validHeaderId && !header) throw new Error(`Comber production header ${validHeaderId} not found`)
     const machines = await prisma.comber_machines.findMany({
-      where: { is_active: true },
-      select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
+      where: header ? buildMachineVisibilityWhere(header.entry_date) : { is_active: true },
+      select: {
+        id: true,
+        machine_no: true,
+        description: true,
+        mc_id: true,
+        make_name: true,
+        prodn_mixing: true,
+        speed: true,
+        mc_effi: true,
+        sliver_hank: true,
+        is_active: true,
+        activated_at: true,
+        deactivated_at: true
+      }
     })
+    const machineById = new Map(machines.map(machine => [machine.id, machine]))
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
     machines.forEach(m => {
-      machineSpeedMap[m.id] = m.speed;
+      const rawEfficiency = Number(m.mc_effi)
+      const machineEfficiency = Number.isFinite(rawEfficiency) && rawEfficiency > 0 && rawEfficiency <= 100
+        ? rawEfficiency
+        : 93
+      const sliverHank = positiveNumberOrFallback(m.sliver_hank, 0.14)
+      machineSpeedMap[m.id] = positiveNumberOrFallback(m.speed, 1)
       machineSetupOverridesMap[m.id] = {
-        ...(m.sliver_hank != null && { sl_hank: m.sliver_hank }),
-        ...(m.mc_effi != null && { mc_effi: m.mc_effi })
+        sl_hank: sliverHank,
+        mc_effi: machineEfficiency
       };
     });
     const setups = await getOrCreateDateScopedSetups({
@@ -840,7 +883,33 @@ export async function getComberMachineSetups(headerId = null) {
       headerId: validHeaderId,
       machineIds: machines.map(machine => machine.id),
       machineSpeedMap,
-      machineSetupOverridesMap
+      machineSetupOverridesMap,
+      defaultSetupFactory: ({ machineId, totalTime }) => {
+        const machine = machineById.get(machineId)
+        if (!machine) throw new Error(`Comber machine ${machineId} not found`)
+        const rawEfficiency = Number(machine.mc_effi)
+        const machineEfficiency = Number.isFinite(rawEfficiency) && rawEfficiency > 0 && rawEfficiency <= 100
+          ? rawEfficiency
+          : 93
+        const sliverHank = positiveNumberOrFallback(machine.sliver_hank, 0.14)
+        return {
+          machine_id: machineId,
+          prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+          session_no: 1,
+          cc_time: 0,
+          sl_hank: sliverHank,
+          mc_effi: machineEfficiency,
+          shift_time: positiveNumberOrFallback(totalTime, 510),
+          default_waste: 0.96,
+          constant: calculateComberConstantFromSlHank(sliverHank),
+          description: machine.description || null
+        }
+      },
+      validateDefaultSetup: setup => assertPositiveSetupFields(
+        setup,
+        ['sl_hank', 'mc_effi', 'shift_time', 'constant'],
+        'Comber setup'
+      )
     })
     const headerDetails = validHeaderId
       ? await prisma.comber_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
@@ -877,6 +946,7 @@ export async function getComberMachineSetups(headerId = null) {
 // Update machine setup
 export async function updateComberMachineSetup(setupId, updates) {
   try {
+    updates = sanitizeComberSetupUpdate(updates)
     // Recalculate constant if sl_hank changes
     if (updates.sl_hank !== undefined) {
       updates.constant = calculateComberConstantFromSlHank(updates.sl_hank)
@@ -889,7 +959,7 @@ export async function updateComberMachineSetup(setupId, updates) {
 
     const data = await prisma.comber_machine_setup.update({
       where: { id: setupId },
-      data: updates
+      data: { ...updates, updated_at: new Date() }
     })
     return data
   } catch (error) {
@@ -915,28 +985,42 @@ export async function createComberMachineSetup(setupData) {
 }
 
 // Add new comber machine (creates both machine and setup)
-export async function addComberMachine(machineData) {
+export async function addComberMachine(machineData, entryContext) {
   try {
-    const requestedShift = Number.parseInt(machineData?.shift, 10)
-    const effectiveShift = Number.isFinite(requestedShift) && requestedShift > 0 ? requestedShift : 1
+    const created = await prisma.$transaction(async tx => {
+    const context = await resolveEntryMachineContext({
+      headerModel: tx.comber_production_header,
+      context: entryContext,
+      label: 'Comber production entry'
+    })
+    const machineNo = normalizeMachineNumber(machineData?.machine_no)
+    const matchingLifecycles = await tx.comber_machines.findMany({
+      where: { machine_no: machineNo },
+      select: { id: true, is_active: true, activated_at: true, deactivated_at: true }
+    })
+    assertLifecycleCanStart(matchingLifecycles, context.entryDate, machineNo)
+    const installedDate = validateInstalledDateForActivation(machineData?.installed_date, context.entryDate)
+    machineData = { ...machineData, machine_no: machineNo }
+    const effectiveShift = context.shift
     const shiftConfig = await getComberShiftConfiguration(effectiveShift)
-    const setupShiftTime = shiftConfig.totalTime
+    const setupShiftTime = context.totalTime > 0 ? context.totalTime : shiftConfig.totalTime
     const defaultSlHank = machineData.sl_hank || COMBER_FORMULA_FALLBACK.slHank
     const defaultMcEffi = machineData.mc_effi ?? COMBER_FORMULA_FALLBACK.mcEffiFactor
 
     // Check if machine_no already exists (might be inactive)
     if (machineData.machine_no) {
-      const existingMachine = await prisma.comber_machines.findFirst({
-        where: { machine_no: machineData.machine_no }
+      const existingMachine = await tx.comber_machines.findFirst({
+        // Preserve inactive rows as completed historical lifecycles.
+        where: { machine_no: machineData.machine_no, is_active: true }
       })
 
       if (existingMachine && !existingMachine.is_active) {
         // Reactivate the existing machine
-        const reactivated = await prisma.comber_machines.update({
+        const reactivated = await tx.comber_machines.update({
           where: { id: existingMachine.id },
           data: {
             is_active: true,
-            activated_at: new Date(),
+            activated_at: context.entryDate,
             deactivated_at: null,
             description: machineData.description || existingMachine.machine_no,
             make_name: machineData.make_name || 'LMW',
@@ -949,14 +1033,14 @@ export async function addComberMachine(machineData) {
         
         // Check if setup exists, create if not
         const slHank = defaultSlHank
-        let existingSetup = await prisma.comber_machine_setup.findFirst({
+        let existingSetup = await tx.comber_machine_setup.findFirst({
           where: { machine_id: existingMachine.id }
         })
         
         let setup = existingSetup
         if (existingSetup) {
           // Update existing setup
-          await prisma.comber_machine_setup.update({
+          await tx.comber_machine_setup.update({
             where: { id: existingSetup.id },
             data: {
               prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
@@ -969,9 +1053,11 @@ export async function addComberMachine(machineData) {
           })
         } else {
           // Create setup if it doesn't exist
-          setup = await prisma.comber_machine_setup.create({
+          setup = await tx.comber_machine_setup.create({
             data: {
               machine_id: existingMachine.id,
+              entry_date: context.entryDate,
+              shift: context.shift,
               prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
               session_no: machineData.session_no || machineData.session || 1,
               cc_time: machineData.cc_time || 0,
@@ -990,7 +1076,7 @@ export async function addComberMachine(machineData) {
 
       if (existingMachine && existingMachine.is_active) {
         // Check if setup exists — only throw if setup is already present
-        const existingSetup = await prisma.comber_machine_setup.findFirst({
+        const existingSetup = await tx.comber_machine_setup.findFirst({
           where: { machine_id: existingMachine.id }
         })
         if (existingSetup) {
@@ -998,9 +1084,11 @@ export async function addComberMachine(machineData) {
         }
         // Active but no setup — create the setup for the existing machine (do NOT create a new machine)
         const slHank = defaultSlHank
-        const newSetup = await prisma.comber_machine_setup.create({
+        const newSetup = await tx.comber_machine_setup.create({
           data: {
             machine_id: existingMachine.id,
+            entry_date: context.entryDate,
+            shift: context.shift,
             prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
             session_no: machineData.session_no || machineData.session || 1,
             cc_time: machineData.cc_time || 0,
@@ -1016,17 +1104,17 @@ export async function addComberMachine(machineData) {
     }
 
     // Get the max mc_id and sort_order to generate next values
-    const maxMachine = await prisma.comber_machines.findFirst({
+    const maxMachine = await tx.comber_machines.findFirst({
       orderBy: { mc_id: 'desc' }
     })
-    const maxSortResult = await prisma.comber_machines.aggregate({ _max: { sort_order: true } })
+    const maxSortResult = await tx.comber_machines.aggregate({ _max: { sort_order: true } })
 
     const nextMcId = (maxMachine?.mc_id || 0) + 1
     const nextSortOrder = (maxSortResult._max.sort_order ?? 0) + 1
     const nextMachineNo = machineData.machine_no || `CO${nextMcId}`
 
     // Insert new machine
-    const newMachine = await prisma.comber_machines.create({
+    const newMachine = await tx.comber_machines.create({
       data: {
         machine_no: nextMachineNo,
         mc_id: nextMcId,
@@ -1036,18 +1124,20 @@ export async function addComberMachine(machineData) {
         prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
         speed: machineData.speed ?? 350,
         mc_effi: defaultMcEffi,
-        installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
+        installed_date: installedDate,
         is_active: true,
-        activated_at: new Date(),
+        activated_at: context.entryDate,
         sort_order: nextSortOrder
       }
     })
 
     // Insert corresponding machine setup
     const slHank = defaultSlHank
-    const newSetup = await prisma.comber_machine_setup.create({
+    const newSetup = await tx.comber_machine_setup.create({
       data: {
         machine_id: newMachine.id,
+        entry_date: context.entryDate,
+        shift: context.shift,
         prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
         session_no: machineData.session_no || machineData.session || 1,
         cc_time: machineData.cc_time || 0,
@@ -1060,23 +1150,30 @@ export async function addComberMachine(machineData) {
     })
 
     // Sync new machine to ALL existing production headers
-    return { machine: newMachine, setup: newSetup }
+    return { machine: newMachine, setup: newSetup, reactivated: false, context }
+    })
+    const { context, ...result } = created
+    const syncedDetails = await syncNewMachinesToComberHeader(context.headerId, context.shift)
+    return { ...result, syncedHeaders: 1, syncedDetails }
   } catch (error) {
     throw error
   }
 }
 
 // Remove comber machine (soft delete)
-export async function removeComberMachine(machineId) {
-  try {
-    const data = await prisma.comber_machines.update({
-      where: { id: machineId },
-      data: { is_active: false, deactivated_at: new Date() }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+export async function removeComberMachines(machineIds, entryContext) {
+  return prisma.$transaction(tx => deactivateEntryMachines({
+    headerModel: tx.comber_production_header,
+    machineModel: tx.comber_machines,
+    machineIds,
+    context: entryContext,
+    label: 'Comber production entry'
+  }))
+}
+
+export async function removeComberMachine(machineId, entryContext) {
+  const result = await removeComberMachines([machineId], entryContext)
+  return { id: machineId, is_active: false, deactivated_at: result.entryDate }
 }
 
 // Delete machine setup
@@ -1113,7 +1210,7 @@ export async function getComberStoppageReasons() {
       where: { dept_name: 'COMBER' }
     })
 
-    if (!comberDept?.id) return []
+    if (!comberDept?.id) throw new Error('COMBER department not found')
 
     const rows = await prisma.$queryRaw`
       SELECT
@@ -1126,6 +1223,7 @@ export async function getComberStoppageReasons() {
       LEFT JOIN stoppage_heads sh ON sh.id = sd.stoppage_head_id
       WHERE sd.is_active = 1
         AND sd.department_id = ${comberDept.id}
+        AND (sd.stoppage_head_id IS NULL OR sh.is_active = 1)
       ORDER BY sd.stoppage_name ASC
     `
 
@@ -1138,74 +1236,93 @@ export async function getComberStoppageReasons() {
   }
 }
 
-// Update machine count (alias for updateComberMachineSetup for count/mixing)
+// Atomically update canonical, current header, and current date/shift count/mixing.
 export async function updateComberMachineCount(machineId, newCount, headerId = null) {
-  try {
-    if (headerId) {
-      await prisma.comber_production_detail.updateMany({
-        where: { header_id: headerId, machine_id: machineId },
-        data: { prodn_mixing: newCount }
-      })
-    }
-    const data = await prisma.comber_machine_setup.updateMany({
-      where: { machine_id: machineId },
-      data: { prodn_mixing: newCount }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+  return bulkUpdateComberMachineCount([machineId], newCount, headerId)
 }
 
-// Bulk update machine count (alias for updateComberMachineSetup for count/mixing)
+// Bulk variant of the same canonical/current-snapshot update.
 export async function bulkUpdateComberMachineCount(machineIds, newCount, headerId = null) {
-  try {
-    if (headerId && machineIds?.length > 0) {
-      await prisma.comber_production_detail.updateMany({
-        where: { header_id: headerId, machine_id: { in: machineIds } },
-        data: { prodn_mixing: newCount }
-      })
+  const mixing = normalizeMixingValue(newCount)
+
+  return prisma.$transaction(async tx => {
+    const context = await resolveMachineMixingContext({
+      headerModel: tx.comber_production_header,
+      machineModel: tx.comber_machines,
+      headerId,
+      machineIds
+    })
+    const updatedAt = new Date()
+
+    const machines = await tx.comber_machines.updateMany({
+      where: { id: { in: context.machineIds }, is_active: true },
+      data: { prodn_mixing: mixing, updated_at: updatedAt }
+    })
+    const productionDetails = context.header
+      ? await tx.comber_production_detail.updateMany({
+          where: {
+            header_id: context.header.id,
+            machine_id: { in: context.machineIds }
+          },
+          data: { prodn_mixing: mixing, updated_at: updatedAt }
+        })
+      : { count: 0 }
+    const setups = context.header
+      ? await Promise.all(context.machineIds.map(machineId => (
+          tx.comber_machine_setup.upsert({
+            where: {
+              idx_comber_setup_date: {
+                machine_id: machineId,
+                entry_date: context.header.entry_date,
+                shift: context.header.shift
+              }
+            },
+            update: { prodn_mixing: mixing, updated_at: updatedAt },
+            create: {
+              machine_id: machineId,
+              entry_date: context.header.entry_date,
+              shift: context.header.shift,
+              prodn_mixing: mixing,
+              updated_at: updatedAt
+            }
+          })
+        )))
+      : []
+
+    assertMachineUpdateCount(machines.count, context.machineIds.length, 'canonical machine')
+    if (context.header) {
+      assertMachineUpdateCount(productionDetails.count, context.machineIds.length, 'production detail')
+      assertMachineUpdateCount(setups.length, context.machineIds.length, 'machine setup')
     }
-    const setupPromises = machineIds.map(id => 
-      prisma.comber_machine_setup.updateMany({
-        where: { machine_id: id },
-        data: { prodn_mixing: newCount }
-      })
-    )
-    const setups = await Promise.all(setupPromises)
-    return setups
-  } catch (error) {
-    throw error
-  }
+
+    return {
+      machineCount: machines.count,
+      productionDetailCount: productionDetails.count,
+      setupCount: setups.length
+    }
+  }, { maxWait: 5000, timeout: 30000 })
 }
 
 // Sync new machines to header - create production details for newly added machines
 export async function syncNewMachinesToComberHeader(headerId, shift = 1) {
   try {
-    // Get shift configuration for totalTime
-    const shiftConfig = await getComberShiftConfiguration(shift)
-    const totalTime = shiftConfig.totalTime
-    
     // Get entry date from header for date-visibility filter
     const header = await prisma.comber_production_header.findUnique({
       where: { id: headerId },
-      select: { entry_date: true }
+      select: { entry_date: true, shift: true }
     })
-    const entryDate = header?.entry_date || new Date()
+    if (!header) throw new Error(`Comber production header ${headerId} not found`)
+    const entryDate = header.entry_date
+    const shiftConfig = await getComberShiftConfiguration(header.shift ?? shift)
+    const totalTime = shiftConfig.totalTime
 
     const [allVisibleMachines, setups] = await Promise.all([
       prisma.comber_machines.findMany({
-        where: {
-          activated_at: { lte: entryDate },
-          OR: [
-            { deactivated_at: null },
-            { deactivated_at: { gt: entryDate } }
-          ]
-        },
+        where: buildMachineVisibilityWhere(entryDate),
         select: { id: true, machine_no: true, prodn_mixing: true },
         orderBy: { sort_order: 'asc' }
       }),
-      prisma.comber_machine_setup.findMany()
+      getComberMachineSetups(headerId)
     ])
 
     const setupMachineIds = new Set((setups || []).map(s => s.machine_id))
@@ -1217,73 +1334,62 @@ export async function syncNewMachinesToComberHeader(headerId, shift = 1) {
       select: { id: true, machine_id: true }
     })
 
-    // Delete stale rows (machines no longer visible on this date)
-    const validMachineIds = new Set(allMachines.map(m => m.id))
-    const staleDetails = existingDetails.filter(d => d.machine_id && !validMachineIds.has(d.machine_id))
-    for (const stale of staleDetails) {
-      await prisma.comber_stoppage_entry.deleteMany({ where: { production_detail_id: stale.id } })
-      await prisma.comber_production_detail.delete({ where: { id: stale.id } })
-    }
-
     // Find machines that don't have details yet
     const existingMachineIds = new Set(existingDetails?.map(d => d.machine_id) || [])
     const newMachines = allMachines?.filter(m => !existingMachineIds.has(m.id)) || []
-
-    if (newMachines.length === 0) {
-      return [] // No new machines to add
-    }
 
     const setupMap = {}
     setups?.forEach(s => {
       setupMap[s.machine_id] = s
     })
 
-    // Create detail records for new machines
-    const newDetails = []
-    for (const machine of newMachines) {
+    // Create detail records for new machines. The transaction also repairs a
+    // missing one-to-one stoppage row without deleting any historical record.
+    const detailRows = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
-      const detail = await prisma.comber_production_detail.create({
-        data: {
-          header_id: headerId,
-          machine_id: machine.id,
-          employee_name: '',
-          prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
-          act_hank: 0,
-          run_hrs: 0,
-          run_min: 0,
-          waste: setup.default_waste ?? null,
-          act_prodn: 0,
-          waste_percent: 0,
-          act_effi_percent: 0,
-          uti_percent: 0,
-          std_hrs: 0,
-          work_time: totalTime,  // Start with full shift time
-          session_no: setup.session_no || 1,
-          total_stoppage_mins: 0
-        }
+      return {
+        header_id: headerId,
+        machine_id: machine.id,
+        employee_name: '',
+        prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
+        act_hank: 0,
+        run_hrs: 0,
+        run_min: 0,
+        waste: setup.default_waste ?? null,
+        act_prodn: 0,
+        waste_percent: 0,
+        act_effi_percent: 0,
+        uti_percent: 0,
+        std_hrs: 0,
+        work_time: totalTime,
+        session_no: setup.session_no || 1,
+        total_stoppage_mins: 0
+      }
+    })
+
+    return await prisma.$transaction(async tx => {
+      if (detailRows.length > 0) {
+        await tx.comber_production_detail.createMany({ data: detailRows, skipDuplicates: true })
+      }
+      const visibleDetails = await tx.comber_production_detail.findMany({
+        where: { header_id: headerId, machine_id: { in: allMachines.map(machine => machine.id) } }
       })
-
-      // Create corresponding stoppage entry with 0 stoppage (user enters manually)
-      await prisma.comber_stoppage_entry.create({
-        data: {
-          production_detail_id: detail.id,
-          stoppage1_id: null,
-          stoppage1_time: 0,
-          stoppage2_id: null,
-          stoppage2_time: 0,
-          stoppage3_id: null,
-          stoppage3_time: 0,
-          stoppage4_id: null,
-          stoppage4_time: 0,
-          total_stoppage_time: 0,
-          is_full_stoppage: false
-        }
-      })
-
-      newDetails.push(detail)
-    }
-
-    return newDetails
+      const stoppages = visibleDetails.length > 0
+        ? await tx.comber_stoppage_entry.findMany({
+            where: { production_detail_id: { in: visibleDetails.map(detail => detail.id) } },
+            select: { production_detail_id: true }
+          })
+        : []
+      const stoppedIds = new Set(stoppages.map(entry => entry.production_detail_id))
+      const missingStoppages = visibleDetails
+        .filter(detail => !stoppedIds.has(detail.id))
+        .map(detail => ({ production_detail_id: detail.id, total_stoppage_time: 0, is_full_stoppage: false }))
+      if (missingStoppages.length > 0) {
+        await tx.comber_stoppage_entry.createMany({ data: missingStoppages, skipDuplicates: true })
+      }
+      const newMachineIds = new Set(newMachines.map(machine => machine.id))
+      return visibleDetails.filter(detail => newMachineIds.has(detail.machine_id))
+    })
   } catch (error) {
     throw error
   }
@@ -1313,13 +1419,14 @@ export async function getStoppageDetails() {
       where: { is_active: true },
       select: {
         id: true,
-        stoppage_name: true
+        stoppage_name: true,
+        stoppage_head_id: true
       },
       orderBy: {
         stoppage_name: 'asc'
       }
     })
-    return data || []
+    return filterReasonsWithActiveHeads(prisma, data || [])
   } catch (error) {
     throw error
   }
@@ -1549,10 +1656,7 @@ export async function getComberCountOptions() {
 // Convert RunHrs (HH.MM format) to RunMin
 // Example: 5.58 -> (5 * 60) + 58 = 358
 export function calculateRunMin(runHrs) {
-  if (!runHrs || runHrs <= 0) return 0
-  const hours = Math.floor(runHrs)
-  const minutes = Math.round((runHrs - hours) * 100)
-  return (hours * 60) + minutes
+  return parseRunHoursToMinutes(runHrs)
 }
 
 // Calculate all production values based on formula
@@ -1566,20 +1670,24 @@ export function calculateRunMin(runHrs) {
 // - Uti% = (WorkTime / TotalTime) × 100
 export function calculateComberProductionValues(actHank, runHrs, waste, totalTime, stoppageTime, setup) {
   const { mcEffiFactor, constant } = resolveComberFormulaInputs(setup)
-  const wasteValue = waste ?? 0
   const productionTime = resolveProductionTime(totalTime, stoppageTime)
+  const toNonNegativeNumber = (value) => {
+    const parsed = Number(value?.toString?.() ?? value)
+    return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
+  }
+  const wasteValue = toNonNegativeNumber(waste)
 
   // Run Min = Hours×60 + (Decimal×100)
-  const runMin = calculateRunMin(runHrs)
+  const runMin = Math.min(calculateRunMin(runHrs), productionTime.workTime)
 
   // Work Time = Total Time - Stoppage Time
   const workTime = productionTime.workTime
 
   // Std.hrs = WorkTime × MCEffi(Factor)
-  const stdHrs = workTime * mcEffiFactor
+  const stdHrs = workTime * toNonNegativeNumber(mcEffiFactor)
 
   // Act.Prodn = Act.Hank × Constant
-  const actProdn = actHank * constant
+  const actProdn = toNonNegativeNumber(actHank) * toNonNegativeNumber(constant)
 
   // Waste% = (Waste / Act.Prodn) × 100
   const wastePercent = actProdn > 0 ? (wasteValue / actProdn) * 100 : 0
@@ -1595,11 +1703,11 @@ export function calculateComberProductionValues(actHank, runHrs, waste, totalTim
   return {
     run_min: runMin,
     work_time: workTime,
-    std_hrs: Math.round(stdHrs * 10) / 10,
-    act_prodn: Math.round(actProdn * 100) / 100,
+    std_hrs: roundProductionValue(stdHrs, 1),
+    act_prodn: roundProductionValue(actProdn),
     waste: waste ?? null,
-    waste_percent: Math.round(wastePercent * 100) / 100,
-    act_effi_percent: Math.round(actEffiPercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100
+    waste_percent: roundProductionValue(wastePercent),
+    act_effi_percent: roundProductionValue(actEffiPercent),
+    uti_percent: roundProductionValue(utiPercent)
   }
 }

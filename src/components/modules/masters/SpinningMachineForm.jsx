@@ -83,6 +83,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
   });
 
   const isActive = watch('is_active');
+  const isHistoricalInactive = initialData?.is_active === false;
   const productionKgsManual = watch('production_kgs_manual_entry');
   const directHankEntry = watch('direct_hank_entry');
   const countName = watch('count_name');
@@ -209,12 +210,19 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
           <Checkbox
             id="is_active"
             checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
+            disabled={isHistoricalInactive}
+            onCheckedChange={(checked) => setValue('is_active', checked === true)}
           />
           <Label htmlFor="is_active" className="cursor-pointer">
             Active
           </Label>
         </div>
+
+        {isHistoricalInactive && (
+          <p className="col-span-2 text-xs text-amber-700">
+            This inactive machine is retained for production history. Use Add New with the same machine number to create a new lifecycle.
+          </p>
+        )}
 
         {/* Production Kgs Manual Entry */}
         <div className="space-y-2 flex items-center gap-2">

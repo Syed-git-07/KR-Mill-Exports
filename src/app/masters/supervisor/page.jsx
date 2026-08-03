@@ -14,8 +14,9 @@ import {
   deleteSupervisorAction,
   searchSupervisorsAction
 } from '@/app/actions/supervisor';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Ban } from 'lucide-react';
 import { assertAllActionsSucceeded } from '@/lib/actionResult';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function SupervisorMaster() {
   const [supervisors, setSupervisors] = useState([]);
@@ -27,6 +28,15 @@ export default function SupervisorMaster() {
   const [selectedSupervisor, setSelectedSupervisor] = useState(null);
   const [selectedRows, setSelectedRows] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: supervisors, setRows: setSupervisors,
+    selectedItem: selectedSupervisor, setSelectedItem: setSelectedSupervisor,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    editingItem: editingSupervisor, setEditingItem: setEditingSupervisor,
+    setIsEditing,
+    setIsModalOpen
+  });
 
   const searchFields = ['code', 'supervisor_name', 'department_name'];
 
@@ -41,53 +51,52 @@ export default function SupervisorMaster() {
   }, []);
 
   const loadSupervisors = async () => {
-    try {
-      setLoading(true);
-      const result = await getSupervisorsAction();
-      
-      if (result.success) {
-        const formattedData = result.data.map(supervisor => ({
-          ...supervisor,
-          department_name: supervisor.dept_name || '-'
-        }));
-        
-        setSupervisors(formattedData);
-        setError(null);
-      } else {
-        setError('Failed to load supervisors: ' + result.error);
-        toast.error('Failed to load supervisors');
+    await runLatestRowsRequest(
+      () => getSupervisorsAction(),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(supervisor => ({
+            ...supervisor,
+            department_name: supervisor.dept_name || '-'
+          })));
+          setError(null);
+        },
+        onError: err => {
+          console.error('Error loading supervisors:', err);
+          setError('Failed to load supervisors. Please check your database connection.');
+          toast.error('Failed to load supervisors');
+        },
+        onFinally: () => setLoading(false)
       }
-    } catch (err) {
-      console.error('Error loading supervisors:', err);
-      setError('Failed to load supervisors. Please check your database connection.');
-      toast.error('Failed to load supervisors');
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
-    try {
-      setLoading(true);
-      const result = await searchSupervisorsAction(field, condition, value);
-      
-      if (result.success) {
-        const formattedData = result.data.map(supervisor => ({
-          ...supervisor,
-          department_name: supervisor.dept_name || '-'
-        }));
-        
-        setSupervisors(formattedData);
-        toast.success(`Found ${result.data.length} supervisor(s)`);
-      } else {
-        toast.error('Search failed: ' + result.error);
-      }
-    } catch (err) {
-      console.error('Error searching supervisors:', err);
-      toast.error('Search failed');
-    } finally {
-      setLoading(false);
+    if (!String(value ?? '').trim()) {
+      await loadSupervisors();
+      return;
     }
+    await runLatestRowsRequest(
+      () => searchSupervisorsAction(field, condition, value),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(supervisor => ({
+            ...supervisor,
+            department_name: supervisor.dept_name || '-'
+          })));
+          toast.success(`Found ${(result.data || []).length} supervisor(s)`);
+        },
+        onError: err => {
+          console.error('Error searching supervisors:', err);
+          toast.error('Search failed');
+        },
+        onFinally: () => setLoading(false)
+      }
+    );
   };
 
   const handleShowAll = () => {
@@ -96,11 +105,16 @@ export default function SupervisorMaster() {
   };
 
   const handleRowClick = (supervisor) => {
+    if (isSelectMode) return;
     setSelectedSupervisor(supervisor);
   };
 
   const handleAdd = () => {
+    resetInteractionState();
     setEditingSupervisor(null);
+    setSelectedSupervisor(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsEditing(false);
     setIsModalOpen(true);
   };
@@ -108,30 +122,37 @@ export default function SupervisorMaster() {
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} supervisor(s)?`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected supervisors are no longer in the current list');
+      if (!confirm(`Are you sure you want to delete ${currentSelectedRows.length} supervisor(s)?`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteSupervisorAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteSupervisorAction(row.id)));
         assertAllActionsSucceeded(results, 'Failed to delete one or more supervisors');
-        toast.success(`${selectedRows.length} supervisor(s) deleted successfully`);
+        toast.success(`${currentSelectedRows.length} supervisor(s) deleted successfully`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadSupervisors();
       } catch (error) {
         toast.error('Failed to delete supervisors: ' + error.message);
+      } finally {
+        loadSupervisors();
       }
     } else if (!isSelectMode && selectedSupervisor) {
       // Single delete
-      if (!confirm(`Are you sure you want to delete supervisor "${selectedSupervisor.supervisor_name}"?`)) {
+      const currentSupervisor = getCurrentRow(selectedSupervisor);
+      if (!currentSupervisor) return toast.warning('The selected supervisor is no longer in the current list');
+      if (!confirm(`Are you sure you want to delete supervisor "${currentSupervisor.supervisor_name}"?`)) {
         return;
       }
 
       try {
-        const result = await deleteSupervisorAction(selectedSupervisor.id);
+        const result = await deleteSupervisorAction(currentSupervisor.id);
         if (result.success) {
           toast.success('Supervisor deleted successfully');
+          resetInteractionState({ closeModal: true });
           setSelectedSupervisor(null);
           loadSupervisors();
         } else {
@@ -143,6 +164,25 @@ export default function SupervisorMaster() {
       }
     } else {
       toast.error('Please select supervisor(s) to delete');
+    }
+  };
+
+  const handleDeactivate = async () => {
+    const currentTargets = isSelectMode ? getCurrentRows(selectedRows) : getCurrentRows(selectedSupervisor);
+    const targets = currentTargets.filter(row => row.is_active);
+    if (!targets.length) return toast.info('Select at least one active supervisor');
+    if (!confirm(`Deactivate ${targets.length} supervisor(s)?`)) return;
+    try {
+      const results = await Promise.all(targets.map(row => updateSupervisorAction(row.id, { is_active: false })));
+      assertAllActionsSucceeded(results, 'Failed to deactivate one or more supervisors');
+      toast.success(`${targets.length} supervisor(s) deactivated`);
+      resetInteractionState({ closeModal: true });
+      setSelectedRows([]);
+      setSelectedSupervisor(null);
+    } catch (error) {
+      toast.error('Failed to deactivate supervisors: ' + error.message);
+    } finally {
+      loadSupervisors();
     }
   };
 
@@ -166,14 +206,17 @@ export default function SupervisorMaster() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleSave = async (supervisorData) => {
     try {
       if (isEditing && editingSupervisor) {
-        const result = await updateSupervisorAction(editingSupervisor.id, supervisorData);
+        const currentSupervisor = getCurrentRow(editingSupervisor);
+        if (!currentSupervisor) throw new Error('This supervisor is no longer in the current list');
+        const result = await updateSupervisorAction(currentSupervisor.id, supervisorData);
         if (result.success) {
           toast.success('Supervisor updated successfully');
         } else {
@@ -189,6 +232,7 @@ export default function SupervisorMaster() {
           return;
         }
       }
+      resetInteractionState({ closeModal: true });
       setIsModalOpen(false);
       setIsEditing(false);
       setEditingSupervisor(null);
@@ -220,6 +264,15 @@ export default function SupervisorMaster() {
           >
             <span className="text-xs sm:text-sm">{isSelectMode ? 'Cancel' : 'Select'}</span>
           </Button>
+          <Button
+            onClick={handleDeactivate}
+            variant="outline"
+            className="border-orange-500 text-orange-600 hover:bg-orange-50 flex-1 sm:flex-none"
+            disabled={isSelectMode ? !selectedRows.some(row => row.is_active) : !selectedSupervisor?.is_active}
+          >
+            <Ban className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Deactivate</span>
+          </Button>
           <Button 
             onClick={handleDelete} 
             variant="outline"
@@ -227,7 +280,7 @@ export default function SupervisorMaster() {
             disabled={isSelectMode ? selectedRows.length === 0 : !selectedSupervisor}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -263,12 +316,15 @@ export default function SupervisorMaster() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
+          getRowClassName={(row) => !row.is_active ? '!bg-red-100 hover:!bg-red-200 text-red-700' : '!bg-white hover:!bg-yellow-100'}
+          onRowDoubleClick={(row) => {
+            if (isSelectMode) return;
+            openRowEditor(row);
+          }}
           onContextMenu={(row, e) => {
             e.preventDefault();
-            setSelectedSupervisor(row);
-            setEditingSupervisor(row);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            if (isSelectMode) return;
+            openRowEditor(row);
           }}
         />
       )}
@@ -281,7 +337,13 @@ export default function SupervisorMaster() {
 
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) {
+            setIsEditing(false);
+            setEditingSupervisor(null);
+          }
+        }}
         title="Supervisor Master"
         description={isEditing ? 'To Add, Modify, Supervisor details.' : 'Add a new supervisor to the system'}
         onCancel={() => {

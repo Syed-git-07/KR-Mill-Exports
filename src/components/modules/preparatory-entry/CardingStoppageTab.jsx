@@ -35,6 +35,7 @@ import {
   getCardingMachinesAction
 } from '@/app/actions/carding-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 // Helper function to safely convert any value to a number
 const toNumber = (value) => {
@@ -114,6 +115,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const lastLoadKeyRef = useRef('')
   const tableRef = useRef(null)
 
@@ -123,6 +125,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -130,8 +133,10 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const focusRowByDelta = useCallback((rowIndex, delta, col) => {
     const targetRow = rowIndex + delta
@@ -365,7 +370,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
         }
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, effectiveTotalTime, machineSetups, getEffectiveSetup, mergeProductionDetailWithDraft, stoppageData.length])
+  }, [sharedDraftEdits, localEditedRows, productionDraftEdits, setupDraftEdits, effectiveTotalTime, machineSetups, getEffectiveSetup, mergeProductionDetailWithDraft, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -466,12 +471,18 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({
+      dependencyDrafts,
+      tabKey: 'stoppage',
+      refDrafts: editedRowsRef.current,
+      propDrafts: editedRows
+    })
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -480,15 +491,15 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
         updateStoppageEntryAction(rowId, changes)
       )
 
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Carding stoppage row')
-      const savedCount = Object.keys(editedRows).length
-      setEditedRows({})
+      const savedCount = Object.keys(currentEdits).length
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved successfully')
       }
@@ -551,7 +562,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: fullStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -589,7 +600,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: partialStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,

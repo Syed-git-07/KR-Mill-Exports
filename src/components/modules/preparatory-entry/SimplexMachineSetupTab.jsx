@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { format } from 'date-fns'
 import { Loader2, Plus, Trash2, Edit, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
@@ -22,12 +23,13 @@ import {
   bulkUpdateSimplexMachineCountAction,
   getSimplexCountOptionsAction,
   addSimplexMachineAction,
-  removeSimplexMachineAction,
+  removeSimplexMachinesAction,
   getSimplexMachineSetupsAction,
   lookupSimplexMachineByNoAction
 } from '@/app/actions/simplexEntryActions'
 import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 const parseFloatOr = (value, fallback) => {
   const parsed = Number.parseFloat(value)
@@ -39,12 +41,13 @@ const parseIntOr = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed
 }
 
-const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ headerId = null, totalTime = 510, onRefresh, sharedDraftEdits, onSharedDraftEditsChange }, ref) {
+const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ headerId = null, entryDate = '', shift = 1, totalTime = 510, onRefresh, sharedDraftEdits, onSharedDraftEditsChange }, ref) {
   const [setupData, setSetupData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const lastLoadKeyRef = useRef('')
   const [isSaving, setIsSaving] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
@@ -55,6 +58,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -62,8 +66,10 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -96,13 +102,20 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     description: '',
     make_name: '',
     model: '',
-    installed_date: new Date().toISOString().split('T')[0],
+    installed_date: entryDate || format(new Date(), 'yyyy-MM-dd'),
     prodn_mixing: '',
     prodn_effi: 85,
     tpi: 1.73,
     no_of_spindles: 140,
     speed: 1000
   })
+
+  useEffect(() => {
+    setNewMachine(previous => ({
+      ...previous,
+      installed_date: entryDate || format(new Date(), 'yyyy-MM-dd')
+    }))
+  }, [entryDate])
 
   const mergeServerRowsWithDrafts = useCallback((rows) => {
     const drafts = editedRowsRef.current || {}
@@ -223,7 +236,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     }))
 
     if (d.has_setup) {
-      toast.info(`Machine #${val} found - it will be reactivated with existing setup`, { id: toastId })
+      toast.info(`Machine #${val} found - its values will seed a new lifecycle`, { id: toastId })
     } else {
       toast.success(`Machine #${val} details filled`, { id: toastId })
     }
@@ -266,8 +279,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
   }
 
   // Handle save
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const editedRowIds = Object.keys(currentEdits)
     if (editedRowIds.length === 0) {
       if (!suppressNoChangesToast) toast.info('No changes to save')
@@ -279,15 +292,17 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       const rowsToSave = setupData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
       
       for (const row of rowsToSave) {
+        const changes = currentEdits[row.id] || currentEdits[String(row.id)] || {}
+        const effectiveRow = { ...row, ...changes }
         const result = await updateSimplexMachineSetupAction(row.id, {
-          prodn_mixing: row.prodn_mixing,
-          session_no: parseIntOr(row.session_no, 1),
-          cc_time: parseFloatOr(row.cc_time, 0),
-          sl_hank: parseFloatOr(row.sl_hank, 1.4),
-          mc_effi: parseFloatOr(row.mc_effi, 92),
-          tpi: parseFloatOr(row.tpi, 1.73),
-          spindles: parseIntOr(row.spindles, 140),
-          shift_time: parseIntOr(row.shift_time, 510)
+          prodn_mixing: effectiveRow.prodn_mixing,
+          session_no: parseIntOr(effectiveRow.session_no, 1),
+          cc_time: parseFloatOr(effectiveRow.cc_time, 0),
+          sl_hank: parseFloatOr(effectiveRow.sl_hank, 1.4),
+          mc_effi: parseFloatOr(effectiveRow.mc_effi, 92),
+          tpi: parseFloatOr(effectiveRow.tpi, 1.73),
+          spindles: parseIntOr(effectiveRow.spindles, 140),
+          shift_time: parseIntOr(effectiveRow.shift_time, 510)
         })
         if (!result?.success) {
           throw new Error(result?.error || `Failed to save simplex setup for machine ${row.machine?.machine_no || row.machine_id}`)
@@ -297,7 +312,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
       }
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       
       if (!skipParentRefresh) {
         await loadData({ force: true })
@@ -357,7 +372,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         return setup?.machine?.id
       }).filter(Boolean)
       
-      const result = await bulkUpdateSimplexMachineCountAction(machineIds, countToSet)
+      const result = await bulkUpdateSimplexMachineCountAction(machineIds, countToSet, headerId)
       if (!result?.success) throw new Error(result?.error || 'Failed to update Simplex counts')
       toast.success(`Count updated for ${selectedRows.length} machine(s)`)
       setShowCountChangeDialog(false)
@@ -401,7 +416,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         cc_time: 0,
         sl_hank: 1.4,
         mc_effi: 92
-      })
+      }, { headerId, entryDate, shift })
 
       if (!result?.success) {
         throw new Error(result?.error || 'Failed to add machine')
@@ -414,7 +429,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         description: '',
         make_name: '',
         model: '',
-        installed_date: new Date().toISOString().split('T')[0],
+        installed_date: entryDate || format(new Date(), 'yyyy-MM-dd'),
         prodn_mixing: '',
         prodn_effi: 85,
         tpi: 1.73,
@@ -442,13 +457,14 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
     setIsSaving(true)
     try {
-      for (const rowId of selectedRows) {
-        const machineSetup = setupData.find(s => s.id === rowId)
-        if (machineSetup?.machine?.id) {
-          const result = await removeSimplexMachineAction(machineSetup.machine.id)
-          if (!result?.success) throw new Error(result?.error || 'Failed to remove a Simplex machine')
-        }
+      const machineIds = selectedRows
+        .map(rowId => setupData.find(setup => setup.id === rowId)?.machine?.id)
+        .filter(Boolean)
+      if (machineIds.length !== selectedRows.length) {
+        throw new Error('One or more selected machines are no longer available; refresh and try again')
       }
+      const result = await removeSimplexMachinesAction(machineIds, { headerId, entryDate, shift })
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove Simplex machines')
       
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
@@ -756,7 +772,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           <DialogHeader>
             <DialogTitle>Add New Machine</DialogTitle>
             <DialogDescription>
-              Create or reactivate a simplex machine and add it to setup
+              Create a new machine lifecycle and add it to this entry setup
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-5 py-4">

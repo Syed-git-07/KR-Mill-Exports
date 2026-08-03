@@ -22,6 +22,7 @@ import {
 } from '@/app/actions/simplexEntryActions'
 import { calculateSimplexProductionValues } from '@/lib/utils/simplexCalculations'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0
@@ -78,6 +79,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const shiftTimeVal = totalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
   const lastLoadKeyRef = useRef('')
@@ -88,6 +90,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -95,8 +98,10 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -304,7 +309,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
         )
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, machineSetups, getEffectiveSetup, stoppageData.length])
+  }, [sharedDraftEdits, localEditedRows, productionDraftEdits, setupDraftEdits, totalTime, machineSetups, getEffectiveSetup, stoppageData.length])
 
   // Handle stoppage reason change
   const handleStoppageReasonChange = (rowId, field, value) => {
@@ -390,12 +395,12 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
   }
 
   // Handle save
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    const currentEdits = editedRowsRef.current || editedRows || {}
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'stoppage', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const editedRowIds = Object.keys(currentEdits)
     if (editedRowIds.length === 0) {
       if (!suppressNoChangesToast) toast.info('No changes to save')
@@ -407,15 +412,17 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       const rowsToSave = stoppageData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
       
       for (const row of rowsToSave) {
+        const changes = currentEdits[row.id] || currentEdits[String(row.id)] || {}
+        const effectiveRow = { ...row, ...changes }
         const result = await updateSimplexStoppageEntryAction(row.id, {
-          stoppage1_id: row.stoppage1_id || null,
-          stoppage1_time: row.stoppage1_id ? (row.stoppage1_time || 0) : 0,
-          stoppage2_id: row.stoppage2_id || null,
-          stoppage2_time: row.stoppage2_id ? (row.stoppage2_time || 0) : 0,
-          stoppage3_id: row.stoppage3_id || null,
-          stoppage3_time: row.stoppage3_id ? (row.stoppage3_time || 0) : 0,
-          stoppage4_id: row.stoppage4_id || null,
-          stoppage4_time: row.stoppage4_id ? (row.stoppage4_time || 0) : 0
+          stoppage1_id: effectiveRow.stoppage1_id || null,
+          stoppage1_time: effectiveRow.stoppage1_id ? (effectiveRow.stoppage1_time || 0) : 0,
+          stoppage2_id: effectiveRow.stoppage2_id || null,
+          stoppage2_time: effectiveRow.stoppage2_id ? (effectiveRow.stoppage2_time || 0) : 0,
+          stoppage3_id: effectiveRow.stoppage3_id || null,
+          stoppage3_time: effectiveRow.stoppage3_id ? (effectiveRow.stoppage3_time || 0) : 0,
+          stoppage4_id: effectiveRow.stoppage4_id || null,
+          stoppage4_time: effectiveRow.stoppage4_id ? (effectiveRow.stoppage4_time || 0) : 0
         })
         if (!result?.success) throw new Error(result?.error || `Failed to save Simplex stoppage row ${row.id}`)
       }
@@ -423,7 +430,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
       }
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       
       if (!skipParentRefresh) {
         await loadData({ force: true })
@@ -479,7 +486,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: fullStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,
@@ -521,7 +528,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
     )
     const result = applyBulkStoppageDraft({
       rows: stoppageData,
-      drafts: editedRows,
+      drafts: editedRowsRef.current || editedRows || {},
       reasonId: partialStoppage.reason,
       reason: selectedReason,
       minutes: parsedTime,

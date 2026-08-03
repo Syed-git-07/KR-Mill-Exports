@@ -31,7 +31,8 @@ const spinningCountSchema = z.object({
   doff_loss: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
   auto_effi: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
   hok_cons: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
-  sliver_hank: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val)))
+  sliver_hank: z.number().min(0).nullable().optional().or(z.string().transform(val => val === '' ? null : Number(val))),
+  is_active: z.boolean().default(true)
 })
 
 const optionalNumber = value => (
@@ -75,12 +76,14 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       doff_loss: '',
       auto_effi: '',
       hok_cons: '',
-      sliver_hank: ''
+      sliver_hank: '',
+      is_active: true
     }
   })
 
   const isRunningNow = watch('is_running_now')
   const autoconerActive = watch('autoconer_active')
+  const isActive = watch('is_active')
 
   const handleFormSubmit = (data) => {
     console.log('Form submitted with raw data:', data)
@@ -109,7 +112,8 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       doff_loss: optionalNumber(data.doff_loss),
       auto_effi: optionalNumber(data.auto_effi),
       hok_cons: optionalNumber(data.hok_cons),
-      sliver_hank: optionalNumber(data.sliver_hank)
+      sliver_hank: optionalNumber(data.sliver_hank),
+      is_active: Boolean(data.is_active)
     }
     
     console.log('Transformed data:', transformedData)
@@ -245,6 +249,10 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       </div>
 
       <div className="flex justify-end gap-2 pt-4">
+        <div className="flex items-center gap-2 mr-auto">
+          <Checkbox id="is_active" checked={isActive} onCheckedChange={(checked) => setValue('is_active', checked === true)} />
+          <Label htmlFor="is_active">Active</Label>
+        </div>
         <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white">
           {isSubmitting ? 'Saving...' : 'Save'}
         </Button>

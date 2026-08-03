@@ -82,13 +82,23 @@ export async function deleteUnusedDepartment(id) {
   if (!id) throw new Error('Department ID is required')
 
   return prisma.$transaction(async transaction => {
-    const [supervisor, stoppage, hok] = await Promise.all([
+    const department = await transaction.departments.findUnique({
+      where: { id },
+      select: { dept_name: true }
+    })
+    if (!department) throw new Error('Department not found')
+
+    const [supervisor, stoppage, hok, employee] = await Promise.all([
       transaction.supervisors.findFirst({ where: { department_id: id }, select: { id: true } }),
       transaction.stoppage_details.findFirst({ where: { department_id: id }, select: { id: true } }),
-      transaction.hok_strength_detail.findFirst({ where: { department_id: id }, select: { id: true } })
+      transaction.hok_strength_detail.findFirst({ where: { department_id: id }, select: { id: true } }),
+      transaction.employee_master.findFirst({
+        where: { department: department.dept_name },
+        select: { id: true }
+      })
     ])
 
-    if (supervisor || stoppage || hok) {
+    if (supervisor || stoppage || hok || employee) {
       throw referencedError(
         'DEPARTMENT_IN_USE',
         'This department is used by supervisors, stoppages, or HOK history and cannot be permanently removed. Deactivate it instead.'
@@ -125,14 +135,29 @@ export async function deleteUnusedSpinningCount(id) {
   if (!id) throw new Error('Spinning count ID is required')
 
   return prisma.$transaction(async transaction => {
-    const [autoconerSetup, autoconerDetail, tpiEntry, twcEntry] = await Promise.all([
-      transaction.autoconer_machine_setup.findFirst({ where: { count_id: id }, select: { id: true } }),
-      transaction.autoconer_production_detail.findFirst({ where: { count_id: id }, select: { id: true } }),
+    const count = await transaction.spinning_counts.findUnique({
+      where: { id },
+      select: { count_name: true }
+    })
+    if (!count) throw new Error('Spinning count not found')
+
+    const [autoconerSetup, autoconerDetail, autoconerMachine, spinningSetup, spinningDetail, tpiEntry, twcEntry] = await Promise.all([
+      transaction.autoconer_machine_setup.findFirst({
+        where: { OR: [{ count_id: id }, { count_name: count.count_name }] },
+        select: { id: true }
+      }),
+      transaction.autoconer_production_detail.findFirst({
+        where: { OR: [{ count_id: id }, { count_name: count.count_name }] },
+        select: { id: true }
+      }),
+      transaction.autoconer_machines.findFirst({ where: { count: count.count_name }, select: { id: true } }),
+      transaction.spinning_machine_setup.findFirst({ where: { count_name: count.count_name }, select: { id: true } }),
+      transaction.spinning_production_detail.findFirst({ where: { count_name: count.count_name }, select: { id: true } }),
       transaction.tpi_entries.findFirst({ where: { spinning_count_id: id }, select: { id: true } }),
       transaction.twc_entries.findFirst({ where: { spinning_count_id: id }, select: { id: true } })
     ])
 
-    if (autoconerSetup || autoconerDetail || tpiEntry || twcEntry) {
+    if (autoconerSetup || autoconerDetail || autoconerMachine || spinningSetup || spinningDetail || tpiEntry || twcEntry) {
       throw referencedError(
         'SPINNING_COUNT_IN_USE',
         'This spinning count is used by production setup or historical entries and cannot be permanently removed. Deactivate it instead.'

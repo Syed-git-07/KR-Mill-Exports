@@ -16,6 +16,7 @@ import {
   deleteHOKEntryAction,
   searchHOKEntriesAction,
 } from '@/app/actions/hok-strength';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function HOKStrengthPage() {
   const [entries, setEntries] = useState([]);
@@ -26,6 +27,15 @@ export default function HOKStrengthPage() {
   const [selectedRows, setSelectedRows] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: entries, setRows: setEntries,
+    selectedItem: selectedEntry, setSelectedItem: setSelectedEntry,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    editingItem: editingEntry, setEditingItem: setEditingEntry,
+    setIsEditing,
+    setIsModalOpen
+  });
 
   const searchFields = ['hok_id', 'date'];
 
@@ -39,28 +49,25 @@ export default function HOKStrengthPage() {
   }, []);
 
   const loadEntries = async () => {
-    try {
-      setLoading(true);
-      const result = await getHOKEntriesAction();
-      
-      if (!result.success) {
-        toast.error(result.error || 'Failed to load HOK Strength entries');
-        return;
+    await runLatestRowsRequest(
+      () => getHOKEntriesAction(),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error || 'Failed to load HOK Strength entries');
+          replaceRows((result.data || []).map(entry => ({
+            ...entry,
+            id: entry.hok_id,
+            formatted_date: format(new Date(entry.date), 'dd-MMM-yyyy')
+          })));
+        },
+        onError: error => {
+          toast.error(error.message || 'Failed to load HOK Strength entries');
+          console.error(error);
+        },
+        onFinally: () => setLoading(false)
       }
-      
-      // Format date for display and add id for DataGrid compatibility
-      const formattedData = result.data.map(entry => ({
-        ...entry,
-        id: entry.hok_id, // Add id for DataGrid row selection
-        formatted_date: format(new Date(entry.date), 'dd-MMM-yyyy')
-      }));
-      setEntries(formattedData);
-    } catch (error) {
-      toast.error('Failed to load HOK Strength entries');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
@@ -69,29 +76,24 @@ export default function HOKStrengthPage() {
       return;
     }
 
-    try {
-      const result = await searchHOKEntriesAction({
-        field: field,
-        operator: condition,
-        value: value,
-      });
-      
-      if (!result.success) {
-        toast.error(result.error || 'Search failed');
-        return;
+    await runLatestRowsRequest(
+      () => searchHOKEntriesAction({ field, operator: condition, value }),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error || 'Search failed');
+          replaceRows((result.data || []).map(entry => ({
+            ...entry,
+            id: entry.hok_id,
+            formatted_date: format(new Date(entry.date), 'dd-MMM-yyyy')
+          })));
+          toast.success(`Found ${(result.data || []).length} entries`);
+        },
+        onError: error => {
+          toast.error(error.message || 'Search failed');
+          console.error(error);
+        }
       }
-      
-      const formattedData = result.data.map(entry => ({
-        ...entry,
-        id: entry.hok_id, // Add id for DataGrid row selection
-        formatted_date: format(new Date(entry.date), 'dd-MMM-yyyy')
-      }));
-      setEntries(formattedData);
-      toast.success(`Found ${result.data.length} entries`);
-    } catch (error) {
-      toast.error('Search failed');
-      console.error(error);
-    }
+    );
   };
 
   const handleShowAll = () => {
@@ -100,42 +102,61 @@ export default function HOKStrengthPage() {
   };
 
   const handleRowClick = (entry) => {
+    if (isSelectMode) return;
     setSelectedEntry(entry);
   };
 
+  const openEditForm = (entry) => {
+    if (isSelectMode) return;
+    const currentEntry = getCurrentRow(entry);
+    if (!currentEntry) return;
+    openRowEditor(currentEntry);
+  };
+
   const handleCreate = () => {
+    resetInteractionState();
     setEditingEntry(null);
+    setSelectedEntry(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsEditing(false);
     setIsModalOpen(true);
   };
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      if (!confirm(`Delete ${selectedRows.length} HOK entries?`)) return;
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected HOK entries are no longer in the current list');
+      if (!confirm(`Delete ${currentSelectedRows.length} HOK entries?`)) return;
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteHOKEntryAction(row.hok_id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteHOKEntryAction(row.hok_id)));
         const failed = results.filter(r => !r.success);
         if (failed.length > 0) {
           toast.error(`Failed to delete ${failed.length} entry(ies)`);
         } else {
-          toast.success(`${selectedRows.length} entries deleted successfully`);
+          toast.success(`${currentSelectedRows.length} entries deleted successfully`);
         }
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
-        loadEntries();
       } catch (error) {
         toast.error('Failed to delete entries');
         console.error(error);
+      } finally {
+        loadEntries();
       }
     } else if (!isSelectMode && selectedEntry) {
-      if (!confirm(`Delete HOK entry for ${selectedEntry.formatted_date}?`)) return;
+      const currentEntry = getCurrentRow(selectedEntry);
+      if (!currentEntry) return toast.warning('The selected HOK entry is no longer in the current list');
+      if (!confirm(`Delete HOK entry for ${currentEntry.formatted_date}?`)) return;
       try {
-        const result = await deleteHOKEntryAction(selectedEntry.hok_id);
+        const result = await deleteHOKEntryAction(currentEntry.hok_id);
         if (!result.success) {
           toast.error(result.error || 'Failed to delete entry');
           return;
         }
         toast.success('Entry deleted successfully');
+        resetInteractionState({ closeModal: true });
         setSelectedEntry(null);
         loadEntries();
       } catch (error) {
@@ -167,15 +188,18 @@ export default function HOKStrengthPage() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleSubmit = async (formData) => {
     try {
       let result;
       if (isEditing && editingEntry) {
-        result = await updateHOKEntryAction(editingEntry.hok_id, formData);
+        const currentEntry = getCurrentRow(editingEntry);
+        if (!currentEntry) throw new Error('This HOK entry is no longer in the current list');
+        result = await updateHOKEntryAction(currentEntry.hok_id, formData);
       } else {
         result = await createBulkHOKEntriesAction(formData);
       }
@@ -186,6 +210,7 @@ export default function HOKStrengthPage() {
       }
       
       toast.success(isEditing ? 'HOK Strength entry updated successfully' : 'HOK Strength entry created successfully');
+      resetInteractionState({ closeModal: true });
       setIsModalOpen(false);
       setEditingEntry(null);
       setIsEditing(false);
@@ -223,7 +248,7 @@ export default function HOKStrengthPage() {
             disabled={isSelectMode ? selectedRows.length === 0 : !selectedEntry}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
+            <span className="hidden sm:inline">Remove Permanently</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
           </Button>
         </div>
@@ -249,12 +274,10 @@ export default function HOKStrengthPage() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
+          onRowDoubleClick={openEditForm}
           onContextMenu={(row, e) => {
             e.preventDefault();
-            setSelectedEntry(row);
-            setEditingEntry(row);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            openEditForm(row);
           }}
         />
       )}
@@ -267,7 +290,13 @@ export default function HOKStrengthPage() {
       {/* Form Modal */}
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) {
+            setEditingEntry(null);
+            setIsEditing(false);
+          }
+        }}
         title="HOK Strength Master"
         description={isEditing ? 'To Modify the HOK Strength Head' : 'Add new HOK Strength entry'}
         onCancel={() => {

@@ -1,5 +1,13 @@
 import { prisma } from '../prisma';
 import { deleteUnusedMachine } from './machineDeletion';
+import { buildMachineLifecycleUpdate, normalizeMachineMasterData } from './machineMasterValidation';
+
+const COMBER_MASTER_NUMBERS = {
+  mc_id: { label: 'Machine id number', max: 1000000, integer: true },
+  speed: { label: 'Speed', required: true, max: 1000000 },
+  sliver_hank: { label: 'Sliver hank', max: 1000 },
+  mc_effi: { label: 'Machine efficiency', required: true, max: 100 }
+};
 
 /**
  * Comber Machine Master - CRUD Operations
@@ -30,11 +38,14 @@ export async function getComberMachineById(id) {
 
 // Create a new comber machine
 export async function createComberMachine(machineData) {
-  // Convert date string to Date object if needed
-  let installedDate = machineData.installed_date;
-  if (installedDate && typeof installedDate === 'string') {
-    installedDate = new Date(installedDate);
-  }
+  machineData = normalizeMachineMasterData(machineData, COMBER_MASTER_NUMBERS);
+  const installedDate = machineData.installed_date;
+
+  const duplicate = await prisma.comber_machines.findFirst({
+    where: { machine_no: machineData.machine_no, is_active: true },
+    select: { id: true }
+  });
+  if (duplicate) throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
 
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
@@ -67,23 +78,20 @@ export async function createComberMachine(machineData) {
 
 // Update an existing comber machine
 export async function updateComberMachine(id, machineData) {
-  // Convert date string to Date object if needed
-  let installedDate = machineData.installed_date;
-  if (installedDate && typeof installedDate === 'string') {
-    installedDate = new Date(installedDate);
-  }
+  machineData = normalizeMachineMasterData(machineData, COMBER_MASTER_NUMBERS);
+  const installedDate = machineData.installed_date;
+  const existing = await prisma.comber_machines.findUnique({ where: { id }, select: { is_active: true } });
+  if (!existing) throw new Error('Comber machine not found');
+  const duplicate = await prisma.comber_machines.findFirst({
+    where: { id: { not: id }, machine_no: machineData.machine_no, is_active: true },
+    select: { id: true }
+  });
+  if (duplicate) throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
 
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
 
-  // Handle activation/deactivation timestamps
-  const timestampData = {};
-  if (machineData.is_active === true) {
-    timestampData.activated_at = new Date();
-    timestampData.deactivated_at = null;
-  } else if (machineData.is_active === false) {
-    timestampData.deactivated_at = new Date();
-  }
+  const timestampData = buildMachineLifecycleUpdate(existing.is_active, machineData.is_active);
 
   const data = await prisma.comber_machines.update({
     where: { id },
@@ -98,10 +106,9 @@ export async function updateComberMachine(id, machineData) {
       sliver_hank: machineData.sliver_hank ?? null,
       mc_effi: machineData.mc_effi,
       installed_date: installedDate,
-      is_active: machineData.is_active,
+      ...timestampData,
       direct_hank_entry: machineData.direct_hank_entry,
       direct_kgs_entry: machineData.direct_kgs_entry,
-      ...timestampData,
       updated_at: new Date(),
     }
   });

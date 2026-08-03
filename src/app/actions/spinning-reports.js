@@ -3,14 +3,14 @@
 import { safeActionError } from '@/lib/security/errors'
 
 import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageReportQueries'
+import { parseStrictDate } from '@/lib/strictDate'
 
 /**
  * Normalize date to UTC midnight for MySQL DATE comparison
  * Prevents timezone offset issues when comparing with DATE fields
  */
 function normalizeDate(dateString) {
-  const date = new Date(dateString)
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0))
+  return parseStrictDate(dateString, 'Report date')
 }
 
 /**
@@ -21,10 +21,6 @@ function normalizeDate(dateString) {
 export async function generateSpinningStoppageReportAction(selectedDate) {
   try {
     const normalizedDate = normalizeDate(selectedDate)
-    
-    console.log('Spinning Stoppage Report requested:')
-    console.log('  Original date:', selectedDate)
-    console.log('  Normalized date:', normalizedDate.toISOString())
     
     const reportData = await generateSpinningStoppageReport(normalizedDate)
     

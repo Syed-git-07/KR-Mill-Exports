@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { format } from 'date-fns'
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
@@ -23,16 +24,13 @@ import {
   updateSpinningMachineSetupAction,
   batchUpdateSpinningMachineSetupsAction,
   applySpinningOptionCheckAction,
-  upsertSpinningMachineSetupAction,
   getSpinningCountsAction,
-  getSpinningMachinesAction,
   getAllSpinningMachinesAction,
   addSpinningMachineAction,
-  removeSpinningMachineAction,
-  removeSpinningMachineSetupsAction,
+  removeSpinningMachinesAction,
   lookupSpinningMachineByNoAction
 } from '@/app/actions/spinning-entry'
-import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 
 /**
  * Spinning Machine Setup Tab
@@ -45,6 +43,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   shift = 1,
   totalTime,
   entryDate,
+  headerId,
   onRefresh,
   sharedDraftEdits,
   onSharedDraftEditsChange
@@ -58,6 +57,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const [selectedRows, setSelectedRows] = useState([])
 
   const setEditedRows = useCallback((updater) => {
@@ -66,6 +66,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -73,8 +74,10 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   // Ref for table container (Enter/Arrow row navigation)
   const tableRef = useRef(null)
@@ -110,7 +113,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     const val = String(machineNo || '').trim()
     if (!val) return
     const toastId = toast.loading(`Looking up machine #${val}…`)
-    const result = await lookupSpinningMachineByNoAction(val)
+    const result = await lookupSpinningMachineByNoAction(val, entryDate, shift)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -171,7 +174,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     make_name: '',
     model: '',
     allocated_spindles: 1104,
-    installed_date: new Date().toISOString().split('T')[0],
+    installed_date: entryDate || format(new Date(), 'yyyy-MM-dd'),
     // Setup fields - populated from spinning_counts master
     count_name: countData?.count_name || '',
     act_count: countData?.act_count != null ? parseFloat(countData.act_count) : 0,
@@ -319,7 +322,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     setIsSaving(true)
     try {
       const updates = (editedRowsRef.current || editedRows || {})[row.id] || {}
-      const result = await updateSpinningMachineSetupAction(row.id, updates, shift)
+      const result = await updateSpinningMachineSetupAction(row.id, updates, shift, entryDate)
       
       if (result.success) {
         toast.success('Setup saved')
@@ -341,8 +344,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   }
 
   // Save all changes
-  const handleSaveAll = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+  const handleSaveAll = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
     const editedIds = Object.keys(currentEdits)
     if (editedIds.length === 0) {
       if (!suppressNoChangesToast) {
@@ -358,13 +361,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         ...currentEdits[id]
       }))
 
-      const result = await batchUpdateSpinningMachineSetupsAction(updates, shift)
+      const result = await batchUpdateSpinningMachineSetupsAction(updates, shift, entryDate)
       
       if (result.success) {
         if (!suppressSuccessToast) {
           toast.success(`Saved ${updates.length} setup(s)`)
         }
-        setEditedRows({})
+        if (!preserveDrafts) setEditedRows({})
         if (!skipParentRefresh) {
           await loadData()
           onRefresh?.()
@@ -438,7 +441,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         ...(selectedCount?.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
       }))
 
-      const result = await batchUpdateSpinningMachineSetupsAction(updates, shift)
+      const result = await batchUpdateSpinningMachineSetupsAction(updates, shift, entryDate)
       
       if (result.success) {
         toast.success(`Updated count for ${selectedRows.length} machine(s)`)
@@ -523,17 +526,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
     setIsSaving(true)
     try {
-      // Convert date to full ISO DateTime format for Prisma
-      const installedDate = newMachineData.installed_date 
-        ? new Date(newMachineData.installed_date + 'T00:00:00.000Z')
-        : null
-      
       // Convert empty strings to null for integer fields
       const result = await addSpinningMachineAction({
         ...newMachineData,
+        headerId,
         entryDate,
         shift: parseInt(shift),
-        run_time: totalTime, // Use current shift's totalTime
+        run_time: effectiveTotalTime,
         description: newMachineData.description || newMachineData.machine_no,
         model: newMachineData.model || null,
         act_count: newMachineData.act_count,
@@ -543,19 +542,20 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         speed: newMachineData.speed === '' || newMachineData.speed == null
           ? 0
           : parseInt(newMachineData.speed),
-        installed_date: installedDate
+        installed_date: newMachineData.installed_date || null
       })
       
       if (!result.success) throw new Error(result.error)
       
-      if (result.data.reactivated) {
-        toast.success(`Machine ${newMachineData.machine_no} reactivated successfully`)
+      if (result.data.newLifecycle) {
+        toast.success(`New lifecycle for machine ${newMachineData.machine_no} added successfully`)
       } else {
         toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added successfully`)
       }
       
       setAddMachineDialog(false)
       resetMachineForm()
+      setEditedRows({})
       
       await loadData()
       onRefresh?.()
@@ -579,19 +579,27 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     setIsSaving(true)
     try {
       // Get machine IDs from selected setup rows (machine is a nested object)
-      const machineIds = selectedRows
-        .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
-        .filter(id => id !== undefined)
+      const machineIds = [...new Set(selectedRows
+        .map(setupId => {
+          const setup = setupData.find(row => row.id === setupId)
+          return setup?.machine?.id || setup?.machine_id
+        })
+        .filter(Boolean))]
+      if (machineIds.length !== selectedRows.length) {
+        throw new Error('One or more selected setup rows no longer have a machine')
+      }
 
-      // Deactivate machines in master table (like Autoconer)
-      const removePromises = machineIds.map(id => removeSpinningMachineAction(id))
-      const results = await Promise.all(removePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
+      const result = await removeSpinningMachinesAction(machineIds, {
+        headerId,
+        entryDate,
+        shift: Number.parseInt(shift, 10)
+      })
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove machines')
 
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setRemoveDialog(false)
       setSelectedRows([])
+      setEditedRows({})
       await loadData()
       onRefresh?.()
     } catch (error) {

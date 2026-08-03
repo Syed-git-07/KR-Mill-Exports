@@ -4,6 +4,10 @@ const toFiniteNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const toNonNegativeFiniteNumber = (value, fallback = 0) => (
+  Math.max(toFiniteNumber(value, fallback), 0)
+)
+
 export function roundProductionValue(value, decimals = 2) {
   const factor = 10 ** decimals
   return Math.round(toFiniteNumber(value) * factor) / factor
@@ -59,6 +63,66 @@ export function calculateTimeAdjustedProductionMetrics({
     efficiencyPercent: roundProductionValue(efficiency),
     utilizationPercent: roundProductionValue(utilization),
     wastePercent: roundProductionValue(wastePercent),
+    ...time,
+  }
+}
+
+/**
+ * One shared Spinning calculation for both Production and Stoppage grids.
+ * Keeping it here prevents the two views from drifting when stoppage drafts
+ * change before the overall Update is committed.
+ */
+export function calculateSpinningGpsMetrics({
+  actHank,
+  actCount,
+  allocatedSpindles,
+  efficiency,
+  speed,
+  tpi,
+  waste,
+  totalTime,
+  stoppageTime,
+  shiftNo,
+}) {
+  const time = resolveProductionTime(totalTime, stoppageTime)
+  const safeActHank = toNonNegativeFiniteNumber(actHank)
+  const safeActCount = toNonNegativeFiniteNumber(actCount)
+  const safeAllocatedSpindles = toNonNegativeFiniteNumber(allocatedSpindles)
+  const safeEfficiency = toNonNegativeFiniteNumber(efficiency)
+  const safeSpeed = toNonNegativeFiniteNumber(speed)
+  const safeTpi = toNonNegativeFiniteNumber(tpi)
+  const safeWaste = toNonNegativeFiniteNumber(waste)
+  const multiplier = Number(shiftNo) === 3 ? 7 : 8.5
+  const totalSpindles = Math.round((safeAllocatedSpindles / 8) * multiplier)
+
+  // The production workbook uses a fixed 0.985 factor for actual production.
+  const constant = safeActCount > 0
+    ? (1 / 2.20456 / safeActCount) * totalSpindles * 0.985
+    : 0
+  const actualProduction = safeActHank * constant
+  const stoppedSpindles = time.totalTime > 0
+    ? (time.stoppageTime / time.totalTime) * totalSpindles
+    : 0
+  const workedSpindles = Math.max(totalSpindles - stoppedSpindles, 0)
+  const gps = workedSpindles > 0
+    ? (actualProduction / workedSpindles) * 1000
+    : 0
+  const expectedGps = safeActCount > 0 && safeSpeed > 0 && safeTpi > 0
+    ? (7.2 * safeSpeed / safeTpi / safeActCount) * safeEfficiency
+    : 0
+  const wastePercent = actualProduction > 0
+    ? (safeWaste / actualProduction) * 100
+    : 0
+
+  return {
+    actualProduction: roundProductionValue(actualProduction),
+    stoppedSpindles: roundProductionValue(stoppedSpindles),
+    workedSpindles: roundProductionValue(workedSpindles),
+    gps: roundProductionValue(gps),
+    expectedGps: roundProductionValue(expectedGps),
+    wastePercent: roundProductionValue(wastePercent),
+    constant: roundProductionValue(constant, 3),
+    totalSpindles,
     ...time,
   }
 }

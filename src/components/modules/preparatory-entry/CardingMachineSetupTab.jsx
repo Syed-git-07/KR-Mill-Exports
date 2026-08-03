@@ -32,9 +32,11 @@ import {
 import EnterSelect from '@/components/ui/enter-select'
 import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { format } from 'date-fns'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { CARDING_FORMULA_FALLBACK } from '@/lib/cardingFormulaFallback'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 import {
   getCardingMachineSetupsAction,
   updateMachineSetupAction,
@@ -60,6 +62,10 @@ const formatNumber = (value, decimals = 2) => {
   return toNumber(value).toFixed(decimals)
 }
 
+const formatEntryDate = (value) => (
+  typeof value === 'string' ? value.slice(0, 10) : format(value, 'yyyy-MM-dd')
+)
+
 const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
   entryDate,
   shift = 1,
@@ -75,21 +81,25 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
     const setEditedRows = useCallback((updater) => {
       if (onSharedDraftEditsChange) {
         const prev = editedRowsRef.current || {}
         const next = typeof updater === 'function' ? updater(prev) : (updater || {})
         if (next === prev) return
-        editedRowsRef.current = next
-        onSharedDraftEditsChange(next)
+      editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
+      onSharedDraftEditsChange(next)
         return
       }
       setLocalEditedRows(prev => (typeof updater === 'function' ? updater(prev) : (updater || {})))
     }, [onSharedDraftEditsChange])
 
-    useEffect(() => {
-      editedRowsRef.current = editedRows
-    }, [editedRows])
+  useEffect(() => {
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const [selectedRows, setSelectedRows] = useState([])
   const [countOptions, setCountOptions] = useState([])
@@ -130,7 +140,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     const val = String(machineNo || '').trim()
     if (!val) return
     const toastId = toast.loading(`Looking up machine ${val}…`)
-    const result = await lookupCardingMachineByNoAction(val)
+    const result = await lookupCardingMachineByNoAction(val, formatEntryDate(entryDate), shift)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -187,7 +197,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     if (!entryDate) return
     setIsLoading(true)
     try {
-      const formattedDate = typeof entryDate === 'string' ? entryDate : entryDate.toISOString().split('T')[0]
+      const formattedDate = formatEntryDate(entryDate)
       const [setupsResult, countsResult] = await Promise.all([
         getCardingMachineSetupsAction(formattedDate, shift),
         getCountOptionsAction()
@@ -308,8 +318,14 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const currentEdits = resolveCommitDrafts({
+      dependencyDrafts,
+      tabKey: 'setup',
+      refDrafts: editedRowsRef.current,
+      propDrafts: editedRows
+    })
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -318,19 +334,18 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const currentEdits = editedRowsRef.current || editedRows || {}
-      const formattedDate = typeof entryDate === 'string' ? entryDate : entryDate.toISOString().split('T')[0]
+      const formattedDate = formatEntryDate(entryDate)
       const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const row = setupData.find(r => String(r.id) === String(rowId))
-        const machineId = row?.machine_id
-        return updateMachineSetupAction(machineId || rowId, changes, formattedDate, shift)
+        const setupId = row?.id || rowId
+        return updateMachineSetupAction(setupId, changes, formattedDate, shift)
       })
 
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Carding machine setup row')
       const savedCount = Object.keys(currentEdits).length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
       }
@@ -404,7 +419,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     }
     setIsSaving(true)
     try {
-      const result = await addCardingMachineAction(newMachine)
+      const result = await addCardingMachineAction(newMachine, formatEntryDate(entryDate), shift)
       if (result.success) {
         if (result.data?.reactivated) {
           toast.success('Machine reactivated successfully')
@@ -448,7 +463,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const promises = selectedRows.map(id => removeCardingMachineAction(id))
+      const promises = selectedRows.map(id => removeCardingMachineAction(id, formatEntryDate(entryDate)))
       const results = await Promise.all(promises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')

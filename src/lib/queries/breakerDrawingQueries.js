@@ -3,10 +3,25 @@ import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPrevio
 import { resolveBreakerDrawingShiftFallbackTime } from '../breakerDrawingShiftFallback';
 import { calculateBreakerDrawingStdProdn, getBreakerDrawingActProdnConstant, resolveBreakerDrawingFormulaInputs, BREAKER_DRAWING_FORMULA_FALLBACK } from '../breakerDrawingFormulaFallback';
 import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath';
-import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
+import {
+  assertPositiveSetupFields,
+  efficiencyFactorOrFallback,
+  getOrCreateDateScopedSetups,
+  positiveNumberOrFallback
+} from './dateScopedMachineSetup';
 import { buildStoppageUpdate, findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { assertActiveStoppageReasons } from './stoppageValidation';
-import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { sanitizeProductionDetailUpdate, sanitizeProductionHeaderUpdate } from './productionDetailUpdate';
+import { assertMachineUpdateCount, normalizeMixingValue, resolveMachineMixingContext } from './machineMixingUpdate';
+import { buildMachineVisibilityWhere } from './machineDateVisibility';
+import { sanitizeBreakerDrawingSetupUpdate } from '../preparatorySetupValidation';
+import {
+  assertLifecycleCanStart,
+  deactivateEntryMachines,
+  normalizeMachineNumber,
+  resolveEntryMachineContext,
+  validateInstalledDateForActivation
+} from './entryMachineLifecycle';
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -115,7 +130,10 @@ export async function getOrCreateBreakerDrawingHeader(date, shift, supervisorId,
 export async function updateBreakerDrawingHeader(id, updates) {
   const data = await prisma.breaker_drawing_production_header.update({
     where: { id },
-    data: updates
+    data: {
+      ...sanitizeProductionHeaderUpdate('breaker_drawing_production_header', updates),
+      updated_at: new Date()
+    }
   });
   return data;
 }
@@ -178,7 +196,17 @@ export async function getBreakerDrawingProductionWithSetup(headerId) {
     machineIds.length > 0
       ? prisma.drawing_breaker_machines.findMany({
           where: { id: { in: machineIds } },
-          select: { id: true, machine_no: true, description: true, prodn_mixing: true, mc_id: true, speed: true, is_active: true }
+          select: {
+            id: true,
+            machine_no: true,
+            description: true,
+            prodn_mixing: true,
+            mc_id: true,
+            speed: true,
+            is_active: true,
+            activated_at: true,
+            deactivated_at: true
+          }
         })
       : Promise.resolve([]),
     detailIds.length > 0
@@ -199,11 +227,19 @@ export async function getBreakerDrawingProductionWithSetup(headerId) {
     stoppageMap[s.production_detail_id].push(s);
   });
 
-  const enriched = (data || []).map(d => ({
-    ...d,
-    machine: machineMap[d.machine_id] || null,
-    stoppage: stoppageMap[d.id] || []
-  }));
+  const header = await prisma.breaker_drawing_production_header.findUnique({
+    where: { id: headerId },
+    select: { entry_date: true }
+  });
+  const entryDate = header?.entry_date || null;
+
+  const enriched = (data || [])
+    .map(d => ({
+      ...d,
+      machine: machineMap[d.machine_id] || null,
+      stoppage: stoppageMap[d.id] || []
+    }))
+    .filter(detail => isBreakerMachineVisibleOnDate(detail.machine, entryDate));
   
   // Sort by natural machine number order (BD1, BD2, BD3, BD4)
   return enriched?.sort((a, b) => {
@@ -216,31 +252,29 @@ export async function getBreakerDrawingProductionWithSetup(headerId) {
 // Initialize production details for all breaker drawing machines
 // Speed is fetched from machine table (source of truth)
 export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
-  // Get shift configuration from database
-  const shiftConfig = await getBreakerDrawingShiftConfiguration(shift);
-  const totalTime = shiftConfig.totalTime;
-  const defaultStoppage = shiftConfig.defaultStoppage;
-  
-  // Get entry_date from header for date-based machine visibility
+  // Resolve the date, shift and runtime from the persisted header. Callers may
+  // hold stale route state while an existing entry is being reopened.
   const headerForDate = await prisma.breaker_drawing_production_header.findUnique({
     where: { id: headerId },
-    select: { entry_date: true }
+    select: { entry_date: true, shift: true }
   });
-  const entryDate = headerForDate?.entry_date || new Date();
+  if (!headerForDate) throw new Error(`Breaker Drawing production header ${headerId} not found`);
+  const entryDate = headerForDate.entry_date;
+  const headerShift = headerForDate.shift ?? shift;
+  const shiftConfig = await getBreakerDrawingShiftConfiguration(headerShift);
+  const totalTime = shiftConfig.totalTime;
+  const defaultStoppage = shiftConfig.defaultStoppage;
 
   // Get all breaker drawing machines visible on this entry date (not yet deactivated)
   // Only include machines that have a setup entry — master-only machines (no setup) are excluded
   const machines = await prisma.drawing_breaker_machines.findMany({
-    where: {
-      activated_at: { lte: entryDate },
-      OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-    },
+    where: buildMachineVisibilityWhere(entryDate),
     select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
     orderBy: { mc_id: 'asc' }
   });
 
-  // Get machine setup for default values (except speed which comes from machine)
-  const setups = await prisma.breaker_drawing_machine_setup.findMany();
+  // Use only the setup snapshot belonging to this header's date and shift.
+  const setups = await getBreakerDrawingMachineSetups(headerId);
   const setupMachineIds = new Set((setups || []).map(s => s.machine_id));
   const machinesWithSetup = (machines || []).filter(m => setupMachineIds.has(m.id));
 
@@ -251,14 +285,15 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
   });
 
   // Create detail records for each machine
-  const defaultWorkTime = totalTime - defaultStoppage;
+  const defaultWorkTime = Math.max(totalTime - defaultStoppage, 0);
 
   const details = machinesWithSetup.map(machine => {
     const setup = setupMap[machine.id] || {};
     // Use machine/setup values with centralized fallback-only defaults.
     const stdProdn = calculateBreakerDrawingStdProdn(setup, totalTime, machine.speed);
     // Exp.Prodn = Std.Prodn × (WorkTime / TotalTime)
-    const expProdn = stdProdn * (defaultWorkTime / totalTime);
+    const workRatio = totalTime > 0 ? defaultWorkTime / totalTime : 0;
+    const expProdn = stdProdn * workRatio;
     
     return {
       header_id: headerId,
@@ -269,7 +304,7 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
       std_prodn: stdProdn,
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
-      uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
+      uti_percent: Math.round(workRatio * 100 * 100) / 100,
       waste: setup.default_waste ?? null,
       waste_percent: 0,
       run_time: totalTime,  // Run time = Shift time
@@ -278,61 +313,57 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
     };
   });
 
-  await prisma.breaker_drawing_production_detail.createMany({
-    data: details,
-    skipDuplicates: true
+  return prisma.$transaction(async tx => {
+    if (details.length > 0) {
+      await tx.breaker_drawing_production_detail.createMany({ data: details, skipDuplicates: true });
+    }
+    const createdData = await tx.breaker_drawing_production_detail.findMany({
+      where: { header_id: headerId, machine_id: { in: machinesWithSetup.map(machine => machine.id) } }
+    });
+    const existingStoppages = createdData.length > 0
+      ? await tx.breaker_drawing_stoppage_entry.findMany({
+          where: { production_detail_id: { in: createdData.map(detail => detail.id) } },
+          select: { production_detail_id: true }
+        })
+      : [];
+    const stoppedIds = new Set(existingStoppages.map(entry => entry.production_detail_id));
+    const missingStoppages = createdData
+      .filter(detail => !stoppedIds.has(detail.id))
+      .map(detail => ({ production_detail_id: detail.id, total_stoppage_time: 0 }));
+    if (missingStoppages.length > 0) {
+      await tx.breaker_drawing_stoppage_entry.createMany({ data: missingStoppages, skipDuplicates: true });
+    }
+    return createdData;
   });
-
-  const createdData = await prisma.breaker_drawing_production_detail.findMany({
-    where: { header_id: headerId }
-  });
-
-  // Initialize stoppage entries for each detail with no pre-filled stoppages
-  const stoppageEntries = createdData.map(detail => ({
-    production_detail_id: detail.id,
-    stoppage1_id: null,
-    stoppage1_time: 0,
-    stoppage2_id: null,
-    stoppage2_time: 0,
-    total_stoppage_time: 0
-  }));
-
-  await prisma.breaker_drawing_stoppage_entry.createMany({
-    data: stoppageEntries,
-    skipDuplicates: true
-  });
-
-  return createdData;
 }
 
 // Sync newly added machines to an existing header
 // This adds production details and stoppage entries for any active machines
 // that don't already have records in this header
 export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1) {
-  // Get shift configuration from database
-  const shiftConfig = await getBreakerDrawingShiftConfiguration(shift);
-  const totalTime = shiftConfig.totalTime;
-  const defaultStoppage = shiftConfig.defaultStoppage;
-  
   // Get entry_date from header for date-based machine visibility
   const headerForDate = await prisma.breaker_drawing_production_header.findUnique({
     where: { id: headerId },
-    select: { entry_date: true }
+    select: { entry_date: true, shift: true }
   });
-  const entryDate = headerForDate?.entry_date || new Date();
+  if (!headerForDate) throw new Error(`Breaker Drawing production header ${headerId} not found`);
+  const entryDate = headerForDate.entry_date;
+  const headerShift = headerForDate.shift ?? shift;
+  const shiftConfig = await getBreakerDrawingShiftConfiguration(headerShift);
+  const totalTime = shiftConfig.totalTime;
+  const defaultStoppage = shiftConfig.defaultStoppage;
 
   // Get all machines visible on this entry date
   // Only include machines with a setup entry — master-only machines (no setup) are excluded
   const allMachines = await prisma.drawing_breaker_machines.findMany({
     where: {
-      activated_at: { lte: entryDate },
-      OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
+      ...buildMachineVisibilityWhere(entryDate)
     },
     select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
     orderBy: { mc_id: 'asc' }
   });
 
-  const setups = await prisma.breaker_drawing_machine_setup.findMany();
+  const setups = await getBreakerDrawingMachineSetups(headerId);
   const setupMachineIds = new Set((setups || []).map(s => s.machine_id));
   const allMachinesWithSetup = (allMachines || []).filter(m => setupMachineIds.has(m.id));
 
@@ -342,46 +373,10 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
     select: { id: true, machine_id: true }
   });
 
-  // Delete rows for machines that are no longer visible on this entry date
+  // Sync is additive. Deactivation changes visibility only; production and
+  // stoppage history must never be deleted while an entry is opened.
   const existingMachineIdsList = existingDetails?.map(d => d.machine_id) || [];
-  const allExistingMachines = existingMachineIdsList.length > 0
-    ? await prisma.drawing_breaker_machines.findMany({
-        where: { id: { in: existingMachineIdsList } },
-        select: { id: true, deactivated_at: true }
-      })
-    : [];
-  const existingMachineMap = {};
-  allExistingMachines.forEach(m => { existingMachineMap[m.id] = m; });
-
-  const staleDetailIds = existingDetails
-    .filter(d => {
-      const m = existingMachineMap[d.machine_id];
-      // Remove if machine was deactivated on or before the entry date
-      if (m?.deactivated_at && new Date(m.deactivated_at) <= entryDate) return true;
-      // Remove if machine has no setup (was created via master only, not via Machine Setup tab)
-      if (m && !setupMachineIds.has(m.id)) return true;
-      return false;
-    })
-    .map(d => d.id);
-
-  if (staleDetailIds.length > 0) {
-    await prisma.breaker_drawing_stoppage_entry.deleteMany({
-      where: { production_detail_id: { in: staleDetailIds } }
-    });
-    await prisma.breaker_drawing_production_detail.deleteMany({
-      where: { id: { in: staleDetailIds } }
-    });
-  }
-
-  // Find only truly new machines (after stale row cleanup)
-  const remainingMachineIds = existingDetails
-    .filter(d => !staleDetailIds.includes(d.id))
-    .map(d => d.machine_id);
-  const newMachines = allMachinesWithSetup?.filter(m => !remainingMachineIds.includes(m.id)) || [];
-
-  if (newMachines.length === 0) {
-    return []; // No new machines to add
-  }
+  const newMachines = allMachinesWithSetup?.filter(m => !existingMachineIdsList.includes(m.id)) || [];
 
   const setupMap = {};
   setups?.forEach(s => {
@@ -389,13 +384,14 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
   });
 
   // Use shift-based configuration
-  const defaultWorkTime = totalTime - defaultStoppage;
+  const defaultWorkTime = Math.max(totalTime - defaultStoppage, 0);
 
   // Create detail records for new machines
   const details = newMachines.map(machine => {
     const setup = setupMap[machine.id] || {};
     const stdProdn = calculateBreakerDrawingStdProdn(setup, totalTime, machine.speed);
-    const expProdn = stdProdn * (defaultWorkTime / totalTime);
+    const workRatio = totalTime > 0 ? defaultWorkTime / totalTime : 0;
+    const expProdn = stdProdn * workRatio;
     
     return {
       header_id: headerId,
@@ -406,7 +402,7 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
       std_prodn: stdProdn,
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
-      uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
+      uti_percent: Math.round(workRatio * 100 * 100) / 100,
       waste: setup.default_waste ?? null,
       waste_percent: 0,
       run_time: totalTime,  // Run time = Shift time
@@ -415,45 +411,43 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
     };
   });
 
-  await prisma.breaker_drawing_production_detail.createMany({
-    data: details,
-    skipDuplicates: true
-  });
-
-  const createdData = await prisma.breaker_drawing_production_detail.findMany({
-    where: {
-      header_id: headerId,
-      machine_id: { in: newMachines.map(m => m.id) }
+  return prisma.$transaction(async tx => {
+    if (details.length > 0) {
+      await tx.breaker_drawing_production_detail.createMany({ data: details, skipDuplicates: true });
     }
+    const visibleDetails = await tx.breaker_drawing_production_detail.findMany({
+      where: { header_id: headerId, machine_id: { in: allMachinesWithSetup.map(machine => machine.id) } }
+    });
+    const stoppages = visibleDetails.length > 0
+      ? await tx.breaker_drawing_stoppage_entry.findMany({
+          where: { production_detail_id: { in: visibleDetails.map(detail => detail.id) } },
+          select: { production_detail_id: true }
+        })
+      : [];
+    const stoppedIds = new Set(stoppages.map(entry => entry.production_detail_id));
+    const missingStoppages = visibleDetails
+      .filter(detail => !stoppedIds.has(detail.id))
+      .map(detail => ({ production_detail_id: detail.id, total_stoppage_time: 0 }));
+    if (missingStoppages.length > 0) {
+      await tx.breaker_drawing_stoppage_entry.createMany({ data: missingStoppages, skipDuplicates: true });
+    }
+    const newMachineIds = new Set(newMachines.map(machine => machine.id));
+    return visibleDetails.filter(detail => newMachineIds.has(detail.machine_id));
   });
-
-  // Create stoppage entries for new details with no pre-filled stoppages
-  const stoppageEntries = createdData.map(detail => ({
-    production_detail_id: detail.id,
-    stoppage1_id: null,
-    stoppage1_time: 0,
-    stoppage2_id: null,
-    stoppage2_time: 0,
-    total_stoppage_time: 0
-  }));
-
-  await prisma.breaker_drawing_stoppage_entry.createMany({
-    data: stoppageEntries,
-    skipDuplicates: true
-  });
-
-  return createdData;
 }
 
 // Update production detail
 export async function updateBreakerDrawingDetail(id, updates) {
   // Remove any fields that shouldn't be updated (like speed from calculations)
-  const { speed, machine, stoppage, ...cleanUpdates } = sanitizeProductionDetailUpdate(updates);
+  const cleanUpdates = sanitizeProductionDetailUpdate('breaker_drawing_production_detail', updates);
   
   try {
     const data = await prisma.breaker_drawing_production_detail.update({
       where: { id },
-      data: cleanUpdates
+      data: {
+        ...cleanUpdates,
+        updated_at: new Date()
+      }
     });
     return data;
   } catch (error) {
@@ -464,9 +458,16 @@ export async function updateBreakerDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateBreakerDrawingDetails(updates) {
+  const updatedAt = new Date();
   return prisma.$transaction(
     updates.map(({ id, ...data }) =>
-      prisma.breaker_drawing_production_detail.update({ where: { id }, data: sanitizeProductionDetailUpdate(data) })
+      prisma.breaker_drawing_production_detail.update({
+        where: { id },
+        data: {
+          ...sanitizeProductionDetailUpdate('breaker_drawing_production_detail', data),
+          updated_at: updatedAt
+        }
+      })
     )
   );
 }
@@ -639,7 +640,8 @@ export async function updateBreakerDrawingStoppageEntry(id, updates) {
       where: { id: detail.id },
       data: {
         total_stoppage_mins: total,
-        ...calculated
+        ...calculated,
+        updated_at: new Date()
       }
     });
 
@@ -874,22 +876,44 @@ export async function applyBreakerDrawingPartialStoppage(headerId, fromMachineNo
 // Get all machine setups with machine info (optionally scoped to a specific headerId)
 export async function getBreakerDrawingMachineSetups(headerId = null) {
   const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
+  const header = validHeaderId
+    ? await prisma.breaker_drawing_production_header.findUnique({
+        where: { id: validHeaderId },
+        select: { entry_date: true }
+      })
+    : null;
+  if (validHeaderId && !header) throw new Error(`Breaker Drawing production header ${validHeaderId} not found`);
   const machines = await prisma.drawing_breaker_machines.findMany({
-    where: { is_active: true },
-    select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+    where: header ? buildMachineVisibilityWhere(header.entry_date) : { is_active: true },
+    select: {
+      id: true,
+      machine_no: true,
+      description: true,
+      make_name: true,
+      prodn_mixing: true,
+      speed: true,
+      delivery: true,
+      sliver_hank: true,
+      prodn_efficiency: true,
+      is_active: true,
+      activated_at: true,
+      deactivated_at: true
+    }
   });
+  const machineById = new Map(machines.map(machine => [machine.id, machine]));
   const machineSpeedMap = {};
   const machineSetupOverridesMap = {};
   machines.forEach(m => {
-    machineSpeedMap[m.id] = m.speed;
-    const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+    const speed = positiveNumberOrFallback(m.speed, 750);
+    const hankConstant = positiveNumberOrFallback(m.sliver_hank, 0.14);
+    const efficiency = efficiencyFactorOrFallback(m.prodn_efficiency, 0.85);
+    const delivery = positiveNumberOrFallback(m.delivery, 1);
+    machineSpeedMap[m.id] = speed;
     machineSetupOverridesMap[m.id] = {
-      ...(m.speed != null && { speed: m.speed }),
-      ...(m.delivery != null && { delivery: m.delivery }),
-      ...(m.sliver_hank != null && { hank_constant: m.sliver_hank }),
-      ...(Number.isFinite(rawEfficiency) && {
-        std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
-      })
+      speed,
+      delivery,
+      hank_constant: hankConstant,
+      std_efficiency_factor: efficiency
     };
   });
   const setups = await getOrCreateDateScopedSetups({
@@ -898,7 +922,28 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     headerId: validHeaderId,
     machineIds: machines.map(machine => machine.id),
     machineSpeedMap,
-    machineSetupOverridesMap
+    machineSetupOverridesMap,
+    defaultSetupFactory: ({ machineId, totalTime }) => {
+      const machine = machineById.get(machineId);
+      if (!machine) throw new Error(`Breaker Drawing machine ${machineId} not found`);
+      return {
+        machine_id: machineId,
+        speed: positiveNumberOrFallback(machine.speed, 750),
+        hank_constant: positiveNumberOrFallback(machine.sliver_hank, 0.14),
+        std_efficiency_factor: efficiencyFactorOrFallback(machine.prodn_efficiency, 0.85),
+        default_waste: 0.85,
+        std_prodn: 0,
+        shift_time: positiveNumberOrFallback(totalTime, 510),
+        default_stoppage: 0,
+        divisor_constant: 1693,
+        delivery: positiveNumberOrFallback(machine.delivery, 1)
+      };
+    },
+    validateDefaultSetup: setup => assertPositiveSetupFields(
+      setup,
+      ['speed', 'hank_constant', 'std_efficiency_factor', 'shift_time', 'divisor_constant', 'delivery'],
+      'Breaker Drawing setup'
+    )
   });
   const headerDetails = validHeaderId
     ? await prisma.breaker_drawing_production_detail.findMany({
@@ -937,6 +982,7 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
 // NOTE: Speed is stored in drawing_breaker_machines table (source of truth)
 // The trigger sync_bd_speed_on_machine_update auto-syncs to setup table
 export async function updateBreakerDrawingMachineSetup(id, updates) {
+  updates = sanitizeBreakerDrawingSetupUpdate(updates);
   // Get current setup to find machine_id
   const currentSetup = await prisma.breaker_drawing_machine_setup.findUnique({
     where: { id },
@@ -975,7 +1021,7 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
 
   const data = await prisma.breaker_drawing_machine_setup.update({
     where: { id },
-    data: updates
+    data: { ...updates, updated_at: new Date() }
   });
   const machine = data?.machine_id
     ? await prisma.drawing_breaker_machines.findUnique({
@@ -1021,7 +1067,7 @@ export async function getBreakerDrawingStoppageReasons() {
   const breakerDept = await prisma.departments.findFirst({
     where: { dept_name: 'BREAKER DRAWING' }
   });
-  if (!breakerDept?.id) return [];
+  if (!breakerDept?.id) throw new Error('BREAKER DRAWING department not found');
 
   const rows = await prisma.$queryRaw`
     SELECT
@@ -1034,6 +1080,7 @@ export async function getBreakerDrawingStoppageReasons() {
     LEFT JOIN stoppage_heads sh ON sh.id = sd.stoppage_head_id
     WHERE sd.is_active = 1
       AND sd.department_id = ${breakerDept.id}
+      AND (sd.stoppage_head_id IS NULL OR sh.is_active = 1)
     ORDER BY sd.stoppage_name ASC
   `;
 
@@ -1167,17 +1214,32 @@ export async function getBreakerDrawingMachineWithSpeed(machineId) {
 // ============================================
 
 // Add new breaker drawing machine
-export async function addBreakerDrawingMachine(machineData) {
+export async function addBreakerDrawingMachine(machineData, entryContext) {
+  const created = await prisma.$transaction(async tx => {
+  const context = await resolveEntryMachineContext({
+    headerModel: tx.breaker_drawing_production_header,
+    context: entryContext,
+    label: 'Breaker Drawing production entry'
+  });
+  const requestedMachineNo = normalizeMachineNumber(machineData?.machine_no);
+  const matchingLifecycles = await tx.drawing_breaker_machines.findMany({
+    where: { machine_no: requestedMachineNo },
+    select: { id: true, is_active: true, activated_at: true, deactivated_at: true }
+  });
+  assertLifecycleCanStart(matchingLifecycles, context.entryDate, requestedMachineNo);
+  const installedDate = validateInstalledDateForActivation(machineData?.installed_date, context.entryDate);
+  machineData = { ...machineData, machine_no: requestedMachineNo };
   // Check if machine_no already exists (might be inactive)
   if (machineData.machine_no) {
-    const existingMachine = await prisma.drawing_breaker_machines.findFirst({
-      where: { machine_no: machineData.machine_no },
+    const existingMachine = await tx.drawing_breaker_machines.findFirst({
+      // Preserve inactive rows as completed historical lifecycles.
+      where: { machine_no: machineData.machine_no, is_active: true },
       select: { id: true, is_active: true, machine_no: true }
     });
 
     if (existingMachine && !existingMachine.is_active) {
       // Reactivate the existing machine — clear deactivated_at, set new activated_at
-      const reactivated = await prisma.drawing_breaker_machines.update({
+      const reactivated = await tx.drawing_breaker_machines.update({
         where: { id: existingMachine.id },
         data: {
           is_active: true,
@@ -1186,18 +1248,18 @@ export async function addBreakerDrawingMachine(machineData) {
           model: machineData.model || null,
           prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
           speed: resolveBreakerDrawingFormulaInputs(machineData).speed,
-          installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
-          activated_at: new Date(),
+          installed_date: installedDate,
+          activated_at: context.entryDate,
           deactivated_at: null,
         }
       });
 
       // Update or create the setup if needed
-      let existingSetup = await prisma.breaker_drawing_machine_setup.findUnique({
+      let existingSetup = await tx.breaker_drawing_machine_setup.findUnique({
         where: { machine_id: existingMachine.id }
       });
 
-      const shiftTime = machineData.shift_time || resolveBreakerDrawingShiftFallbackTime(1);
+      const shiftTime = context.totalTime > 0 ? context.totalTime : resolveBreakerDrawingShiftFallbackTime(context.shift);
       const formulaInputs = resolveBreakerDrawingFormulaInputs(machineData);
       const speed = formulaInputs.speed;
       const hankConstant = formulaInputs.hankConstant;
@@ -1208,7 +1270,7 @@ export async function addBreakerDrawingMachine(machineData) {
 
       let setup = existingSetup;
       if (existingSetup) {
-        await prisma.breaker_drawing_machine_setup.update({
+        await tx.breaker_drawing_machine_setup.update({
           where: { id: existingSetup.id },
           data: {
             speed: speed,
@@ -1221,9 +1283,11 @@ export async function addBreakerDrawingMachine(machineData) {
         });
       } else {
         // Create setup if it doesn't exist
-        setup = await prisma.breaker_drawing_machine_setup.create({
+        setup = await tx.breaker_drawing_machine_setup.create({
           data: {
             machine_id: existingMachine.id,
+            entry_date: context.entryDate,
+            shift: context.shift,
             speed: speed,
             hank_constant: hankConstant,
             std_efficiency_factor: stdEffi,
@@ -1241,23 +1305,25 @@ export async function addBreakerDrawingMachine(machineData) {
 
     if (existingMachine && existingMachine.is_active) {
       // Check if setup already exists
-      const existingSetup = await prisma.breaker_drawing_machine_setup.findUnique({
+      const existingSetup = await tx.breaker_drawing_machine_setup.findUnique({
         where: { machine_id: existingMachine.id }
       });
       if (existingSetup) {
         throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
       }
       // Machine is active but was created via master form (no setup yet) — create the setup
-      const shiftTime = machineData.shift_time || resolveBreakerDrawingShiftFallbackTime(1);
+      const shiftTime = context.totalTime > 0 ? context.totalTime : resolveBreakerDrawingShiftFallbackTime(context.shift);
       const formulaInputs = resolveBreakerDrawingFormulaInputs(machineData);
       const speed = formulaInputs.speed;
       const hankConstant = formulaInputs.hankConstant;
       const stdEffi = formulaInputs.stdEfficiencyFactor;
       const divisor = formulaInputs.divisorConstant;
       const delivery = formulaInputs.delivery;
-      const newSetup = await prisma.breaker_drawing_machine_setup.create({
+      const newSetup = await tx.breaker_drawing_machine_setup.create({
         data: {
           machine_id: existingMachine.id,
+          entry_date: context.entryDate,
+          shift: context.shift,
           speed,
           hank_constant: hankConstant,
           std_efficiency_factor: stdEffi,
@@ -1274,7 +1340,7 @@ export async function addBreakerDrawingMachine(machineData) {
   }
 
   // Get the max mc_id to generate next one
-  const maxMachine = await prisma.drawing_breaker_machines.findFirst({
+  const maxMachine = await tx.drawing_breaker_machines.findFirst({
     select: { mc_id: true, machine_no: true },
     orderBy: { mc_id: 'desc' }
   });
@@ -1283,7 +1349,7 @@ export async function addBreakerDrawingMachine(machineData) {
   const nextMachineNo = machineData.machine_no || `BD${nextMcId}`;
 
   // Insert new machine
-  const newMachine = await prisma.drawing_breaker_machines.create({
+  const newMachine = await tx.drawing_breaker_machines.create({
     data: {
       machine_no: nextMachineNo,
       mc_id: nextMcId,
@@ -1292,13 +1358,14 @@ export async function addBreakerDrawingMachine(machineData) {
       model: machineData.model || null,
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
       speed: resolveBreakerDrawingFormulaInputs(machineData).speed,
-      installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
-      is_active: true
+      installed_date: installedDate,
+      is_active: true,
+      activated_at: context.entryDate
     }
   });
 
   // Create machine setup for the new machine
-  const shiftTime = machineData.shift_time || resolveBreakerDrawingShiftFallbackTime(1);
+  const shiftTime = context.totalTime > 0 ? context.totalTime : resolveBreakerDrawingShiftFallbackTime(context.shift);
   const formulaInputs = resolveBreakerDrawingFormulaInputs(machineData);
   const speed = formulaInputs.speed;
   const hankConstant = formulaInputs.hankConstant;
@@ -1306,9 +1373,11 @@ export async function addBreakerDrawingMachine(machineData) {
   const divisor = formulaInputs.divisorConstant;
   const delivery = formulaInputs.delivery;
 
-  const newSetup = await prisma.breaker_drawing_machine_setup.create({
+  const newSetup = await tx.breaker_drawing_machine_setup.create({
     data: {
       machine_id: newMachine.id,
+      entry_date: context.entryDate,
+      shift: context.shift,
       speed: speed,
       hank_constant: hankConstant,
       std_efficiency_factor: stdEffi,
@@ -1323,47 +1392,71 @@ export async function addBreakerDrawingMachine(machineData) {
 
   // Do NOT proactively sync past headers — the sync runs on each entry page load.
   // New machines will appear automatically the next time any entry is opened.
-  return { machine: newMachine, setup: newSetup, reactivated: false, syncedHeaders: 0 };
+  return { machine: newMachine, setup: newSetup, reactivated: false, context };
+  });
+  const { context, ...result } = created;
+  const syncedDetails = await syncNewMachinesToBreakerDrawingHeader(context.headerId, context.shift);
+  return { ...result, syncedHeaders: 1, syncedDetails };
 }
 
 // Remove (deactivate) breaker drawing machine
-export async function removeBreakerDrawingMachine(machineId) {
-  // Soft delete - set is_active to false and record the deactivation date
-  const data = await prisma.drawing_breaker_machines.update({
-    where: { id: machineId },
-    data: { is_active: false, deactivated_at: new Date() }
-  });
-  return data;
+export async function removeBreakerDrawingMachines(machineIds, entryContext) {
+  return prisma.$transaction(tx => deactivateEntryMachines({
+    headerModel: tx.breaker_drawing_production_header,
+    machineModel: tx.drawing_breaker_machines,
+    machineIds,
+    context: entryContext,
+    label: 'Breaker Drawing production entry'
+  }));
 }
 
-// Update machine mixing on header production details and setup table
+export async function removeBreakerDrawingMachine(machineId, entryContext) {
+  const result = await removeBreakerDrawingMachines([machineId], entryContext);
+  return { id: machineId, is_active: false, deactivated_at: result.entryDate };
+}
+
+// Update the current entry plus the canonical machine value used by new entries.
 export async function updateBreakerDrawingMachineMixing(machineId, newMixing, headerId = null) {
-  if (headerId) {
-    await prisma.breaker_drawing_production_detail.updateMany({
-      where: { header_id: headerId, machine_id: machineId },
-      data: { prodn_mixing: newMixing }
-    });
-  }
-  const data = await prisma.breaker_drawing_machine_setup.updateMany({
-    where: { machine_id: machineId },
-    data: { prodn_mixing: newMixing }
-  });
-  return data;
+  return bulkUpdateBreakerDrawingMachineMixing([machineId], newMixing, headerId);
 }
 
-// Bulk update machine mixing on header production details and setup table
+// Bulk update the current entry plus canonical machine values used by new entries.
 export async function bulkUpdateBreakerDrawingMachineMixing(machineIds, newMixing, headerId = null) {
-  if (headerId && machineIds?.length > 0) {
-    await prisma.breaker_drawing_production_detail.updateMany({
-      where: { header_id: headerId, machine_id: { in: machineIds } },
-      data: { prodn_mixing: newMixing }
+  const mixing = normalizeMixingValue(newMixing);
+
+  return prisma.$transaction(async tx => {
+    const context = await resolveMachineMixingContext({
+      headerModel: tx.breaker_drawing_production_header,
+      machineModel: tx.drawing_breaker_machines,
+      headerId,
+      machineIds
     });
-  }
-  const data = await prisma.breaker_drawing_machine_setup.updateMany({
-    where: { machine_id: { in: machineIds } },
-    data: { prodn_mixing: newMixing }
-  });
-  return data;
+    const updatedAt = new Date();
+
+    const machines = await tx.drawing_breaker_machines.updateMany({
+      where: { id: { in: context.machineIds }, is_active: true },
+      data: { prodn_mixing: mixing, updated_at: updatedAt }
+    });
+    const productionDetails = context.header
+      ? await tx.breaker_drawing_production_detail.updateMany({
+          where: {
+            header_id: context.header.id,
+            machine_id: { in: context.machineIds }
+          },
+          data: { prodn_mixing: mixing, updated_at: updatedAt }
+        })
+      : { count: 0 };
+
+    assertMachineUpdateCount(machines.count, context.machineIds.length, 'canonical machine');
+    if (context.header) {
+      assertMachineUpdateCount(productionDetails.count, context.machineIds.length, 'production detail');
+    }
+
+    return {
+      machineCount: machines.count,
+      productionDetailCount: productionDetails.count
+    };
+  }, { maxWait: 5000, timeout: 30000 });
 }
 
 // Get all mixing options from spinning_counts master table

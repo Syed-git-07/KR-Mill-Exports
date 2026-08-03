@@ -28,6 +28,7 @@ import {
   findDraftByKeys,
   getEffectiveStoppageTotal,
   mergeSetupDraft,
+  resolveCommitDrafts,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
 
@@ -65,6 +66,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const tableRef = useRef(null)
 
   const setEditedRows = useCallback((updater) => {
@@ -73,6 +75,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
       const next = typeof updater === 'function' ? updater(prev) : (updater || {})
       if (next === prev) return
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -80,8 +83,10 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const focusRowByDelta = useCallback((rowIndex, delta, col) => {
     const targetRow = rowIndex + delta
@@ -137,7 +142,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         actProdn,
         effectiveTotalTime,
         stoppageTime,
-        setup
+        setup,
+        mergedRow.std_prodn
       )
 
       const finalExpProdn = toNumber(calculated.exp_prodn)
@@ -232,7 +238,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         actProdn,
         effectiveTotalTime,
         stoppageTime,
-        setup
+        setup,
+        row.std_prodn
       )
 
       const finalExpProdn = toNumber(calculated.exp_prodn)
@@ -289,7 +296,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
             actProdn,
             effectiveTotalTime,
             stoppageTime,
-            setup
+            setup,
+            row.std_prodn
           )
           const expProdn = calculated.exp_prodn
           const runTime = calculated.run_time
@@ -359,9 +367,15 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
-    const currentEdits = editedRowsRef.current || editedRows || {}
+    const currentEdits = resolveCommitDrafts({
+      dependencyDrafts,
+      tabKey: 'production',
+      refDrafts: editedRowsRef.current,
+      propDrafts: editedRows
+    })
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
     const rowsToSave = selectRowsForDependentCommit(
@@ -398,7 +412,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
           actProdn,
           effectiveTotalTime,
           stoppageTime,
-          setup
+          setup,
+          row.std_prodn
         )
 
         const wasteValue = toNumber(changes.waste ?? row.waste)
@@ -427,7 +442,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
       const result = await bulkUpdateProductionDetailsAction(updates)
       if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       const savedCount = rowsToSave.length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
       }

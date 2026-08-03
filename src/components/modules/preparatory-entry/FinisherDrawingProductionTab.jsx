@@ -23,6 +23,7 @@ import {
   findDraftByKeys,
   getEffectiveStoppageTotal,
   mergeSetupDraft,
+  resolveCommitDrafts,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
 import { NumberInput } from '@/components/ui/number-input'
@@ -51,6 +52,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
@@ -60,6 +62,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         return
       }
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -72,8 +75,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
   // (e.g. {waste:6} arriving from a prior parent render while the ref is already at {waste:6.78}).
   // Fix: only sync state→ref for the local-state path where no synchronous write exists.
   useEffect(() => {
-    if (!onSharedDraftEditsChange) {
-      editedRowsRef.current = editedRows
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
     }
   }, [editedRows, onSharedDraftEditsChange])
 
@@ -461,10 +464,11 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     suppressNoChangesToast = false,
     suppressSuccessToast = false,
     skipParentRefresh = false,
+    preserveDrafts = false,
     dependencyDrafts = null
   } = {}) => {
     // Use only the ref — it is always the most current (updated synchronously in setEditedRows).
-    const pendingEdits = editedRowsRef.current || {}
+    const pendingEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'production', refDrafts: editedRowsRef.current, propDrafts: editedRows })
 
     const effectiveSetupDrafts = dependencyDrafts?.setup ?? setupDraftEdits
     const effectiveStoppageDrafts = dependencyDrafts?.stoppage ?? stoppageDraftEdits
@@ -532,8 +536,10 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       const result = await bulkUpdateFinisherDrawingDetailsAction(updates)
       if (!result?.success) throw new Error(result?.error || 'Failed to update production rows')
       const savedCount = rowsToSave.length
-      editedRowsRef.current = {}
-      setEditedRows({})
+      if (!preserveDrafts) {
+        editedRowsRef.current = {}
+        setEditedRows({})
+      }
       if (!suppressSuccessToast) {
         toast.success('Production data saved successfully')
       }

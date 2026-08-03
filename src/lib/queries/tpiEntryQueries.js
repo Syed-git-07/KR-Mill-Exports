@@ -1,196 +1,190 @@
-import { prisma } from '../prisma';
+import { prisma } from '../prisma'
+import { parseStrictDate } from '../strictDate'
 
-/**
- * TPI Entry CRUD Operations
- * 
- * VB6 Grid Columns: id (entry_id), sdate (DD-Mon-YY), countname, TPI
- * VB6 Form Fields: Date, Count (dropdown), TPI
- * 
- * NOTE: Requires FK constraint on spinning_count_id -> spinning_counts(id)
- * Run schema/tpi-twc-fk-fix.sql if join fails
- */
+const TPI_SEARCH_FIELDS = new Set(['entry_id', 'entry_date', 'tpi_value'])
+const TPI_NUMERIC_FIELDS = new Set(['entry_id', 'tpi_value'])
 
-// Get all TPI entries with count name join
+function requiredDate(value, label = 'Entry date') {
+  return parseStrictDate(value, label)
+}
+
+function requiredNonNegativeNumber(value, label) {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`${label} is required`)
+  }
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`${label} must be a non-negative number`)
+  }
+  return number
+}
+
+function normalizeTPIEntry(entryData = {}) {
+  const spinningCountId = String(entryData.spinning_count_id || '').trim()
+  if (!spinningCountId) throw new Error('Count selection is required')
+
+  const shift = entryData.shift == null || entryData.shift === ''
+    ? null
+    : String(entryData.shift).trim()
+
+  return {
+    entry_date: requiredDate(entryData.entry_date),
+    spinning_count_id: spinningCountId,
+    tpi_value: requiredNonNegativeNumber(entryData.tpi_value, 'TPI value'),
+    shift,
+    remarks: entryData.remarks == null || entryData.remarks === ''
+      ? null
+      : String(entryData.remarks).trim(),
+  }
+}
+
+async function assertUsableCount(transaction, countId, unchangedCountId = null) {
+  const count = await transaction.spinning_counts.findUnique({
+    where: { id: countId },
+    select: { id: true, is_active: true },
+  })
+
+  if (!count) throw new Error('The selected spinning count no longer exists')
+  if (!count.is_active && countId !== unchangedCountId) {
+    throw new Error('The selected spinning count is inactive')
+  }
+}
+
+async function assertNoDuplicateEntry(transaction, data, excludeId = null) {
+  const duplicate = await transaction.tpi_entries.findFirst({
+    where: {
+      entry_date: data.entry_date,
+      spinning_count_id: data.spinning_count_id,
+      shift: data.shift,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  })
+
+  if (duplicate) {
+    throw new Error('A TPI entry already exists for this date, count, and shift')
+  }
+}
+
+async function attachCountNames(entries) {
+  const countIds = [...new Set(entries.map(entry => entry.spinning_count_id).filter(Boolean))]
+  const counts = countIds.length
+    ? await prisma.spinning_counts.findMany({
+        where: { id: { in: countIds } },
+        select: { id: true, count_name: true },
+      })
+    : []
+  const countMap = new Map(counts.map(count => [count.id, count]))
+
+  return entries.map(entry => ({
+    ...entry,
+    spinning_counts: countMap.get(entry.spinning_count_id) || null,
+  }))
+}
+
 export async function getTPIEntries() {
-  try {
-    const data = await prisma.tpi_entries.findMany({
-      orderBy: {
-        entry_id: 'asc'
-      }
-    })
-
-    // Manually fetch spinning count names since no relationship is defined
-    const countIds = [...new Set(data.map(e => e.spinning_count_id).filter(Boolean))];
-    const counts = countIds.length > 0 ? await prisma.spinning_counts.findMany({
-      where: { id: { in: countIds } },
-      select: { id: true, count_name: true }
-    }) : [];
-
-    const countMap = Object.fromEntries(counts.map(c => [c.id, c]));
-
-    // Transform to expected format (map to tpi_value and add spinning_counts)
-    return data.map(entry => ({
-      ...entry,
-      tpi_value: entry.tpi_value, // Use tpi_value from database
-      spinning_counts: countMap[entry.spinning_count_id] || null
-    }))
-  } catch (error) {
-    throw error
-  }
+  const entries = await prisma.tpi_entries.findMany({
+    orderBy: { entry_id: 'asc' },
+  })
+  return attachCountNames(entries)
 }
 
-// Get spinning counts for dropdown
-export async function getCountsForDropdown() {
-  try {
-    const data = await prisma.spinning_counts.findMany({
-      where: { is_active: true },
-      select: {
-        id: true,
-        count_name: true
-      },
-      orderBy: {
-        count_name: 'asc'
-      }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+export async function getCountsForDropdown(includeCountId = null) {
+  return prisma.spinning_counts.findMany({
+    where: {
+      OR: [
+        { is_active: true },
+        ...(includeCountId ? [{ id: includeCountId }] : []),
+      ],
+    },
+    select: { id: true, count_name: true, is_active: true },
+    orderBy: { count_name: 'asc' },
+  })
 }
 
-// Create new TPI entry
 export async function createTPIEntry(entryData) {
-  try {
-    // Convert entry_date string to Date object if needed
-    const processedData = { ...entryData };
-    if (processedData.entry_date && typeof processedData.entry_date === 'string') {
-      processedData.entry_date = new Date(processedData.entry_date);
-    }
+  const normalized = normalizeTPIEntry(entryData)
 
-    const data = await prisma.tpi_entries.create({
-      data: processedData
+  return prisma.$transaction(async transaction => {
+    await assertUsableCount(transaction, normalized.spinning_count_id)
+    await assertNoDuplicateEntry(transaction, normalized)
+
+    const latest = await transaction.tpi_entries.findFirst({
+      orderBy: { entry_id: 'desc' },
+      select: { entry_id: true },
     })
-    return data
-  } catch (error) {
-    throw error
-  }
+
+    return transaction.tpi_entries.create({
+      data: {
+        ...normalized,
+        entry_id: (latest?.entry_id ?? 0) + 1,
+      },
+    })
+  }, { isolationLevel: 'Serializable' })
 }
 
-// Update TPI entry
 export async function updateTPIEntry(id, entryData) {
-  try {
-    // Convert entry_date string to Date object if needed
-    const processedData = { ...entryData };
-    if (processedData.entry_date && typeof processedData.entry_date === 'string') {
-      processedData.entry_date = new Date(processedData.entry_date);
-    }
+  if (!id) throw new Error('TPI entry ID is required')
+  const normalized = normalizeTPIEntry(entryData)
 
-    const data = await prisma.tpi_entries.update({
+  return prisma.$transaction(async transaction => {
+    const existing = await transaction.tpi_entries.findUnique({
       where: { id },
-      data: processedData
+      select: { id: true, spinning_count_id: true },
     })
-    return data
-  } catch (error) {
-    throw error
-  }
+    if (!existing) throw new Error('TPI entry not found')
+
+    await assertUsableCount(transaction, normalized.spinning_count_id, existing.spinning_count_id)
+    await assertNoDuplicateEntry(transaction, normalized, id)
+
+    return transaction.tpi_entries.update({
+      where: { id },
+      data: normalized,
+    })
+  })
 }
 
-// Delete TPI entry
 export async function deleteTPIEntry(id) {
-  try {
-    await prisma.tpi_entries.delete({
-      where: { id }
-    })
-    return true
-  } catch (error) {
-    throw error
-  }
+  if (!id) throw new Error('TPI entry ID is required')
+  await prisma.tpi_entries.delete({ where: { id } })
+  return true
 }
 
-// Search TPI entries by entry_id (VB6 style - search by id)
 export async function searchTPIEntries(field, condition, value) {
-  try {
-    let where = {}
+  if (!TPI_SEARCH_FIELDS.has(field)) throw new Error('Unsupported TPI search field')
+  const trimmedValue = String(value ?? '').trim()
+  if (!trimmedValue) return getTPIEntries()
 
-    if (value && value.trim() !== '') {
-      const numValue = parseFloat(value)
-      const isNumber = !isNaN(numValue)
-
-      switch (condition) {
-        case 'Like':
-          if (!isNumber) {
-            // MySQL doesn't support mode: 'insensitive', string comparisons are case-insensitive by default
-            where[field] = {
-              contains: value
-            }
-          } else {
-            where[field] = numValue
-          }
-          break
-        case 'Equal':
-        case '=':
-          if (isNumber) {
-            where[field] = numValue
-          } else {
-            where[field] = value
-          }
-          break
-        case 'Not Equal':
-          if (isNumber) {
-            where[field] = {
-              not: numValue
-            }
-          } else {
-            where[field] = {
-              not: value
-            }
-          }
-          break
-        case 'Greater':
-          if (isNumber) {
-            where[field] = {
-              gt: numValue
-            }
-          }
-          break
-        case 'Less':
-          if (isNumber) {
-            where[field] = {
-              lt: numValue
-            }
-          }
-          break
-        default:
-          // MySQL doesn't support mode: 'insensitive', string comparisons are case-insensitive by default
-          where[field] = {
-            contains: value
-          }
-      }
-    }
-
-    const data = await prisma.tpi_entries.findMany({
-      where,
-      orderBy: {
-        entry_id: 'asc'
-      }
-    })
-    
-    // Manually fetch spinning count names since no relationship is defined
-    const countIds = [...new Set(data.map(e => e.spinning_count_id).filter(Boolean))];
-    const counts = countIds.length > 0 ? await prisma.spinning_counts.findMany({
-      where: { id: { in: countIds } },
-      select: { id: true, count_name: true }
-    }) : [];
-
-    const countMap = Object.fromEntries(counts.map(c => [c.id, c]));
-    
-    // Transform to expected format
-    return data.map(entry => ({
-      ...entry,
-      tpi_value: entry.tpi_value, // Use tpi_value from database
-      spinning_counts: countMap[entry.spinning_count_id] || null
-    }))
-  } catch (error) {
-    throw error
+  let operand
+  if (field === 'entry_date') {
+    operand = requiredDate(trimmedValue, 'Search date')
+  } else if (TPI_NUMERIC_FIELDS.has(field)) {
+    operand = requiredNonNegativeNumber(trimmedValue, 'Search value')
+    if (field === 'entry_id') operand = Math.trunc(operand)
   }
+
+  let filter
+  switch (condition) {
+    case 'Not Equal':
+      filter = { not: operand }
+      break
+    case 'Greater':
+      filter = { gt: operand }
+      break
+    case 'Less':
+      filter = { lt: operand }
+      break
+    case 'Like':
+    case 'Equal':
+    case '=':
+    default:
+      filter = operand
+      break
+  }
+
+  const entries = await prisma.tpi_entries.findMany({
+    where: { [field]: filter },
+    orderBy: { entry_id: 'asc' },
+  })
+  return attachCountNames(entries)
 }

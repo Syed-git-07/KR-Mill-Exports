@@ -203,36 +203,45 @@ export async function getCountOptionsAction() {
   }
 }
 
-export async function addBreakerDrawingMachineAction(machineData) {
+export async function addBreakerDrawingMachineAction(machineData, entryContext) {
   try {
-    const data = await queries.addBreakerDrawingMachine(machineData)
+    const data = await queries.addBreakerDrawingMachine(machineData, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeBreakerDrawingMachineAction(machineId) {
+export async function removeBreakerDrawingMachineAction(machineId, entryContext) {
   try {
-    const data = await queries.removeBreakerDrawingMachine(machineId)
+    const data = await queries.removeBreakerDrawingMachine(machineId, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function updateMachineCountAction(machineId, count) {
+export async function removeBreakerDrawingMachinesAction(machineIds, entryContext) {
   try {
-    const data = await queries.updateMachineCount(machineId, count)
+    const data = await queries.removeBreakerDrawingMachines(machineIds, entryContext)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function bulkUpdateMachineCountAction(machineIds, count) {
+export async function updateMachineCountAction(machineId, count, headerId = null) {
   try {
-    const data = await queries.bulkUpdateMachineCount(machineIds, count)
+    const data = await queries.updateMachineCount(machineId, count, headerId)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function bulkUpdateMachineCountAction(machineIds, count, headerId = null) {
+  try {
+    const data = await queries.bulkUpdateMachineCount(machineIds, count, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -17,6 +17,7 @@ import {
 import { getSpinningCountOptionsAction } from '@/app/actions/finisher-drawing-entry';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 import { assertAllActionsSucceeded } from '@/lib/actionResult';
+import { useLatestRows } from '@/hooks/useLatestRows';
 
 export default function DrawingFinisherPage() {
   const [machines, setMachines] = useState([]);
@@ -28,6 +29,15 @@ export default function DrawingFinisherPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [countOptions, setCountOptions] = useState([]);
+  const { getCurrentRow, getCurrentRows, openRowEditor, resetInteractionState, runLatestRowsRequest } = useLatestRows({
+    rows: machines, setRows: setMachines,
+    selectedItem: selectedMachine, setSelectedItem: setSelectedMachine,
+    selectedRows, setSelectedRows,
+    setIsSelectMode,
+    setIsEditing,
+    setIsModalOpen,
+    closeModalWhenSelectedItemStale: isEditing
+  });
 
   // VB6 search fields: McNo
   const searchFields = [
@@ -51,36 +61,27 @@ export default function DrawingFinisherPage() {
   }, []);
 
   const loadMachines = async () => {
-    try {
-      setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getDrawingFinisherMachinesAction(),
-        getSpinningCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
+    await runLatestRowsRequest(
+      () => Promise.all([getDrawingFinisherMachinesAction(), getSpinningCountOptionsAction()]),
+      {
+        onStart: () => setLoading(true),
+        onSuccess: ([result, countRes], { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          if (countRes?.success) setCountOptions(countRes.data || []);
+          replaceRows((result.data || []).map(machine => ({
+            ...machine,
+            prodn_mixing: machine.prodn_mixing || '-',
+            make_name: machine.make_name || '-',
+            speed: machine.speed || 0
+          })));
+        },
+        onError: err => {
+          console.error('Error loading drawing finisher machines:', err);
+          toast.error('Failed to load drawing finisher machines: ' + err.message);
+        },
+        onFinally: () => setLoading(false)
       }
-      
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      // Format data for display
-      const formattedData = (result.data || []).map(machine => ({
-        ...machine,
-        prodn_mixing: machine.prodn_mixing || '-',
-        make_name: machine.make_name || '-',
-        speed: machine.speed || 0
-      }));
-      
-      setMachines(formattedData);
-    } catch (err) {
-      console.error('Error loading drawing finisher machines:', err);
-      toast.error('Failed to load drawing finisher machines: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleSearch = async (field, condition, value) => {
@@ -89,26 +90,25 @@ export default function DrawingFinisherPage() {
       return;
     }
     
-    try {
-      const result = await searchDrawingFinisherMachinesAction(field, condition, value);
-      
-      if (!result.success) {
-        throw new Error(result.error);
+    await runLatestRowsRequest(
+      () => searchDrawingFinisherMachinesAction(field, condition, value),
+      {
+        onSuccess: (result, { replaceRows }) => {
+          if (!result.success) throw new Error(result.error);
+          replaceRows((result.data || []).map(machine => ({
+            ...machine,
+            prodn_mixing: machine.prodn_mixing || '-',
+            make_name: machine.make_name || '-',
+            speed: machine.speed || 0
+          })));
+          toast.success(`Found ${(result.data || []).length} result(s)`);
+        },
+        onError: err => {
+          console.error('Search error:', err);
+          toast.error('Search failed: ' + err.message);
+        }
       }
-      
-      const formattedData = result.data.map(machine => ({
-        ...machine,
-        prodn_mixing: machine.prodn_mixing || '-',
-        make_name: machine.make_name || '-',
-        speed: machine.speed || 0
-      }));
-      
-      setMachines(formattedData);
-      toast.success(`Found ${result.data.length} result(s)`);
-    } catch (err) {
-      console.error('Search error:', err);
-      toast.error('Search failed: ' + err.message);
-    }
+    );
   };
 
   const handleShowAll = () => {
@@ -116,27 +116,24 @@ export default function DrawingFinisherPage() {
   };
 
   const handleRowClick = (machine) => {
+    if (isSelectMode) return;
     setSelectedMachine(machine);
   };
 
   const handleAdd = () => {
+    resetInteractionState();
     setSelectedMachine(null);
+    setSelectedRows([]);
+    setIsSelectMode(false);
     setIsEditing(false);
-    setIsModalOpen(true);
-  };
-
-  const handleEdit = () => {
-    if (!selectedMachine) {
-      toast.error('Please select a machine to edit');
-      return;
-    }
-    setIsEditing(true);
     setIsModalOpen(true);
   };
 
   const handleDeactivate = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      const activeRows = selectedRows.filter(r => r.is_active);
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected machines are no longer in the current list');
+      const activeRows = currentSelectedRows.filter(r => r.is_active);
       if (activeRows.length === 0) {
         toast.info('All selected machines are already inactive');
         return;
@@ -150,6 +147,7 @@ export default function DrawingFinisherPage() {
         const results = await Promise.all(activeRows.map(row => updateDrawingFinisherMachineAction(row.id, { is_active: false })));
         assertAllActionsSucceeded(results, 'Failed to deactivate one or more machines');
         toast.success(`${activeRows.length} machine(s) deactivated`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
         loadMachines();
@@ -157,7 +155,7 @@ export default function DrawingFinisherPage() {
         toast.error('Failed to deactivate: ' + error.message);
       }
     } else {
-      const targetMachine = selectedMachine;
+      const targetMachine = getCurrentRow(selectedMachine);
       if (!targetMachine) {
         toast.warning('Please select a machine to deactivate');
         return;
@@ -178,6 +176,7 @@ export default function DrawingFinisherPage() {
           throw new Error(result.error);
         }
         toast.success('Machine deactivated');
+        resetInteractionState({ closeModal: true });
         setIsModalOpen(false);
         setIsEditing(false);
         setSelectedMachine(null);
@@ -191,14 +190,17 @@ export default function DrawingFinisherPage() {
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} machine(s)?`)) {
+      const currentSelectedRows = getCurrentRows(selectedRows);
+      if (!currentSelectedRows.length) return toast.warning('The selected machines are no longer in the current list');
+      if (!confirm(`Are you sure you want to delete ${currentSelectedRows.length} machine(s)?`)) {
         return;
       }
 
       try {
-        const results = await Promise.all(selectedRows.map(row => deleteDrawingFinisherMachineAction(row.id)));
+        const results = await Promise.all(currentSelectedRows.map(row => deleteDrawingFinisherMachineAction(row.id)));
         assertAllActionsSucceeded(results, 'Failed to remove one or more machines');
-        toast.success(`${selectedRows.length} machine(s) deleted successfully`);
+        toast.success(`${currentSelectedRows.length} machine(s) deleted successfully`);
+        resetInteractionState({ closeModal: true });
         setSelectedRows([]);
         setIsSelectMode(false);
         loadMachines();
@@ -207,16 +209,19 @@ export default function DrawingFinisherPage() {
       }
     } else if (!isSelectMode && selectedMachine) {
       // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedMachine.machine_no}"?`)) {
+      const currentMachine = getCurrentRow(selectedMachine);
+      if (!currentMachine) return toast.warning('The selected machine is no longer in the current list');
+      if (!confirm(`Are you sure you want to delete "${currentMachine.machine_no}"?`)) {
         return;
       }
 
       try {
-        const result = await deleteDrawingFinisherMachineAction(selectedMachine.id);
+        const result = await deleteDrawingFinisherMachineAction(currentMachine.id);
         if (!result.success) {
           throw new Error(result.error);
         }
         toast.success('Machine deleted successfully');
+        resetInteractionState({ closeModal: true });
         setSelectedMachine(null);
         setIsModalOpen(false);
         loadMachines();
@@ -248,8 +253,9 @@ export default function DrawingFinisherPage() {
   };
 
   const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    setSelectedRows([]);
+    const nextSelectMode = !isSelectMode;
+    resetInteractionState({ closeModal: true });
+    setIsSelectMode(nextSelectMode);
   };
 
   const handleSave = async (formData) => {
@@ -257,7 +263,9 @@ export default function DrawingFinisherPage() {
     try {
       let result;
       if (isEditing && selectedMachine) {
-        result = await updateDrawingFinisherMachineAction(selectedMachine.id, formData);
+        const currentMachine = getCurrentRow(selectedMachine);
+        if (!currentMachine) throw new Error('This machine is no longer in the current list');
+        result = await updateDrawingFinisherMachineAction(currentMachine.id, formData);
         if (!result.success) {
           throw new Error(result.error);
         }
@@ -269,6 +277,7 @@ export default function DrawingFinisherPage() {
         }
         toast.success('Machine created successfully');
       }
+      resetInteractionState({ closeModal: true });
       setIsModalOpen(false);
       setSelectedMachine(null);
       loadMachines();
@@ -356,15 +365,13 @@ export default function DrawingFinisherPage() {
               : '!bg-white hover:!bg-yellow-100'
           }
           onRowDoubleClick={(row) => {
-            setSelectedMachine(row);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            if (isSelectMode) return;
+            openRowEditor(row);
           }}
           onContextMenu={(row, e) => {
             e.preventDefault();
-            setSelectedMachine(row);
-            setIsEditing(true);
-            setIsModalOpen(true);
+            if (isSelectMode) return;
+            openRowEditor(row);
           }}
         />
       )}
@@ -381,12 +388,15 @@ export default function DrawingFinisherPage() {
       {/* Form Modal */}
       <FormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) setIsEditing(false);
+        }}
         title="Draw Frame Finisher M/c Master"
         description={isEditing ? "Modify machine make details" : "Add new machine make details"}
         onCancel={() => {
           setIsModalOpen(false);
-          setSelectedMachine(null);
+          setIsEditing(false);
         }}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

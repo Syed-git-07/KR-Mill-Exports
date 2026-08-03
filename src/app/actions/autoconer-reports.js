@@ -13,13 +13,14 @@ import {
 } from '@/lib/queries/autoconerLowEfficiencyReportQueries'
 import { generateAutoconerParticularSiderReport } from '@/lib/queries/autoconerParticularSiderReportQueries'
 import { generateAutoconerEfficiencyReport } from '@/lib/queries/autoconerEfficiencyReportQueries'
+import { parseStrictDate } from '@/lib/strictDate'
 
 /**
  * Normalize date to UTC midnight for MySQL DATE comparison
  */
 function normalizeDate(dateString) {
-  const date = new Date(dateString)
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0))
+  const value = dateString instanceof Date ? dateString.toISOString().slice(0, 10) : dateString
+  return parseStrictDate(value, 'Report date')
 }
 
 /**

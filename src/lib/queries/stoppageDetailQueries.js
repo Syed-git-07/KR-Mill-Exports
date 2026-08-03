@@ -1,6 +1,83 @@
 import { prisma } from '../prisma'
 import { deleteUnusedStoppageDetail } from './masterDeletion'
 
+const DETAIL_FIELDS = new Set([
+  'code', 'description', 'stoppage_name', 'short_code', 'full_stoppage_name',
+  'department_id', 'stoppage_head_id', 'is_active'
+])
+
+function cleanStoppageDetailData(detailData = {}) {
+  const data = {}
+  for (const [key, value] of Object.entries(detailData)) {
+    if (!DETAIL_FIELDS.has(key) || value === undefined) continue
+    if (key === 'code') {
+      if (value == null || value === '') data.code = null
+      else {
+        const code = Number(value)
+        if (!Number.isInteger(code) || code <= 0) throw new Error('Code must be a positive whole number')
+        data.code = code
+      }
+    } else if (key === 'is_active') {
+      if (typeof value !== 'boolean') throw new Error('Active status must be true or false')
+      data.is_active = value
+    } else if (key === 'department_id' || key === 'stoppage_head_id') {
+      data[key] = value || null
+    } else {
+      data[key] = value == null || value === '' ? null : String(value).trim()
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'stoppage_name') && !data.stoppage_name) {
+    throw new Error('Stoppage name is required')
+  }
+  return data
+}
+
+async function validateStoppageDetail(transaction, data, excludeId = null, existing = null) {
+  const departmentChanged = data.department_id && data.department_id !== existing?.department_id
+  const headChanged = data.stoppage_head_id && data.stoppage_head_id !== existing?.stoppage_head_id
+  if (departmentChanged || (!existing && data.department_id)) {
+    const department = await transaction.departments.findUnique({
+      where: { id: data.department_id },
+      select: { is_active: true }
+    })
+    if (!department) throw new Error('Selected department no longer exists')
+    if (!department.is_active) throw new Error('Selected department is inactive')
+  }
+  if (headChanged || (!existing && data.stoppage_head_id)) {
+    const head = await transaction.stoppage_heads.findUnique({
+      where: { id: data.stoppage_head_id },
+      select: { is_active: true }
+    })
+    if (!head) throw new Error('Selected stoppage head no longer exists')
+    if (!head.is_active) throw new Error('Selected stoppage head is inactive')
+  }
+
+  if (data.code != null) {
+    const duplicateCode = await transaction.stoppage_details.findFirst({
+      where: { code: data.code, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true }
+    })
+    if (duplicateCode) throw new Error(`Stoppage detail code ${data.code} already exists`)
+  }
+
+  const departmentId = data.department_id ?? existing?.department_id
+  const headId = data.stoppage_head_id ?? existing?.stoppage_head_id
+  const stoppageName = data.stoppage_name ?? existing?.stoppage_name
+  if (departmentId && headId && stoppageName && (data.stoppage_name || departmentChanged || headChanged || !existing)) {
+    const duplicateName = await transaction.stoppage_details.findFirst({
+      where: {
+        department_id: departmentId,
+        stoppage_head_id: headId,
+        stoppage_name: { equals: stoppageName },
+        ...(excludeId ? { id: { not: excludeId } } : {})
+      },
+      select: { id: true }
+    })
+    if (duplicateName) throw new Error('This stoppage reason already exists in the selected department and head')
+  }
+}
+
 /**
  * Get all stoppage details with joined data
  */
@@ -73,29 +150,24 @@ export async function getStoppageDetailById(id) {
  * Create new stoppage detail
  */
 export async function createStoppageDetail(stoppageDetailData) {
-  // Auto-generate code if not provided
-  let code = stoppageDetailData.code
-  
-  if (!code) {
-    // Get max code and increment
-    const maxData = await prisma.stoppage_details.findFirst({
-      orderBy: { code: 'desc' },
-      select: { code: true }
-    });
-    
-    code = maxData && maxData.code ? maxData.code + 1 : 1447;
-  }
+  const processedData = cleanStoppageDetailData(stoppageDetailData)
+  if (!processedData.stoppage_name) throw new Error('Stoppage name is required')
+  if (!processedData.department_id) throw new Error('Department is required')
+  if (!processedData.stoppage_head_id) throw new Error('Stoppage head is required')
+  processedData.description = processedData.description || ''
+  if (processedData.is_active === undefined) processedData.is_active = true
 
-  // Ensure description is not null (MySQL requires NOT NULL)
-  const processedData = {
-    ...stoppageDetailData,
-    code,
-    description: stoppageDetailData.description || ''
-  };
-
-  const data = await prisma.stoppage_details.create({
-    data: processedData
-  });
+  const data = await prisma.$transaction(async transaction => {
+    if (!processedData.code) {
+      const maxData = await transaction.stoppage_details.findFirst({
+        orderBy: { code: 'desc' },
+        select: { code: true }
+      })
+      processedData.code = (maxData?.code ?? 1446) + 1
+    }
+    await validateStoppageDetail(transaction, processedData)
+    return transaction.stoppage_details.create({ data: processedData })
+  }, { isolationLevel: 'Serializable' })
 
   // Fetch related data manually
   let stoppageHead = null;
@@ -127,16 +199,18 @@ export async function createStoppageDetail(stoppageDetailData) {
  * Update stoppage detail
  */
 export async function updateStoppageDetail(id, stoppageDetailData) {
-  // Ensure description is not null (MySQL requires NOT NULL)
-  const processedData = {
-    ...stoppageDetailData,
-    description: stoppageDetailData.description || ''
-  };
+  if (!id) throw new Error('Stoppage detail ID is required')
+  const processedData = cleanStoppageDetailData(stoppageDetailData)
+  if (Object.prototype.hasOwnProperty.call(processedData, 'description')) {
+    processedData.description = processedData.description || ''
+  }
 
-  const data = await prisma.stoppage_details.update({
-    where: { id },
-    data: processedData
-  });
+  const data = await prisma.$transaction(async transaction => {
+    const existing = await transaction.stoppage_details.findUnique({ where: { id } })
+    if (!existing) throw new Error('Stoppage detail not found')
+    await validateStoppageDetail(transaction, processedData, id, existing)
+    return transaction.stoppage_details.update({ where: { id }, data: processedData })
+  })
 
   // Fetch related data manually
   let stoppageHead = null;
@@ -177,13 +251,33 @@ export async function deleteStoppageDetail(id) {
 export async function searchStoppageDetails(field, condition, value) {
   let whereClause = {};
 
-  const trimmedValue = value.trim()
+  const allowedFields = new Set(['code', 'stoppage_name', 'short_code', 'description', 'stoppage_head_name', 'dept_name', 'is_active'])
+  if (!allowedFields.has(field)) throw new Error('Unsupported stoppage detail search field')
+  const trimmedValue = String(value ?? '').trim()
+
+  if (field === 'stoppage_head_name' || field === 'dept_name') {
+    const model = field === 'stoppage_head_name' ? prisma.stoppage_heads : prisma.departments
+    const nameField = field === 'stoppage_head_name' ? 'stoppage_head_name' : 'dept_name'
+    const idField = field === 'stoppage_head_name' ? 'stoppage_head_id' : 'department_id'
+    const nameFilter = condition === 'Equal'
+      ? trimmedValue
+      : condition === 'Not Equal'
+        ? { not: trimmedValue }
+        : { contains: trimmedValue }
+    const matches = await model.findMany({ where: { [nameField]: nameFilter }, select: { id: true } })
+    whereClause[idField] = { in: matches.map(item => item.id) }
+  }
 
   // Handle numeric fields
   const numericFields = ['code']
   const isNumericField = numericFields.includes(field)
 
-  if (condition === 'Like') {
+  if (field === 'stoppage_head_name' || field === 'dept_name') {
+    // Relationship filter was resolved above.
+  } else if (field === 'is_active') {
+    const active = ['true', 'yes', 'active', '1'].includes(trimmedValue.toLowerCase())
+    whereClause.is_active = condition === 'Not Equal' ? { not: active } : active
+  } else if (condition === 'Like') {
     if (isNumericField) {
       // For numeric fields, use exact match with Like
       const numValue = parseInt(trimmedValue, 10)
@@ -261,7 +355,8 @@ export async function getStoppageHeadsForDropdown() {
   const data = await prisma.stoppage_heads.findMany({
     select: {
       id: true,
-      stoppage_head_name: true
+      stoppage_head_name: true,
+      is_active: true
     },
     orderBy: { stoppage_head_name: 'asc' }
   });
@@ -274,10 +369,10 @@ export async function getStoppageHeadsForDropdown() {
  */
 export async function getDepartmentsForDropdown() {
   const data = await prisma.departments.findMany({
-    where: { is_active: true },
     select: {
       id: true,
-      dept_name: true
+      dept_name: true,
+      is_active: true
     },
     orderBy: { dept_name: 'asc' }
   });

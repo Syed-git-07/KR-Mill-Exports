@@ -6,18 +6,30 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const departmentSchema = z.object({
   code: z.number().min(0, 'Code must be positive'),
   dept_name: z.string().min(2, 'Department name must be at least 2 characters'),
   sl_no: z.number().min(0, 'SL.NO must be positive'),
-  hok: z.number().min(0, 'H.O.K must be positive')
+  hok: z.number().min(0, 'H.O.K must be positive'),
+  is_active: z.boolean().default(true)
 });
 
+const operationalDepartmentNames = new Set([
+  'AUTOCONER', 'BREAKER DRAWING', 'CARDING', 'COMBER',
+  'FINISHER DRAWING', 'LAP FORMER', 'SIMPLEX', 'SPINNING'
+]);
+
 export default function DepartmentForm({ initialData, onSubmit, onCancel }) {
+  const isOperationalDepartment = operationalDepartmentNames.has(
+    String(initialData?.dept_name ?? '').trim().replace(/\s+/g, ' ').toUpperCase()
+  );
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting }
   } = useForm({
     resolver: zodResolver(departmentSchema),
@@ -25,7 +37,8 @@ export default function DepartmentForm({ initialData, onSubmit, onCancel }) {
       code: '',
       dept_name: '',
       sl_no: '',
-      hok: 0.2
+      hok: 0.2,
+      is_active: true
     }
   });
 
@@ -79,7 +92,13 @@ export default function DepartmentForm({ initialData, onSubmit, onCancel }) {
             id="dept_name"
             {...register('dept_name')}
             className={errors.dept_name ? 'border-red-500' : ''}
+            readOnly={isOperationalDepartment}
           />
+          {isOperationalDepartment && (
+            <p className="text-xs text-muted-foreground">
+              This production department name is a system key; its other attributes remain editable.
+            </p>
+          )}
           {errors.dept_name && (
             <p className="text-xs text-red-500">{errors.dept_name.message}</p>
           )}
@@ -98,6 +117,15 @@ export default function DepartmentForm({ initialData, onSubmit, onCancel }) {
           {errors.hok && (
             <p className="text-xs text-red-500">{errors.hok.message}</p>
           )}
+        </div>
+
+        <div className="flex items-center gap-2 pt-7">
+          <Checkbox
+            id="is_active"
+            checked={watch('is_active')}
+            onCheckedChange={(checked) => setValue('is_active', checked === true)}
+          />
+          <Label htmlFor="is_active">Active</Label>
         </div>
       </div>
     </form>

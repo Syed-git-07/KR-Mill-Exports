@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { format } from 'date-fns'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -28,13 +29,14 @@ import {
   getLapFormerMachineSetupsAction,
   updateLapFormerMachineSetupAction,
   addLapFormerMachineAction,
-  removeLapFormerMachineAction,
+  removeLapFormerMachinesAction,
   bulkUpdateLapFormerMachineMixingAction,
   getLapFormerMixingOptionsAction,
   getSpinningCountOptionsAction,
   lookupLapFormerMachineByNoAction
 } from '@/app/actions/lapFormerEntryActions'
 import { NumberInput } from '@/components/ui/number-input'
+import { resolveCommitDrafts } from '@/lib/entryDraftSync'
 import {
   LAP_FORMER_FORMULA_FALLBACK,
   calculateLapFormerStdProdn,
@@ -86,6 +88,7 @@ const findDraftByKeys = (drafts, ...keys) => {
 
 const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   headerId = null,
+  entryDate = '',
   shift = 1,
   totalTime = resolveLapFormerShiftFallbackTime(shift),
   onRefresh,
@@ -98,6 +101,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
+  const publishedDraftsRef = useRef(new WeakSet())
   const lastLoadKeyRef = useRef('')
   const [selectedRows, setSelectedRows] = useState([])
 
@@ -109,6 +113,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         return
       }
       editedRowsRef.current = next
+      publishedDraftsRef.current.add(next)
       onSharedDraftEditsChange(next)
       return
     }
@@ -116,8 +121,10 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   }, [onSharedDraftEditsChange])
 
   useEffect(() => {
-    editedRowsRef.current = editedRows
-  }, [editedRows])
+    if (!onSharedDraftEditsChange || !publishedDraftsRef.current.has(editedRows)) {
+      editedRowsRef.current = editedRows || {}
+    }
+  }, [editedRows, onSharedDraftEditsChange])
 
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
@@ -148,7 +155,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     description: '',
     make_name: '',
     model: '',
-    installed_date: new Date().toISOString().split('T')[0],
+    installed_date: entryDate || format(new Date(), 'yyyy-MM-dd'),
     prodn_mixing: '',
     speed: LAP_FORMER_FORMULA_FALLBACK.speed,
     prodn_effi: Math.round(LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor * 100),
@@ -157,6 +164,13 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     std_efficiency_factor: LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor,
     delivery: LAP_FORMER_FORMULA_FALLBACK.delivery
   })
+
+  useEffect(() => {
+    setNewMachine(previous => ({
+      ...previous,
+      installed_date: entryDate || format(new Date(), 'yyyy-MM-dd')
+    }))
+  }, [entryDate])
 
   // Mixing change form
   const [newMixing, setNewMixing] = useState('')
@@ -300,8 +314,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   }
 
   // Commit this tab's draft during the final Update
-  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    const pendingEdits = editedRowsRef.current || editedRows || {}
+  const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false, preserveDrafts = false, dependencyDrafts = null } = {}) => {
+    const pendingEdits = resolveCommitDrafts({ dependencyDrafts, tabKey: 'setup', refDrafts: editedRowsRef.current, propDrafts: editedRows })
 
     if (Object.keys(pendingEdits).length === 0) {
       if (!suppressNoChangesToast) {
@@ -342,7 +356,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       }
       
       const savedCount = results.length
-      setEditedRows({})
+      if (!preserveDrafts) setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
       }
@@ -437,7 +451,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     }))
 
     if (d.has_setup) {
-      toast.info(`Machine #${val} found - it will be reactivated with existing setup`, { id: toastId })
+      toast.info(`Machine #${val} found - its values will seed a new lifecycle`, { id: toastId })
     } else {
       toast.success(`Machine #${val} details filled`, { id: toastId })
     }
@@ -464,7 +478,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         std_efficiency_factor: (Number(newMachine.prodn_effi) || Math.round(LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor * 100)) / 100,
         delivery: LAP_FORMER_FORMULA_FALLBACK.delivery,
         shift_time: totalTime
-      })
+      }, { headerId, entryDate, shift })
       if (!result?.success) throw new Error(result?.error || 'Failed to add the Lap Former machine')
       toast.success('New machine added successfully')
       setShowAddDialog(false)
@@ -473,7 +487,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         description: '',
         make_name: '',
         model: '',
-        installed_date: new Date().toISOString().split('T')[0],
+        installed_date: entryDate || format(new Date(), 'yyyy-MM-dd'),
         prodn_mixing: '',
         speed: LAP_FORMER_FORMULA_FALLBACK.speed,
         prodn_effi: Math.round(LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor * 100),
@@ -502,12 +516,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const removePromises = selectedRows.map(machineId => 
-        removeLapFormerMachineAction(machineId)
-      )
-      const results = await Promise.all(removePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
+      const result = await removeLapFormerMachinesAction(selectedRows, { headerId, entryDate, shift })
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove machines')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])

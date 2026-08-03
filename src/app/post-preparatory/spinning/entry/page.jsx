@@ -62,9 +62,12 @@ function SpinningEntryContent() {
   const [headerId, setHeaderId] = useState(null)
   const [headerData, setHeaderData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [headerLoadError, setHeaderLoadError] = useState(false)
+  const headerLoadRequestRef = useRef(0)
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const sharedDraftsRef = useRef(sharedDrafts)
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [shiftTime, setShiftTime] = useState(resolveSpinningShiftFallbackTime(shift)) // Dynamic shift time from database
   // Copy Previous Speed states
@@ -78,30 +81,52 @@ function SpinningEntryContent() {
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
 
-  const setProductionDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, production: updates || {} }))
+  const updateTabDrafts = useCallback((tabKey, nextDraftOrUpdater) => {
+    const currentDrafts = sharedDraftsRef.current
+    const currentTabDrafts = currentDrafts?.[tabKey] || {}
+    const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
+      ? nextDraftOrUpdater(currentTabDrafts)
+      : (nextDraftOrUpdater || {})
+    if (nextTabDrafts === currentTabDrafts) return
+
+    const nextDrafts = {
+      ...currentDrafts,
+      [tabKey]: nextTabDrafts
+    }
+    sharedDraftsRef.current = nextDrafts
+    setSharedDrafts(nextDrafts)
   }, [])
+
+  const clearAllDrafts = useCallback(() => {
+    const emptyDrafts = { header: {}, production: {}, stoppage: {}, setup: {} }
+    sharedDraftsRef.current = emptyDrafts
+    setSharedDrafts(emptyDrafts)
+  }, [])
+
+  const setProductionDraftEdits = useCallback((updates) => {
+    updateTabDrafts('production', updates)
+  }, [updateTabDrafts])
 
   const setStoppageDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, stoppage: updates || {} }))
-  }, [])
+    updateTabDrafts('stoppage', updates)
+  }, [updateTabDrafts])
 
   const setSetupDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, setup: updates || {} }))
-  }, [])
+    updateTabDrafts('setup', updates)
+  }, [updateTabDrafts])
 
-  const getUnsavedEditCount = useCallback(() => {
+  const getUnsavedEditCount = useCallback((drafts = sharedDraftsRef.current) => {
     const sharedCount =
-      Object.keys(sharedDrafts.production || {}).length +
-      Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length +
-      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
+      Object.keys(drafts.production || {}).length +
+      Object.keys(drafts.stoppage || {}).length +
+      Object.keys(drafts.setup || {}).length +
+      (Object.keys(drafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
     const refs = [productionTabRef.current, stoppageTabRef.current, setupTabRef.current]
     return refs.reduce((sum, tab) => sum + (tab?.getEditedCount?.() || 0), 0)
-  }, [sharedDrafts])
+  }, [])
   // Load supervisors
   useEffect(() => {
     const loadSupervisors = async () => {
@@ -157,12 +182,16 @@ function SpinningEntryContent() {
 
   // Load or create production header when date/shift changes
   const loadProductionHeader = useCallback(async () => {
+    const requestId = ++headerLoadRequestRef.current
     setIsLoading(true)
     try {
       const dateStr = format(date, 'yyyy-MM-dd')
       const result = await getSpinningProductionByDateShiftAction(dateStr, parseInt(shift))
+      if (requestId !== headerLoadRequestRef.current) return
+      if (!result?.success) throw new Error(result?.error || 'Failed to load Spinning production header')
+      setHeaderLoadError(false)
       
-      if (result.success && result.data) {
+      if (result.data) {
         setHeaderId(result.data.id)
         setHeaderData(result.data)
         setSupervisorId(result.data.supervisor_id || '')
@@ -174,10 +203,16 @@ function SpinningEntryContent() {
         setMaisitryId('')
       }
     } catch (error) {
+      if (requestId !== headerLoadRequestRef.current) return
+      setHeaderLoadError(true)
+      setHeaderId(null)
+      setHeaderData(null)
+      setSupervisorId('')
+      setMaisitryId('')
       console.error('Error loading production header:', error)
       toast.error('Failed to load production data')
     } finally {
-      setIsLoading(false)
+      if (requestId === headerLoadRequestRef.current) setIsLoading(false)
     }
   }, [date, shift])
 
@@ -224,10 +259,7 @@ function SpinningEntryContent() {
   const handleSupervisorChange = (value) => {
     setSupervisorId(value)
     if (headerId) {
-      setSharedDrafts(prev => ({
-        ...prev,
-        header: { ...prev.header, supervisor_id: value || null }
-      }))
+      updateTabDrafts('header', prev => ({ ...prev, supervisor_id: value || null }))
     }
   }
 
@@ -235,10 +267,7 @@ function SpinningEntryContent() {
   const handleMaisitryChange = (value) => {
     setMaisitryId(value)
     if (headerId) {
-      setSharedDrafts(prev => ({
-        ...prev,
-        header: { ...prev.header, maisitry_id: value || null }
-      }))
+      updateTabDrafts('header', prev => ({ ...prev, maisitry_id: value || null }))
     }
   }
 
@@ -256,11 +285,13 @@ function SpinningEntryContent() {
   const handleDateChange = (nextDate) => {
     if (!nextDate) return
     if (!confirmIfUnsaved('Changing date will reload entry data.')) return
+    clearAllDrafts()
     setDate(nextDate)
   }
 
   const handleShiftChange = (nextShift) => {
     if (!confirmIfUnsaved('Changing shift will reload entry data.')) return
+    clearAllDrafts()
     setShift(nextShift)
   }
 
@@ -341,57 +372,79 @@ function SpinningEntryContent() {
   const handleSaveAllTabs = async () => {
     if (!headerId || isSavingAll) return
 
-    const totalPending = getUnsavedEditCount()
+    const draftSnapshot = sharedDraftsRef.current
+    const totalPending = getUnsavedEditCount(draftSnapshot)
 
     if (totalPending === 0) {
       toast.info('No changes to save')
       return
     }
 
+    const requiredTabs = [
+      { label: 'Machine Setup', tab: setupTabRef.current },
+      { label: 'Stoppage', tab: stoppageTabRef.current },
+      { label: 'Production', tab: productionTabRef.current }
+    ]
+    const unavailableTab = requiredTabs.find(({ tab }) => typeof tab?.saveChanges !== 'function')
+    if (unavailableTab) {
+      toast.error(`${unavailableTab.label} is not ready. Wait for all tabs to finish loading, then retry Update.`)
+      return
+    }
+
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
-      const setupResult = await (
-        setupTabRef.current?.saveChanges?.({
+      const setupResult = await setupTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-      const stoppageResult = await (
-        stoppageTabRef.current?.saveChanges?.({
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
+        })
+      if (!setupResult?.success) {
+        toast.error('Update stopped at Machine Setup. Drafts were kept for retry.')
+        return
+      }
+      const stoppageResult = await stoppageTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-      const prodResult = await (
-        productionTabRef.current?.saveChanges?.({
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
+        })
+      if (!stoppageResult?.success) {
+        toast.error('Update stopped at Stoppage. Production was not saved; drafts were kept for retry.')
+        return
+      }
+      const prodResult = await productionTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
-      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
-        ? await updateSpinningProductionHeaderAction(headerId, sharedDrafts.header)
+          preserveDrafts: true,
+          dependencyDrafts: draftSnapshot
+        })
+      if (!prodResult?.success) {
+        toast.error('Update stopped at Production. Drafts were kept for retry.')
+        return
+      }
+      const headerResult = Object.keys(draftSnapshot.header || {}).length > 0
+        ? await updateSpinningProductionHeaderAction(headerId, draftSnapshot.header)
         : { success: true, saved: 0 }
-
-      const results = [prodResult, stoppageResult, setupResult, headerResult]
-      const failures = results.filter(r => !r?.success)
-      const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
-
-      if (failures.length > 0) {
-        toast.error(`Saved ${totalSaved} change(s), but ${failures.length} tab(s) failed`)
-      } else {
-        toast.success(`Saved ${totalSaved} change(s) across all tabs`)
-        router.push('/post-preparatory/spinning')
+      if (!headerResult?.success) {
+        toast.error('Entry header could not be saved. Drafts were kept for retry.')
         return
       }
 
-      handleRefresh()
+      const results = [prodResult, stoppageResult, setupResult]
+      const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0) +
+        (Object.keys(draftSnapshot.header || {}).length > 0 ? 1 : 0)
+
+      toast.success(`Saved ${totalSaved} change(s) across all tabs`)
+      clearAllDrafts()
+      router.push('/post-preparatory/spinning')
+    } catch (error) {
+      console.error('Failed to update Spinning entry:', error)
+      toast.error('Update failed. Drafts were kept for retry.')
     } finally {
       setIsSavingAll(false)
     }
@@ -412,7 +465,7 @@ function SpinningEntryContent() {
       stoppageTabRef.current?.discardChanges?.() || Promise.resolve({ success: true }),
       setupTabRef.current?.discardChanges?.() || Promise.resolve({ success: true })
     ])
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+    clearAllDrafts()
     await loadProductionHeader()
 
     toast.success('Unsaved changes discarded')
@@ -512,7 +565,7 @@ function SpinningEntryContent() {
             </div>
 
             {/* Initialize Button */}
-            {!headerId && (
+            {!headerId && !headerLoadError && (
               <Button 
                 onClick={handleInitialize}
                 disabled={isInitializing}
@@ -614,7 +667,7 @@ function SpinningEntryContent() {
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
           <span className="ml-2">Loading...</span>
         </div>
-      ) : headerId ? (
+          ) : headerId && !headerLoadError ? (
         <Card>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">
@@ -673,6 +726,7 @@ function SpinningEntryContent() {
                 <SpinningMachineSetupTab 
                   ref={setupTabRef}
                   key={`setup-${refreshKey}`} 
+                  headerId={headerId}
                   entryDate={format(date, 'yyyy-MM-dd')}
                   shift={parseInt(shift)}
                   totalTime={shiftTime}

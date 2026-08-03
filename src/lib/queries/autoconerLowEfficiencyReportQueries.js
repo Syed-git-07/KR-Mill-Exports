@@ -51,29 +51,11 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     }
   }
 
-  // Get all unique count names to fetch spinning counts
-  const countNames = [...new Set(details.map(d => d.count_name).filter(c => c !== null))]
-
-  // Get spinning counts data for act_count (actual efficiency target)
-  const spinningCounts = await prisma.spinning_counts.findMany({
-    where: {
-      count_name: {
-        in: countNames
-      },
-      is_active: true
-    }
-  })
-
-  // Create spinning count lookup map
-  const spinningCountMap = {}
-  spinningCounts.forEach(sc => {
-    spinningCountMap[sc.count_name] = parseFloat(sc.act_count) || 0
-  })
-
   // Get all machine IDs
   const machineIds = [...new Set(details.map(d => d.machine_id))]
 
-  // Get machine information (machine_no, no_of_drums for efficiency calculation)
+  // Get machine information. The configured efficiency target belongs to the
+  // Autoconer machine master; yarn count (act_count) is not a percentage.
   const machines = await prisma.autoconer_machines.findMany({
     where: {
       id: {
@@ -87,7 +69,8 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
   machines.forEach(m => {
     machineMap[m.id] = {
       machine_no: m.machine_no,
-      no_of_drums: m.no_of_drums || 0
+      no_of_drums: Number(m.no_of_drums) || 0,
+      act_effi: Number(m.act_effi) || 0
     }
   })
 
@@ -127,8 +110,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         const machine = machineMap[detail.machine_id]
         if (!machine) return null
 
-        // Get act_count from spinning_counts based on count_name
-        const actCount = spinningCountMap[detail.count_name] || 0
+        const targetEfficiency = machine.act_effi
         
         // Calculate prodn_effi on the fly if it's 0.00 or not set (backward compatibility)
         let shiftEffi = parseFloat(detail.prodn_effi) || 0
@@ -149,16 +131,16 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
           shiftEffi = parseFloat(shiftEffi.toFixed(2))
         }
 
-        // Only include if target count is set
-        if (actCount > 0) {
+        // Only include machines that have a configured target efficiency.
+        if (targetEfficiency > 0) {
           return {
             machine_no: machine.machine_no,
             sider_name: detail.emp_name || 'NIL',
             count: detail.count_name || '',
-            act_effi: actCount,  // Act Effi (target count from spinning_counts)
+            act_effi: targetEfficiency,
             shift_effi: shiftEffi,  // Shift Effi % (actual efficiency percentage)
             red_light: parseFloat(detail.red_light) || 0,
-            is_low_efficiency: shiftEffi < actCount  // Flag for color coding (red if below, green if above)
+            is_low_efficiency: shiftEffi < targetEfficiency
           }
         }
         return null

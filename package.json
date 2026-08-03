@@ -12,6 +12,7 @@
     "security:cleanup": "node scripts/cleanup-security-data.js",
     "security:smoke": "node scripts/smoke-auth-runtime.js",
     "db:audit": "node scripts/audit-production-integrity.js",
+    "db:repair:spinning-stoppage": "node scripts/repair-spinning-stoppage-integrity.js",
     "schema:extract-structure": "powershell -ExecutionPolicy Bypass -File schema/schema-structure/extract-structure.ps1"
   },
   "dependencies": {

@@ -32,6 +32,11 @@ export function resolveCardingFormulaInputs(setup = {}) {
 
 export function calculateCardingStdProdn(setup, totalTime) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant } = resolveCardingFormulaInputs(setup)
-  if (!totalTime || !hankConstant || !divisorConstant) return 0
-  return (speed / divisorConstant / hankConstant) * totalTime * stdEfficiencyFactor
+  const safeTotalTime = toNumber(totalTime)
+  if (
+    safeTotalTime === null || safeTotalTime <= 0 ||
+    speed <= 0 || hankConstant <= 0 ||
+    stdEfficiencyFactor <= 0 || divisorConstant <= 0
+  ) return 0
+  return (speed / divisorConstant / hankConstant) * safeTotalTime * stdEfficiencyFactor
 }

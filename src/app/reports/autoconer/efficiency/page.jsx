@@ -20,6 +20,44 @@ import {
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+const BASELINE_POSITION_ROWS = [1, 2, 3, 4, 5].map(position => ({
+  position,
+  occurrence: 0,
+  label: String(position),
+}))
+
+const chunkGroups = (groups, size = 13) => {
+  const chunks = []
+  for (let index = 0; index < groups.length; index += size) {
+    chunks.push(groups.slice(index, index + size))
+  }
+  return chunks
+}
+
+const getDateKey = value => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? ''))
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : ''
+}
+
+const displayDateKey = value => {
+  const dateKey = getDateKey(value)
+  if (!dateKey) return 'Invalid date'
+  const [year, month, day] = dateKey.split('-')
+  return `${day}-${month}-${year}`
+}
+
+const abbreviatedCount = value => String(value || '').replace('COMBED STAR', 'CS')
+
+const formatMachineCell = (machine, group, positionRow) => {
+  if (!machine) return ''
+  const efficiency = Number(machine.efficiency)
+  const formattedEfficiency = Number.isFinite(efficiency) ? efficiency.toFixed(2) : '0.00'
+  const needsMachineLabel = !group.isBaseline || positionRow.occurrence > 0
+  return needsMachineLabel
+    ? `${machine.machine_no}: ${formattedEfficiency}`
+    : formattedEfficiency
+}
+
 /**
  * Autoconer Efficiency Report Page
  * Displays efficiency grid with machine groups as columns and positions as rows
@@ -82,73 +120,82 @@ export default function AutoconerEfficiencyReportPage() {
 
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      doc.text(`Date: ${format(new Date(reportData.date), 'dd-MM-yyyy')}`, pageWidth / 2, yPos, { align: 'center' })
+      doc.text(`Date: ${displayDateKey(reportData.date)}`, pageWidth / 2, yPos, { align: 'center' })
       yPos += 10
 
-      // Loop through each shift
-      reportData.shifts.forEach((shift, shiftIndex) => {
-        if (shiftIndex > 0) {
-          doc.addPage()
-          yPos = 15
-        }
+      let renderedTable = false
+      reportData.shifts.forEach(shift => {
+        const positionRows = shift.positionRows?.length
+          ? shift.positionRows
+          : BASELINE_POSITION_ROWS
 
-        // Shift header
-        doc.setFontSize(12)
-        doc.setFont('helvetica', 'bold')
-        doc.text(`Shift ${shift.shift}: ${shift.supervisor_name}`, 14, yPos)
-        yPos += 5
-
-        // Build table headers (column groups 1-13)
-        const headers = [' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13']
-       
-        // Build count row (68 CS for all columns)
-        const countRow = [shift.primary_count || '68 CS']
-        for (let i = 1; i <= 13; i++) {
-          const group = shift.groups.find(g => g.groupNumber === i)
-          countRow.push(group?.count?.replace('COMBED STAR', 'CS') || '68 CS')
-        }
-
-        // Build 5 machine position rows
-        const bodyRows = []
-        for (let pos = 0; pos < 5; pos++) {
-          const row = [String(pos + 1)]
-          for (let groupNum = 1; groupNum <= 13; groupNum++) {
-            const group = shift.groups.find(g => g.groupNumber === groupNum)
-            const machine = group?.machines[pos]
-            row.push(machine ? machine.efficiency.toFixed(2) : '')
+        chunkGroups(shift.groups).forEach((groups, groupPageIndex) => {
+          if (renderedTable) {
+            doc.addPage()
+            yPos = 15
           }
-          bodyRows.push(row)
-        }
+          renderedTable = true
 
-        autoTable(doc, {
-          startY: yPos,
-          head: [headers, countRow],
-          body: bodyRows,
-          theme: 'grid',
-          headStyles: {
-            fillColor: [22, 163, 74], // green-600
-            textColor: 255,
-            fontStyle: 'bold',
-            halign: 'center'
-          },
-          styles: {
-            fontSize: 8,
-            cellPadding: 1.5,
-            halign: 'center'
-          },
-          columnStyles: {
-            0: { cellWidth: 10, fontStyle: 'bold', fillColor: [240, 240, 240] }
-          }
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          const continuation = groupPageIndex > 0 ? ' (continued)' : ''
+          doc.text(`Shift ${shift.shift}: ${shift.supervisor_name}${continuation}`, 14, yPos)
+          yPos += 5
+
+          const headers = [
+            ' ',
+            ...groups.map(group => group.headerLabel ?? group.groupNumber ?? group.groupName),
+          ]
+          const countRow = [
+            abbreviatedCount(shift.primary_count),
+            ...groups.map(group => abbreviatedCount(group.count)),
+          ]
+          const bodyRows = positionRows.map((positionRow, positionIndex) => [
+            positionRow.label,
+            ...groups.map(group => formatMachineCell(
+              group.machines[positionIndex],
+              group,
+              positionRow
+            )),
+          ])
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [headers, countRow],
+            body: bodyRows,
+            theme: 'grid',
+            headStyles: {
+              fillColor: [22, 163, 74],
+              textColor: 255,
+              fontStyle: 'bold',
+              halign: 'center'
+            },
+            styles: {
+              fontSize: 8,
+              cellPadding: 1.5,
+              halign: 'center'
+            },
+            columnStyles: {
+              0: { cellWidth: 10, fontStyle: 'bold', fillColor: [240, 240, 240] }
+            }
+          })
+
+          yPos = doc.lastAutoTable.finalY || yPos
         })
-
-        yPos = doc.lastAutoTable.finalY || yPos
       })
 
       // Add designations footer on last page
-      const totalPages = doc.internal.pages.length - 1
+      let totalPages = doc.getNumberOfPages()
       doc.setPage(totalPages)
-      
-      yPos = doc.internal.pageSize.getHeight() - 25
+
+      const pageHeight = doc.internal.pageSize.getHeight()
+      if ((doc.lastAutoTable?.finalY || 0) > pageHeight - 35) {
+        doc.addPage()
+        totalPages = doc.getNumberOfPages()
+        doc.setPage(totalPages)
+      }
+
+      yPos = pageHeight - 25
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
       doc.setLineWidth(0.3)
@@ -157,7 +204,7 @@ export default function AutoconerEfficiencyReportPage() {
       const signatoriesText = 'AM(P)          GM          MD'
       doc.text(signatoriesText, pageWidth / 2, yPos, { align: 'center' })
 
-      const filename = `Autoconer_Efficiency_${format(new Date(reportData.date), 'dd-MM-yyyy')}.pdf`
+      const filename = `Autoconer_Efficiency_${displayDateKey(reportData.date)}.pdf`
       doc.save(filename)
       toast.success('PDF downloaded successfully')
     } catch (error) {
@@ -258,63 +305,90 @@ export default function AutoconerEfficiencyReportPage() {
           <div className="text-center mb-6 pb-4 border-b print:border-black">
             <h1 className="text-2xl font-bold mb-1">Kayaar Exports Private Limited</h1>
             <h2 className="text-xl font-semibold mb-2">Autoconer Production Report</h2>
-            <p className="text-sm font-medium">Date: {format(new Date(reportData.date), 'dd-MM-yyyy')}</p>
+            <p className="text-sm font-medium">Date: {displayDateKey(reportData.date)}</p>
           </div>
 
           {/* Shift Grids */}
-          {reportData.shifts.map((shift, shiftIndex) => (
-            <div key={shiftIndex} className="mb-8 page-break-after">
-              <h3 className="text-lg font-semibold mb-3">
-                Shift {shift.shift}: {shift.supervisor_name}
-              </h3>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse border border-gray-300 text-sm">
-                  <thead>
-                    {/* Machine group numbers */}
-                    <tr className="bg-green-600 text-white">
-                      <th className="border border-gray-300 px-2 py-1"></th>
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(num => (
-                        <th key={num} className="border border-gray-300 px-2 py-1 text-center font-bold">
-                          {num}
-                        </th>
-                      ))}
-                    </tr>
-                    {/* Count names row */}
-                    <tr className="bg-green-600 text-white">
-                      <th className="border border-gray-300 px-2 py-1 text-center"></th>
-                      {shift.groups.map((group, idx) => (
-                        <th key={idx} className="border border-gray-300 px-2 py-1 text-center text-xs font-semibold">
-                          {group.count.replace('COMBED STAR', 'CS')}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Machine positions 1-5 */}
-                    {[0, 1, 2, 3, 4].map(posIndex => (
-                      <tr key={posIndex} className="hover:bg-gray-50">
-                        <td className="border border-gray-300 px-2 py-1 text-center font-bold bg-gray-100">
-                          {posIndex + 1}
-                        </td>
-                        {shift.groups.map((group, groupIdx) => {
-                          const machine = group.machines[posIndex]
-                          return (
-                            <td 
-                              key={groupIdx} 
-                              className="border border-gray-300 px-2 py-1 text-center"
+          {reportData.shifts.map(shift => {
+            const positionRows = shift.positionRows?.length
+              ? shift.positionRows
+              : BASELINE_POSITION_ROWS
+
+            return (
+              <div key={shift.shift} className="mb-8 page-break-after">
+                <h3 className="text-lg font-semibold mb-3">
+                  Shift {shift.shift}: {shift.supervisor_name}
+                </h3>
+
+                {chunkGroups(shift.groups).map((groups, groupPageIndex) => (
+                  <div
+                    key={`${shift.shift}-${groupPageIndex}`}
+                    className="overflow-x-auto mb-5"
+                  >
+                    {groupPageIndex > 0 && (
+                      <p className="text-sm font-semibold mb-2">
+                        Shift {shift.shift} continued
+                      </p>
+                    )}
+                    <table className="w-full border-collapse border border-gray-300 text-sm">
+                      <thead>
+                        <tr className="bg-green-600 text-white">
+                          <th className="border border-gray-300 px-2 py-1"></th>
+                          {groups.map(group => (
+                            <th
+                              key={group.groupKey || group.groupName}
+                              className="border border-gray-300 px-2 py-1 text-center font-bold"
                             >
-                              {machine ? machine.efficiency.toFixed(2) : ''}
+                              {group.headerLabel ?? group.groupNumber ?? group.groupName}
+                            </th>
+                          ))}
+                        </tr>
+                        <tr className="bg-green-600 text-white">
+                          <th className="border border-gray-300 px-2 py-1 text-center">
+                            {abbreviatedCount(shift.primary_count)}
+                          </th>
+                          {groups.map(group => (
+                            <th
+                              key={group.groupKey || group.groupName}
+                              className="border border-gray-300 px-2 py-1 text-center text-xs font-semibold"
+                            >
+                              {abbreviatedCount(group.count)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {positionRows.map((positionRow, positionIndex) => (
+                          <tr
+                            key={`${positionRow.position}-${positionRow.occurrence}`}
+                            className="hover:bg-gray-50"
+                          >
+                            <td className="border border-gray-300 px-2 py-1 text-center font-bold bg-gray-100">
+                              {positionRow.label}
                             </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            {groups.map(group => {
+                              const machine = group.machines[positionIndex]
+                              return (
+                                <td
+                                  key={group.groupKey || group.groupName}
+                                  className="border border-gray-300 px-2 py-1 text-center"
+                                  title={machine
+                                    ? `${machine.machine_no} - ${machine.count}`
+                                    : undefined}
+                                >
+                                  {formatMachineCell(machine, group, positionRow)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
+            )
+          })}
 
           {/* Signatories */}
           <div className="text-center mt-8 pt-4 border-t print:border-black">

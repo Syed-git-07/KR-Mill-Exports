@@ -62,9 +62,9 @@ export async function searchTWCEntriesAction(field, condition, value) {
   }
 }
 
-export async function getCountsForDropdownAction() {
+export async function getCountsForDropdownAction(includeCountId = null) {
   try {
-    const data = await getCountsForDropdown();
+    const data = await getCountsForDropdown(includeCountId);
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching counts for dropdown:', error);
