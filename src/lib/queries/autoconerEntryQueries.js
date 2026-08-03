@@ -960,18 +960,32 @@ async function synchronizeAutoconerMachineSetupSnapshots(entryDate, shift = 1) {
     const countById = new Map(activeCounts.map(count => [count.id, count]))
     const countByName = new Map(activeCounts.map(count => [count.count_name, count]))
 
+    let defaultCountMaster = activeCounts.find(count => count.autoconer_active) || activeCounts[0] || null
+    if (!defaultCountMaster) {
+      const fallbackCounts = await tx.spinning_counts.findMany({
+        where: { is_active: true },
+        take: 1
+      })
+      defaultCountMaster = fallbackCounts[0] || null
+    }
+
+    if (missingMachines.length > 0 && !defaultCountMaster) {
+      throw new Error('Create and activate at least one complete Spinning Count in Count Master before initializing Autoconer machines')
+    }
+
     const inserts = missingMachines.map(machine => {
       const previous = previousByMachine.get(machine.id)
       const currentCount = countByName.get(machine.count) ||
         countById.get(previous?.count_id) ||
-        countByName.get(previous?.count_name)
+        countByName.get(previous?.count_name) ||
+        defaultCountMaster
       const setup = {
         machine_id: machine.id,
         entry_date: dateObj,
         shift: shiftNum,
-        count_name: currentCount?.count_name ?? machine.count ?? previous?.count_name ?? '',
-        count_id: currentCount?.id ?? previous?.count_id ?? null,
-        act_count: currentCount?.act_count ?? previous?.act_count,
+        count_name: currentCount.count_name,
+        count_id: currentCount.id,
+        act_count: Number(currentCount.act_count),
         session_no: previous?.session_no ?? 1,
         run_time: targetShiftTime
       }
@@ -1071,7 +1085,7 @@ async function resolveCompleteAutoconerSetup(tx, existing, updates) {
   const countId = sanitized.count_id ?? existing?.count_id
   const countName = sanitized.count_name ?? existing?.count_name
   const countWhere = countId ? { id: countId } : { count_name: countName }
-  const count = countId || countName
+  let count = countId || countName
     ? await tx.spinning_counts.findFirst({
         where: {
           ...countWhere,
@@ -1080,6 +1094,15 @@ async function resolveCompleteAutoconerSetup(tx, existing, updates) {
         select: { id: true, count_name: true, act_count: true }
       })
     : null
+
+  if (!count && (!existing || countWasEdited)) {
+    count = countId || countName
+      ? await tx.spinning_counts.findFirst({
+          where: { ...countWhere, is_active: true },
+          select: { id: true, count_name: true, act_count: true }
+        })
+      : null
+  }
 
   if (!count) {
     throw autoconerSetupError(
@@ -1595,7 +1618,7 @@ async function addDateScopedAutoconerMachine(machineData) {
       throw error
     }
 
-    const selectedCount = machineData.count_id
+    let selectedCount = machineData.count_id
       ? await tx.spinning_counts.findFirst({
           where: { id: machineData.count_id, is_active: true, autoconer_active: true },
           select: { id: true, count_name: true, act_count: true }
@@ -1608,6 +1631,28 @@ async function addDateScopedAutoconerMachine(machineData) {
           },
           select: { id: true, count_name: true, act_count: true }
         })
+
+    if (!selectedCount) {
+      selectedCount = machineData.count_id
+        ? await tx.spinning_counts.findFirst({
+            where: { id: machineData.count_id, is_active: true },
+            select: { id: true, count_name: true, act_count: true }
+          })
+        : await tx.spinning_counts.findFirst({
+            where: {
+              count_name: machineData.count_name || machineInput.count,
+              is_active: true
+            },
+            select: { id: true, count_name: true, act_count: true }
+          })
+    }
+
+    if (!selectedCount) {
+      selectedCount = await tx.spinning_counts.findFirst({
+        where: { is_active: true },
+        select: { id: true, count_name: true, act_count: true }
+      })
+    }
     if (!selectedCount) throw autoconerSetupError('Select an active Autoconer spinning count')
 
     const runTime = machineData.run_time ?? await getAutoconerShiftTime(activeShift)

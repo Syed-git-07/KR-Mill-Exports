@@ -80,6 +80,7 @@ test('Autoconer setup snapshots add missing visible machines transactionally', a
   assert.match(helperSource, /previousByMachine/)
   assert.match(helperSource, /tx\.autoconer_machine_setup\.createMany/)
   assert.match(helperSource, /skipDuplicates: true/)
+  assert.match(helperSource, /defaultCountMaster/, 'missing machine counts must fall back to an active count master')
 
   const addStart = source.indexOf('export async function addAutoconerMachine')
   const addEnd = source.indexOf('// Remove/deactivate autoconer machine', addStart)
