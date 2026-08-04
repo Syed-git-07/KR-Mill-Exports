@@ -365,7 +365,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
         }
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, effectiveTotalTime, machineSetups, getEffectiveSetup, mergeProductionDetailWithDraft, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, effectiveTotalTime, machineSetups, getEffectiveSetup, mergeProductionDetailWithDraft, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -480,9 +480,10 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
-        updateStoppageEntryAction(rowId, changes)
-      )
+      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateStoppageEntryAction(rowId, persistedChanges)
+      })
 
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)

@@ -597,9 +597,67 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
 // Update production detail
 export async function updateProductionDetail(id, updates) {
   try {
+    // Recalculate on the server from the date/shift-specific setup.  The
+    // client recalculates for immediate display, but the persisted values
+    // must not depend on a stoppage draft being present in the browser.
+    const existing = await prisma.carding_production_detail.findUnique({
+      where: { id },
+      select: {
+        header_id: true,
+        machine_id: true,
+        act_hank: true,
+        act_prodn: true,
+        waste: true,
+        total_stoppage_mins: true,
+      }
+    })
+
+    if (!existing) {
+      throw new Error(`Carding production detail ${id} not found`)
+    }
+
+    const header = await prisma.carding_production_header.findUnique({
+      where: { id: existing.header_id },
+      select: { entry_date: true, shift: true }
+    })
+    const totalTime = await getCardingShiftTime(header?.shift || 1)
+
+    const setup = header
+      ? await prisma.carding_machine_setup.findFirst({
+          where: {
+            machine_id: existing.machine_id,
+            entry_date: header.entry_date,
+            shift: header.shift
+          }
+        })
+      : null
+
+    const stoppage = updates.total_stoppage_mins ?? existing.total_stoppage_mins ?? 0
+    const actHank = updates.act_hank ?? existing.act_hank ?? 0
+    const actProdn = updates.act_prodn ?? existing.act_prodn ?? 0
+    const waste = updates.waste ?? existing.waste ?? 0
+    const calculated = calculateProductionValues(
+      actHank,
+      actProdn,
+      totalTime,
+      stoppage,
+      setup || {}
+    )
+    const wastePercent = Number(actProdn) > 0
+      ? Math.round((Number(waste) / Number(actProdn)) * 100 * 100) / 100
+      : 0
+    const { waste: _formulaWaste, waste_percent: _formulaWastePercent, ...calculatedFields } = calculated
+
     const data = await prisma.carding_production_detail.update({
       where: { id },
-      data: updates
+      data: {
+        ...updates,
+        ...calculatedFields,
+        act_hank: actHank,
+        act_prodn: actProdn,
+        waste,
+        waste_percent: wastePercent
+      }
     })
     return data
   } catch (error) {

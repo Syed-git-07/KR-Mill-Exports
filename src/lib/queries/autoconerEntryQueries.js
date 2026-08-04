@@ -738,7 +738,7 @@ export async function updateAutoconerStoppageEntry(id, updates) {
     // Fallback behavior remains centralized in getAutoconerShiftTime().
     const detail = await prisma.autoconer_production_detail.findUnique({
       where: { id: existing.production_detail_id },
-      select: { header_id: true }
+      select: { header_id: true, machine_id: true, idle_drum: true }
     })
 
     const header = detail?.header_id
@@ -749,13 +749,28 @@ export async function updateAutoconerStoppageEntry(id, updates) {
       : null
 
     const totalTime = await getAutoconerShiftTime(header?.shift || 1)
-    const workTime = Math.max(totalTime - totalStoppage, 0)
+    const machine = detail?.machine_id
+      ? await prisma.autoconer_machines.findUnique({
+          where: { id: detail.machine_id },
+          select: { no_of_drums: true }
+        })
+      : null
+    const calculated = calculateAutoconerProductionValues(
+      0,
+      0,
+      detail?.idle_drum ?? 0,
+      machine?.no_of_drums ?? 0,
+      totalStoppage,
+      totalTime
+    )
 
     await prisma.autoconer_production_detail.update({
       where: { id: existing.production_detail_id },
       data: {
-        total_stoppage_mins: totalStoppage,
-        work_time: workTime
+        total_stoppage_mins: calculated.total_stoppage_mins,
+        work_time: calculated.work_time,
+        run_time: calculated.run_time,
+        prodn_effi: calculated.prodn_effi
       }
     })
 

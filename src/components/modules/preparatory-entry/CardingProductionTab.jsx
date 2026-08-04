@@ -161,7 +161,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         ]
       }
     })
-  }, [effectiveTotalTime, getEffectiveTotalStoppageMins, setEditedRows])
+  }, [effectiveTotalTime, getEffectiveTotalStoppageMins, getEffectiveSetup, setEditedRows])
 
   // Load production data
   const loadData = useCallback(async () => {

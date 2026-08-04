@@ -14,6 +14,9 @@ const {
   selectRowsForDependentCommit
 } = await importSourceModule('../src/lib/entryDraftSync.js')
 const {
+  applyBulkStoppageDraft
+} = await importSourceModule('../src/lib/stoppageSlotUtils.js')
+const {
   calculateCardingStdProdn,
   resolveCardingFormulaInputs
 } = await importSourceModule('../src/lib/cardingFormulaFallback.js')
@@ -90,6 +93,27 @@ test('stoppage draft totals override saved slot values without touching the data
 
   assert.equal(getEffectiveStoppageTotal(productionRow, drafts), 27)
   assert.equal(productionRow.stoppage[0].total_stoppage_time, 15)
+})
+
+test('bulk stoppage drafts link back to production so calculated grids update immediately', () => {
+  const result = applyBulkStoppageDraft({
+    rows: [{
+      id: 'stoppage-1',
+      production_detail_id: 'production-1',
+      stoppage1_id: 'reason-existing-1',
+      stoppage1_time: 10,
+      stoppage2_id: 'reason-existing-2',
+      stoppage2_time: 5,
+      stoppage3_time: 0,
+      stoppage4_time: 0
+    }],
+    reasonId: 'reason-1',
+    minutes: 20,
+    maxMinutes: 510
+  })
+
+  assert.equal(result.drafts['stoppage-1'].production_detail_id, 'production-1')
+  assert.equal(getEffectiveStoppageTotal(productionRow, result.drafts), 35)
 })
 
 test('dependent setup and stoppage edits select production rows for final commit', () => {

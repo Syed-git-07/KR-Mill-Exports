@@ -78,11 +78,11 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
   }, [editedRows])
 
   const setEditedRows = useCallback((updater) => {
-    const applyUpdate = (current) => (typeof updater === 'function' ? updater(current) : updater)
-    setLocalEditedRows(prev => applyUpdate(prev))
-    if (onSharedDraftEditsChange) {
-      onSharedDraftEditsChange(prev => applyUpdate(prev || {}))
-    }
+    const current = editedRowsRef.current || {}
+    const next = typeof updater === 'function' ? updater(current) : (updater || {})
+    editedRowsRef.current = next
+    setLocalEditedRows(next)
+    onSharedDraftEditsChange?.(next)
   }, [onSharedDraftEditsChange])
 
   // Table ref for Enter/Arrow row navigation
@@ -211,7 +211,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     if (!stoppageData.length) return
 
     setStoppageData(prev => mergeServerRowsWithDrafts(prev))
-  }, [productionDraftEdits, setupDraftEdits, mergeServerRowsWithDrafts, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, mergeServerRowsWithDrafts, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -323,9 +323,10 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(draftRows).map(([rowId, changes]) => 
-        updateAutoconerStoppageEntryAction(rowId, changes)
-      )
+      const updatePromises = Object.entries(draftRows).map(([rowId, changes]) => {
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateAutoconerStoppageEntryAction(rowId, persistedChanges)
+      })
 
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)

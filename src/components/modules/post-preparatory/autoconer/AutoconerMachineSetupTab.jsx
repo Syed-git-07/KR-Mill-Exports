@@ -59,11 +59,11 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
   const editedRows = sharedDraftEdits ?? localEditedRows
   const editedRowsRef = useRef({})
   const setEditedRows = useCallback((updater) => {
-    const applyUpdate = (current) => (typeof updater === 'function' ? updater(current) : updater)
-    setLocalEditedRows(prev => applyUpdate(prev))
-    if (onSharedDraftEditsChange) {
-      onSharedDraftEditsChange(prev => applyUpdate(prev || {}))
-    }
+    const current = editedRowsRef.current || {}
+    const next = typeof updater === 'function' ? updater(current) : (updater || {})
+    editedRowsRef.current = next
+    setLocalEditedRows(next)
+    onSharedDraftEditsChange?.(next)
   }, [onSharedDraftEditsChange])
   const [selectedRows, setSelectedRows] = useState([])
 

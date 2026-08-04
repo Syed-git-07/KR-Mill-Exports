@@ -358,7 +358,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
         }
       }
     }))
-  }, [productionDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, stoppageData.length, resolveEffectiveSetup])
+  }, [editedRows, productionDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, stoppageData.length, resolveEffectiveSetup])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -468,9 +468,10 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
-        updateComberStoppageEntryAction(rowId, changes)
-      )
+      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateComberStoppageEntryAction(rowId, persistedChanges)
+      })
 
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)

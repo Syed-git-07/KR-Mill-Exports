@@ -274,16 +274,19 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
         ...calculated
       }
     }))
-  }, [setupDraftEdits, productionDraftEdits, calculateStoppageValues, effectiveTotalTime, stoppageData.length])
+  }, [editedRows, setupDraftEdits, productionDraftEdits, calculateStoppageValues, effectiveTotalTime, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
     const numValue = parseInt(value) || 0
+    const stoppageEntryId = stoppageData.find(row => String(row.id) === String(rowId))?.stoppage_entry_id
     
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
+        production_detail_id: rowId,
+        ...(stoppageEntryId ? { stoppage_entry_id: stoppageEntryId } : {}),
         [field]: numValue
       }
     }))
@@ -312,11 +315,14 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     const timeField = field.replace('_id', '_time')
     const isClearing = !value || value === 'NONE'
     const savedValue = isClearing ? null : value
+    const stoppageEntryId = stoppageData.find(row => String(row.id) === String(rowId))?.stoppage_entry_id
     
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
+        production_detail_id: rowId,
+        ...(stoppageEntryId ? { stoppage_entry_id: stoppageEntryId } : {}),
         [field]: savedValue,
         ...(isClearing ? { [timeField]: 0 } : {})
       }
@@ -368,7 +374,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
           console.error('No stoppage_entry_id found for row:', rowId)
           return Promise.resolve({ success: false, error: 'No stoppage entry ID' })
         }
-        return updateSpinningStoppageEntryAction(stoppageEntryId, changes)
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateSpinningStoppageEntryAction(stoppageEntryId, persistedChanges)
       })
 
       const results = await Promise.all(updatePromises)

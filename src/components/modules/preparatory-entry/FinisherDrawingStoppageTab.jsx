@@ -384,7 +384,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         }
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, getEffectiveSetup, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, totalTime, machineSetups, mergeProductionDetailDraft, getEffectiveSetup, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -499,9 +499,10 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
-        updateFinisherDrawingStoppageEntryAction(rowId, changes)
-      )
+      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateFinisherDrawingStoppageEntryAction(rowId, persistedChanges)
+      })
 
       const stoppageResults = await Promise.all(updatePromises)
       const failedStoppage = stoppageResults.find(result => !result?.success)

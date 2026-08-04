@@ -64,11 +64,14 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   }, [editedRows])
 
   const setEditedRows = useCallback((updater) => {
-    const applyUpdate = (current) => (typeof updater === 'function' ? updater(current) : updater)
-    setLocalEditedRows(prev => applyUpdate(prev))
-    if (onSharedDraftEditsChange) {
-      onSharedDraftEditsChange(prev => applyUpdate(prev || {}))
-    }
+    // Keep the ref in sync in the same event that changes the draft.  React
+    // effects run after render, so relying on the effect below could make a
+    // click on Update immediately after typing save the previous row state.
+    const current = editedRowsRef.current || {}
+    const next = typeof updater === 'function' ? updater(current) : (updater || {})
+    editedRowsRef.current = next
+    setLocalEditedRows(next)
+    onSharedDraftEditsChange?.(next)
   }, [onSharedDraftEditsChange])
 
   // Table ref for Enter-to-next-row navigation
@@ -326,7 +329,10 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
         )
 
         // Filter out underscore-prefixed fields (they're not in database schema)
-        const { _idleDrumPercent, _drumEfficiency, ...dbFields } = calculated
+        // uti_percent is a display-only calculation for AutoCorner.  Unlike
+        // other production modules it is not a column on
+        // autoconer_production_detail, so it must never be sent to Prisma.
+        const { _idleDrumPercent, _drumEfficiency, uti_percent: _utiPercent, ...dbFields } = calculated
 
         return {
           id: rowId,

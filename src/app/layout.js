@@ -2,6 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import GlobalRequestLoader from "@/components/common/GlobalRequestLoader";
+import NumberInputWheelGuard from "@/components/common/NumberInputWheelGuard";
 import AppHeader from "@/components/layout/AppHeader";
 import { getCurrentUser } from "@/lib/security/auth";
 import "@/lib/utils/suppressHydrationWarnings";
@@ -36,6 +37,7 @@ export default async function RootLayout({ children }) {
         suppressHydrationWarning
       >
         <GlobalRequestLoader />
+        <NumberInputWheelGuard />
         <div className="min-h-screen bg-gray-50">
           {user && <AppHeader user={user} />}
           {children}

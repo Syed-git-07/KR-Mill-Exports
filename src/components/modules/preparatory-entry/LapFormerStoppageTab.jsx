@@ -340,7 +340,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
         }
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, recalcProductionFromStoppage, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, totalTime, recalcProductionFromStoppage, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -449,9 +449,10 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
-        updateLapFormerStoppageEntryAction(rowId, changes)
-      )
+      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateLapFormerStoppageEntryAction(rowId, persistedChanges)
+      })
 
       const results = await Promise.all(updatePromises)
       const failed = results.filter(r => !r.success)

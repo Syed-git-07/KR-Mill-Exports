@@ -304,7 +304,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
         )
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, machineSetups, getEffectiveSetup, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, totalTime, machineSetups, getEffectiveSetup, stoppageData.length])
 
   // Handle stoppage reason change
   const handleStoppageReasonChange = (rowId, field, value) => {

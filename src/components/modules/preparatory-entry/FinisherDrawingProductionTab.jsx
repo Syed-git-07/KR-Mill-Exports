@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
-  getFinisherDrawingProductionDetailsAction,
+  getFinisherDrawingProductionWithSetupAction,
   updateFinisherDrawingDetailAction,
   getFinisherDrawingMachineSetupsAction,
   syncFinisherDrawingNewMachinesToHeaderAction
@@ -100,20 +100,10 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     else if (e.key === 'ArrowUp') { e.preventDefault(); focusRowByDelta(rowIndex, -1, colName) }
   }, [focusRowByDelta])
 
-  const getEffectiveTotalStoppageMins = useCallback((row) => {
-    const stoppageEntry = Array.isArray(row?.stoppage) ? row.stoppage[0] : row?.stoppage
-    const baseTotal = toNumber(stoppageEntry?.total_stoppage_time ?? row?.total_stoppage_mins ?? 0)
-    if (!stoppageEntry?.id) return baseTotal
-
-    const stoppageDraft = stoppageDraftEdits?.[stoppageEntry.id] || stoppageDraftEdits?.[String(stoppageEntry.id)]
-    if (!stoppageDraft) return baseTotal
-
-    const t1 = toNumber(stoppageDraft.stoppage1_time ?? stoppageEntry.stoppage1_time ?? 0)
-    const t2 = toNumber(stoppageDraft.stoppage2_time ?? stoppageEntry.stoppage2_time ?? 0)
-    const t3 = toNumber(stoppageDraft.stoppage3_time ?? stoppageEntry.stoppage3_time ?? 0)
-    const t4 = toNumber(stoppageDraft.stoppage4_time ?? stoppageEntry.stoppage4_time ?? 0)
-    return t1 + t2 + t3 + t4
-  }, [stoppageDraftEdits])
+  const getEffectiveTotalStoppageMins = useCallback(
+    (row) => getEffectiveStoppageTotal(row, stoppageDraftEdits),
+    [stoppageDraftEdits]
+  )
 
   const getEffectiveSetup = useCallback((machineId, setupMap = machineSetups) => {
     const baseSetup = setupMap[machineId]
@@ -268,7 +258,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       }
 
       const [detailsResult, setupsResult] = await Promise.all([
-        getFinisherDrawingProductionDetailsAction(headerId),
+        getFinisherDrawingProductionWithSetupAction(headerId),
         getFinisherDrawingMachineSetupsAction(shift, headerId)
       ])
       
