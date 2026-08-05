@@ -19,13 +19,19 @@ const toNumber = (value) => {
 }
 
 export function resolveFinisherDrawingFormulaInputs(setup = {}, machineSpeed = null) {
-  // A dated setup is the source of truth for entry pages. Machine master speed
-  // is only a fallback when that date/shift has no setup speed.
-  const speed = toNumber(setup?.speed) ?? toNumber(machineSpeed) ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
-  const hankConstant = toNumber(setup?.hank_constant) ?? FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
-  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) ?? FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
-  const divisorConstant = toNumber(setup?.divisor_constant) ?? FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant
-  const delivery = toNumber(setup?.delivery) ?? FINISHER_DRAWING_FORMULA_FALLBACK.delivery
+  const m = setup?.machine || {}
+  
+  let machineEffFactor = null
+  if (toNumber(m.prodn_efficiency) !== null) {
+      const rawEff = toNumber(m.prodn_efficiency)
+      machineEffFactor = rawEff > 1 ? rawEff / 100 : rawEff
+  }
+
+  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || toNumber(m.speed) || FINISHER_DRAWING_FORMULA_FALLBACK.speed
+  const hankConstant = toNumber(setup?.hank_constant) || toNumber(m.hank_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
+  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || machineEffFactor || FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
+  const divisorConstant = toNumber(setup?.divisor_constant) || toNumber(m.divisor_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant
+  const delivery = toNumber(setup?.delivery) || toNumber(m.delivery) || FINISHER_DRAWING_FORMULA_FALLBACK.delivery
 
   return {
     speed,

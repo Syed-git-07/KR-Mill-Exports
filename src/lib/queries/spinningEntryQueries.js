@@ -28,12 +28,12 @@ function applySpinningCountMaster(setup, countMaster) {
   if (!countMaster) return setup
   return {
     ...setup,
-    ...(isProvided(countMaster.act_count) && { act_count: toFiniteNumber(countMaster.act_count) }),
-    ...(isProvided(countMaster.tpi) && { tpi: toFiniteNumber(countMaster.tpi) }),
-    ...(isProvided(countMaster.speed) && { speed: toFiniteNumber(countMaster.speed) }),
-    ...(isProvided(countMaster.tw_con) && { tw_con: toFiniteNumber(countMaster.tw_con) }),
-    ...(isProvided(countMaster.doff_loss) && { doff_loss: toFiniteNumber(countMaster.doff_loss) }),
-    ...(isProvided(countMaster.waste_percent) && { c_waste_percent: toFiniteNumber(countMaster.waste_percent) })
+    ...( !isProvided(setup.act_count) && isProvided(countMaster.act_count) && { act_count: toFiniteNumber(countMaster.act_count) }),
+    ...( !isProvided(setup.tpi) && isProvided(countMaster.tpi) && { tpi: toFiniteNumber(countMaster.tpi) }),
+    ...( !isProvided(setup.speed) && isProvided(countMaster.speed) && { speed: toFiniteNumber(countMaster.speed) }),
+    ...( !isProvided(setup.tw_con) && isProvided(countMaster.tw_con) && { tw_con: toFiniteNumber(countMaster.tw_con) }),
+    ...( !isProvided(setup.doff_loss) && isProvided(countMaster.doff_loss) && { doff_loss: toFiniteNumber(countMaster.doff_loss) }),
+    ...( !isProvided(setup.c_waste_percent) && isProvided(countMaster.waste_percent) && { c_waste_percent: toFiniteNumber(countMaster.waste_percent) })
   }
 }
 

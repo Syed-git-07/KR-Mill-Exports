@@ -100,13 +100,7 @@ export async function getOrCreateDateScopedSetups({
   if (sourceRows.length) {
     await setupModel.createMany({
       data: sourceRows.map(row => {
-        const overrides = {
-          ...(machineSetupOverridesMap?.[row.machine_id] || {})
-        }
-        const defaultSpeed = machineSpeedMap?.[row.machine_id]
-        if ('speed' in row && defaultSpeed !== null && defaultSpeed !== undefined) {
-          overrides.speed = defaultSpeed
-        }
+        const overrides = {}
         if ('shift_time' in row && header.total_time !== null && header.total_time !== undefined) {
           overrides.shift_time = header.total_time
         }

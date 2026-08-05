@@ -913,7 +913,28 @@ export async function updateBreakerDrawingMachineSetup(id, updates) {
     }
   });
 
-  const speedToUse = updates.speed !== undefined ? Number(updates.speed) : (currentSetup?.speed ?? 750);
+  const machine = await prisma.drawing_breaker_machines.findUnique({
+    where: { id: currentSetup.machine_id }
+  });
+
+  if (machine) {
+    if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
+      if (Number(updates.speed) === Number(machine.speed)) updates.speed = null;
+    }
+    if ('delivery' in updates && updates.delivery !== null && updates.delivery !== undefined) {
+      if (Number(updates.delivery) === Number(machine.delivery)) updates.delivery = null;
+    }
+    if ('hank_constant' in updates && updates.hank_constant !== null && updates.hank_constant !== undefined) {
+      if (Number(updates.hank_constant) === Number(machine.sliver_hank)) updates.hank_constant = null;
+    }
+    if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
+      const rawEff = Number(machine.prodn_efficiency);
+      const masterEff = rawEff > 1 ? rawEff / 100 : rawEff;
+      if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null;
+    }
+  }
+
+  const speedToUse = updates.speed !== undefined ? (updates.speed === null ? machine?.speed ?? 750 : Number(updates.speed)) : (currentSetup?.speed ?? 750);
 
   // Recalculate std_prodn if parameters change
   if (

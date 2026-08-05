@@ -29,13 +29,21 @@ export function resolveComberMcEffiFactor(value) {
 }
 
 export function resolveComberFormulaInputs(setup = {}, machine = null) {
+  const m = machine || setup?.machine || {}
+  
   const slHank =
-    toNumber(setup?.sl_hank) ??
-    toNumber(machine?.sliver_hank) ??
+    toNumber(setup?.sl_hank) ||
+    toNumber(m?.sliver_hank) ||
     COMBER_FORMULA_FALLBACK.slHank
 
+  let machineEffFactor = null
+  if (toNumber(m?.mc_effi) !== null) {
+      const rawEff = toNumber(m.mc_effi)
+      machineEffFactor = rawEff > 1 ? rawEff / 100 : rawEff
+  }
+
   const mcEffiFactor = resolveComberMcEffiFactor(
-    setup?.mc_effi ?? machine?.mc_effi ?? COMBER_FORMULA_FALLBACK.mcEffiFactor
+    toNumber(setup?.mc_effi) || machineEffFactor || COMBER_FORMULA_FALLBACK.mcEffiFactor
   )
   const mcEffiPercent = mcEffiFactor * 100
 

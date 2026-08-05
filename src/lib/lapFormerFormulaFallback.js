@@ -19,12 +19,20 @@ const toNumber = (value) => {
 }
 
 export function resolveLapFormerFormulaInputs(setup = {}, machineSpeed = null) {
+  const m = setup?.machine || {}
+  
+  let machineEffFactor = null
+  if (toNumber(m.prodn_efficiency) !== null) {
+      const rawEff = toNumber(m.prodn_efficiency)
+      machineEffFactor = rawEff > 1 ? rawEff / 100 : rawEff
+  }
+
   // Setup/draft speed must take precedence so cross-tab dynamic recalculation uses unsaved setup edits.
-  const speed = toNumber(setup?.speed) ?? toNumber(machineSpeed) ?? LAP_FORMER_FORMULA_FALLBACK.speed
-  const hankConstant = toNumber(setup?.hank_constant) ?? LAP_FORMER_FORMULA_FALLBACK.hankConstant
-  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) ?? LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor
-  const divisorConstant = toNumber(setup?.divisor_constant) ?? LAP_FORMER_FORMULA_FALLBACK.divisorConstant
-  const delivery = toNumber(setup?.delivery) ?? LAP_FORMER_FORMULA_FALLBACK.delivery
+  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || toNumber(m.speed) || LAP_FORMER_FORMULA_FALLBACK.speed
+  const hankConstant = toNumber(setup?.hank_constant) || toNumber(m.hank_constant) || LAP_FORMER_FORMULA_FALLBACK.hankConstant
+  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || machineEffFactor || LAP_FORMER_FORMULA_FALLBACK.stdEfficiencyFactor
+  const divisorConstant = toNumber(setup?.divisor_constant) || toNumber(m.divisor_constant) || LAP_FORMER_FORMULA_FALLBACK.divisorConstant
+  const delivery = toNumber(setup?.delivery) || toNumber(m.delivery) || LAP_FORMER_FORMULA_FALLBACK.delivery
 
   return {
     speed,

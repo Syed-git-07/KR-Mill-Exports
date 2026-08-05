@@ -597,67 +597,14 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
 // Update production detail
 export async function updateProductionDetail(id, updates) {
   try {
-    // Recalculate on the server from the date/shift-specific setup.  The
-    // client recalculates for immediate display, but the persisted values
-    // must not depend on a stoppage draft being present in the browser.
-    const existing = await prisma.carding_production_detail.findUnique({
-      where: { id },
-      select: {
-        header_id: true,
-        machine_id: true,
-        act_hank: true,
-        act_prodn: true,
-        waste: true,
-        total_stoppage_mins: true,
-      }
-    })
-
-    if (!existing) {
-      throw new Error(`Carding production detail ${id} not found`)
-    }
-
-    const header = await prisma.carding_production_header.findUnique({
-      where: { id: existing.header_id },
-      select: { entry_date: true, shift: true }
-    })
-    const totalTime = await getCardingShiftTime(header?.shift || 1)
-
-    const setup = header
-      ? await prisma.carding_machine_setup.findFirst({
-          where: {
-            machine_id: existing.machine_id,
-            entry_date: header.entry_date,
-            shift: header.shift
-          }
-        })
-      : null
-
-    const stoppage = updates.total_stoppage_mins ?? existing.total_stoppage_mins ?? 0
-    const actHank = updates.act_hank ?? existing.act_hank ?? 0
-    const actProdn = updates.act_prodn ?? existing.act_prodn ?? 0
-    const waste = updates.waste ?? existing.waste ?? 0
-    const calculated = calculateProductionValues(
-      actHank,
-      actProdn,
-      totalTime,
-      stoppage,
-      setup || {}
-    )
-    const wastePercent = Number(actProdn) > 0
-      ? Math.round((Number(waste) / Number(actProdn)) * 100 * 100) / 100
-      : 0
-    const { waste: _formulaWaste, waste_percent: _formulaWastePercent, ...calculatedFields } = calculated
+    // Client already recalculates correctly based on full state.
+    // We just take the explicitly saved cleanUpdates directly to avoid
+    // overwriting accurate UI values with missing/stale server context.
+    const { speed, machine, stoppage, ...cleanUpdates } = updates
 
     const data = await prisma.carding_production_detail.update({
       where: { id },
-      data: {
-        ...updates,
-        ...calculatedFields,
-        act_hank: actHank,
-        act_prodn: actProdn,
-        waste,
-        waste_percent: wastePercent
-      }
+      data: cleanUpdates
     })
     return data
   } catch (error) {
@@ -1318,6 +1265,20 @@ export async function updateMachineSetup(identifier, updates, entryDate = null, 
     }
 
     const setupUpdates = { ...updates }
+
+    const machine = await prisma.carding_machines.findUnique({
+      where: { id: existing.machine_id }
+    })
+    if (machine) {
+      if ('speed' in setupUpdates && setupUpdates.speed !== null && setupUpdates.speed !== undefined) {
+        if (Number(setupUpdates.speed) === Number(machine.speed)) setupUpdates.speed = null
+      }
+      if ('std_efficiency_factor' in setupUpdates && setupUpdates.std_efficiency_factor !== null && setupUpdates.std_efficiency_factor !== undefined) {
+        const rawEff = Number(machine.prodn_efficiency)
+        const masterEff = rawEff > 1 ? rawEff / 100 : rawEff
+        if (Number(setupUpdates.std_efficiency_factor) === masterEff) setupUpdates.std_efficiency_factor = null
+      }
+    }
 
     const currentSetup = await prisma.carding_machine_setup.findUnique({
       where: { id: existing.id },

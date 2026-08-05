@@ -1185,9 +1185,25 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
         delivery: true
       }
     })
+    if (!existingSetup) throw new Error('Setup not found')
 
-    // If speed is being updated, update it in setup table and machine table
-    if (hasSpeedUpdate) {
+    const machine = await prisma.drawing_finisher_machines.findUnique({
+      where: { id: existingSetup.machine_id }
+    })
+    
+    if (machine) {
+      if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
+        if (Number(updates.speed) === Number(machine.speed)) updates.speed = null
+      }
+      if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
+        const rawEff = Number(machine.prodn_efficiency)
+        const masterEff = rawEff > 1 ? rawEff / 100 : rawEff
+        if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null
+      }
+    }
+
+    // If speed is being updated, parse it
+    if (updates.speed !== null && updates.speed !== undefined) {
       const normalizedSpeed = Number.parseInt(String(updates.speed), 10)
       if (!Number.isFinite(normalizedSpeed) || normalizedSpeed < 0) {
         throw new Error('Invalid speed value')

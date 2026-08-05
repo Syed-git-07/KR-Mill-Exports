@@ -1174,10 +1174,25 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
   if (!existingSetup) throw new Error(`Lap former setup ${setupId} not found`);
   const machineId = existingSetup.machine_id;
 
+  const machineFull = await prisma.lap_former_machines.findUnique({
+    where: { id: machineId }
+  });
+
+  if (machineFull) {
+    if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
+      if (Number(updates.speed) === Number(machineFull.speed)) updates.speed = null;
+    }
+    if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
+      const rawEff = Number(machineFull.prodn_efficiency);
+      const masterEff = rawEff > 1 ? rawEff / 100 : rawEff;
+      if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null;
+    }
+  }
+
   const speedWasUpdated = updates.speed !== undefined;
 
   // Store speed only in this date/shift snapshot.
-  if (speedWasUpdated) {
+  if (speedWasUpdated && updates.speed !== null) {
     const numSpeed = Number(updates.speed) || 0;
     updates.speed = numSpeed;
   }

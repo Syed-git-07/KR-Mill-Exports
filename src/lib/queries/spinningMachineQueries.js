@@ -81,6 +81,19 @@ export async function createSpinningMachine(machineData) {
       where: { machine_no: { equals: processedData.machine_no } }
     });
 
+    let finalSpeed = speed;
+    let finalTpi = tpi;
+    let finalActCount = act_count;
+    
+    if (count_name) {
+      const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name, is_active: true } });
+      if (countMaster) {
+        if (finalActCount != null && parseFloat(finalActCount) === parseFloat(countMaster.act_count)) finalActCount = null;
+        if (finalTpi != null && parseFloat(finalTpi) === parseFloat(countMaster.tpi)) finalTpi = null;
+        if (finalSpeed != null && parseInt(finalSpeed) === parseInt(countMaster.speed)) finalSpeed = null;
+      }
+    }
+
     if (existing) {
       if (!existing.is_active) {
         // Reactivate the inactive machine instead of creating a duplicate
@@ -94,10 +107,10 @@ export async function createSpinningMachine(machineData) {
           }
         });
         await upsertDefaultSpinningSetup(reactivated.id, {
-          speed,
+          speed: finalSpeed,
           count_name,
-          act_count,
-          tpi,
+          act_count: finalActCount,
+          tpi: finalTpi,
           allocated_spindles: processedData.allocated_spindles,
         });
         return reactivated;
@@ -117,10 +130,10 @@ export async function createSpinningMachine(machineData) {
     // Keep the baseline setup in sync with the master. New dated entries clone
     // this row and then refresh count-controlled values from the counts master.
     await upsertDefaultSpinningSetup(machine.id, {
-      speed,
+      speed: finalSpeed,
       count_name,
-      act_count,
-      tpi,
+      act_count: finalActCount,
+      tpi: finalTpi,
       allocated_spindles: processedData.allocated_spindles,
     });
 
@@ -151,13 +164,26 @@ export async function updateSpinningMachine(id, machineData) {
     }
   });
 
+  let finalSpeed = speed;
+  let finalTpi = tpi;
+  let finalActCount = act_count;
+  
+  if (count_name) {
+    const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name, is_active: true } });
+    if (countMaster) {
+      if (finalActCount != null && parseFloat(finalActCount) === parseFloat(countMaster.act_count)) finalActCount = null;
+      if (finalTpi != null && parseFloat(finalTpi) === parseFloat(countMaster.tpi)) finalTpi = null;
+      if (finalSpeed != null && parseInt(finalSpeed) === parseInt(countMaster.speed)) finalSpeed = null;
+    }
+  }
+
   // Update or create the baseline setup so master speed/TPI/count/spindles are
   // the source for newly-created dated entries. Explicit zero is valid.
   await upsertDefaultSpinningSetup(id, {
-    speed,
+    speed: finalSpeed,
     count_name,
-    act_count,
-    tpi,
+    act_count: finalActCount,
+    tpi: finalTpi,
     allocated_spindles: processedData.allocated_spindles,
   });
 
@@ -176,13 +202,26 @@ export async function getSpinningMachineWithSetup(id) {
       shift: 1
     }
   });
+  
+  let finalSpeed = setup?.speed ?? null;
+  let finalTpi = setup?.tpi ?? null;
+  let finalActCount = setup?.act_count ?? null;
+  
+  if (setup?.count_name) {
+    const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name: setup.count_name, is_active: true } });
+    if (countMaster) {
+      if (finalActCount == null && countMaster.act_count != null) finalActCount = parseFloat(countMaster.act_count);
+      if (finalTpi == null && countMaster.tpi != null) finalTpi = parseFloat(countMaster.tpi);
+      if (finalSpeed == null && countMaster.speed != null) finalSpeed = parseInt(countMaster.speed);
+    }
+  }
 
   return {
     ...machine,
     count_name: setup?.count_name || null,
-    act_count: setup?.act_count != null ? parseFloat(setup.act_count) : null,
-    tpi: setup?.tpi != null ? parseFloat(setup.tpi) : null,
-    speed: setup?.speed ?? null,
+    act_count: finalActCount != null ? parseFloat(finalActCount) : null,
+    tpi: finalTpi != null ? parseFloat(finalTpi) : null,
+    speed: finalSpeed ?? null,
   };
 }
 
