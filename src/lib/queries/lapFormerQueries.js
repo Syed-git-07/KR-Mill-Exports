@@ -408,8 +408,8 @@ export async function initializeLapFormerDetails(headerId) {
   const newMachines = machines.filter(m => !existingMachineIds.includes(m.id));
   if (newMachines.length === 0) return existingDetails;
 
-  // Get machine setup for default values
-  const setups = await prisma.lap_former_machine_setup.findMany();
+  // Materialize this header's setup snapshot from the current master values.
+  const setups = await getLapFormerMachineSetups(headerId);
 
   // Create a map of machine_id to setup
   const setupMap = {};
@@ -1094,6 +1094,7 @@ export async function getLapFormerMachineSetups(headerId = null) {
         make_name: true,
         prodn_mixing: true,
         speed: true,
+        prodn_efficiency: true,
         sort_order: true
       }
     }),

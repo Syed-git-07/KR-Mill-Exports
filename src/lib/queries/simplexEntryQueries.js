@@ -294,8 +294,8 @@ export async function initializeSimplexProductionDetails(headerId) {
 
     if (!machines || machines.length === 0) return []
 
-    // Get machine setup for default values
-    const setups = await prisma.simplex_machine_setup.findMany()
+    // Materialize this header's setup snapshot from the current master values.
+    const setups = await getSimplexMachineSetups(headerId)
 
     // Create a map of machine_id to setup
     const setupMap = {}

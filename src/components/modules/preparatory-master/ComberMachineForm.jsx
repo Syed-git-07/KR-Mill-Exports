@@ -378,6 +378,7 @@ export default function ComberMachineForm({ initialData, onSubmit, isLoading, co
           <Input
             id="mc_effi"
             type="number"
+            step="any"
             placeholder="Enter std efficiency"
             {...register('mc_effi')}
             className={errors.mc_effi ? 'border-red-500' : ''}

@@ -46,8 +46,9 @@ export function cloneDateScopedSetup(row, entryDate, shift, setupOverrides = {})
 
 /**
  * Materializes an independent setup snapshot for one production header.
- * A new header inherits the most recent earlier date/shift, but an existing
- * snapshot is never re-sourced, so later edits cannot rewrite history.
+ * A new header inherits the most recent earlier date/shift, then overlays the
+ * current machine-master values. An existing snapshot is never re-sourced, so
+ * later master edits cannot rewrite history.
  */
 export async function getOrCreateDateScopedSetups({
   setupModel,
@@ -104,7 +105,10 @@ export async function getOrCreateDateScopedSetups({
         if ('shift_time' in row && header.total_time !== null && header.total_time !== undefined) {
           overrides.shift_time = header.total_time
         }
-        return cloneDateScopedSetup(row, entryDate, shift, overrides)
+        return cloneDateScopedSetup(row, entryDate, shift, {
+          ...overrides,
+          ...(machineSetupOverridesMap?.[row.machine_id] || {})
+        })
       }),
       skipDuplicates: true
     })

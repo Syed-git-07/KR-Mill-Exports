@@ -388,7 +388,9 @@ export async function initializeProductionDetails(headerId, shift = 1) {
       const setup = setupMap[machine.id] || {}
       const inherited = inheritedSetups[machine.id] || {}
 
-      const countMixing = inherited.count_mixing !== undefined ? inherited.count_mixing : (machine.prodn_mixing || '64COMBED GOLD')
+      // Master count/mixing is part of the new-entry snapshot. Do not let a
+      // prior entry delay a just-saved Carding master change by one entry.
+      const countMixing = machine.prodn_mixing ?? inherited.count_mixing ?? '64COMBED GOLD'
       const employeeName = null
       const sessionNo = inherited.session_no !== undefined ? inherited.session_no : 1
       const wasteVal = inherited.waste !== undefined && inherited.waste !== null ? inherited.waste : (setup.default_waste ?? null)
@@ -539,7 +541,10 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
       const setup = setupMap[machine.id] || {}
       const inherited = inheritedSetups[machine.id] || {}
 
-      const countMixing = inherited.count_mixing !== undefined ? inherited.count_mixing : (machine.prodn_mixing || '64COMBED GOLD')
+      // A newly-created entry must take its count/mixing from the current
+      // machine master immediately. The previous production entry is only a
+      // fallback for legacy machines whose master value is blank.
+      const countMixing = machine.prodn_mixing || inherited.count_mixing || '64COMBED GOLD'
       const employeeName = null
       const sessionNo = inherited.session_no !== undefined ? inherited.session_no : 1
       const wasteVal = inherited.waste !== undefined && inherited.waste !== null ? inherited.waste : (setup.default_waste ?? null)
@@ -1020,6 +1025,58 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
     })
     
     if (setups.length > 0) {
+      // Setup rows can be prepared when the entry screen is opened, before a
+      // production detail is actually created. If the master is edited in
+      // between, refresh that still-unused snapshot so the immediate next
+      // entry does not lag by one record. Once details exist it is historical
+      // data and must never be refreshed from master.
+      const matchingHeaders = await prisma.carding_production_header.findMany({
+        where: { entry_date: dateObj, shift: shiftNum },
+        select: { id: true }
+      })
+      const materializedDetailCount = matchingHeaders.length > 0
+        ? await prisma.carding_production_detail.count({
+            where: { header_id: { in: matchingHeaders.map(header => header.id) } }
+          })
+        : 0
+
+      if (materializedDetailCount === 0) {
+        const machines = await prisma.carding_machines.findMany({
+          where: { id: { in: setups.map(setup => setup.machine_id) } }
+        })
+        const machineMap = new Map(machines.map(machine => [machine.id, machine]))
+
+        await Promise.all(setups.map(setup => {
+          const machine = machineMap.get(setup.machine_id)
+          if (!machine) return Promise.resolve()
+
+          const rawEfficiency = Number(machine.prodn_efficiency ?? setup.std_efficiency_factor ?? 0.98)
+          const stdEfficiencyFactor = rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+          const speed = machine.speed ?? setup.speed ?? 130
+          const hankConstant = machine.hank_constant ?? setup.hank_constant ?? 0.13
+          const stdProdn = calculateCardingStdProdn({
+            speed,
+            divisor_constant: setup.divisor_constant ?? 1693,
+            hank_constant: hankConstant,
+            std_efficiency_factor: stdEfficiencyFactor
+          }, targetShiftTime)
+
+          return prisma.carding_machine_setup.update({
+            where: { id: setup.id },
+            data: {
+              speed,
+              hank_constant: hankConstant,
+              std_efficiency_factor: stdEfficiencyFactor,
+              shift_time: targetShiftTime,
+              std_prodn: Math.round(stdProdn * 100) / 100
+            }
+          })
+        }))
+
+        setups = await prisma.carding_machine_setup.findMany({
+          where: { entry_date: dateObj, shift: shiftNum }
+        })
+      }
       return setups
     }
     
@@ -1059,14 +1116,16 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         const cloneData = prevSetups.map(s => {
           const { id, created_at, updated_at, ...rest } = s
           const machine = activeMachines.find(m => m.id === s.machine_id)
-          const defaultSpeed = rest.speed ?? (machine ? (machine.speed ?? 130.00) : 130.00)
+          // A new entry must use the current Carding master values. The
+          // previous setup only supplies fields that do not exist in master.
+          const defaultSpeed = machine?.speed ?? rest.speed ?? 130.00
           const machineEfficiency = machine?.prodn_efficiency == null
             ? null
             : Number(machine.prodn_efficiency)
-          const stdEfficiencyFactor = rest.std_efficiency_factor ?? (Number.isFinite(machineEfficiency)
+          const stdEfficiencyFactor = Number.isFinite(machineEfficiency)
             ? (machineEfficiency > 1 ? machineEfficiency / 100 : machineEfficiency)
-            : 0.85)
-          const hankConstant = rest.hank_constant ?? (machine?.hank_constant ? Number(machine.hank_constant) : 0.13)
+            : (rest.std_efficiency_factor ?? 0.85)
+          const hankConstant = machine?.hank_constant ?? rest.hank_constant ?? 0.13
           const fallbackStdProdn = calculateCardingStdProdn({
             speed: defaultSpeed,
             divisor_constant: rest.divisor_constant ?? 1693,
