@@ -251,12 +251,6 @@ export default function SpinningCountPage() {
         onOpenChange={setIsModalOpen}
         title="Spinning Count Master"
         description={isEditing ? "To Modify the Spinning Count Details" : "Add new spinning count"}
-        onSave={() => {
-          const form = document.querySelector('form')
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-          }
-        }}
         onCancel={() => setIsModalOpen(false)}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

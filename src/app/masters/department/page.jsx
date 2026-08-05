@@ -252,12 +252,6 @@ export default function DepartmentPage() {
         onOpenChange={setIsModalOpen}
         title="Department Master"
         description={isEditing ? "Modify department details" : "Add new department"}
-        onSave={() => {
-          const form = document.querySelector('form')
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-          }
-        }}
         onCancel={() => setIsModalOpen(false)}
         onDelete={isEditing ? handleDelete : null}
         showDelete={isEditing}

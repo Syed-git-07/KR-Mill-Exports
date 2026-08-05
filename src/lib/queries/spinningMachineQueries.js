@@ -1,5 +1,31 @@
 import { prisma } from '../prisma';
 
+const SPINNING_DEFAULT_SETUP_DATE = new Date('2026-04-01T00:00:00.000Z');
+
+async function upsertDefaultSpinningSetup(machineId, setupFields) {
+  const data = Object.fromEntries(
+    Object.entries(setupFields).filter(([, value]) => value !== undefined)
+  );
+  if (Object.keys(data).length === 0) return null;
+
+  return prisma.spinning_machine_setup.upsert({
+    where: {
+      idx_spinning_machine_setup_date: {
+        machine_id: machineId,
+        entry_date: SPINNING_DEFAULT_SETUP_DATE,
+        shift: 1,
+      }
+    },
+    update: data,
+    create: {
+      machine_id: machineId,
+      entry_date: SPINNING_DEFAULT_SETUP_DATE,
+      shift: 1,
+      ...data,
+    }
+  });
+}
+
 /**
  * Spinning Machine Master CRUD Operations
  */
@@ -55,6 +81,19 @@ export async function createSpinningMachine(machineData) {
       where: { machine_no: { equals: processedData.machine_no } }
     });
 
+    let finalSpeed = speed;
+    let finalTpi = tpi;
+    let finalActCount = act_count;
+    
+    if (count_name) {
+      const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name, is_active: true } });
+      if (countMaster) {
+        if (finalActCount != null && parseFloat(finalActCount) === parseFloat(countMaster.act_count)) finalActCount = null;
+        if (finalTpi != null && parseFloat(finalTpi) === parseFloat(countMaster.tpi)) finalTpi = null;
+        if (finalSpeed != null && parseInt(finalSpeed) === parseInt(countMaster.speed)) finalSpeed = null;
+      }
+    }
+
     if (existing) {
       if (!existing.is_active) {
         // Reactivate the inactive machine instead of creating a duplicate
@@ -66,6 +105,13 @@ export async function createSpinningMachine(machineData) {
             activated_at: new Date(),
             deactivated_at: null,
           }
+        });
+        await upsertDefaultSpinningSetup(reactivated.id, {
+          speed: finalSpeed,
+          count_name,
+          act_count: finalActCount,
+          tpi: finalTpi,
+          allocated_spindles: processedData.allocated_spindles,
         });
         return reactivated;
       } else {
@@ -81,8 +127,15 @@ export async function createSpinningMachine(machineData) {
       data: { ...processedData, activated_at: new Date(), sort_order: nextSortOrder }
     });
 
-    // NOTE: Machine setup records are NOT created here.
-    // They are only created when the machine is explicitly added via the Machine Setup tab.
+    // Keep the baseline setup in sync with the master. New dated entries clone
+    // this row and then refresh count-controlled values from the counts master.
+    await upsertDefaultSpinningSetup(machine.id, {
+      speed: finalSpeed,
+      count_name,
+      act_count: finalActCount,
+      tpi: finalTpi,
+      allocated_spindles: processedData.allocated_spindles,
+    });
 
     return machine;
   } catch (error) {
@@ -111,23 +164,28 @@ export async function updateSpinningMachine(id, machineData) {
     }
   });
 
-  // Update the setup row (count/tpi/speed/act_count) if any are provided
-  const setupUpdate = {};
-  if (speed !== undefined) setupUpdate.speed = speed;
-  if (count_name !== undefined) setupUpdate.count_name = count_name;
-  if (act_count !== undefined) setupUpdate.act_count = act_count;
-  if (tpi !== undefined) setupUpdate.tpi = tpi;
-
-  if (Object.keys(setupUpdate).length > 0) {
-    await prisma.spinning_machine_setup.updateMany({
-      where: { 
-        machine_id: id,
-        entry_date: new Date('2026-04-01'),
-        shift: 1
-      },
-      data: setupUpdate
-    });
+  let finalSpeed = speed;
+  let finalTpi = tpi;
+  let finalActCount = act_count;
+  
+  if (count_name) {
+    const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name, is_active: true } });
+    if (countMaster) {
+      if (finalActCount != null && parseFloat(finalActCount) === parseFloat(countMaster.act_count)) finalActCount = null;
+      if (finalTpi != null && parseFloat(finalTpi) === parseFloat(countMaster.tpi)) finalTpi = null;
+      if (finalSpeed != null && parseInt(finalSpeed) === parseInt(countMaster.speed)) finalSpeed = null;
+    }
   }
+
+  // Update or create the baseline setup so master speed/TPI/count/spindles are
+  // the source for newly-created dated entries. Explicit zero is valid.
+  await upsertDefaultSpinningSetup(id, {
+    speed: finalSpeed,
+    count_name,
+    act_count: finalActCount,
+    tpi: finalTpi,
+    allocated_spindles: processedData.allocated_spindles,
+  });
 
   return data;
 }
@@ -144,13 +202,26 @@ export async function getSpinningMachineWithSetup(id) {
       shift: 1
     }
   });
+  
+  let finalSpeed = setup?.speed ?? null;
+  let finalTpi = setup?.tpi ?? null;
+  let finalActCount = setup?.act_count ?? null;
+  
+  if (setup?.count_name) {
+    const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name: setup.count_name, is_active: true } });
+    if (countMaster) {
+      if (finalActCount == null && countMaster.act_count != null) finalActCount = parseFloat(countMaster.act_count);
+      if (finalTpi == null && countMaster.tpi != null) finalTpi = parseFloat(countMaster.tpi);
+      if (finalSpeed == null && countMaster.speed != null) finalSpeed = parseInt(countMaster.speed);
+    }
+  }
 
   return {
     ...machine,
     count_name: setup?.count_name || null,
-    act_count: setup?.act_count != null ? parseFloat(setup.act_count) : null,
-    tpi: setup?.tpi != null ? parseFloat(setup.tpi) : null,
-    speed: setup?.speed || null,
+    act_count: finalActCount != null ? parseFloat(finalActCount) : null,
+    tpi: finalTpi != null ? parseFloat(finalTpi) : null,
+    speed: finalSpeed ?? null,
   };
 }
 

@@ -126,7 +126,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
       model: d.model || prev.model,
-      allocated_spindles: d.allocated_spindles || prev.allocated_spindles,
+      allocated_spindles: d.allocated_spindles ?? prev.allocated_spindles,
       installed_date: d.installed_date
         ? String(d.installed_date).split('T')[0]
         : prev.installed_date,
@@ -537,8 +537,12 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         description: newMachineData.description || newMachineData.machine_no,
         model: newMachineData.model || null,
         act_count: newMachineData.act_count,
-        allocated_spindles: newMachineData.allocated_spindles ? parseInt(newMachineData.allocated_spindles) : 1104,
-        speed: newMachineData.speed ? parseInt(newMachineData.speed) : 0,
+        allocated_spindles: newMachineData.allocated_spindles === '' || newMachineData.allocated_spindles == null
+          ? 1104
+          : parseInt(newMachineData.allocated_spindles),
+        speed: newMachineData.speed === '' || newMachineData.speed == null
+          ? 0
+          : parseInt(newMachineData.speed),
         installed_date: installedDate
       })
       
@@ -700,10 +704,10 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                       {totalTime}
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
-                      {row.machine?.allocated_spindles || row.allocated_spindles || 1104}
+                      {row.allocated_spindles ?? row.machine?.allocated_spindles ?? 1104}
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-center font-medium text-green-600 tabular-nums whitespace-nowrap">
-                      {calculateNoOfSpindles(row.machine?.allocated_spindles || row.allocated_spindles)}
+                      {calculateNoOfSpindles(row.allocated_spindles ?? row.machine?.allocated_spindles)}
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput
@@ -950,7 +954,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <NumberInput
                   type="number"
                   value={newMachineData.allocated_spindles}
-                  onChange={(e) => setNewMachineData(prev => ({ ...prev, allocated_spindles: parseInt(e.target.value) || 1104 }))}
+                  onChange={(e) => setNewMachineData(prev => ({ ...prev, allocated_spindles: e.target.value === '' ? '' : parseInt(e.target.value) }))}
                   onKeyDown={handleDialogNav}
                   className="mt-2"
                   zeroAsEmpty

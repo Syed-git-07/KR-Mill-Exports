@@ -92,9 +92,13 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 
   const calculateValues = useCallback((row, updates = {}, effectiveSetupOverride = null) => {
     const setup = effectiveSetupOverride || row.setup || {}
-    const actCount = parseFloat(setup.act_count) || 0
-    const allocatedSpindles = parseInt(setup.allocated_spindles) || row.machine?.allocated_spindles || 1104
-    const efficiency = parseFloat(setup.efficiency) || 0.95
+    const actCount = Number.isFinite(Number(setup.act_count)) ? Number(setup.act_count) : 0
+    const allocatedSpindles = setup.allocated_spindles != null && setup.allocated_spindles !== ''
+      ? Number(setup.allocated_spindles)
+      : (row.machine?.allocated_spindles ?? 1104)
+    const efficiency = setup.efficiency != null && setup.efficiency !== ''
+      ? Number(setup.efficiency)
+      : 0.95
     const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
     const productionTime = resolveProductionTime(effectiveTotalTime, requestedStoppageMins)
     const stoppageMins = productionTime.stoppageTime

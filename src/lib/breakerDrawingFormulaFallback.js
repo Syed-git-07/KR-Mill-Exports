@@ -12,19 +12,26 @@ export const BREAKER_DRAWING_FORMULA_FALLBACK = {
 }
 
 const toNumber = (value) => {
-  if (value === null || value === undefined) return 0
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') return Number.parseFloat(value) || 0
-  if (typeof value === 'object' && value.toString) return Number.parseFloat(value.toString()) || 0
-  return 0
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const parsed = Number.parseFloat(value?.toString?.() ?? String(value))
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export function resolveBreakerDrawingFormulaInputs(setup = {}, machineSpeed = null) {
-  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || BREAKER_DRAWING_FORMULA_FALLBACK.speed
-  const hankConstant = toNumber(setup?.hank_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant
-  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
-  const divisorConstant = toNumber(setup?.divisor_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.divisorConstant
-  const delivery = toNumber(setup?.delivery) || BREAKER_DRAWING_FORMULA_FALLBACK.delivery
+  const m = setup?.machine || {}
+  
+  let machineEffFactor = null
+  if (toNumber(m.prodn_efficiency) !== null) {
+      const rawEff = toNumber(m.prodn_efficiency)
+      machineEffFactor = rawEff > 1 ? rawEff / 100 : rawEff
+  }
+
+  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || toNumber(m.speed) || BREAKER_DRAWING_FORMULA_FALLBACK.speed
+  const hankConstant = toNumber(setup?.hank_constant) || toNumber(m.hank_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant
+  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || machineEffFactor || BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
+  const divisorConstant = toNumber(setup?.divisor_constant) || toNumber(m.divisor_constant) || BREAKER_DRAWING_FORMULA_FALLBACK.divisorConstant
+  const delivery = toNumber(setup?.delivery) || toNumber(m.delivery) || BREAKER_DRAWING_FORMULA_FALLBACK.delivery
 
   return {
     speed,

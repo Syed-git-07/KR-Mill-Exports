@@ -818,15 +818,21 @@ export async function getComberMachineSetups(headerId = null) {
       select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
     })
     const machineSpeedMap = {};
+    const machineSetupOverridesMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
+      machineSetupOverridesMap[m.id] = {
+        ...(m.sliver_hank != null && { sl_hank: m.sliver_hank }),
+        ...(m.mc_effi != null && { mc_effi: m.mc_effi })
+      };
     });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.comber_machine_setup,
       headerModel: prisma.comber_production_header,
       headerId: validHeaderId,
       machineIds: machines.map(machine => machine.id),
-      machineSpeedMap
+      machineSpeedMap,
+      machineSetupOverridesMap
     })
     const headerDetails = validHeaderId
       ? await prisma.comber_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
@@ -871,6 +877,10 @@ export async function updateComberMachineSetup(setupId, updates) {
     const currentSetup = await prisma.comber_machine_setup.findUnique({
       where: { id: setupId },
       select: { machine_id: true }
+    })
+
+    const machine = await prisma.comber_machines.findUnique({
+      where: { id: currentSetup.machine_id }
     })
 
     const data = await prisma.comber_machine_setup.update({
@@ -928,7 +938,7 @@ export async function addComberMachine(machineData) {
             make_name: machineData.make_name || 'LMW',
             model: machineData.model || null,
             prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
-            speed: machineData.speed || 350,
+            speed: machineData.speed ?? 350,
             mc_effi: defaultMcEffi
           }
         })
@@ -1020,7 +1030,7 @@ export async function addComberMachine(machineData) {
         make_name: machineData.make_name || 'LMW',
         model: machineData.model || null,
         prodn_mixing: machineData.prodn_mixing || machineData.prodn_count || '64COMBED GOLD',
-        speed: machineData.speed || 350,
+        speed: machineData.speed ?? 350,
         mc_effi: defaultMcEffi,
         installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
         is_active: true,

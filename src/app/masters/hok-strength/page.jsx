@@ -270,12 +270,6 @@ export default function HOKStrengthPage() {
         onOpenChange={setIsModalOpen}
         title="HOK Strength Master"
         description={isEditing ? 'To Modify the HOK Strength Head' : 'Add new HOK Strength entry'}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingEntry(null);

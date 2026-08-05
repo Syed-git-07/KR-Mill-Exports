@@ -321,12 +321,6 @@ export default function TWCEntryMaster() {
         onOpenChange={setIsModalOpen}
         title="TWC Entry Master"
         description={isEditing ? "Update TWC entry details" : "Add a new TWC entry"}
-        onSave={() => {
-          const form = document.querySelector('form')
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingEntry(null);

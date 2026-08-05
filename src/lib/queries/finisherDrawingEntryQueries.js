@@ -404,15 +404,24 @@ export async function initializeFinisherDrawingDetails(headerId) {
 
     const machineIds = machines.map(m => m.id)
     const machineSpeedMap = {};
+    const machineSetupOverridesMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
+      const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+      machineSetupOverridesMap[m.id] = {
+        ...(m.speed != null && { speed: m.speed }),
+        ...(Number.isFinite(rawEfficiency) && {
+          std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+        })
+      };
     });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.finisher_drawing_machine_setup,
       headerModel: prisma.finisher_drawing_production_header,
       headerId,
       machineIds,
-      machineSpeedMap
+      machineSpeedMap,
+      machineSetupOverridesMap
     })
 
     const setupMap = {}
@@ -507,15 +516,24 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
 
     const machineIds = machines.map(m => m.id)
     const machineSpeedMap = {};
+    const machineSetupOverridesMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
+      const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+      machineSetupOverridesMap[m.id] = {
+        ...(m.speed != null && { speed: m.speed }),
+        ...(Number.isFinite(rawEfficiency) && {
+          std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+        })
+      };
     });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.finisher_drawing_machine_setup,
       headerModel: prisma.finisher_drawing_production_header,
       headerId,
       machineIds,
-      machineSpeedMap
+      machineSpeedMap,
+      machineSetupOverridesMap
     })
 
     const setupMap = {}
@@ -1089,15 +1107,24 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
       select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
     })
     const machineSpeedMap = {};
+    const machineSetupOverridesMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
+      const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+      machineSetupOverridesMap[m.id] = {
+        ...(m.speed != null && { speed: m.speed }),
+        ...(Number.isFinite(rawEfficiency) && {
+          std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+        })
+      };
     });
     const data = await getOrCreateDateScopedSetups({
       setupModel: prisma.finisher_drawing_machine_setup,
       headerModel: prisma.finisher_drawing_production_header,
       headerId: validHeaderId,
       machineIds: machines.map(machine => machine.id),
-      machineSpeedMap
+      machineSpeedMap,
+      machineSetupOverridesMap
     })
     const headerDetails = validHeaderId
       ? await prisma.finisher_drawing_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
@@ -1158,11 +1185,16 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
         delivery: true
       }
     })
+    if (!existingSetup) throw new Error('Setup not found')
 
-    // If speed is being updated, update it in setup table and machine table
-    if (hasSpeedUpdate) {
+    const machine = await prisma.drawing_finisher_machines.findUnique({
+      where: { id: existingSetup.machine_id }
+    })
+
+    // If speed is being updated, parse it
+    if (updates.speed !== null && updates.speed !== undefined) {
       const normalizedSpeed = Number.parseInt(String(updates.speed), 10)
-      if (!Number.isFinite(normalizedSpeed) || normalizedSpeed <= 0) {
+      if (!Number.isFinite(normalizedSpeed) || normalizedSpeed < 0) {
         throw new Error('Invalid speed value')
       }
       updates.speed = normalizedSpeed
@@ -1170,11 +1202,6 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
 
     // Recalculate std_prodn if other params change
     if (hasFormulaRuntimeUpdate) {
-      // Get current speed from machine table
-      const machine = await prisma.drawing_finisher_machines.findUnique({
-        where: { id: existingSetup.machine_id },
-        select: { speed: true }
-      })
 
       const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machine?.speed
       const resolved = resolveFinisherDrawingFormulaInputs({
@@ -1209,7 +1236,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
     if (Object.keys(updates).length === 0) {
       const data = await prisma.finisher_drawing_machine_setup.findUnique({ where: { id: setupId } })
 
-      const machine = await prisma.drawing_finisher_machines.findUnique({
+      const resultMachine = await prisma.drawing_finisher_machines.findUnique({
         where: { id: existingSetup.machine_id },
         select: {
           id: true,
@@ -1218,7 +1245,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
         }
       })
 
-      return { ...data, machine: machine || null, speed: machine?.speed ?? data?.speed }
+      return { ...data, machine: resultMachine || null, speed: resultMachine?.speed ?? data?.speed }
     }
 
     const data = await prisma.finisher_drawing_machine_setup.update({
@@ -1229,7 +1256,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
       }
     })
 
-    const machine = await prisma.drawing_finisher_machines.findUnique({
+    const finalMachine = await prisma.drawing_finisher_machines.findUnique({
       where: { id: existingSetup.machine_id },
       select: {
         id: true,
@@ -1238,7 +1265,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
       }
     })
 
-    return { ...data, machine: machine || null, speed: machine?.speed ?? data.speed }
+    return { ...data, machine: finalMachine || null, speed: finalMachine?.speed ?? data.speed }
   } catch (error) {
     console.error('Error updating machine setup:', error)
     throw new Error(`Failed to update machine setup: ${error.message || JSON.stringify(error)}`)
@@ -1585,7 +1612,7 @@ export async function addFinisherDrawingMachine(machineData) {
         installed_date: installedDate || existingMachine.installed_date || null,
         prodn_efficiency: prodnEffi ?? existingMachine.prodn_efficiency,
         prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
-        speed: machineData.speed || FINISHER_DRAWING_FORMULA_FALLBACK.speed,
+        speed: resolveFinisherDrawingFormulaInputs(machineData, machineData.speed).speed,
         activated_at: new Date(),
         deactivated_at: null,
       }
@@ -1663,7 +1690,10 @@ export async function addFinisherDrawingMachine(machineData) {
         installed_date: installedDate || existingMachine.installed_date || null,
         prodn_efficiency: prodnEffi ?? existingMachine.prodn_efficiency,
         prodn_mixing: machineData.prodn_mixing || existingMachine.prodn_mixing || '64COMBED GOLD',
-        speed: machineData.speed || existingMachine.speed || FINISHER_DRAWING_FORMULA_FALLBACK.speed,
+        speed: resolveFinisherDrawingFormulaInputs(
+          { speed: machineData.speed === '' || machineData.speed == null ? existingMachine.speed : machineData.speed },
+          existingMachine.speed
+        ).speed,
       }
     })
 
@@ -1707,7 +1737,7 @@ export async function addFinisherDrawingMachine(machineData) {
       installed_date: installedDate || null,
       prodn_efficiency: prodnEffi,
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
-      speed: machineData.speed || FINISHER_DRAWING_FORMULA_FALLBACK.speed,
+      speed: resolveFinisherDrawingFormulaInputs(machineData, machineData.speed).speed,
       is_active: true,
       activated_at: new Date(),
       sort_order: nextSortOrder,

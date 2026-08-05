@@ -411,7 +411,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
         }
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, getEffectiveSetup, mergeProductionDetailWithDraft, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, totalTime, getEffectiveSetup, mergeProductionDetailWithDraft, stoppageData.length])
 
   // Handle stoppage time change
   const handleTimeChange = (rowId, field, value) => {
@@ -522,9 +522,10 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
-        updateStoppageEntryAction(rowId, changes)
-      )
+      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+        const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
+        return updateStoppageEntryAction(rowId, persistedChanges)
+      })
 
       const stoppageResults = await Promise.all(updatePromises)
       const failedStoppage = stoppageResults.find(result => !result?.success)

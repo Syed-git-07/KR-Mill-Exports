@@ -379,12 +379,6 @@ export default function SpinningMachineMaster() {
         onOpenChange={setIsModalOpen}
         title="Spinning Machine Master"
         description={editingMachine ? "Modify machine details" : "Add new machine"}
-        onSave={() => {
-          const form = document.querySelector('form')
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false)
           setEditingMachine(null)

@@ -166,7 +166,7 @@ export async function generateSpinningStoppageReport(selectedDate) {
 
         if (!machine || !stoppageEntry) return
 
-        const allocatedSpindles = machine.allocated_spindles || 1104
+        const allocatedSpindles = machine.allocated_spindles ?? 1104
 
         // CALCULATE No of Spindles based on shift (as per formula)
         const noOfSpindles =

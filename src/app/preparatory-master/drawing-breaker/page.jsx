@@ -356,12 +356,6 @@ export default function DrawingBreakerPage() {
         onOpenChange={setIsModalOpen}
         title="Draw Frame Breaker M/c Master"
         description={editingMachine ? "Modify machine make details" : "Add new machine make details"}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingMachine(null);

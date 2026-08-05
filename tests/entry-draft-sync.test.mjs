@@ -13,20 +13,38 @@ const {
   mergeSetupDraft,
   selectRowsForDependentCommit
 } = await importSourceModule('../src/lib/entryDraftSync.js')
-const { calculateCardingStdProdn } = await importSourceModule('../src/lib/cardingFormulaFallback.js')
+const {
+  applyBulkStoppageDraft
+} = await importSourceModule('../src/lib/stoppageSlotUtils.js')
+const {
+  calculateCardingStdProdn,
+  resolveCardingFormulaInputs
+} = await importSourceModule('../src/lib/cardingFormulaFallback.js')
 const {
   calculateBreakerDrawingStdProdn,
-  getBreakerDrawingActProdnConstant
+  getBreakerDrawingActProdnConstant,
+  resolveBreakerDrawingFormulaInputs
 } = await importSourceModule('../src/lib/breakerDrawingFormulaFallback.js')
-const { calculateFinisherDrawingStdProdn } = await importSourceModule('../src/lib/finisherDrawingFormulaFallback.js')
+const {
+  calculateFinisherDrawingStdProdn,
+  resolveFinisherDrawingFormulaInputs
+} = await importSourceModule('../src/lib/finisherDrawingFormulaFallback.js')
 const {
   calculateLapFormerStdProdn,
-  getLapFormerActProdnConstant
+  getLapFormerActProdnConstant,
+  resolveLapFormerFormulaInputs
 } = await importSourceModule('../src/lib/lapFormerFormulaFallback.js')
 const {
   calculateComberConstantFromSlHank,
   resolveComberFormulaInputs
 } = await importSourceModule('../src/lib/comberFormulaFallback.js')
+const {
+  resolveSimplexFormulaInputs
+} = await importSourceModule('../src/lib/simplexFormulaFallback.js')
+const {
+  buildMachineSetupOverrides,
+  cloneDateScopedSetup
+} = await importSourceModule('../src/lib/queries/dateScopedMachineSetup.js')
 const {
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
@@ -75,6 +93,27 @@ test('stoppage draft totals override saved slot values without touching the data
 
   assert.equal(getEffectiveStoppageTotal(productionRow, drafts), 27)
   assert.equal(productionRow.stoppage[0].total_stoppage_time, 15)
+})
+
+test('bulk stoppage drafts link back to production so calculated grids update immediately', () => {
+  const result = applyBulkStoppageDraft({
+    rows: [{
+      id: 'stoppage-1',
+      production_detail_id: 'production-1',
+      stoppage1_id: 'reason-existing-1',
+      stoppage1_time: 10,
+      stoppage2_id: 'reason-existing-2',
+      stoppage2_time: 5,
+      stoppage3_time: 0,
+      stoppage4_time: 0
+    }],
+    reasonId: 'reason-1',
+    minutes: 20,
+    maxMinutes: 510
+  })
+
+  assert.equal(result.drafts['stoppage-1'].production_detail_id, 'production-1')
+  assert.equal(getEffectiveStoppageTotal(productionRow, result.drafts), 35)
 })
 
 test('dependent setup and stoppage edits select production rows for final commit', () => {
@@ -202,4 +241,69 @@ test('stoppage time is bounded to the shift before dependent formulas run', () =
     stoppageTime: 0,
     workTime: 510
   })
+})
+
+test('explicit zero master values are never replaced by formula defaults', () => {
+  assert.deepEqual(resolveCardingFormulaInputs({
+    speed: 0,
+    hank_constant: 0,
+    std_efficiency_factor: 0,
+    divisor_constant: 0
+  }), {
+    speed: 0,
+    hankConstant: 0,
+    stdEfficiencyFactor: 0,
+    divisorConstant: 0
+  })
+
+  assert.equal(resolveBreakerDrawingFormulaInputs({ speed: 0 }).speed, 0)
+  assert.equal(resolveFinisherDrawingFormulaInputs({ speed: 0 }).speed, 0)
+  assert.equal(resolveLapFormerFormulaInputs({ speed: 0 }).speed, 0)
+
+  const simplex = resolveSimplexFormulaInputs({
+    overrides: { speed: 0, tpi: 0, hank: 0, mcEffi: 0, totalSpindles: 0 }
+  })
+  assert.equal(simplex.speed, 0)
+  assert.equal(simplex.tpi, 0)
+  assert.equal(simplex.slHank, 0)
+  assert.equal(simplex.mcEffiPercent, 0)
+  assert.equal(simplex.totalSpindles, 0)
+
+  const comber = resolveComberFormulaInputs({ sl_hank: 0, mc_effi: 0 })
+  assert.equal(comber.slHank, 0)
+  assert.equal(comber.mcEffiFactor, 0)
+  assert.equal(comber.constant, 0)
+})
+
+test('new date snapshots apply every present machine master value including zero', () => {
+  const overrides = buildMachineSetupOverrides({
+    speed: 0,
+    tpi: 0,
+    no_of_spindles: 0,
+    absent: null
+  }, {
+    speed: 'speed',
+    tpi: 'tpi',
+    spindles: 'no_of_spindles',
+    ignored: 'absent'
+  })
+
+  assert.deepEqual(overrides, { speed: 0, tpi: 0, spindles: 0 })
+
+  const snapshot = cloneDateScopedSetup({
+    id: 'old',
+    machine_id: 'machine-1',
+    entry_date: new Date('2026-07-01'),
+    shift: 1,
+    speed: 350,
+    hank_constant: 0.14,
+    std_efficiency_factor: 0.9,
+    divisor_constant: 1693,
+    delivery: 1,
+    shift_time: 510,
+    std_prodn: 677.79
+  }, new Date('2026-08-01'), 2, { speed: 0 })
+
+  assert.equal(snapshot.speed, 0)
+  assert.equal(snapshot.std_prodn, 0)
 })

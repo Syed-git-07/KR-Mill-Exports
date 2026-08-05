@@ -11,7 +11,9 @@
     "user:create": "node scripts/create-app-user.js",
     "security:cleanup": "node scripts/cleanup-security-data.js",
     "security:smoke": "node scripts/smoke-auth-runtime.js",
-    "schema:extract-structure": "powershell -ExecutionPolicy Bypass -File schema/schema-structure/extract-structure.ps1"
+    "schema:extract-structure": "powershell -ExecutionPolicy Bypass -File schema/schema-structure/extract-structure.ps1",
+    "backup": "node scripts/db-backup.js",
+    "backup:service": "node scripts/backup-service.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -28,11 +30,14 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.4.2",
     "jspdf": "^4.1.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.554.0",
     "next": "^15.5.9",
     "next-themes": "^0.4.6",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.4",
     "react": "19.2.0",
     "react-day-picker": "^9.13.0",
     "react-dom": "19.2.0",

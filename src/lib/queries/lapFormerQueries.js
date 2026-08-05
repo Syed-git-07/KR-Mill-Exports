@@ -1107,15 +1107,24 @@ export async function getLapFormerMachineSetups(headerId = null) {
 
   const machineIds = machines.map(m => m.id);
   const machineSpeedMap = {};
+  const machineSetupOverridesMap = {};
   machines.forEach(m => {
     machineSpeedMap[m.id] = m.speed;
+    const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
+    machineSetupOverridesMap[m.id] = {
+      ...(m.speed != null && { speed: m.speed }),
+      ...(Number.isFinite(rawEfficiency) && {
+        std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+      })
+    };
   });
   const data = await getOrCreateDateScopedSetups({
     setupModel: prisma.lap_former_machine_setup,
     headerModel: prisma.lap_former_production_header,
     headerId: validHeaderId,
     machineIds,
-    machineSpeedMap
+    machineSpeedMap,
+    machineSetupOverridesMap
   });
 
   const machineMap = {};
@@ -1165,10 +1174,14 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
   if (!existingSetup) throw new Error(`Lap former setup ${setupId} not found`);
   const machineId = existingSetup.machine_id;
 
+  const machineFull = await prisma.lap_former_machines.findUnique({
+    where: { id: machineId }
+  });
+
   const speedWasUpdated = updates.speed !== undefined;
 
   // Store speed only in this date/shift snapshot.
-  if (speedWasUpdated) {
+  if (speedWasUpdated && updates.speed !== null) {
     const numSpeed = Number(updates.speed) || 0;
     updates.speed = numSpeed;
   }
@@ -1182,13 +1195,7 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
     updates.delivery !== undefined ||
     updates.divisor_constant !== undefined
   ) {
-    // Get current speed from machine table
-    const machine = await prisma.lap_former_machines.findUnique({
-      where: { id: machineId },
-      select: { speed: true }
-    });
-
-    const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machine?.speed;
+    const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machineFull?.speed;
 
     const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(
       {
@@ -1224,12 +1231,12 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
   if (Object.keys(updates).length === 0) {
     const data = await prisma.lap_former_machine_setup.findUnique({ where: { id: setupId } });
 
-    const machine = await prisma.lap_former_machines.findUnique({
+    const resultMachine = await prisma.lap_former_machines.findUnique({
       where: { id: machineId },
       select: { id: true, machine_no: true, speed: true }
     });
 
-    return { ...data, machine, speed: machine?.speed ?? data?.speed };
+    return { ...data, machine: resultMachine, speed: resultMachine?.speed ?? data?.speed };
   }
 
   const data = await prisma.lap_former_machine_setup.update({
@@ -1237,12 +1244,12 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
     data: updates
   });
 
-  const machine = await prisma.lap_former_machines.findUnique({
+  const finalMachine = await prisma.lap_former_machines.findUnique({
     where: { id: machineId },
     select: { id: true, machine_no: true, speed: true }
   });
 
-  return { ...data, machine, speed: machine?.speed ?? data.speed };
+  return { ...data, machine: finalMachine, speed: finalMachine?.speed ?? data.speed };
 }
 
 // Update machine speed
@@ -1477,7 +1484,10 @@ export async function addLapFormerMachine(machineData) {
               ? new Date(machineData.installed_date)
               : existingMachine.installed_date,
             prodn_mixing: machineData.prodn_mixing || existingMachine.prodn_mixing || '64COMBED GOLD',
-            speed: machineData.speed || existingMachine.speed || LAP_FORMER_FORMULA_FALLBACK.speed,
+            speed: resolveLapFormerFormulaInputs(
+              { speed: machineData.speed === '' || machineData.speed == null ? existingMachine.speed : machineData.speed },
+              existingMachine.speed
+            ).speed,
             prodn_efficiency: machineData.prodn_effi ?? existingMachine.prodn_efficiency
           }
         });
@@ -1560,7 +1570,7 @@ export async function addLapFormerMachine(machineData) {
       make_name: machineData.make_name || 'LMW',
       model: machineData.model || null,
       prodn_mixing: machineData.prodn_mixing || '64COMBED GOLD',
-      speed: machineData.speed || LAP_FORMER_FORMULA_FALLBACK.speed,
+      speed: resolveLapFormerFormulaInputs(machineData, machineData.speed).speed,
       prodn_efficiency: machineData.prodn_effi ?? null,
       installed_date: machineData.installed_date ? new Date(machineData.installed_date) : null,
       is_active: true,

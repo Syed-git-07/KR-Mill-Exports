@@ -17,17 +17,16 @@ export const SIMPLEX_FORMULA_FALLBACK = {
 }
 
 const toNumber = (value) => {
-  if (value === null || value === undefined) return 0
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') return parseFloat(value) || 0
-  if (typeof value === 'object' && value.toString) return parseFloat(value.toString()) || 0
-  return parseFloat(String(value)) || 0
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const parsed = parseFloat(value?.toString?.() ?? String(value))
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 // Supports both factor (0.925) and percent (92.5) storage styles.
 export function resolveSimplexMcEffiPercent(value) {
   const n = toNumber(value)
-  if (n <= 0) return SIMPLEX_FORMULA_FALLBACK.mcEffiPercent
+  if (n === null) return SIMPLEX_FORMULA_FALLBACK.mcEffiPercent
   return n <= 1 ? (n * 100) : n
 }
 
@@ -42,7 +41,7 @@ export function resolveSimplexFormulaInputs({ machine, setup, overrides } = {}) 
   const tpi = toNumber(overrides?.tpi) || toNumber(setup?.tpi) || toNumber(machine?.tpi) || SIMPLEX_FORMULA_FALLBACK.tpi
   const slHank = toNumber(overrides?.hank) || toNumber(setup?.sl_hank) || SIMPLEX_FORMULA_FALLBACK.slHank
   const mcEffiPercent = resolveSimplexMcEffiPercent(
-    overrides?.mcEffi ?? setup?.mc_effi ?? machine?.mc_effi ?? SIMPLEX_FORMULA_FALLBACK.mcEffiPercent
+    toNumber(overrides?.mcEffi) || toNumber(setup?.mc_effi) || toNumber(machine?.mc_effi) || SIMPLEX_FORMULA_FALLBACK.mcEffiPercent
   )
   const totalSpindles = toNumber(overrides?.totalSpindles) || toNumber(setup?.spindles) || toNumber(machine?.no_of_spindles) || SIMPLEX_FORMULA_FALLBACK.totalSpindles
 

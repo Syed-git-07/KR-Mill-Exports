@@ -597,9 +597,14 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
 // Update production detail
 export async function updateProductionDetail(id, updates) {
   try {
+    // Client already recalculates correctly based on full state.
+    // We just take the explicitly saved cleanUpdates directly to avoid
+    // overwriting accurate UI values with missing/stale server context.
+    const { speed, machine, stoppage, ...cleanUpdates } = updates
+
     const data = await prisma.carding_production_detail.update({
       where: { id },
-      data: updates
+      data: cleanUpdates
     })
     return data
   } catch (error) {
@@ -1051,20 +1056,29 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
       })
       const missingMachines = activeMachines.filter(m => !prevMachineIds.includes(m.id))
 
-      const cloneData = prevSetups.map(s => {
-        const { id, created_at, updated_at, ...rest } = s
-        const machine = activeMachines.find(m => m.id === s.machine_id)
-        const defaultSpeed = machine ? (machine.speed ?? rest.speed) : rest.speed
-        const fallbackStdProdn = calculateCardingStdProdn({
-          speed: defaultSpeed,
-          divisor_constant: rest.divisor_constant ?? 1693,
-          hank_constant: rest.hank_constant,
-          std_efficiency_factor: rest.std_efficiency_factor
-        }, targetShiftTime)
+        const cloneData = prevSetups.map(s => {
+          const { id, created_at, updated_at, ...rest } = s
+          const machine = activeMachines.find(m => m.id === s.machine_id)
+          const defaultSpeed = rest.speed ?? (machine ? (machine.speed ?? 130.00) : 130.00)
+          const machineEfficiency = machine?.prodn_efficiency == null
+            ? null
+            : Number(machine.prodn_efficiency)
+          const stdEfficiencyFactor = rest.std_efficiency_factor ?? (Number.isFinite(machineEfficiency)
+            ? (machineEfficiency > 1 ? machineEfficiency / 100 : machineEfficiency)
+            : 0.85)
+          const hankConstant = rest.hank_constant ?? (machine?.hank_constant ? Number(machine.hank_constant) : 0.13)
+          const fallbackStdProdn = calculateCardingStdProdn({
+            speed: defaultSpeed,
+            divisor_constant: rest.divisor_constant ?? 1693,
+            hank_constant: hankConstant,
+            std_efficiency_factor: stdEfficiencyFactor
+          }, targetShiftTime)
 
         return {
           ...rest,
           speed: defaultSpeed,
+          hank_constant: hankConstant,
+          std_efficiency_factor: stdEfficiencyFactor,
           entry_date: dateObj,
           shift: shiftNum,
           shift_time: targetShiftTime,
@@ -1251,6 +1265,10 @@ export async function updateMachineSetup(identifier, updates, entryDate = null, 
     }
 
     const setupUpdates = { ...updates }
+
+    const machine = await prisma.carding_machines.findUnique({
+      where: { id: existing.machine_id }
+    })
 
     const currentSetup = await prisma.carding_machine_setup.findUnique({
       where: { id: existing.id },

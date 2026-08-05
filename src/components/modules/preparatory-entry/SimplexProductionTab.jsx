@@ -101,11 +101,11 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     const idleSpindles = parseInt(base.idle_spindles, 10) || 0
     const waste = toNumber(base.waste)
 
-    const speed = setup.speed || machine.speed || 960
-    const tpi = setup.tpi || machine.tpi || 1.73
-    const mcEffi = setup.mc_effi || machine.mc_effi || 92
-    const totalSpindles = setup.spindles || machine.no_of_spindles || 140
-    const hank = setup.sl_hank || 1.4
+    const speed = setup.speed ?? machine.speed ?? 960
+    const tpi = setup.tpi ?? machine.tpi ?? 1.73
+    const mcEffi = setup.mc_effi ?? machine.mc_effi ?? 92
+    const totalSpindles = setup.spindles ?? machine.no_of_spindles ?? 140
+    const hank = setup.sl_hank ?? 1.4
 
     const calculated = calculateSimplexProductionValues({
       runHrs,
@@ -291,11 +291,11 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
         const effectiveRow = { ...row, ...changes }
 
         // Get machine parameters
-        const speed = setup.speed || machine.speed || 960
-        const tpi = setup.tpi || machine.tpi || 1.73
-        const mcEffi = setup.mc_effi || machine.mc_effi || 92
-        const totalSpindles = setup.spindles || machine.no_of_spindles || 140
-        const hank = setup.sl_hank || 1.4
+        const speed = setup.speed ?? machine.speed ?? 960
+        const tpi = setup.tpi ?? machine.tpi ?? 1.73
+        const mcEffi = setup.mc_effi ?? machine.mc_effi ?? 92
+        const totalSpindles = setup.spindles ?? machine.no_of_spindles ?? 140
+        const hank = setup.sl_hank ?? 1.4
 
         // Calculate production values
         const calculated = calculateSimplexProductionValues({

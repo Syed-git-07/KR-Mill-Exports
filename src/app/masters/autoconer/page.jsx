@@ -110,7 +110,7 @@ export default function AutoconerMaster() {
       from_drum: machine.from_drum || null,
       to_drum: machine.to_drum || null,
       no_of_drums: machine.no_of_drums || 0,
-      speed: machine.speed || null,
+      speed: machine.speed ?? null,
       count: machine.count || '',
       installed_date: machine.installed_date || null,
       direct_prod_entry: machine.direct_prod_entry || false
@@ -142,7 +142,7 @@ export default function AutoconerMaster() {
         from_drum: machineToEdit.from_drum || null,
         to_drum: machineToEdit.to_drum || null,
         no_of_drums: machineToEdit.no_of_drums || 0,
-        speed: machineToEdit.speed || null,
+        speed: machineToEdit.speed ?? null,
         count: machineToEdit.count || '',
         installed_date: machineToEdit.installed_date || null,
         direct_prod_entry: machineToEdit.direct_prod_entry || false
@@ -396,12 +396,6 @@ export default function AutoconerMaster() {
         }}
         title="AutoConer Machine Master"
         description={editingMachine ? 'Update machine details' : 'Add a new autoconer machine to the system'}
-        onSave={() => {
-          const form = document.querySelector('form');
-          if (form) {
-            form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-          }
-        }}
         onCancel={() => {
           setIsModalOpen(false);
           setEditingMachine(null);

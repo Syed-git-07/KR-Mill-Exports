@@ -7,6 +7,36 @@ import { resolveProductionTime } from '../productionFormulaMath'
 const SPINNING_DEFAULT_SETUP_DATE_KEY = '2026-04-01'
 const SPINNING_DEFAULT_SETUP_DATE = new Date(`${SPINNING_DEFAULT_SETUP_DATE_KEY}T00:00:00.000Z`)
 
+const isProvided = value => value !== null && value !== undefined && value !== ''
+
+function toFiniteNumber(value, fallback = 0) {
+  if (!isProvided(value)) return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function firstProvidedNumber(values, fallback = 0) {
+  for (const value of values) {
+    if (!isProvided(value)) continue
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function applySpinningCountMaster(setup, countMaster) {
+  if (!countMaster) return setup
+  return {
+    ...setup,
+    ...( !isProvided(setup.act_count) && isProvided(countMaster.act_count) && { act_count: toFiniteNumber(countMaster.act_count) }),
+    ...( !isProvided(setup.tpi) && isProvided(countMaster.tpi) && { tpi: toFiniteNumber(countMaster.tpi) }),
+    ...( !isProvided(setup.speed) && isProvided(countMaster.speed) && { speed: toFiniteNumber(countMaster.speed) }),
+    ...( !isProvided(setup.tw_con) && isProvided(countMaster.tw_con) && { tw_con: toFiniteNumber(countMaster.tw_con) }),
+    ...( !isProvided(setup.doff_loss) && isProvided(countMaster.doff_loss) && { doff_loss: toFiniteNumber(countMaster.doff_loss) }),
+    ...( !isProvided(setup.c_waste_percent) && isProvided(countMaster.waste_percent) && { c_waste_percent: toFiniteNumber(countMaster.waste_percent) })
+  }
+}
+
 /**
  * Spinning (Ring Frame) Production Entry Queries
  * 
@@ -428,7 +458,7 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
     // Create detail records for new machines
     const details = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
-      const allocatedSpindles = parseFloat(setup.allocated_spindles) || machine.allocated_spindles || 1104
+      const allocatedSpindles = firstProvidedNumber([setup.allocated_spindles, machine.allocated_spindles], 1104)
       // Calculate No of Spindles based on shift: (Allocated / 8) × 8.5 for Shift 1&2, × 7 for Shift 3
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
 
@@ -572,7 +602,7 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
     // Create detail records
     const details = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
-      const allocatedSpindles = parseFloat(setup.allocated_spindles) || machine.allocated_spindles || 1104
+      const allocatedSpindles = firstProvidedNumber([setup.allocated_spindles, machine.allocated_spindles], 1104)
       // Calculate No of Spindles based on shift: (Allocated / 8) × 8.5 for Shift 1&2, × 7 for Shift 3
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
 
@@ -770,11 +800,11 @@ export async function getSpinningStoppageEntries(headerId) {
           count_name: detail.count_name || setup.count_name || '',
           session_no: detail.session_no ?? null,
           run_time: detail.run_time ?? fallbackRunTime,
-          total_spindles: setup.allocated_spindles || machine.allocated_spindles || 1104,
-          act_count: parseFloat(setup.act_count) || 0,
-          efficiency: parseFloat(setup.efficiency) || 0.95,
-          speed: parseInt(setup.speed) || 0,
-          tpi: parseFloat(setup.tpi) || 0,
+          total_spindles: firstProvidedNumber([setup.allocated_spindles, machine.allocated_spindles], 1104),
+          act_count: toFiniteNumber(setup.act_count),
+          efficiency: toFiniteNumber(setup.efficiency, 0.95),
+          speed: toFiniteNumber(setup.speed),
+          tpi: toFiniteNumber(setup.tpi),
           stoppage_entry_id: stoppage.id,
           stoppage1_id: stoppage.stoppage1_id,
           stoppage1: stoppageReasonMap[stoppage.stoppage1_id] || null,
@@ -890,7 +920,7 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
       const machine = await prisma.spinning_machines.findUnique({
         where: { id: prodDetail.machine_id }
       })
-      const allocatedSpindles = parseFloat(setup?.allocated_spindles) || machine?.allocated_spindles || 1104
+      const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
       const shift = header?.shift || 1
       const runTime = prodDetail.run_time ?? resolveSpinningShiftFallbackTime(shift)
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
@@ -989,7 +1019,7 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
       // Recalculate stopped_spindles and worked_spindles
       const setup = setupMap[detail.machine_id]
       const machine = machineMap[detail.machine_id]
-      const allocatedSpindles = parseFloat(setup?.allocated_spindles) || machine?.allocated_spindles || 1104
+      const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
       const runTime = detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
@@ -1105,7 +1135,7 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 
       // Recalculate stopped_spindles and worked_spindles
       const setup = setupMap[detail.machine_id]
-      const allocatedSpindles = parseFloat(setup?.allocated_spindles) || detail.machine?.allocated_spindles || 1104
+      const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, detail.machine?.allocated_spindles], 1104)
       const runTime = detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
@@ -1168,14 +1198,21 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
     })
     
     if (baselineSetups.length > 0) {
+      const countNames = [...new Set(baselineSetups.map(s => s.count_name).filter(Boolean))]
+      const countMasters = countNames.length
+        ? await prisma.spinning_counts.findMany({
+            where: { count_name: { in: countNames }, is_active: true }
+          })
+        : []
+      const countMasterMap = new Map(countMasters.map(count => [count.count_name, count]))
       const cloneData = baselineSetups.map(s => {
         const { id, created_at, updated_at, ...rest } = s
-        return {
+        return applySpinningCountMaster({
           ...rest,
           entry_date: dateObj,
           shift: shiftNum,
           run_time: targetShiftTime
-        }
+        }, countMasterMap.get(s.count_name))
       })
       
       await prisma.spinning_machine_setup.createMany({
@@ -1202,7 +1239,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
       count_name: '',
       act_count: 69.50,
       tpi: 13.00,
-      allocated_spindles: m.allocated_spindles || 1104,
+      allocated_spindles: firstProvidedNumber([m.allocated_spindles], 1104),
       tw_con: 4,
       doff_loss: 0.70,
       c_waste_percent: 0.90,
@@ -1898,7 +1935,7 @@ export async function addSpinningMachine(machineData) {
             description: description || machine_no,
             make_name: make_name || 'LAKSHMI',
             model: model || null,
-            allocated_spindles: masterAllocatedSpindles || 1104,
+            allocated_spindles: firstProvidedNumber([masterAllocatedSpindles], 1104),
             frame_no: frame_no || null,
             mc_id: mc_id || null,
             group_no: group_no || null,
@@ -1928,7 +1965,7 @@ export async function addSpinningMachine(machineData) {
           description: description || machine_no,
           make_name: make_name || 'LAKSHMI',
           model: model || null,
-          allocated_spindles: masterAllocatedSpindles || 1104,
+          allocated_spindles: firstProvidedNumber([masterAllocatedSpindles], 1104),
           frame_no: frame_no || null,
           mc_id: mc_id || null,
           group_no: group_no || null,
@@ -1960,16 +1997,16 @@ export async function addSpinningMachine(machineData) {
             entry_date: SPINNING_DEFAULT_SETUP_DATE,
             shift: 1,
             count_name: count_name || '30s CARDED',
-            act_count: act_count || 69.5,
-            session_no: session_no || 1,
+            act_count: toFiniteNumber(act_count, 69.5),
+            session_no: toFiniteNumber(session_no, 1),
             run_time: run_time ?? resolveSpinningShiftFallbackTime(1),
-            allocated_spindles: masterAllocatedSpindles || 1104,
-            tw_con: tw_con || 0,
-            doff_loss: doff_loss || 0,
-            c_waste_percent: c_waste_percent || 0,
-            speed: speed || 0,
-            tpi: tpi || 0,
-            efficiency: efficiency || 0.95
+            allocated_spindles: firstProvidedNumber([masterAllocatedSpindles], 1104),
+            tw_con: toFiniteNumber(tw_con),
+            doff_loss: toFiniteNumber(doff_loss),
+            c_waste_percent: toFiniteNumber(c_waste_percent),
+            speed: toFiniteNumber(speed),
+            tpi: toFiniteNumber(tpi),
+            efficiency: toFiniteNumber(efficiency, 0.95)
           }
         })
       }
@@ -1993,16 +2030,16 @@ export async function addSpinningMachine(machineData) {
                 entry_date: activeDateObj,
                 shift: activeShift,
                 count_name: count_name || '30s CARDED',
-                act_count: act_count || 69.5,
-                session_no: session_no || 1,
+                act_count: toFiniteNumber(act_count, 69.5),
+                session_no: toFiniteNumber(session_no, 1),
                 run_time: run_time ?? resolveSpinningShiftFallbackTime(activeShift),
-                allocated_spindles: masterAllocatedSpindles || 1104,
-                tw_con: tw_con || 0,
-                doff_loss: doff_loss || 0,
-                c_waste_percent: c_waste_percent || 0,
-                speed: speed || 0,
-                tpi: tpi || 0,
-                efficiency: efficiency || 0.95
+                allocated_spindles: firstProvidedNumber([masterAllocatedSpindles], 1104),
+                tw_con: toFiniteNumber(tw_con),
+                doff_loss: toFiniteNumber(doff_loss),
+                c_waste_percent: toFiniteNumber(c_waste_percent),
+                speed: toFiniteNumber(speed),
+                tpi: toFiniteNumber(tpi),
+                efficiency: toFiniteNumber(efficiency, 0.95)
               }
             })
           }

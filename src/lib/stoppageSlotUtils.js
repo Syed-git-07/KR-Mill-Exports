@@ -61,6 +61,15 @@ export function applyBulkStoppageDraft({
       [idField]: reasonId,
       [timeField]: minutes,
       total_stoppage_time: totalStoppage,
+      // Keep both sides of an entry linked while the change is only a local
+      // draft. Production grids resolve stoppage drafts from their detail ID,
+      // whereas bulk actions start from a stoppage entry ID.
+      ...(row.production_detail_id || row.production_detail?.id || row.id
+        ? { production_detail_id: row.production_detail_id || row.production_detail?.id || row.id }
+        : {}),
+      ...(row.stoppage_entry_id || row.id
+        ? { stoppage_entry_id: row.stoppage_entry_id || row.id }
+        : {}),
       ...additionalChanges
     }
 

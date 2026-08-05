@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef } from "react";
+
 import {
   Dialog,
   DialogContent,
@@ -29,29 +31,43 @@ export default function FormModal({
   secondaryActionClassName = "border-orange-500 text-orange-600 hover:bg-orange-50",
   formId,
 }) {
-  const handleSave = () => {
+  const contentRef = useRef(null);
+
+  const submitForm = (form) => {
+    if (!form) return false;
+
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+      return true;
+    }
+
+    const submitButton = form.querySelector(
+      'button[type="submit"], input[type="submit"]',
+    );
+    if (submitButton) {
+      submitButton.click();
+      return true;
+    }
+
+    form.dispatchEvent(
+      new Event("submit", { cancelable: true, bubbles: true }),
+    );
+    return true;
+  };
+
+  const handleSave = (event) => {
     if (formId) {
       const form = document.getElementById(formId);
-      if (form) {
-        if (typeof form.requestSubmit === "function") {
-          form.requestSubmit();
-          return;
-        }
-
-        const submitButton = form.querySelector(
-          'button[type="submit"], input[type="submit"]',
-        );
-        if (submitButton) {
-          submitButton.click();
-          return;
-        }
-
-        form.dispatchEvent(
-          new Event("submit", { cancelable: true, bubbles: true }),
-        );
-        return;
-      }
+      if (submitForm(form)) return;
     }
+
+    // Forms rendered by Radix dialogs are portalled next to the application
+    // shell. Scope the lookup to this modal so the global header's sign-out
+    // form can never be submitted by a master record's Save button.
+    const modalRoot = contentRef.current
+      || event?.currentTarget?.closest('[data-slot="dialog-content"]');
+    const modalForm = modalRoot?.querySelector("form");
+    if (submitForm(modalForm)) return;
 
     if (onSave) {
       onSave();
@@ -60,7 +76,7 @@ export default function FormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-white border border-gray-200 max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent ref={contentRef} className="bg-white border border-gray-200 max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold">{title}</DialogTitle>
           {description && (
@@ -109,7 +125,7 @@ export default function FormModal({
               Cancel
             </Button>
             <Button
-              type={formId ? "submit" : "button"}
+              type="button"
               form={formId || undefined}
               onClick={handleSave}
               className="bg-blue-600 hover:bg-blue-700 text-white"

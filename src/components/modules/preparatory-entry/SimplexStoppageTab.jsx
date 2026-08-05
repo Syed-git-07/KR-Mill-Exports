@@ -36,11 +36,11 @@ const recalcProductionFromStoppage = (productionDetail, totalStoppageTime, total
   const machine = productionDetail.machine || {}
   const calculated = calculateSimplexProductionValues({
     runHrs: toNumber(productionDetail.run_hrs),
-    speed: setup?.speed || machine.speed || 960,
-    tpi: setup?.tpi || machine.tpi || 1.73,
-    hank: setup?.sl_hank || 1.4,
-    mcEffi: setup?.mc_effi || machine.mc_effi || 92,
-    totalSpindles: setup?.spindles || machine.no_of_spindles || 140,
+    speed: setup?.speed ?? machine.speed ?? 960,
+    tpi: setup?.tpi ?? machine.tpi ?? 1.73,
+    hank: setup?.sl_hank ?? 1.4,
+    mcEffi: setup?.mc_effi ?? machine.mc_effi ?? 92,
+    totalSpindles: setup?.spindles ?? machine.no_of_spindles ?? 140,
     idleSpindles: parseInt(productionDetail.idle_spindles, 10) || 0,
     waste: toNumber(productionDetail.waste),
     totalTime,
@@ -304,7 +304,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
         )
       }
     }))
-  }, [productionDraftEdits, setupDraftEdits, totalTime, machineSetups, getEffectiveSetup, stoppageData.length])
+  }, [editedRows, productionDraftEdits, setupDraftEdits, totalTime, machineSetups, getEffectiveSetup, stoppageData.length])
 
   // Handle stoppage reason change
   const handleStoppageReasonChange = (rowId, field, value) => {

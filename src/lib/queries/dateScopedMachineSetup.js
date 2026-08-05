@@ -1,6 +1,21 @@
 const SYSTEM_FIELDS = new Set(['id', 'created_at', 'updated_at', 'entry_date', 'shift'])
 
-function cloneData(row, entryDate, shift, defaultSpeed = null) {
+function numberOrFallback(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+export function buildMachineSetupOverrides(machine, fieldMap) {
+  if (!machine) return {}
+  return Object.fromEntries(
+    Object.entries(fieldMap)
+      .map(([setupField, machineField]) => [setupField, machine[machineField]])
+      .filter(([, value]) => value !== null && value !== undefined && value !== '')
+  )
+}
+
+export function cloneDateScopedSetup(row, entryDate, shift, setupOverrides = {}) {
   const cloned = Object.fromEntries([
     ...Object.entries(row)
       .filter(([key]) => !SYSTEM_FIELDS.has(key)),
@@ -8,22 +23,22 @@ function cloneData(row, entryDate, shift, defaultSpeed = null) {
     ['shift', shift]
   ])
 
-  if (defaultSpeed !== null && defaultSpeed !== undefined && 'speed' in row) {
-    cloned.speed = defaultSpeed
+  Object.assign(cloned, setupOverrides)
 
-    // Recalculate std_prodn for models that have it (breaker_drawing_machine_setup, finisher_drawing_machine_setup, lap_former_machine_setup)
-    if ('std_prodn' in row) {
-      const speed = Number(defaultSpeed)
-      const divisorConstant = Number(cloned.divisor_constant || 1693)
-      const hankConstant = Number(cloned.hank_constant || 0.14)
-      const stdEfficiencyFactor = Number(cloned.std_efficiency_factor || 0.85)
-      const delivery = Number(cloned.delivery || 1)
-      const shiftTime = Number(cloned.shift_time || 510)
+  // Recalculate derived standard production from the complete effective
+  // snapshot. Explicit zero master values must remain zero rather than being
+  // replaced by legacy defaults.
+  if ('std_prodn' in row) {
+    const speed = numberOrFallback(cloned.speed, 0)
+    const divisorConstant = numberOrFallback(cloned.divisor_constant, 1693)
+    const hankConstant = numberOrFallback(cloned.hank_constant, 0.14)
+    const stdEfficiencyFactor = numberOrFallback(cloned.std_efficiency_factor, 0.85)
+    const delivery = numberOrFallback(cloned.delivery, 1)
+    const shiftTime = numberOrFallback(cloned.shift_time, 510)
 
-      if (hankConstant && divisorConstant) {
-        cloned.std_prodn = Math.round((speed / divisorConstant / hankConstant) * shiftTime * stdEfficiencyFactor * delivery * 100) / 100
-      }
-    }
+    cloned.std_prodn = hankConstant > 0 && divisorConstant > 0
+      ? Math.round((speed / divisorConstant / hankConstant) * shiftTime * stdEfficiencyFactor * delivery * 100) / 100
+      : 0
   }
 
   return cloned
@@ -39,7 +54,8 @@ export async function getOrCreateDateScopedSetups({
   headerModel,
   headerId,
   machineIds = null,
-  machineSpeedMap = null
+  machineSpeedMap = null,
+  machineSetupOverridesMap = null
 }) {
   if (!headerId) {
     // Legacy callers (master lookup/add-machine flows) use the baseline rows.
@@ -51,7 +67,7 @@ export async function getOrCreateDateScopedSetups({
 
   const header = await headerModel.findUnique({
     where: { id: headerId },
-    select: { entry_date: true, shift: true }
+    select: { entry_date: true, shift: true, total_time: true }
   })
   if (!header) throw new Error(`Production header ${headerId} not found`)
 
@@ -84,8 +100,11 @@ export async function getOrCreateDateScopedSetups({
   if (sourceRows.length) {
     await setupModel.createMany({
       data: sourceRows.map(row => {
-        const defaultSpeed = machineSpeedMap ? machineSpeedMap[row.machine_id] : null
-        return cloneData(row, entryDate, shift, defaultSpeed)
+        const overrides = {}
+        if ('shift_time' in row && header.total_time !== null && header.total_time !== undefined) {
+          overrides.shift_time = header.total_time
+        }
+        return cloneDateScopedSetup(row, entryDate, shift, overrides)
       }),
       skipDuplicates: true
     })
