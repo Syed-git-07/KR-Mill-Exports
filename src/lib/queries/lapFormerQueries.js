@@ -1178,17 +1178,6 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
     where: { id: machineId }
   });
 
-  if (machineFull) {
-    if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
-      if (Number(updates.speed) === Number(machineFull.speed)) updates.speed = null;
-    }
-    if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
-      const rawEff = Number(machineFull.prodn_efficiency);
-      const masterEff = rawEff > 1 ? rawEff / 100 : rawEff;
-      if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null;
-    }
-  }
-
   const speedWasUpdated = updates.speed !== undefined;
 
   // Store speed only in this date/shift snapshot.
@@ -1206,13 +1195,7 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
     updates.delivery !== undefined ||
     updates.divisor_constant !== undefined
   ) {
-    // Get current speed from machine table
-    const machine = await prisma.lap_former_machines.findUnique({
-      where: { id: machineId },
-      select: { speed: true }
-    });
-
-    const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machine?.speed;
+    const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machineFull?.speed;
 
     const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(
       {
@@ -1248,12 +1231,12 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
   if (Object.keys(updates).length === 0) {
     const data = await prisma.lap_former_machine_setup.findUnique({ where: { id: setupId } });
 
-    const machine = await prisma.lap_former_machines.findUnique({
+    const resultMachine = await prisma.lap_former_machines.findUnique({
       where: { id: machineId },
       select: { id: true, machine_no: true, speed: true }
     });
 
-    return { ...data, machine, speed: machine?.speed ?? data?.speed };
+    return { ...data, machine: resultMachine, speed: resultMachine?.speed ?? data?.speed };
   }
 
   const data = await prisma.lap_former_machine_setup.update({
@@ -1261,12 +1244,12 @@ export async function updateLapFormerMachineSetup(setupId, updates) {
     data: updates
   });
 
-  const machine = await prisma.lap_former_machines.findUnique({
+  const finalMachine = await prisma.lap_former_machines.findUnique({
     where: { id: machineId },
     select: { id: true, machine_no: true, speed: true }
   });
 
-  return { ...data, machine, speed: machine?.speed ?? data.speed };
+  return { ...data, machine: finalMachine, speed: finalMachine?.speed ?? data.speed };
 }
 
 // Update machine speed

@@ -1056,23 +1056,23 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
       })
       const missingMachines = activeMachines.filter(m => !prevMachineIds.includes(m.id))
 
-      const cloneData = prevSetups.map(s => {
-        const { id, created_at, updated_at, ...rest } = s
-        const machine = activeMachines.find(m => m.id === s.machine_id)
-        const defaultSpeed = machine ? (machine.speed ?? rest.speed) : rest.speed
-        const machineEfficiency = machine?.prodn_efficiency == null
-          ? null
-          : Number(machine.prodn_efficiency)
-        const stdEfficiencyFactor = Number.isFinite(machineEfficiency)
-          ? (machineEfficiency > 1 ? machineEfficiency / 100 : machineEfficiency)
-          : rest.std_efficiency_factor
-        const hankConstant = machine?.hank_constant ?? rest.hank_constant
-        const fallbackStdProdn = calculateCardingStdProdn({
-          speed: defaultSpeed,
-          divisor_constant: rest.divisor_constant ?? 1693,
-          hank_constant: hankConstant,
-          std_efficiency_factor: stdEfficiencyFactor
-        }, targetShiftTime)
+        const cloneData = prevSetups.map(s => {
+          const { id, created_at, updated_at, ...rest } = s
+          const machine = activeMachines.find(m => m.id === s.machine_id)
+          const defaultSpeed = rest.speed ?? (machine ? (machine.speed ?? 130.00) : 130.00)
+          const machineEfficiency = machine?.prodn_efficiency == null
+            ? null
+            : Number(machine.prodn_efficiency)
+          const stdEfficiencyFactor = rest.std_efficiency_factor ?? (Number.isFinite(machineEfficiency)
+            ? (machineEfficiency > 1 ? machineEfficiency / 100 : machineEfficiency)
+            : 0.85)
+          const hankConstant = rest.hank_constant ?? (machine?.hank_constant ? Number(machine.hank_constant) : 0.13)
+          const fallbackStdProdn = calculateCardingStdProdn({
+            speed: defaultSpeed,
+            divisor_constant: rest.divisor_constant ?? 1693,
+            hank_constant: hankConstant,
+            std_efficiency_factor: stdEfficiencyFactor
+          }, targetShiftTime)
 
         return {
           ...rest,
@@ -1269,16 +1269,6 @@ export async function updateMachineSetup(identifier, updates, entryDate = null, 
     const machine = await prisma.carding_machines.findUnique({
       where: { id: existing.machine_id }
     })
-    if (machine) {
-      if ('speed' in setupUpdates && setupUpdates.speed !== null && setupUpdates.speed !== undefined) {
-        if (Number(setupUpdates.speed) === Number(machine.speed)) setupUpdates.speed = null
-      }
-      if ('std_efficiency_factor' in setupUpdates && setupUpdates.std_efficiency_factor !== null && setupUpdates.std_efficiency_factor !== undefined) {
-        const rawEff = Number(machine.prodn_efficiency)
-        const masterEff = rawEff > 1 ? rawEff / 100 : rawEff
-        if (Number(setupUpdates.std_efficiency_factor) === masterEff) setupUpdates.std_efficiency_factor = null
-      }
-    }
 
     const currentSetup = await prisma.carding_machine_setup.findUnique({
       where: { id: existing.id },

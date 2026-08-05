@@ -1190,17 +1190,6 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
     const machine = await prisma.drawing_finisher_machines.findUnique({
       where: { id: existingSetup.machine_id }
     })
-    
-    if (machine) {
-      if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
-        if (Number(updates.speed) === Number(machine.speed)) updates.speed = null
-      }
-      if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
-        const rawEff = Number(machine.prodn_efficiency)
-        const masterEff = rawEff > 1 ? rawEff / 100 : rawEff
-        if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null
-      }
-    }
 
     // If speed is being updated, parse it
     if (updates.speed !== null && updates.speed !== undefined) {
@@ -1213,11 +1202,6 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
 
     // Recalculate std_prodn if other params change
     if (hasFormulaRuntimeUpdate) {
-      // Get current speed from machine table
-      const machine = await prisma.drawing_finisher_machines.findUnique({
-        where: { id: existingSetup.machine_id },
-        select: { speed: true }
-      })
 
       const effectiveSpeed = updates.speed ?? existingSetup?.speed ?? machine?.speed
       const resolved = resolveFinisherDrawingFormulaInputs({
@@ -1252,7 +1236,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
     if (Object.keys(updates).length === 0) {
       const data = await prisma.finisher_drawing_machine_setup.findUnique({ where: { id: setupId } })
 
-      const machine = await prisma.drawing_finisher_machines.findUnique({
+      const resultMachine = await prisma.drawing_finisher_machines.findUnique({
         where: { id: existingSetup.machine_id },
         select: {
           id: true,
@@ -1261,7 +1245,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
         }
       })
 
-      return { ...data, machine: machine || null, speed: machine?.speed ?? data?.speed }
+      return { ...data, machine: resultMachine || null, speed: resultMachine?.speed ?? data?.speed }
     }
 
     const data = await prisma.finisher_drawing_machine_setup.update({
@@ -1272,7 +1256,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
       }
     })
 
-    const machine = await prisma.drawing_finisher_machines.findUnique({
+    const finalMachine = await prisma.drawing_finisher_machines.findUnique({
       where: { id: existingSetup.machine_id },
       select: {
         id: true,
@@ -1281,7 +1265,7 @@ export async function updateFinisherDrawingMachineSetup(setupId, updates) {
       }
     })
 
-    return { ...data, machine: machine || null, speed: machine?.speed ?? data.speed }
+    return { ...data, machine: finalMachine || null, speed: finalMachine?.speed ?? data.speed }
   } catch (error) {
     console.error('Error updating machine setup:', error)
     throw new Error(`Failed to update machine setup: ${error.message || JSON.stringify(error)}`)

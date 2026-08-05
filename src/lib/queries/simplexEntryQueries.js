@@ -1066,23 +1066,6 @@ export async function updateSimplexMachineSetup(id, updates) {
       where: { id: currentSetup.machine_id }
     })
 
-    if (machineFull) {
-      if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
-        if (Number(updates.speed) === Number(machineFull.speed)) updates.speed = null
-      }
-      if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
-        const rawEff = Number(machineFull.prodn_efficiency)
-        const masterEff = rawEff > 1 ? rawEff / 100 : rawEff
-        if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null
-      }
-      if ('tpi' in updates && updates.tpi !== null && updates.tpi !== undefined) {
-        if (Number(updates.tpi) === Number(machineFull.tpi)) updates.tpi = null
-      }
-      if ('no_of_spindles' in updates && updates.no_of_spindles !== null && updates.no_of_spindles !== undefined) {
-        if (Number(updates.no_of_spindles) === Number(machineFull.no_of_spindles)) updates.no_of_spindles = null
-      }
-    }
-
     // Simplex speed is fixed after setup creation and cannot be edited from an entry.
     const safeUpdates = { ...(updates || {}) }
     delete safeUpdates.speed

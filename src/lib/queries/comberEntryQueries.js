@@ -883,17 +883,6 @@ export async function updateComberMachineSetup(setupId, updates) {
       where: { id: currentSetup.machine_id }
     })
 
-    if (machine) {
-      if ('speed' in updates && updates.speed !== null && updates.speed !== undefined) {
-        if (Number(updates.speed) === Number(machine.speed)) updates.speed = null
-      }
-      if ('std_efficiency_factor' in updates && updates.std_efficiency_factor !== null && updates.std_efficiency_factor !== undefined) {
-        const rawEff = Number(machine.prodn_efficiency)
-        const masterEff = rawEff > 1 ? rawEff / 100 : rawEff
-        if (Number(updates.std_efficiency_factor) === masterEff) updates.std_efficiency_factor = null
-      }
-    }
-
     const data = await prisma.comber_machine_setup.update({
       where: { id: setupId },
       data: updates
