@@ -342,7 +342,7 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
         },
         orderBy: { sort_order: 'asc' }
       }),
-      prisma.comber_machine_setup.findMany()
+      getComberMachineSetups(headerId)
     ])
 
     const setupMachineIds = new Set((setups || []).map(s => s.machine_id))
@@ -813,15 +813,33 @@ export async function applyComberPartialStoppage(headerId, fromMachineNo, toMach
 export async function getComberMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
+    const header = validHeaderId
+      ? await prisma.comber_production_header.findUnique({
+          where: { id: validHeaderId },
+          select: { entry_date: true }
+        })
+      : null
     const machines = await prisma.comber_machines.findMany({
-      where: { is_active: true },
-      select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, is_active: true }
+      // A dated entry is governed by visibility on its entry date, not by the
+      // machine's current master status. This keeps historical entries stable.
+      where: header?.entry_date
+        ? {
+            activated_at: { lte: header.entry_date },
+            OR: [
+              { deactivated_at: null },
+              { deactivated_at: { gt: header.entry_date } }
+            ]
+          }
+        : { is_active: true },
+      select: { id: true, machine_no: true, description: true, mc_id: true, make_name: true, prodn_mixing: true, speed: true, sliver_hank: true, mc_effi: true, is_active: true }
     })
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
       machineSetupOverridesMap[m.id] = {
+        ...(m.speed != null && { speed: m.speed }),
+        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(m.sliver_hank != null && { sl_hank: m.sliver_hank }),
         ...(m.mc_effi != null && { mc_effi: m.mc_effi })
       };
@@ -856,7 +874,15 @@ export async function getComberMachineSetups(headerId = null) {
         const dateMixing = mixingMap[setup.machine_id] ?? setup.prodn_mixing ?? machine?.prodn_mixing
         return {
           ...setup,
-          machine: machine ? { ...machine, prodn_mixing: dateMixing } : null,
+          // Keep a dated entry tied to its saved setup snapshot instead of
+          // displaying live values from the machine master.
+          machine: machine ? {
+            ...machine,
+            speed: setup.speed ?? machine.speed,
+            prodn_mixing: dateMixing,
+            sliver_hank: setup.sl_hank ?? machine.sliver_hank,
+            mc_effi: setup.mc_effi ?? machine.mc_effi
+          } : null,
           prodn_mixing: dateMixing
         }
       })
@@ -1176,18 +1202,17 @@ export async function bulkUpdateComberMachineCount(machineIds, newCount, headerI
 }
 
 // Sync new machines to header - create production details for newly added machines
-export async function syncNewMachinesToComberHeader(headerId, shift = 1) {
+export async function syncNewMachinesToComberHeader(headerId, shift = null) {
   try {
-    // Get shift configuration for totalTime
-    const shiftConfig = await getComberShiftConfiguration(shift)
-    const totalTime = shiftConfig.totalTime
-    
     // Get entry date from header for date-visibility filter
     const header = await prisma.comber_production_header.findUnique({
       where: { id: headerId },
-      select: { entry_date: true }
+      select: { entry_date: true, shift: true, total_time: true }
     })
     const entryDate = header?.entry_date || new Date()
+    const effectiveShift = Number(header?.shift ?? shift ?? 1)
+    const shiftConfig = await getComberShiftConfiguration(effectiveShift)
+    const totalTime = header?.total_time ?? shiftConfig.totalTime
 
     const [allVisibleMachines, setups] = await Promise.all([
       prisma.comber_machines.findMany({
@@ -1201,7 +1226,7 @@ export async function syncNewMachinesToComberHeader(headerId, shift = 1) {
         select: { id: true, machine_no: true, prodn_mixing: true },
         orderBy: { sort_order: 'asc' }
       }),
-      prisma.comber_machine_setup.findMany()
+      getComberMachineSetups(headerId)
     ])
 
     const setupMachineIds = new Set((setups || []).map(s => s.machine_id))
@@ -1212,14 +1237,6 @@ export async function syncNewMachinesToComberHeader(headerId, shift = 1) {
       where: { header_id: headerId },
       select: { id: true, machine_id: true }
     })
-
-    // Delete stale rows (machines no longer visible on this date)
-    const validMachineIds = new Set(allMachines.map(m => m.id))
-    const staleDetails = existingDetails.filter(d => d.machine_id && !validMachineIds.has(d.machine_id))
-    for (const stale of staleDetails) {
-      await prisma.comber_stoppage_entry.deleteMany({ where: { production_detail_id: stale.id } })
-      await prisma.comber_production_detail.delete({ where: { id: stale.id } })
-    }
 
     // Find machines that don't have details yet
     const existingMachineIds = new Set(existingDetails?.map(d => d.machine_id) || [])

@@ -107,6 +107,16 @@ export async function updateCardingMachine(id, machineData) {
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
 
+  const currentMachine = await prisma.carding_machines.findUnique({
+    where: { id },
+    select: { is_active: true }
+  });
+
+  const isActivating = (machineData.is_active === true || machineData.is_active === 1)
+    && currentMachine?.is_active !== true;
+  const isDeactivating = (machineData.is_active === false || machineData.is_active === 0)
+    && currentMachine?.is_active !== false;
+
   const data = await prisma.carding_machines.update({
     where: { id },
     data: {
@@ -127,10 +137,32 @@ export async function updateCardingMachine(id, machineData) {
       direct_kgs_entry: machineData.direct_kgs_entry,
       updated_at: new Date(),
       // Handle is_active as boolean OR numeric (0/1) from any code path
-      ...((machineData.is_active === true  || machineData.is_active === 1)  && { activated_at: new Date(), deactivated_at: null }),
-      ...((machineData.is_active === false || machineData.is_active === 0) && { deactivated_at: new Date() }),
+      ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
+      ...(isDeactivating && { deactivated_at: new Date() }),
     }
   });
+
+  // Keep only the undated master setup template in sync. Dated setup rows are
+  // entry snapshots and must never be rewritten by a later master change.
+  const templateUpdates = {};
+  if (machineData.speed !== undefined) templateUpdates.speed = machineData.speed;
+  if (machineData.hank_constant !== undefined) templateUpdates.hank_constant = machineData.hank_constant;
+  if (machineData.prodn_effi !== undefined && machineData.prodn_effi !== null && machineData.prodn_effi !== '') {
+    const efficiency = Number(machineData.prodn_effi);
+    if (Number.isFinite(efficiency)) {
+      templateUpdates.std_efficiency_factor = efficiency > 1 ? efficiency / 100 : efficiency;
+    }
+  }
+  if (Object.keys(templateUpdates).length > 0) {
+    await prisma.carding_machine_setup.updateMany({
+      where: {
+        machine_id: id,
+        entry_date: new Date('1970-01-01T00:00:00.000Z'),
+        shift: 1
+      },
+      data: templateUpdates
+    });
+  }
   
   return data;
 }

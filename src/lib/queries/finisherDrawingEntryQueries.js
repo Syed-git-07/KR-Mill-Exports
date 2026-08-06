@@ -397,7 +397,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
         id: true,
         machine_no: true,
         prodn_mixing: true,
-        speed: true
+        speed: true,
+        prodn_efficiency: true
       },
       orderBy: { sort_order: 'asc' }
     })
@@ -509,7 +510,8 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
         id: true,
         machine_no: true,
         prodn_mixing: true,
-        speed: true
+        speed: true,
+        prodn_efficiency: true
       },
       orderBy: { sort_order: 'asc' }
     })
@@ -1104,7 +1106,7 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
     const machines = await prisma.drawing_finisher_machines.findMany({
       where: { is_active: true },
-      select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+      select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, prodn_efficiency: true, is_active: true }
     })
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};

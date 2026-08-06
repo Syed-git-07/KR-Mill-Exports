@@ -75,12 +75,66 @@ export async function updateComberMachine(id, machineData) {
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
 
+  // Older Comber headers may not yet have their own dated setup row. Capture
+  // the pre-update template for those existing entries before changing master
+  // data, so a later read can never materialize them from the new master.
+  const [currentMachine, templateSetup, existingDetails, headers] = await Promise.all([
+    prisma.comber_machines.findUnique({ where: { id }, select: { is_active: true } }),
+    prisma.comber_machine_setup.findFirst({
+      where: {
+        machine_id: id,
+        entry_date: new Date('1970-01-01T00:00:00.000Z'),
+        shift: 1
+      }
+    }),
+    prisma.comber_production_detail.findMany({
+      where: { machine_id: id },
+      select: { header_id: true }
+    }),
+    prisma.comber_production_header.findMany({
+      select: { id: true, entry_date: true, shift: true }
+    })
+  ]);
+
+  if (templateSetup && existingDetails.length > 0) {
+    const headerIds = new Set(existingDetails.map(detail => detail.header_id));
+    const snapshotHeaders = headers.filter(header => headerIds.has(header.id));
+    const existingSnapshots = await prisma.comber_machine_setup.findMany({
+      where: {
+        machine_id: id,
+        OR: snapshotHeaders.map(header => ({
+          entry_date: header.entry_date,
+          shift: Number(header.shift)
+        }))
+      },
+      select: { entry_date: true, shift: true }
+    });
+    const existingSnapshotKeys = new Set(
+      existingSnapshots.map(setup => `${setup.entry_date.toISOString()}-${setup.shift}`)
+    );
+    const { id: setupId, created_at, updated_at, entry_date, shift, ...templateValues } = templateSetup;
+    const missingSnapshots = snapshotHeaders
+      .filter(header => !existingSnapshotKeys.has(`${header.entry_date.toISOString()}-${Number(header.shift)}`))
+      .map(header => ({
+        ...templateValues,
+        entry_date: header.entry_date,
+        shift: Number(header.shift)
+      }));
+
+    if (missingSnapshots.length > 0) {
+      await prisma.comber_machine_setup.createMany({
+        data: missingSnapshots,
+        skipDuplicates: true
+      });
+    }
+  }
+
   // Handle activation/deactivation timestamps
   const timestampData = {};
-  if (machineData.is_active === true) {
+  if (machineData.is_active === true && currentMachine?.is_active !== true) {
     timestampData.activated_at = new Date();
     timestampData.deactivated_at = null;
-  } else if (machineData.is_active === false) {
+  } else if (machineData.is_active === false && currentMachine?.is_active !== false) {
     timestampData.deactivated_at = new Date();
   }
 
@@ -104,6 +158,25 @@ export async function updateComberMachine(id, machineData) {
       updated_at: new Date(),
     }
   });
+
+  // Update only the undated master setup template. Dated rows belong to
+  // already-created production entries and must remain historical snapshots.
+  const templateUpdates = {};
+  if (machineData.speed !== undefined) templateUpdates.speed = machineData.speed;
+  if (machineData.prodn_mixing !== undefined) templateUpdates.prodn_mixing = machineData.prodn_mixing;
+  if (machineData.sliver_hank !== undefined) templateUpdates.sl_hank = machineData.sliver_hank;
+  if (machineData.mc_effi !== undefined) templateUpdates.mc_effi = machineData.mc_effi;
+  if (Object.keys(templateUpdates).length > 0) {
+    await prisma.comber_machine_setup.updateMany({
+      where: {
+        machine_id: id,
+        entry_date: new Date('1970-01-01T00:00:00.000Z'),
+        shift: 1
+      },
+      data: templateUpdates
+    });
+  }
+
   return data;
 }
 

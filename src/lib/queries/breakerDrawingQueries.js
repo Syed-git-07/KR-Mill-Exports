@@ -231,8 +231,8 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
     orderBy: { mc_id: 'asc' }
   });
 
-  // Get machine setup for default values (except speed which comes from machine)
-  const setups = await prisma.breaker_drawing_machine_setup.findMany();
+  // Materialize this header's setup snapshot from the current master values.
+  const setups = await getBreakerDrawingMachineSetups(headerId);
   const setupMachineIds = new Set((setups || []).map(s => s.machine_id));
   const machinesWithSetup = (machines || []).filter(m => setupMachineIds.has(m.id));
 
@@ -838,7 +838,7 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
   const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
   const machines = await prisma.drawing_breaker_machines.findMany({
     where: { is_active: true },
-    select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, is_active: true }
+    select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, delivery: true, sliver_hank: true, prodn_efficiency: true, is_active: true }
   });
   const machineSpeedMap = {};
   const machineSetupOverridesMap = {};

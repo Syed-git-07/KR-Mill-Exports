@@ -25,10 +25,10 @@ export function resolveCardingFormulaInputs(setup = {}) {
       machineEffFactor = rawEff > 1 ? rawEff / 100 : rawEff
   }
 
-  const speed = toNumber(setup?.speed) || toNumber(m.speed) || CARDING_FORMULA_FALLBACK.speed
-  const hankConstant = toNumber(setup?.hank_constant) || toNumber(m.hank_constant) || CARDING_FORMULA_FALLBACK.hankConstant
-  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || machineEffFactor || CARDING_FORMULA_FALLBACK.stdEfficiencyFactor
-  const divisorConstant = toNumber(setup?.divisor_constant) || toNumber(m.divisor_constant) || CARDING_FORMULA_FALLBACK.divisorConstant
+  const speed = toNumber(setup?.speed) ?? toNumber(m.speed) ?? CARDING_FORMULA_FALLBACK.speed
+  const hankConstant = toNumber(setup?.hank_constant) ?? toNumber(m.hank_constant) ?? CARDING_FORMULA_FALLBACK.hankConstant
+  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) ?? machineEffFactor ?? CARDING_FORMULA_FALLBACK.stdEfficiencyFactor
+  const divisorConstant = toNumber(setup?.divisor_constant) ?? toNumber(m.divisor_constant) ?? CARDING_FORMULA_FALLBACK.divisorConstant
 
   return {
     speed,
