@@ -1,5 +1,4 @@
-export const APP_BASE_PATH =
-  process.env.NEXT_PUBLIC_BASE_PATH ?? "/kr-production-app";
+export const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export function withBasePath(path = "/") {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;

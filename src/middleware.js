@@ -21,18 +21,36 @@ function isSafeOrigin(request) {
   const origin = request.headers.get("origin");
   if (!origin) return process.env.NODE_ENV !== "production";
 
-  const host =
-    request.headers.get("x-forwarded-host") || request.headers.get("host");
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const host = forwardedHost || request.headers.get("host");
+  const forwardedProtocol = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
   const protocol =
-    request.headers.get("x-forwarded-proto") ||
-    request.nextUrl.protocol.replace(":", "");
-  const expected = `${protocol}://${host}`;
+    forwardedProtocol || request.nextUrl.protocol.replace(":", "");
+  const expected = host ? `${protocol}://${host}` : null;
   const configured = (process.env.AUTH_TRUSTED_ORIGINS || "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
 
-  return origin === expected || configured.includes(origin);
+  if (origin === expected || configured.includes(origin)) return true;
+
+  // A TLS-terminating reverse proxy may omit x-forwarded-proto. In that case,
+  // the public Origin is still safe when its host exactly matches Host.
+  if (!forwardedProtocol && host) {
+    try {
+      return new URL(origin).host === host;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function withSecurityHeaders(response, requestId, nonce) {
@@ -77,9 +95,7 @@ function redirectToLogin(request, requestId, nonce, clearCookie = false) {
   if (request.method === "GET") {
     url.searchParams.set(
       "returnTo",
-      withBasePath(
-        `${withoutBasePath(request.nextUrl.pathname)}${request.nextUrl.search}`,
-      ),
+      `${withoutBasePath(request.nextUrl.pathname)}${request.nextUrl.search}`,
     );
   }
   const response = NextResponse.redirect(url, 303);

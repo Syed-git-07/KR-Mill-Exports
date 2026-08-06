@@ -10,7 +10,7 @@ function normalizeBasePath(value) {
 }
 
 const basePath = normalizeBasePath(
-  process.env.NEXT_PUBLIC_BASE_PATH ?? "/kr-production-app",
+  process.env.NEXT_PUBLIC_BASE_PATH ?? "",
 );
 
 /** @type {import('next').NextConfig} */
