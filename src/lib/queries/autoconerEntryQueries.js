@@ -502,13 +502,10 @@ export async function getAutoconerProductionDetails(headerId) {
     }))
 
     // Apply date-range visibility filter (preserve historical data correctly)
-    const filtered = enriched.filter(detail => {
-      const m = detail.machine
-      if (!m) return false
-      if (m.activated_at && new Date(m.activated_at) > entryDate) return false
-      if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return false
-      return true
-    })
+    // A production detail points at the exact machine-master revision that was
+    // current when the entry was created. Do not hide or replace that snapshot
+    // merely because a newer revision is now active.
+    const filtered = enriched.filter(detail => !!detail.machine)
   
     // Natural sort by group_id then machine_no
     filtered.sort((a, b) => {
@@ -653,14 +650,8 @@ export async function getAutoconerStoppageEntries(headerId) {
       }
     })
 
-    // Apply date-range visibility filter
-    const filtered = (data || []).filter(entry => {
-      const m = entry.production_detail?.machine
-      if (!m) return false
-      if (m.activated_at && new Date(m.activated_at) > entryDate) return false
-      if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return false
-      return true
-    })
+    // Preserve the machine revision referenced by this historical detail.
+    const filtered = (data || []).filter(entry => !!entry.production_detail?.machine)
   
     // Natural sort by group_id and machine_no
     return filtered.sort((a, b) => {
@@ -922,6 +913,21 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
         }
       })
 
+      // Master edits create a new machine revision. Carry the setup forward to
+      // that active revision, while historical production keeps the old one.
+      const previousMachineIds = [...new Set(prevSetups.map(s => s.machine_id))]
+      const previousMachines = await prisma.autoconer_machines.findMany({
+        where: { id: { in: previousMachineIds } },
+        select: { id: true, mc_id: true, machine_no: true }
+      })
+      const activeMachines = await prisma.autoconer_machines.findMany({
+        where: { is_active: true },
+        select: { id: true, mc_id: true, machine_no: true }
+      })
+      const previousMachineMap = new Map(previousMachines.map(machine => [machine.id, machine]))
+      const activeByMcId = new Map(activeMachines.filter(machine => machine.mc_id != null).map(machine => [machine.mc_id, machine.id]))
+      const activeByMachineNo = new Map(activeMachines.map(machine => [machine.machine_no, machine.id]))
+
       const countIds = [...new Set(prevSetups.map(s => s.count_id).filter(Boolean))]
       const countNames = [...new Set(prevSetups.map(s => s.count_name).filter(Boolean))]
       const currentCounts = await prisma.spinning_counts.findMany({
@@ -939,8 +945,13 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
       const cloneData = prevSetups.map(s => {
         const { id, created_at, updated_at, ...rest } = s
         const currentCount = countById.get(s.count_id) || countByName.get(s.count_name)
+        const previousMachine = previousMachineMap.get(s.machine_id)
+        const activeMachineId = previousMachine
+          ? (activeByMcId.get(previousMachine.mc_id) || activeByMachineNo.get(previousMachine.machine_no))
+          : null
         return {
           ...rest,
+          machine_id: activeMachineId || s.machine_id,
           ...(currentCount?.act_count != null && { act_count: currentCount.act_count }),
           entry_date: dateObj,
           shift: shiftNum,

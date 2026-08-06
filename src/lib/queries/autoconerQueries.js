@@ -150,20 +150,42 @@ export async function updateAutoconerMachine(id, machineData) {
     processedData.installed_date = new Date(processedData.installed_date);
   }
   
-  // Set activated_at / deactivated_at when is_active changes
-  if (processedData.is_active === true) {
-    processedData.activated_at = new Date();
-    processedData.deactivated_at = null;
-  } else if (processedData.is_active === false) {
-    processedData.deactivated_at = new Date();
+  const existing = await prisma.autoconer_machines.findUnique({ where: { id } });
+  if (!existing) throw new Error('Autoconer machine not found');
+
+  // Status-only operations are lifecycle changes, not revisions.
+  const changedKeys = Object.keys(processedData).filter(key => processedData[key] !== existing[key]);
+  const isStatusOnly = changedKeys.every(key => ['is_active', 'activated_at', 'deactivated_at'].includes(key));
+  if (isStatusOnly) {
+    if (processedData.is_active === true) {
+      processedData.activated_at = new Date();
+      processedData.deactivated_at = null;
+    } else if (processedData.is_active === false) {
+      processedData.deactivated_at = new Date();
+    }
+    return prisma.autoconer_machines.update({ where: { id }, data: processedData });
   }
 
-  const data = await prisma.autoconer_machines.update({
-    where: { id },
-    data: processedData
+  // Keep the old row as the immutable snapshot referenced by earlier production
+  // details. The replacement becomes the active master used by future entries.
+  const revisionTime = new Date();
+  return prisma.$transaction(async tx => {
+    await tx.autoconer_machines.update({
+      where: { id },
+      data: { is_active: false, deactivated_at: revisionTime }
+    });
+
+    const { id: _id, created_at: _createdAt, updated_at: _updatedAt, ...oldValues } = existing;
+    return tx.autoconer_machines.create({
+      data: {
+        ...oldValues,
+        ...processedData,
+        is_active: true,
+        activated_at: revisionTime,
+        deactivated_at: null
+      }
+    });
   });
-  
-  return data;
 }
 
 // Delete autoconer machine
