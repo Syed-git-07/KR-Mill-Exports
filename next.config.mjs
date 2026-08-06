@@ -3,8 +3,8 @@ const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   compress: true,
-  // Base path for Apache proxy (disabled for local development)
-  // basePath: '/kr-production-app',
+  // The application is hosted below the main krexports.org site.
+  basePath: '/kr-production-app',
   
   // Ensure trailing slashes for proper routing
   trailingSlash: true,

@@ -5,6 +5,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { getSessionToken, hashSessionToken } from "@/lib/security/session";
 import { logger } from "@/lib/security/logger";
+import { withBasePath } from "@/lib/app-path";
 
 export const getCurrentUser = cache(async () => {
   const token = await getSessionToken();
@@ -42,13 +43,13 @@ export const getCurrentUser = cache(async () => {
 
 export async function requireUser() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(withBasePath("/login"));
   return user;
 }
 
 export async function requireRole(...roles) {
   const user = await requireUser();
-  if (!roles.includes(user.role)) redirect("/");
+  if (!roles.includes(user.role)) redirect(withBasePath("/"));
   return user;
 }
 

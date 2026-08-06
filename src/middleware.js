@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "@/lib/security/constants";
+import { withBasePath, withoutBasePath } from "@/lib/app-path";
 
 const PUBLIC_PATHS = new Set([
   "/login",
@@ -72,11 +73,13 @@ function withSecurityHeaders(response, requestId, nonce) {
 }
 
 function redirectToLogin(request, requestId, nonce, clearCookie = false) {
-  const url = new URL("/login", request.url);
+  const url = new URL(withBasePath("/login"), request.url);
   if (request.method === "GET") {
     url.searchParams.set(
       "returnTo",
-      `${request.nextUrl.pathname}${request.nextUrl.search}`,
+      withBasePath(
+        `${withoutBasePath(request.nextUrl.pathname)}${request.nextUrl.search}`,
+      ),
     );
   }
   const response = NextResponse.redirect(url, 303);
@@ -96,7 +99,8 @@ export async function middleware(request) {
     );
   }
 
-  const pathname = request.nextUrl.pathname.replace(/\/+$/, "") || "/";
+  const pathname =
+    withoutBasePath(request.nextUrl.pathname).replace(/\/+$/, "") || "/";
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   let session = null;
 
@@ -136,7 +140,7 @@ export async function middleware(request) {
 
   if (pathname === "/login" && session) {
     return withSecurityHeaders(
-      NextResponse.redirect(new URL("/", request.url), 303),
+      NextResponse.redirect(new URL(withBasePath("/"), request.url), 303),
       requestId,
       nonce,
     );
@@ -151,7 +155,10 @@ export async function middleware(request) {
     pathname !== "/account/security"
   ) {
     return withSecurityHeaders(
-      NextResponse.redirect(new URL("/account/security", request.url), 303),
+      NextResponse.redirect(
+        new URL(withBasePath("/account/security"), request.url),
+        303,
+      ),
       requestId,
       nonce,
     );
@@ -159,7 +166,7 @@ export async function middleware(request) {
 
   if (pathname.startsWith("/admin") && session?.user.role !== "ADMIN") {
     return withSecurityHeaders(
-      NextResponse.redirect(new URL("/", request.url), 303),
+      NextResponse.redirect(new URL(withBasePath("/"), request.url), 303),
       requestId,
       nonce,
     );
