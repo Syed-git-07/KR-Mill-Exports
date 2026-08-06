@@ -1,10 +1,29 @@
+function normalizeBasePath(value) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") return "";
+
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+  if (!/^\/[A-Za-z0-9._~/-]+$/.test(normalized)) {
+    throw new Error("NEXT_PUBLIC_BASE_PATH must be an absolute URL path.");
+  }
+  return normalized;
+}
+
+const basePath = normalizeBasePath(
+  process.env.NEXT_PUBLIC_BASE_PATH ?? "/kr-production-app",
+);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   compress: true,
-  // The application is hosted below the main krexports.org site.
-  basePath: '/kr-production-app',
+  basePath: basePath || undefined,
+
+  // Expose the normalized build-time value to shared routing helpers.
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
+  },
   
   // Ensure trailing slashes for proper routing
   trailingSlash: true,

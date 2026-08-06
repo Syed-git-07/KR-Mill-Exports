@@ -1,5 +1,6 @@
 import Image from "next/image";
 import LoginForm from "@/components/auth/LoginForm";
+import { withBasePath } from "@/lib/app-path";
 import { safeReturnPath } from "@/lib/security/request";
 
 export const metadata = {
@@ -21,12 +22,13 @@ export default async function LoginPage({ searchParams }) {
         <div className="relative flex items-center gap-4">
           <div className="rounded-lg bg-white px-3 py-2 shadow-sm">
             <Image
-              src="/icon.png"
+              src={withBasePath("/icon.png")}
               alt="KR Exports"
               width={92}
               height={43}
               className="h-auto w-[92px]"
               priority
+              unoptimized
             />
           </div>
           <div className="h-9 w-px bg-white/25" />
@@ -55,12 +57,13 @@ export default async function LoginPage({ searchParams }) {
         <div className="flex items-center px-6 py-6 sm:px-10 lg:hidden">
           <div className="rounded-md bg-white px-2.5 py-1.5 shadow-sm ring-1 ring-slate-200">
             <Image
-              src="/icon.png"
+              src={withBasePath("/icon.png")}
               alt="KR Exports"
               width={78}
               height={36}
               className="h-auto w-[78px]"
               priority
+              unoptimized
             />
           </div>
           <div className="ml-3">
@@ -73,11 +76,12 @@ export default async function LoginPage({ searchParams }) {
           <div className="mx-auto w-full max-w-sm">
             <div className="mb-9 hidden lg:block">
               <Image
-                src="/icon.png"
+                src={withBasePath("/icon.png")}
                 alt="KR Exports"
                 width={96}
                 height={45}
                 className="h-auto w-24"
+                unoptimized
               />
             </div>
 
