@@ -32,6 +32,7 @@ import {
 import EnterSelect from '@/components/ui/enter-select'
 import { Loader2, RefreshCw, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { format } from 'date-fns'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { CARDING_FORMULA_FALLBACK } from '@/lib/cardingFormulaFallback'
@@ -94,6 +95,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
   const [selectedRows, setSelectedRows] = useState([])
   const [countOptions, setCountOptions] = useState([])
   const tableRef = useRef(null)
+  const loadRequestRef = useRef(0)
 
   const focusRowByDelta = useCallback((rowIndex, delta, col) => {
     const targetRow = rowIndex + delta
@@ -185,9 +187,10 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
   // Load machine setups
   const loadData = useCallback(async () => {
     if (!entryDate) return
+    const requestId = ++loadRequestRef.current
     setIsLoading(true)
     try {
-      const formattedDate = typeof entryDate === 'string' ? entryDate : entryDate.toISOString().split('T')[0]
+      const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
       const [setupsResult, countsResult] = await Promise.all([
         getCardingMachineSetupsAction(formattedDate, shift),
         getCountOptionsAction()
@@ -195,6 +198,11 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       
       const setups = setupsResult.success ? setupsResult.data : []
       const counts = countsResult.success ? countsResult.data : []
+
+      // Date/shift changes and initialization can overlap with an older load.
+      // Never allow that older response to replace the freshly initialized
+      // Carding setup currently shown on screen.
+      if (requestId !== loadRequestRef.current) return
       
       // Sort by natural machine number order (CA1, CA2, ... CA10, CA11)
       const sortedSetups = setups?.sort((a, b) => {
@@ -213,10 +221,11 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       setSetupData(mergedSetups)
       setCountOptions(counts || [])
     } catch (error) {
+      if (requestId !== loadRequestRef.current) return
       console.error('Error loading machine setups:', error)
       toast.error('Failed to load machine setups')
     } finally {
-      setIsLoading(false)
+      if (requestId === loadRequestRef.current) setIsLoading(false)
     }
   }, [entryDate, shift])
 
@@ -319,7 +328,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     setIsSaving(true)
     try {
       const currentEdits = editedRowsRef.current || editedRows || {}
-      const formattedDate = typeof entryDate === 'string' ? entryDate : entryDate.toISOString().split('T')[0]
+      const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
       const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const row = setupData.find(r => String(r.id) === String(rowId))
         const machineId = row?.machine_id

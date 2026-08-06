@@ -348,7 +348,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     const existingMachineIds = existingDetails?.map(d => d.machine_id) || []
 
     // Get setups scoped strictly by the entry date and shift
-    const setups = await getOrCreateCardingMachineSetups(entryDate, shift)
+    let setups = await getOrCreateCardingMachineSetups(entryDate, shift)
     const machineIdsWithSetup = setups.map(s => s.machine_id)
 
     // Get all carding machines visible on the entry date that have a setup entry
@@ -369,6 +369,46 @@ export async function initializeProductionDetails(headerId, shift = 1) {
       return existingDetails
     }
 
+    // Initialization is the snapshot boundary for Carding. A setup row may
+    // already have been prepared merely by opening the entry screen, so do
+    // not trust its master-owned values here. Refresh every machine that is
+    // about to receive a new production detail directly from the current
+    // Carding machine master. Existing details are deliberately excluded so
+    // historical entries remain unchanged.
+    const totalTime = await getCardingShiftTime(shift)
+    const setupByMachineId = new Map(setups.map(setup => [setup.machine_id, setup]))
+    const refreshedSetups = await Promise.all(newMachines.map(async machine => {
+      const setup = setupByMachineId.get(machine.id)
+      if (!setup) return null
+
+      const rawEfficiency = Number(machine.prodn_efficiency ?? setup.std_efficiency_factor ?? 0.98)
+      const stdEfficiencyFactor = rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
+      const speed = machine.speed ?? setup.speed ?? 130
+      const hankConstant = machine.hank_constant ?? setup.hank_constant ?? 0.13
+      const stdProdn = calculateCardingStdProdn({
+        speed,
+        divisor_constant: setup.divisor_constant ?? 1693,
+        hank_constant: hankConstant,
+        std_efficiency_factor: stdEfficiencyFactor
+      }, totalTime)
+
+      return prisma.carding_machine_setup.update({
+        where: { id: setup.id },
+        data: {
+          speed,
+          hank_constant: hankConstant,
+          std_efficiency_factor: stdEfficiencyFactor,
+          shift_time: totalTime,
+          std_prodn: Math.round(stdProdn * 100) / 100
+        }
+      })
+    }))
+
+    const refreshedByMachineId = new Map(
+      refreshedSetups.filter(Boolean).map(setup => [setup.machine_id, setup])
+    )
+    setups = setups.map(setup => refreshedByMachineId.get(setup.machine_id) || setup)
+
     // Create a map of machine_id to setup
     const setupMap = {}
     setups?.forEach(s => {
@@ -379,7 +419,6 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     const inheritedSetups = await getCardingInheritedMachineSetups(entryDate, shift, headerId)
 
     // Get shift-specific runtime from configuration (DB-first + centralized fallback)
-    const totalTime = await getCardingShiftTime(shift)
     const defaultStoppage = await getCardingDefaultStoppage(shift)
     const defaultWorkTime = totalTime - defaultStoppage
     const defaultUti = Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100

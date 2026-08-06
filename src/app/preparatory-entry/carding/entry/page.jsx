@@ -219,8 +219,19 @@ function CardingEntryContent() {
       }
       
       // Initialize details for all machines (pass shift for shift-based runtime)
-      await initializeProductionDetailsAction(headerResult.data.id, parseInt(shift))
-      
+      const initializationResult = await initializeProductionDetailsAction(
+        headerResult.data.id,
+        parseInt(shift)
+      )
+      if (!initializationResult.success) {
+        throw new Error(initializationResult.error || 'Failed to initialize production details')
+      }
+
+      // Mount every Carding tab from a clean state after initialization so
+      // no response or draft prepared before the master snapshot can display
+      // the previous entry's machine values.
+      clearAllDrafts()
+      setRefreshKey(prev => prev + 1)
       setHeaderId(headerResult.data.id)
       toast.success('Production entry initialized successfully')
       
@@ -340,11 +351,13 @@ function CardingEntryContent() {
   const handleDateChange = (nextDate) => {
     if (!nextDate) return
     if (!confirmIfUnsaved('Changing date will reload entry data.')) return
+    clearAllDrafts()
     setDate(nextDate)
   }
 
   const handleShiftChange = (nextShift) => {
     if (!confirmIfUnsaved('Changing shift will reload entry data.')) return
+    clearAllDrafts()
     setShift(nextShift)
   }
 
