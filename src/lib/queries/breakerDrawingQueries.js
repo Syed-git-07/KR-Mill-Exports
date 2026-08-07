@@ -836,9 +836,24 @@ export async function applyBreakerDrawingPartialStoppage(headerId, fromMachineNo
 // Get all machine setups with machine info (optionally scoped to a specific headerId)
 export async function getBreakerDrawingMachineSetups(headerId = null) {
   const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
+  const header = validHeaderId
+    ? await prisma.breaker_drawing_production_header.findUnique({
+        where: { id: validHeaderId },
+        select: { entry_date: true }
+      })
+    : null;
   const machines = await prisma.drawing_breaker_machines.findMany({
-    where: { is_active: true },
-    select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, delivery: true, sliver_hank: true, prodn_efficiency: true, is_active: true }
+    where: header?.entry_date
+      ? {
+          activated_at: { lte: header.entry_date },
+          OR: [
+            { deactivated_at: null },
+            { deactivated_at: { gte: header.entry_date } }
+          ]
+        }
+      : { is_active: true },
+    select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, delivery: true, sliver_hank: true, prodn_efficiency: true, is_active: true },
+    orderBy: { is_active: 'desc' }
   });
   const machineSpeedMap = {};
   const machineSetupOverridesMap = {};

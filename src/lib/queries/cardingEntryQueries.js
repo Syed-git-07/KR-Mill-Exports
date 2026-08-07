@@ -1148,7 +1148,14 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
 
       // Find active machines that are missing setups in the prior record set
       const activeMachines = await prisma.carding_machines.findMany({
-        where: { is_active: true }
+        where: {
+          activated_at: { lte: dateObj },
+          OR: [
+            { deactivated_at: null },
+            { deactivated_at: { gte: dateObj } }
+          ]
+        },
+        orderBy: { is_active: 'desc' }
       })
       const missingMachines = activeMachines.filter(m => !prevMachineIds.includes(m.id))
 
@@ -1226,9 +1233,16 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
       })
     }
     
-    // 3. Fallback: Initialize default setups for all active machines
+    // 3. Fallback: Initialize default setups for all active machines on the entry date
     const activeMachines = await prisma.carding_machines.findMany({
-      where: { is_active: true }
+      where: {
+        activated_at: { lte: dateObj },
+        OR: [
+          { deactivated_at: null },
+          { deactivated_at: { gte: dateObj } }
+        ]
+      },
+      orderBy: { is_active: 'desc' }
     })
     
     const defaultSetups = activeMachines.map(m => {
@@ -1288,8 +1302,7 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
     const machines = machineIds.length > 0
       ? await prisma.carding_machines.findMany({
           where: {
-            id: { in: machineIds },
-            is_active: true
+            id: { in: machineIds }
           },
           select: {
             id: true,

@@ -927,8 +927,7 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
     const machines = machineIds.length > 0
       ? await prisma.lap_former_machines.findMany({
           where: {
-            id: { in: machineIds },
-            is_active: true
+            id: { in: machineIds }
           },
           select: {
             id: true,
@@ -1084,9 +1083,23 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
 // Get all machine setups with machine info
 export async function getLapFormerMachineSetups(headerId = null) {
   const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null;
+  const header = validHeaderId
+    ? await prisma.lap_former_production_header.findUnique({
+        where: { id: validHeaderId },
+        select: { entry_date: true }
+      })
+    : null;
   const [machines, headerDetails] = await Promise.all([
     prisma.lap_former_machines.findMany({
-      where: { is_active: true },
+      where: header?.entry_date
+        ? {
+            activated_at: { lte: header.entry_date },
+            OR: [
+              { deactivated_at: null },
+              { deactivated_at: { gte: header.entry_date } }
+            ]
+          }
+        : { is_active: true },
       select: {
         id: true,
         machine_no: true,
@@ -1096,7 +1109,8 @@ export async function getLapFormerMachineSetups(headerId = null) {
         speed: true,
         prodn_efficiency: true,
         sort_order: true
-      }
+      },
+      orderBy: [{ is_active: 'desc' }, { sort_order: 'asc' }]
     }),
     validHeaderId
       ? prisma.lap_former_production_detail.findMany({
