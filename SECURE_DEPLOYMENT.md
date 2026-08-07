@@ -16,6 +16,8 @@ SHA-256 digests.
   Never commit or copy a development `.env` into source control.
 - Set `AUTH_TRUSTED_ORIGINS` to the exact external HTTPS origin. Multiple
   origins are comma-separated.
+- Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before building. This value
+  is embedded into the production bundle and changing it requires a rebuild.
 - Grant the `DATABASE_URL` account only the application permissions it needs,
   plus read-only `SELECT` access to `payroll.employees` and
   `payroll.departments`. Never use the MySQL root account.
@@ -69,8 +71,9 @@ Use a Windows service manager or process supervisor so the process restarts
 after a crash or reboot. Capture stdout and stderr: application logs are emitted
 as single-line JSON without passwords, cookies, or tokens.
 
-The unauthenticated health probe is `GET /api/health`. It intentionally reports
-only process availability, not database or configuration details.
+The unauthenticated production health probe is
+`GET /kr-production-app/api/health`. It intentionally reports only process
+availability, not database or configuration details.
 
 ## 4. Reverse-proxy requirements
 
@@ -84,6 +87,21 @@ Forward these headers without accepting them directly from the public client:
 The proxy should create/overwrite forwarding headers and pass the real client
 address. Incorrect forwarded host/protocol values cause legitimate POST
 requests to fail origin validation.
+
+An Apache deployment beneath the KR Exports site should include the equivalent
+of:
+
+```apache
+ProxyPreserveHost On
+RequestHeader set X-Forwarded-Host "krexports.org"
+RequestHeader set X-Forwarded-Proto "https"
+ProxyPass        "/kr-production-app/" "http://127.0.0.1:3000/kr-production-app/"
+ProxyPassReverse "/kr-production-app/" "http://127.0.0.1:3000/kr-production-app/"
+```
+
+Do not strip `/kr-production-app` before forwarding to Next.js. Server Actions
+validate the public origin and host, so `ProxyPreserveHost` and the forwarded
+headers are required for login and logout POST requests.
 
 ## 5. Operations
 

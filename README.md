@@ -63,6 +63,11 @@ Follow [SECURE_DEPLOYMENT.md](./SECURE_DEPLOYMENT.md). HTTPS, correct reverse
 proxy headers, firewall rules, backups, a process supervisor, and scheduled
 security-data cleanup are required for a production installation.
 
+Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before running `npm run build`
+when the application is hosted at `https://krexports.org/kr-production-app`.
+Use an empty value when hosting at a domain root. Because Next.js embeds the base
+path at build time, rebuild and restart the application after changing it.
+
 ## License
 
 Proprietary. All rights reserved by KR Exports.

@@ -56,6 +56,17 @@ test("post-login return paths cannot escape the application origin", () => {
   assert.equal(safeReturnPath("javascript:alert(1)"), "/");
 });
 
+test("server actions leave base-path application to Next.js", async () => {
+  const authActions = await readFile(
+    path.resolve("src/app/actions/auth.js"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(authActions, /redirect\(\s*withBasePath/);
+  assert.match(authActions, /withoutBasePath\(returnTo\)/);
+  assert.match(authActions, /redirect\("\/login"\)/);
+});
+
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];

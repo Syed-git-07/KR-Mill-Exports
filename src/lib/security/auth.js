@@ -51,4 +51,3 @@ export async function requireRole(...roles) {
   if (!roles.includes(user.role)) redirect("/");
   return user;
 }
-
