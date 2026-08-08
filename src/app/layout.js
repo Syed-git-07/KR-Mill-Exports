@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import GlobalRequestLoader from "@/components/common/GlobalRequestLoader";
 import NumberInputWheelGuard from "@/components/common/NumberInputWheelGuard";
 import AppHeader from "@/components/layout/AppHeader";
+import { withBasePath } from "@/lib/app-path";
 import { getCurrentUser } from "@/lib/security/auth";
 import "@/lib/utils/suppressHydrationWarnings";
 
@@ -21,9 +22,9 @@ export const metadata = {
   title: "KR Exports Production",
   description: "KR Exports Production",
   icons: {
-    icon: "/icon.png",
-    shortcut: "/icon.png",
-    apple: "/icon.png",
+    icon: withBasePath("/icon.png"),
+    shortcut: withBasePath("/icon.png"),
+    apple: withBasePath("/icon.png"),
   },
 };
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, FileClock, Home, KeyRound, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
+import { withBasePath } from "@/lib/app-path";
 import { Button } from "@/components/ui/button";
 
 export default function AppHeader({ user }) {
@@ -60,12 +61,13 @@ export default function AppHeader({ user }) {
             aria-label="KR Production home"
           >
             <Image
-              src="/icon.png"
+              src={withBasePath("/icon.png")}
               alt="KR Exports"
               width={45}
               height={21}
               className="h-auto w-[45px]"
               priority
+              unoptimized
             />
             <span className="hidden truncate text-xs font-semibold text-[#0b2d47] md:inline">
               Production Management

@@ -28,12 +28,14 @@ function applySpinningCountMaster(setup, countMaster) {
   if (!countMaster) return setup
   return {
     ...setup,
-    ...( !isProvided(setup.act_count) && isProvided(countMaster.act_count) && { act_count: toFiniteNumber(countMaster.act_count) }),
-    ...( !isProvided(setup.tpi) && isProvided(countMaster.tpi) && { tpi: toFiniteNumber(countMaster.tpi) }),
-    ...( !isProvided(setup.speed) && isProvided(countMaster.speed) && { speed: toFiniteNumber(countMaster.speed) }),
-    ...( !isProvided(setup.tw_con) && isProvided(countMaster.tw_con) && { tw_con: toFiniteNumber(countMaster.tw_con) }),
-    ...( !isProvided(setup.doff_loss) && isProvided(countMaster.doff_loss) && { doff_loss: toFiniteNumber(countMaster.doff_loss) }),
-    ...( !isProvided(setup.c_waste_percent) && isProvided(countMaster.waste_percent) && { c_waste_percent: toFiniteNumber(countMaster.waste_percent) })
+    // Null baseline values inherit count defaults; non-null values are
+    // deliberate machine-level overrides.
+    ...(!isProvided(setup.act_count) && isProvided(countMaster.act_count) && { act_count: toFiniteNumber(countMaster.act_count) }),
+    ...(!isProvided(setup.tpi) && isProvided(countMaster.tpi) && { tpi: toFiniteNumber(countMaster.tpi) }),
+    ...(!isProvided(setup.speed) && isProvided(countMaster.speed) && { speed: toFiniteNumber(countMaster.speed) }),
+    ...(!isProvided(setup.tw_con) && isProvided(countMaster.tw_con) && { tw_con: toFiniteNumber(countMaster.tw_con) }),
+    ...(!isProvided(setup.doff_loss) && isProvided(countMaster.doff_loss) && { doff_loss: toFiniteNumber(countMaster.doff_loss) }),
+    ...(!isProvided(setup.c_waste_percent) && isProvided(countMaster.waste_percent) && { c_waste_percent: toFiniteNumber(countMaster.waste_percent) })
   }
 }
 
@@ -1229,7 +1231,14 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
     
     // 3. Legacy fallback if the installation has no baseline setup rows.
     const activeMachines = await prisma.spinning_machines.findMany({
-      where: { is_active: true }
+      where: {
+        activated_at: { lte: dateObj },
+        OR: [
+          { deactivated_at: null },
+          { deactivated_at: { gte: dateObj } }
+        ]
+      },
+      orderBy: { is_active: 'desc' }
     })
     
     const defaultSetups = activeMachines.map(m => ({
@@ -1276,11 +1285,14 @@ export async function getSpinningMachineSetups(entryDate, shift = 1) {
     
     const setups = await getOrCreateSpinningMachineSetups(entryDate, shift)
     
-    // Get active machines
-    const machines = await prisma.spinning_machines.findMany({
-      where: { is_active: true },
-      orderBy: { sort_order: 'asc' }
-    })
+    // Get machines that have setups
+    const machineIds = setups.map(s => s.machine_id).filter(Boolean)
+    const machines = machineIds.length > 0 
+      ? await prisma.spinning_machines.findMany({
+          where: { id: { in: machineIds } },
+          orderBy: { sort_order: 'asc' }
+        })
+      : []
 
     const machineMap = {}
     machines?.forEach(m => { machineMap[m.id] = m })

@@ -983,9 +983,25 @@ export async function applySimplexPartialStoppage(headerId, fromMachineNo, toMac
 export async function getSimplexMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
+    const header = validHeaderId
+      ? await prisma.simplex_production_header.findUnique({
+          where: { id: validHeaderId },
+          select: { entry_date: true }
+        })
+      : null
+
     const machines = await prisma.simplex_machines.findMany({
-      where: { is_active: true },
-      select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true }
+      where: header?.entry_date
+        ? {
+            activated_at: { lte: header.entry_date },
+            OR: [
+              { deactivated_at: null },
+              { deactivated_at: { gte: header.entry_date } }
+            ]
+          }
+        : { is_active: true },
+      select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true },
+      orderBy: { is_active: 'desc' }
     })
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};

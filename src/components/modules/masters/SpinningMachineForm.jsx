@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import EnterSelect from '@/components/ui/enter-select';
 import { getSpinningCountsAction } from '@/app/actions/spinning-entry';
+import { Button } from '@/components/ui/button';
+import { Copy } from 'lucide-react';
 
 const spinningMachineSchema = z.object({
   machine_no: z.string().min(1, 'Machine number is required'),
@@ -24,6 +26,9 @@ const spinningMachineSchema = z.object({
   count_name: z.string().optional().nullable(),
   act_count: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
   tpi: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
+  tw_con: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
+  doff_loss: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
+  c_waste_percent: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
 });
 
 export default function SpinningMachineForm({ initialData, onSubmit }) {
@@ -79,6 +84,9 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       count_name: null,
       act_count: null,
       tpi: null,
+      tw_con: null,
+      doff_loss: null,
+      c_waste_percent: null,
     }
   });
 
@@ -87,8 +95,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
   const directHankEntry = watch('direct_hank_entry');
   const countName = watch('count_name');
 
-  const handleCountSelect = (val) => {
-    setValue('count_name', val);
+  const copyCountMasterValues = (val = countName) => {
     const selectedCount = counts.find(c => c.count_name === val);
     if (selectedCount) {
       // act_count is always present (NOT NULL in DB)
@@ -96,9 +103,17 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       // tpi and speed are VARCHAR — only set if value exists and is non-empty
       const tpiVal = selectedCount.tpi != null && selectedCount.tpi !== '' ? parseFloat(selectedCount.tpi) : null;
       const speedVal = selectedCount.speed != null && selectedCount.speed !== '' ? parseInt(selectedCount.speed) : null;
-      if (tpiVal !== null) setValue('tpi', tpiVal);
-      if (speedVal !== null) setValue('speed', speedVal);
+      setValue('tpi', tpiVal);
+      setValue('speed', speedVal);
+      setValue('tw_con', selectedCount.tw_con != null && selectedCount.tw_con !== '' ? parseInt(selectedCount.tw_con) : null);
+      setValue('doff_loss', selectedCount.doff_loss != null ? parseFloat(selectedCount.doff_loss) : null);
+      setValue('c_waste_percent', selectedCount.waste_percent != null ? parseFloat(selectedCount.waste_percent) : null);
     }
+  };
+
+  const handleCountSelect = (val) => {
+    setValue('count_name', val);
+    copyCountMasterValues(val);
   };
 
   const onFormSubmit = async (data) => {
@@ -110,6 +125,9 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       count_name: data.count_name || null,
       act_count: data.act_count ?? null,
       tpi: data.tpi ?? null,
+      tw_con: data.tw_con ?? null,
+      doff_loss: data.doff_loss ?? null,
+      c_waste_percent: data.c_waste_percent ?? null,
     };
     
     await onSubmit(formattedData);
@@ -276,10 +294,23 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
               onKeyDown={handleNav}
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="tw_con">TW.Con</Label>
+            <Input id="tw_con" type="number" {...register('tw_con', { valueAsNumber: true })} onKeyDown={handleNav} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doff_loss">Doff Loss</Label>
+            <Input id="doff_loss" type="number" step="0.01" {...register('doff_loss', { valueAsNumber: true })} onKeyDown={handleNav} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="c_waste_percent">C.Waste %</Label>
+            <Input id="c_waste_percent" type="number" step="0.01" {...register('c_waste_percent', { valueAsNumber: true })} onKeyDown={handleNav} />
+          </div>
         </div>
-        <p className="text-xs text-blue-600">
-          Selecting a count auto-fills Act. Count, TPI, and Speed from the counts master.
-        </p>
+        <Button type="button" variant="outline" size="sm" onClick={() => copyCountMasterValues()} disabled={!countName}>
+          <Copy className="mr-2 h-4 w-4" />
+          Copy Data from Count Master
+        </Button>
       </div>
     </form>
   );

@@ -391,7 +391,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
     const machines = await prisma.drawing_finisher_machines.findMany({
       where: {
         activated_at: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
+        OR: [{ deactivated_at: null }, { deactivated_at: { gte: entryDate } }]
       },
       select: {
         id: true,
@@ -400,7 +400,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
         speed: true,
         prodn_efficiency: true
       },
-      orderBy: { sort_order: 'asc' }
+      orderBy: [{ is_active: 'desc' }, { sort_order: 'asc' }]
     })
 
     const machineIds = machines.map(m => m.id)

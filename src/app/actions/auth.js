@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/security/auth";
+import { withoutBasePath } from "@/lib/app-path";
 import { writeAuditLog } from "@/lib/security/audit";
 import {
   LOGIN_WINDOW_MS,
@@ -206,7 +207,11 @@ export async function loginAction(_previousState, formData) {
     context,
   });
 
-  redirect(user.must_change_password ? "/account/security" : returnTo);
+  redirect(
+    user.must_change_password
+      ? "/account/security"
+      : withoutBasePath(returnTo),
+  );
 }
 
 export async function logoutAction() {
