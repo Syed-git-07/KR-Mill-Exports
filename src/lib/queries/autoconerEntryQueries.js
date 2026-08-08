@@ -1027,7 +1027,10 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
 
     if (defaultSetups.length > 0) {
       await prisma.autoconer_machine_setup.createMany({
-        data: defaultSetups
+        data: defaultSetups,
+        // Concurrent page loads can both observe an empty setup list. Let the
+        // database keep the first row for each machine/date/shift combination.
+        skipDuplicates: true
       })
     }
 
