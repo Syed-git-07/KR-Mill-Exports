@@ -136,6 +136,12 @@ export async function updateDrawingBreakerMachine(id, machineData) {
     installedDate = new Date(installedDate);
   }
 
+  const currentMachine = await prisma.drawing_breaker_machines.findUnique({ where: { id }, select: { is_active: true } });
+  const wantsActive = machineData.is_active === true || machineData.is_active === 1;
+  const wantsInactive = machineData.is_active === false || machineData.is_active === 0;
+  const isActivating = wantsActive && currentMachine?.is_active !== true;
+  const isDeactivating = wantsInactive && currentMachine?.is_active !== false;
+
   return prisma.drawing_breaker_machines.update({
     where: { id },
     data: {
@@ -153,8 +159,8 @@ export async function updateDrawingBreakerMachine(id, machineData) {
       direct_hank_entry: machineData.direct_hank_entry,
       direct_kgs_entry: machineData.direct_kgs_entry,
       updated_at: new Date(),
-      ...((machineData.is_active === true  || machineData.is_active === 1)  && { activated_at: new Date(), deactivated_at: null }),
-      ...((machineData.is_active === false || machineData.is_active === 0) && { deactivated_at: new Date() }),
+      ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
+      ...(isDeactivating && { deactivated_at: new Date() }),
     }
   });
 }

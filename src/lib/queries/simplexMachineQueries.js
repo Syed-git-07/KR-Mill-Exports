@@ -126,6 +126,10 @@ export async function updateSimplexMachine(id, machineData) {
   const parsedCountTpi = parseCountTpi(machineData.count_tpi);
   const effectiveTpi = machineData.tpi ?? parsedCountTpi;
 
+  const currentMachine = await prisma.simplex_machines.findUnique({ where: { id }, select: { is_active: true } });
+  const isActivating = machineData.is_active === true && currentMachine?.is_active !== true;
+  const isDeactivating = machineData.is_active === false && currentMachine?.is_active !== false;
+
   const data = await prisma.simplex_machines.update({
     where: { id },
     data: {
@@ -142,8 +146,8 @@ export async function updateSimplexMachine(id, machineData) {
       no_of_spindles: machineData.no_of_spindles, // Number of Spindles (NEW)
       installed_date: installedDate,
       is_active: machineData.is_active,
-      ...(machineData.is_active === true && { activated_at: new Date(), deactivated_at: null }),
-      ...(machineData.is_active === false && { deactivated_at: new Date() }),
+      ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
+      ...(isDeactivating && { deactivated_at: new Date() }),
       direct_hank_entry: machineData.direct_hank_entry,
       direct_kgs_entry: machineData.direct_kgs_entry,
       updated_at: new Date(),
