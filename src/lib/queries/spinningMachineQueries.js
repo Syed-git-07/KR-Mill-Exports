@@ -26,6 +26,21 @@ async function upsertDefaultSpinningSetup(machineId, setupFields) {
   });
 }
 
+async function syncDatedSpinningSetups(machineId, setupFields) {
+  const data = Object.fromEntries(
+    Object.entries(setupFields).filter(([, value]) => value !== undefined)
+  );
+  if (Object.keys(data).length === 0) return;
+
+  await prisma.spinning_machine_setup.updateMany({
+    where: {
+      machine_id: machineId,
+      NOT: { entry_date: SPINNING_DEFAULT_SETUP_DATE },
+    },
+    data: { ...data, updated_at: new Date() },
+  });
+}
+
 /**
  * Spinning Machine Master CRUD Operations
  */
@@ -69,7 +84,7 @@ function sortMachinesByNumber(machines) {
 export async function createSpinningMachine(machineData) {
   try {
     // Extract setup-specific fields so they don't land in spinning_machines
-    const { speed, count_name, act_count, tpi, ...machineFields } = machineData;
+    const { speed, count_name, act_count, tpi, tw_con, doff_loss, c_waste_percent, ...machineFields } = machineData;
 
     const processedData = { ...machineFields };
     if (processedData.installed_date && typeof processedData.installed_date === 'string') {
@@ -84,6 +99,9 @@ export async function createSpinningMachine(machineData) {
     let finalSpeed = speed;
     let finalTpi = tpi;
     let finalActCount = act_count;
+    let finalTwCon = tw_con;
+    let finalDoffLoss = doff_loss;
+    let finalWastePercent = c_waste_percent;
     
     if (count_name) {
       const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name, is_active: true } });
@@ -91,6 +109,9 @@ export async function createSpinningMachine(machineData) {
         if (finalActCount != null && parseFloat(finalActCount) === parseFloat(countMaster.act_count)) finalActCount = null;
         if (finalTpi != null && parseFloat(finalTpi) === parseFloat(countMaster.tpi)) finalTpi = null;
         if (finalSpeed != null && parseInt(finalSpeed) === parseInt(countMaster.speed)) finalSpeed = null;
+        if (finalTwCon != null && parseInt(finalTwCon) === parseInt(countMaster.tw_con)) finalTwCon = null;
+        if (finalDoffLoss != null && parseFloat(finalDoffLoss) === parseFloat(countMaster.doff_loss)) finalDoffLoss = null;
+        if (finalWastePercent != null && parseFloat(finalWastePercent) === parseFloat(countMaster.waste_percent)) finalWastePercent = null;
       }
     }
 
@@ -111,6 +132,9 @@ export async function createSpinningMachine(machineData) {
           count_name,
           act_count: finalActCount,
           tpi: finalTpi,
+          tw_con: finalTwCon,
+          doff_loss: finalDoffLoss,
+          c_waste_percent: finalWastePercent,
           allocated_spindles: processedData.allocated_spindles,
         });
         return reactivated;
@@ -134,6 +158,9 @@ export async function createSpinningMachine(machineData) {
       count_name,
       act_count: finalActCount,
       tpi: finalTpi,
+      tw_con: finalTwCon,
+      doff_loss: finalDoffLoss,
+      c_waste_percent: finalWastePercent,
       allocated_spindles: processedData.allocated_spindles,
     });
 
@@ -147,7 +174,7 @@ export async function createSpinningMachine(machineData) {
 // Update spinning machine
 export async function updateSpinningMachine(id, machineData) {
   // Extract setup-specific fields — they don't exist as columns in spinning_machines
-  const { speed, count_name, act_count, tpi, ...restData } = machineData;
+  const { speed, count_name, act_count, tpi, tw_con, doff_loss, c_waste_percent, ...restData } = machineData;
 
   const processedData = { ...restData };
   if (processedData.installed_date && typeof processedData.installed_date === 'string') {
@@ -167,6 +194,9 @@ export async function updateSpinningMachine(id, machineData) {
   let finalSpeed = speed;
   let finalTpi = tpi;
   let finalActCount = act_count;
+  let finalTwCon = tw_con;
+  let finalDoffLoss = doff_loss;
+  let finalWastePercent = c_waste_percent;
   
   if (count_name) {
     const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name, is_active: true } });
@@ -174,6 +204,9 @@ export async function updateSpinningMachine(id, machineData) {
       if (finalActCount != null && parseFloat(finalActCount) === parseFloat(countMaster.act_count)) finalActCount = null;
       if (finalTpi != null && parseFloat(finalTpi) === parseFloat(countMaster.tpi)) finalTpi = null;
       if (finalSpeed != null && parseInt(finalSpeed) === parseInt(countMaster.speed)) finalSpeed = null;
+      if (finalTwCon != null && parseInt(finalTwCon) === parseInt(countMaster.tw_con)) finalTwCon = null;
+      if (finalDoffLoss != null && parseFloat(finalDoffLoss) === parseFloat(countMaster.doff_loss)) finalDoffLoss = null;
+      if (finalWastePercent != null && parseFloat(finalWastePercent) === parseFloat(countMaster.waste_percent)) finalWastePercent = null;
     }
   }
 
@@ -184,6 +217,22 @@ export async function updateSpinningMachine(id, machineData) {
     count_name,
     act_count: finalActCount,
     tpi: finalTpi,
+    tw_con: finalTwCon,
+    doff_loss: finalDoffLoss,
+    c_waste_percent: finalWastePercent,
+    allocated_spindles: processedData.allocated_spindles,
+  });
+
+  // The machine master is the machine-specific source of truth. Keep existing
+  // post-preparatory setup rows aligned when the user clicks Update.
+  await syncDatedSpinningSetups(id, {
+    speed,
+    count_name,
+    act_count,
+    tpi,
+    tw_con,
+    doff_loss,
+    c_waste_percent,
     allocated_spindles: processedData.allocated_spindles,
   });
 
@@ -206,6 +255,9 @@ export async function getSpinningMachineWithSetup(id) {
   let finalSpeed = setup?.speed ?? null;
   let finalTpi = setup?.tpi ?? null;
   let finalActCount = setup?.act_count ?? null;
+  let finalTwCon = setup?.tw_con ?? null;
+  let finalDoffLoss = setup?.doff_loss ?? null;
+  let finalWastePercent = setup?.c_waste_percent ?? null;
   
   if (setup?.count_name) {
     const countMaster = await prisma.spinning_counts.findFirst({ where: { count_name: setup.count_name, is_active: true } });
@@ -213,6 +265,9 @@ export async function getSpinningMachineWithSetup(id) {
       if (finalActCount == null && countMaster.act_count != null) finalActCount = parseFloat(countMaster.act_count);
       if (finalTpi == null && countMaster.tpi != null) finalTpi = parseFloat(countMaster.tpi);
       if (finalSpeed == null && countMaster.speed != null) finalSpeed = parseInt(countMaster.speed);
+      if (finalTwCon == null && countMaster.tw_con != null) finalTwCon = parseInt(countMaster.tw_con);
+      if (finalDoffLoss == null && countMaster.doff_loss != null) finalDoffLoss = parseFloat(countMaster.doff_loss);
+      if (finalWastePercent == null && countMaster.waste_percent != null) finalWastePercent = parseFloat(countMaster.waste_percent);
     }
   }
 
@@ -222,6 +277,9 @@ export async function getSpinningMachineWithSetup(id) {
     act_count: finalActCount != null ? parseFloat(finalActCount) : null,
     tpi: finalTpi != null ? parseFloat(finalTpi) : null,
     speed: finalSpeed ?? null,
+    tw_con: finalTwCon != null ? parseInt(finalTwCon) : null,
+    doff_loss: finalDoffLoss != null ? parseFloat(finalDoffLoss) : null,
+    c_waste_percent: finalWastePercent != null ? parseFloat(finalWastePercent) : null,
   };
 }
 
