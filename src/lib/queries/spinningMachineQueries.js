@@ -181,13 +181,19 @@ export async function updateSpinningMachine(id, machineData) {
     processedData.installed_date = new Date(processedData.installed_date);
   }
 
+  const currentMachine = await prisma.spinning_machines.findUnique({
+    where: { id },
+    select: { is_active: true },
+  });
+  const isActivating = processedData.is_active === true && currentMachine?.is_active !== true;
+  const isDeactivating = processedData.is_active === false && currentMachine?.is_active !== false;
+
   const data = await prisma.spinning_machines.update({
     where: { id },
     data: {
       ...processedData,
-      // When toggling is_active, update the timestamps accordingly
-      ...(processedData.is_active === true  && { activated_at: new Date(), deactivated_at: null }),
-      ...(processedData.is_active === false && { deactivated_at: new Date() }),
+      ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
+      ...(isDeactivating && { deactivated_at: new Date() }),
     }
   });
 
@@ -285,9 +291,12 @@ export async function getSpinningMachineWithSetup(id) {
 
 // Activate (reactivate) a spinning machine
 export async function activateSpinningMachine(id) {
-  return await prisma.spinning_machines.update({
+  const machine = await prisma.spinning_machines.findUnique({ where: { id } });
+  if (!machine || machine.is_active === true) return machine;
+
+  return prisma.spinning_machines.update({
     where: { id },
-    data: { is_active: true, activated_at: new Date(), deactivated_at: null }
+    data: { is_active: true, activated_at: new Date(), deactivated_at: null },
   });
 }
 

@@ -101,6 +101,10 @@ export async function updateDrawingFinisherMachine(id, machineData) {
     installedDate = new Date(installedDate);
   }
 
+  const currentMachine = await prisma.drawing_finisher_machines.findUnique({ where: { id }, select: { is_active: true } });
+  const isActivating = machineData.is_active === true && currentMachine?.is_active !== true;
+  const isDeactivating = machineData.is_active === false && currentMachine?.is_active !== false;
+
   const processedData = {
     machine_no: machineData.machine_no,
     description: machineData.description,
@@ -116,10 +120,10 @@ export async function updateDrawingFinisherMachine(id, machineData) {
     updated_at: new Date(),
   };
 
-  if (machineData.is_active === true) {
+  if (isActivating) {
     processedData.activated_at = new Date();
     processedData.deactivated_at = null;
-  } else if (machineData.is_active === false) {
+  } else if (isDeactivating) {
     processedData.deactivated_at = new Date();
   }
 
