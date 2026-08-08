@@ -157,10 +157,10 @@ export async function updateAutoconerMachine(id, machineData) {
   const changedKeys = Object.keys(processedData).filter(key => processedData[key] !== existing[key]);
   const isStatusOnly = changedKeys.every(key => ['is_active', 'activated_at', 'deactivated_at'].includes(key));
   if (isStatusOnly) {
-    if (processedData.is_active === true) {
+    if (processedData.is_active === true && existing.is_active !== true) {
       processedData.activated_at = new Date();
       processedData.deactivated_at = null;
-    } else if (processedData.is_active === false) {
+    } else if (processedData.is_active === false && existing.is_active !== false) {
       processedData.deactivated_at = new Date();
     }
     return prisma.autoconer_machines.update({ where: { id }, data: processedData });
