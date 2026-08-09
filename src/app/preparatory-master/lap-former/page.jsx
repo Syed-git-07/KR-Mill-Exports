@@ -8,12 +8,11 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import LapFormerForm from '@/components/modules/preparatory-master/LapFormerForm';
 import {
-  getLapFormerMachinesAction,
+  getLapFormerPageDataAction,
   createLapFormerMachineAction,
   updateLapFormerMachineAction,
   deleteLapFormerMachineAction,
-  searchLapFormerMachinesAction,
-  getLapFormerCountOptionsAction
+  searchLapFormerMachinesAction
 } from '@/app/actions/lap-former';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
@@ -52,21 +51,16 @@ export default function LapFormerPage() {
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getLapFormerMachinesAction(),
-        getLapFormerCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
-      }
+      const result = await getLapFormerPageDataAction();
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
       // Format data for display
-      const formattedData = (result.data || []).map(machine => ({
+      setCountOptions(result.data?.countOptions || []);
+
+      const formattedData = (result.data?.machines || []).map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',

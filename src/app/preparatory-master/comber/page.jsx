@@ -8,12 +8,11 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import ComberMachineForm from '@/components/modules/preparatory-master/ComberMachineForm';
 import {
-  getComberMachinesAction,
+  getComberMachinePageDataAction,
   createComberMachineAction,
   updateComberMachineAction,
   deleteComberMachineAction,
-  searchComberMachinesAction,
-  getComberCountOptionsAction
+  searchComberMachinesAction
 } from '@/app/actions/comber-machine';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
@@ -53,20 +52,15 @@ export default function ComberMachinePage() {
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getComberMachinesAction(),
-        getComberCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
-      }
+      const result = await getComberMachinePageDataAction();
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
-      const formattedData = (result.data || []).map(machine => ({
+      setCountOptions(result.data?.countOptions || []);
+
+      const formattedData = (result.data?.machines || []).map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',

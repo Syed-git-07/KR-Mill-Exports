@@ -28,6 +28,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
+import DeferredMount from '@/components/common/DeferredMount'
 import { CalendarIcon, Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
@@ -687,6 +688,7 @@ function FinisherDrawingEntryContent() {
 
             <CardContent className="pt-4">
               <TabsContent value="production" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'production'}>
                 <FinisherDrawingProductionTab 
                   ref={productionTabRef}
                   headerId={headerId} 
@@ -698,9 +700,11 @@ function FinisherDrawingEntryContent() {
                   setupDraftEdits={sharedDrafts.setup}
                   stoppageDraftEdits={sharedDrafts.stoppage}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="stoppage" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'stoppage'}>
                 <FinisherDrawingStoppageTab 
                   ref={stoppageTabRef}
                   headerId={headerId}
@@ -712,9 +716,11 @@ function FinisherDrawingEntryContent() {
                   setupDraftEdits={sharedDrafts.setup}
                   productionDraftEdits={sharedDrafts.production}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="setup" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'setup'}>
                 <FinisherDrawingMachineSetupTab
                   ref={setupTabRef}
                   headerId={headerId}
@@ -724,6 +730,7 @@ function FinisherDrawingEntryContent() {
                   sharedDraftEdits={sharedDrafts.setup}
                   onSharedDraftEditsChange={handleSetupDraftsChange}
                 />
+                </DeferredMount>
               </TabsContent>
             </CardContent>
           </Tabs>

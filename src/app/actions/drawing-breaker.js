@@ -14,6 +14,27 @@ export async function getDrawingBreakerMachinesAction() {
   }
 }
 
+export async function getDrawingBreakerPageDataAction() {
+  try {
+    const [machinesResult, countOptionsResult] = await Promise.allSettled([
+      queries.getDrawingBreakerMachines(),
+      queries.getDrawingBreakerCountOptions()
+    ])
+
+    if (machinesResult.status === 'rejected') throw machinesResult.reason
+
+    return {
+      success: true,
+      data: serializeData({
+        machines: machinesResult.value,
+        countOptions: countOptionsResult.status === 'fulfilled' ? countOptionsResult.value : []
+      })
+    }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
 export async function createDrawingBreakerMachineAction(machineData) {
   try {
     const data = await queries.createDrawingBreakerMachine(machineData)

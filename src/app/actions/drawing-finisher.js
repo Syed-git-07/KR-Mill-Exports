@@ -4,11 +4,33 @@ import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/drawingFinisherQueries'
+import { getSpinningCountOptions } from '@/lib/queries/finisherDrawingEntryQueries'
 
 export async function getDrawingFinisherMachinesAction() {
   try {
     const data = await queries.getDrawingFinisherMachines()
     return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function getDrawingFinisherPageDataAction() {
+  try {
+    const [machinesResult, countOptionsResult] = await Promise.allSettled([
+      queries.getDrawingFinisherMachines(),
+      getSpinningCountOptions()
+    ])
+
+    if (machinesResult.status === 'rejected') throw machinesResult.reason
+
+    return {
+      success: true,
+      data: serializeData({
+        machines: machinesResult.value,
+        countOptions: countOptionsResult.status === 'fulfilled' ? countOptionsResult.value : []
+      })
+    }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }

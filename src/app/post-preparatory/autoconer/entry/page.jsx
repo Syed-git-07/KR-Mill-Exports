@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import Calendar from '@/components/common/HolidayAwareCalendar'
+import DeferredMount from '@/components/common/DeferredMount'
 import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
@@ -440,6 +441,7 @@ function AutoconerEntryContent() {
 
             <CardContent className="pt-4">
               <TabsContent value="production" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'production'}>
                 <AutoconerProductionTab 
                   ref={productionTabRef}
                   key={`prod-${refreshKey}`}
@@ -452,9 +454,11 @@ function AutoconerEntryContent() {
                   stoppageDraftEdits={sharedDrafts.stoppage}
                   setupDraftEdits={sharedDrafts.setup}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="stoppage" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'stoppage'}>
                 <AutoconerStoppageTab 
                   ref={stoppageTabRef}
                   key={`stop-${refreshKey}`}
@@ -467,9 +471,11 @@ function AutoconerEntryContent() {
                   productionDraftEdits={sharedDrafts.production}
                   setupDraftEdits={sharedDrafts.setup}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="setup" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'setup'}>
                 <AutoconerMachineSetupTab 
                   ref={setupTabRef}
                   key={`setup-${refreshKey}`} 
@@ -480,6 +486,7 @@ function AutoconerEntryContent() {
                   sharedDraftEdits={sharedDrafts.setup}
                   onSharedDraftEditsChange={handleSetupDraftsChange}
                 />
+                </DeferredMount>
               </TabsContent>
             </CardContent>
           </Tabs>

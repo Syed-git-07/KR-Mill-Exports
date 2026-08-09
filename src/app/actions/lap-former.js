@@ -23,6 +23,28 @@ export async function getLapFormerMachinesAction() {
   }
 }
 
+export async function getLapFormerPageDataAction() {
+  try {
+    const [machinesResult, countOptionsResult] = await Promise.allSettled([
+      getLapFormerMachines(),
+      getSpinningCountOptions()
+    ]);
+
+    if (machinesResult.status === 'rejected') throw machinesResult.reason;
+
+    return {
+      success: true,
+      data: serializeData({
+        machines: machinesResult.value,
+        countOptions: countOptionsResult.status === 'fulfilled' ? countOptionsResult.value : []
+      })
+    };
+  } catch (error) {
+    console.error('Get lap former page data error:', error);
+    return { success: false, error: safeActionError(error) };
+  }
+}
+
 export async function createLapFormerMachineAction(data) {
   try {
     const machine = await createLapFormerMachine(data);

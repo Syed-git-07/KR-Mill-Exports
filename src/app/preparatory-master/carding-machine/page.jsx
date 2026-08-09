@@ -8,12 +8,11 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import CardingMachineForm from '@/components/modules/preparatory-master/CardingMachineForm';
 import {
-  getCardingMachinesAction,
+  getCardingMachinePageDataAction,
   createCardingMachineAction,
   updateCardingMachineAction,
   deleteCardingMachineAction,
-  searchCardingMachinesAction,
-  getCardingCountOptionsAction
+  searchCardingMachinesAction
 } from '@/app/actions/carding-machine';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
@@ -51,20 +50,15 @@ export default function CardingMachinePage() {
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getCardingMachinesAction(),
-        getCardingCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
-      }
+      const result = await getCardingMachinePageDataAction();
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
-      const formattedData = (result.data || []).map(machine => ({
+      setCountOptions(result.data?.countOptions || []);
+
+      const formattedData = (result.data?.machines || []).map(machine => ({
         ...machine,
         mixing_display: machine.prodn_mixing || '-',
         speed: machine.speed ?? 0

@@ -14,6 +14,27 @@ export async function getComberMachinesAction() {
   }
 }
 
+export async function getComberMachinePageDataAction() {
+  try {
+    const [machinesResult, countOptionsResult] = await Promise.allSettled([
+      queries.getComberMachines(),
+      queries.getComberCountOptions()
+    ])
+
+    if (machinesResult.status === 'rejected') throw machinesResult.reason
+
+    return {
+      success: true,
+      data: serializeData({
+        machines: machinesResult.value,
+        countOptions: countOptionsResult.status === 'fulfilled' ? countOptionsResult.value : []
+      })
+    }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
 export async function createComberMachineAction(machineData) {
   try {
     const data = await queries.createComberMachine(machineData)

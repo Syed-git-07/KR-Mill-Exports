@@ -28,6 +28,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
+import DeferredMount from '@/components/common/DeferredMount'
 import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
@@ -663,6 +664,7 @@ function CardingEntryContent() {
 
             <CardContent className="pt-4">
               <TabsContent value="production" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'production'}>
                 <CardingProductionTab 
                   ref={productionTabRef}
                   key={`prod-${refreshKey}`}
@@ -676,9 +678,11 @@ function CardingEntryContent() {
                   setupDraftEdits={sharedDrafts.setup}
                   stoppageDraftEdits={sharedDrafts.stoppage}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="stoppage" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'stoppage'}>
                 <CardingStoppageTab 
                   ref={stoppageTabRef}
                   key={`stop-${refreshKey}`}
@@ -692,9 +696,11 @@ function CardingEntryContent() {
                   productionDraftEdits={sharedDrafts.production}
                   setupDraftEdits={sharedDrafts.setup}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="setup" className="m-0 data-[state=inactive]:hidden" forceMount>
+                <DeferredMount active={activeTab === 'setup'}>
                 <CardingMachineSetupTab 
                   ref={setupTabRef}
                   key={`setup-${refreshKey}`} 
@@ -705,6 +711,7 @@ function CardingEntryContent() {
                   sharedDraftEdits={sharedDrafts.setup}
                   onSharedDraftEditsChange={handleSetupDraftsChange}
                 />
+                </DeferredMount>
               </TabsContent>
             </CardContent>
           </Tabs>

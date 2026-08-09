@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import Calendar from '@/components/common/HolidayAwareCalendar'
+import DeferredMount from '@/components/common/DeferredMount'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -548,6 +549,7 @@ function SimplexEntryContent() {
 
             <CardContent className="pt-4">
               <TabsContent value="production" forceMount className={cn('m-0', activeTab !== 'production' && 'hidden')}>
+                <DeferredMount active={activeTab === 'production'}>
                 <SimplexProductionTab 
                   ref={productionTabRef}
                   headerId={headerId}
@@ -558,9 +560,11 @@ function SimplexEntryContent() {
                   stoppageDraftEdits={sharedDrafts.stoppage}
                   setupDraftEdits={sharedDrafts.setup}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="stoppage" forceMount className={cn('m-0', activeTab !== 'stoppage' && 'hidden')}>
+                <DeferredMount active={activeTab === 'stoppage'}>
                 <SimplexStoppageTab 
                   ref={stoppageTabRef}
                   headerId={headerId}
@@ -571,9 +575,11 @@ function SimplexEntryContent() {
                   productionDraftEdits={sharedDrafts.production}
                   setupDraftEdits={sharedDrafts.setup}
                 />
+                </DeferredMount>
               </TabsContent>
 
               <TabsContent value="setup" forceMount className={cn('m-0', activeTab !== 'setup' && 'hidden')}>
+                <DeferredMount active={activeTab === 'setup'}>
                 <SimplexMachineSetupTab 
                   ref={setupTabRef}
                   headerId={headerId}
@@ -582,6 +588,7 @@ function SimplexEntryContent() {
                   sharedDraftEdits={sharedDrafts.setup}
                   onSharedDraftEditsChange={setSetupDraftEdits}
                 />
+                </DeferredMount>
               </TabsContent>
             </CardContent>
           </Tabs>

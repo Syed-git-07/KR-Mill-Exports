@@ -8,13 +8,12 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import DrawingFinisherForm from '@/components/modules/preparatory-master/DrawingFinisherForm';
 import {
-  getDrawingFinisherMachinesAction,
+  getDrawingFinisherPageDataAction,
   createDrawingFinisherMachineAction,
   updateDrawingFinisherMachineAction,
   deleteDrawingFinisherMachineAction,
   searchDrawingFinisherMachinesAction
 } from '@/app/actions/drawing-finisher';
-import { getSpinningCountOptionsAction } from '@/app/actions/finisher-drawing-entry';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
 export default function DrawingFinisherPage() {
@@ -52,21 +51,16 @@ export default function DrawingFinisherPage() {
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getDrawingFinisherMachinesAction(),
-        getSpinningCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
-      }
+      const result = await getDrawingFinisherPageDataAction();
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
       // Format data for display
-      const formattedData = (result.data || []).map(machine => ({
+      setCountOptions(result.data?.countOptions || []);
+
+      const formattedData = (result.data?.machines || []).map(machine => ({
         ...machine,
         prodn_mixing: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',
