@@ -15,6 +15,27 @@ export async function getCardingMachinesAction() {
   }
 }
 
+export async function getCardingMachinePageDataAction() {
+  try {
+    const [machinesResult, countOptionsResult] = await Promise.allSettled([
+      queries.getCardingMachines(),
+      queries.getCardingCountOptions()
+    ])
+
+    if (machinesResult.status === 'rejected') throw machinesResult.reason
+
+    return {
+      success: true,
+      data: serializeData({
+        machines: machinesResult.value,
+        countOptions: countOptionsResult.status === 'fulfilled' ? countOptionsResult.value : []
+      })
+    }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
 export async function createCardingMachineAction(machineData) {
   try {
     const data = await queries.createCardingMachine(machineData)

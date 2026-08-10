@@ -8,12 +8,11 @@ import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import SimplexMachineForm from '@/components/modules/preparatory-master/SimplexMachineForm';
 import {
-  getSimplexMachinesAction,
+  getSimplexMachinePageDataAction,
   createSimplexMachineAction,
   updateSimplexMachineAction,
   deleteSimplexMachineAction,
-  searchSimplexMachinesAction,
-  getSimplexCountOptionsAction
+  searchSimplexMachinesAction
 } from '@/app/actions/simplex-machine';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
@@ -55,20 +54,15 @@ export default function SimplexMachinePage() {
   const loadMachines = async () => {
     try {
       setLoading(true);
-      const [result, countRes] = await Promise.all([
-        getSimplexMachinesAction(),
-        getSimplexCountOptionsAction()
-      ]);
-      
-      if (countRes?.success) {
-        setCountOptions(countRes.data || []);
-      }
+      const result = await getSimplexMachinePageDataAction();
       
       if (!result.success) {
         throw new Error(result.error);
       }
       
-      const formattedData = (result.data || []).map(machine => ({
+      setCountOptions(result.data?.countOptions || []);
+
+      const formattedData = (result.data?.machines || []).map(machine => ({
         ...machine,
         mixing_display: machine.prodn_mixing || '-',
         make_name: machine.make_name || '-',

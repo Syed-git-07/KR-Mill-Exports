@@ -14,6 +14,27 @@ export async function getSimplexMachinesAction() {
   }
 }
 
+export async function getSimplexMachinePageDataAction() {
+  try {
+    const [machinesResult, countOptionsResult] = await Promise.allSettled([
+      queries.getSimplexMachines(),
+      queries.getSimplexCountOptions()
+    ])
+
+    if (machinesResult.status === 'rejected') throw machinesResult.reason
+
+    return {
+      success: true,
+      data: serializeData({
+        machines: machinesResult.value,
+        countOptions: countOptionsResult.status === 'fulfilled' ? countOptionsResult.value : []
+      })
+    }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
 export async function createSimplexMachineAction(machineData) {
   try {
     const data = await queries.createSimplexMachine(machineData)
