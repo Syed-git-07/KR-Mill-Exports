@@ -1,24 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { ChevronDown, X, Check } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 
 /**
- * StoppageAutocomplete — modal stoppage picker with keyboard-first workflow.
- * - Trigger button shows selected stoppage full name.
- * - Clicking opens modal with search input.
- * - Typing any letter while focused opens modal and seeds search.
- * - Modal shows stoppage name + head/category.
- * - Enter confirms the highlighted option and closes the modal.
- * - X button clears selection.
+ * Searchable stoppage selector used by every preparatory and post-preparatory
+ * stoppage entry. Selection still returns the existing stoppage id; typing is
+ * only used to filter the available reasons.
  */
 export default function StoppageAutocomplete({
   value = '',
@@ -26,7 +15,7 @@ export default function StoppageAutocomplete({
   reasons = [],
   onSelect,
   onClear,
-  placeholder = 'Select stoppage...',
+  placeholder = 'Enter stoppage',
   className = '',
   cleanCell = false,
   editingHighlight = false,
@@ -36,221 +25,209 @@ export default function StoppageAutocomplete({
   'data-row': dataRow,
   'data-col': dataCol
 }) {
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalSearch, setModalSearch] = useState('')
-  const [modalHighlightedIndex, setModalHighlightedIndex] = useState(-1)
-  const triggerRef = useRef(null)
-  const modalSearchRef = useRef(null)
-  const modalHighlightedRef = useRef(null)
-
-  const modalFiltered = modalSearch.trim()
-    ? reasons.filter(r => {
-        const head = r.stoppage_head_name || r.category || ''
-        const term = modalSearch.toLowerCase()
-        return (
-          r.stoppage_name?.toLowerCase().includes(term) ||
-          r.short_code?.toLowerCase().includes(term) ||
-          head.toLowerCase().includes(term)
-        )
-      })
-    : reasons
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState(displayValue || '')
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const containerRef = useRef(null)
+  const inputRef = useRef(null)
+  const highlightedRef = useRef(null)
 
   useEffect(() => {
-    modalHighlightedRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [modalHighlightedIndex])
+    if (!open) setQuery(displayValue || '')
+  }, [displayValue, open])
+
+  const filteredReasons = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    if (!term) return reasons
+
+    return reasons.filter((reason) => {
+      const head = reason.stoppage_head_name || reason.category || ''
+      return (
+        reason.stoppage_name?.toLowerCase().includes(term) ||
+        reason.short_code?.toLowerCase().includes(term) ||
+        head.toLowerCase().includes(term)
+      )
+    })
+  }, [query, reasons])
 
   useEffect(() => {
-    if (!modalOpen) return
-    if (modalFiltered.length > 0) {
-      setModalHighlightedIndex(0)
-    } else {
-      setModalHighlightedIndex(-1)
+    setHighlightedIndex(open && query.trim() && filteredReasons.length ? 0 : -1)
+  }, [open, query, filteredReasons.length])
+
+  useEffect(() => {
+    highlightedRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIndex])
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    const handleOutsidePointer = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpen(false)
+        setQuery(displayValue || '')
+      }
     }
-  }, [modalOpen, modalSearch, modalFiltered.length])
 
-  const confirmItem = useCallback((reason) => {
+    document.addEventListener('mousedown', handleOutsidePointer)
+    return () => document.removeEventListener('mousedown', handleOutsidePointer)
+  }, [open, displayValue])
+
+  const selectReason = useCallback((reason) => {
     onSelect?.(reason.id, reason)
-    setModalOpen(false)
-    setModalSearch('')
-    setModalHighlightedIndex(-1)
+    setQuery(reason.stoppage_name || '')
+    setOpen(false)
+    setHighlightedIndex(-1)
   }, [onSelect])
 
-  const openSearchModal = useCallback((initial = '') => {
-    setModalSearch(initial)
-    setModalHighlightedIndex(-1)
-    setModalOpen(true)
-    setTimeout(() => {
-      modalSearchRef.current?.focus()
-      if (initial) modalSearchRef.current?.setSelectionRange(initial.length, initial.length)
-    }, 20)
-  }, [])
+  const handleChange = (event) => {
+    const nextQuery = event.target.value
+    setQuery(nextQuery)
+    // Keep the editing state active when the final character is removed so
+    // the previous selected name is not restored by the display-value sync.
+    setOpen(true)
+    if (nextQuery.length === 0 && value) onClear?.()
+  }
 
-  const handleClosedStateKeyDown = useCallback((e) => {
+  const handleKeyDown = (event) => {
     if (disabled) return
-    if (!modalOpen && /^[a-zA-Z]$/.test(e.key)) {
-      e.preventDefault()
-      openSearchModal(e.key)
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      if (!open) setOpen(true)
+      setHighlightedIndex((previous) => Math.min(previous + 1, filteredReasons.length - 1))
       return
     }
 
-    if (!modalOpen) {
-      if (e.key === 'Enter') {
-        e.preventDefault()
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlightedIndex((previous) => Math.max(previous - 1, 0))
+      return
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (open && highlightedIndex >= 0 && filteredReasons[highlightedIndex]) {
+        selectReason(filteredReasons[highlightedIndex])
+      } else if (!open) {
         onEnterNavigation?.()
       }
+      return
     }
-  }, [modalOpen, openSearchModal, disabled, onEnterNavigation])
 
-  const handleModalKeyDown = useCallback((e) => {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setModalHighlightedIndex(prev => Math.min(prev + 1, modalFiltered.length - 1))
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setModalHighlightedIndex(prev => Math.max(prev - 1, 0))
-        break
-      case 'Enter':
-        e.preventDefault()
-        if (modalHighlightedIndex >= 0 && modalHighlightedIndex < modalFiltered.length) {
-          confirmItem(modalFiltered[modalHighlightedIndex])
-        }
-        break
-      case 'Escape':
-        e.preventDefault()
-        setModalOpen(false)
-        setModalSearch('')
-        setModalHighlightedIndex(-1)
-        setTimeout(() => triggerRef.current?.focus(), 0)
-        break
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setOpen(false)
+      setQuery(displayValue || '')
     }
-  }, [modalFiltered, modalHighlightedIndex, confirmItem])
+  }
+
+  const clearSelection = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setQuery('')
+    setOpen(false)
+    onClear?.()
+    inputRef.current?.focus()
+  }
 
   return (
     <div
+      ref={containerRef}
       className="relative"
       data-row={dataRow}
       data-col={dataCol}
       data-autocomplete="stoppage"
-      onKeyDown={handleClosedStateKeyDown}
     >
-      {/* Trigger button */}
       <div className={cn(
         'flex items-center border border-gray-300 rounded bg-white',
         compact ? 'h-6' : 'h-7',
         cleanCell && 'h-full rounded-none border-0 shadow-none bg-transparent',
         className
       )}>
-        <button
-          ref={triggerRef}
-          type="button"
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
           disabled={disabled}
-          onClick={() => openSearchModal()}
+          placeholder={placeholder}
+          autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          onChange={handleChange}
+          onFocus={(event) => event.currentTarget.select()}
+          onKeyDown={handleKeyDown}
           className={cn(
-            'group flex-1 min-w-0 text-left px-2 flex items-center justify-between overflow-hidden',
-            'focus:outline-none focus:ring-2 focus:ring-blue-500 rounded',
+            'flex-1 min-w-0 bg-transparent px-2 text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded',
             cleanCell && 'h-full rounded-none focus:ring-0',
-            editingHighlight && 'focus:bg-orange-500 focus:text-white',
+            editingHighlight && 'focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100',
             'disabled:opacity-50 disabled:cursor-not-allowed',
             cleanCell ? 'text-xs' : (compact ? 'text-xs h-6' : 'text-xs h-7')
           )}
-        >
-          <span
-            className={cn(
-              'truncate',
-              !value ? 'text-gray-400' : 'text-gray-900',
-              editingHighlight && 'group-focus:text-white'
-            )}
-            title={value ? (displayValue || '') : ''}
-          >
-            {value ? (displayValue || placeholder) : placeholder}
-          </span>
-          <ChevronDown className={cn('h-3 w-3 text-gray-400 shrink-0 ml-1', editingHighlight && 'group-focus:text-white')} />
-        </button>
-        {value && !disabled && (
+        />
+
+        {value && !disabled ? (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onClear?.() }}
+            onClick={clearSelection}
             className="px-1 text-gray-400 hover:text-red-500 focus:outline-none"
             tabIndex={-1}
+            aria-label="Clear stoppage"
           >
             <X className="h-3 w-3" />
           </button>
+        ) : (
+          <ChevronDown className="h-3 w-3 text-gray-400 shrink-0 mr-1" />
         )}
       </div>
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-xl w-[95vw] p-0 overflow-hidden">
-          <DialogHeader className="px-4 pt-4 pb-2 border-b">
-            <DialogTitle>Select Stoppage</DialogTitle>
-          </DialogHeader>
+      {open && query.length > 0 && (
+        <div
+          role="listbox"
+          className="absolute z-50 mt-1 w-max min-w-full max-w-[28rem] max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+        >
+          {filteredReasons.length === 0 ? (
+            <div className="px-3 py-3 text-center text-sm text-gray-500">No stoppage found</div>
+          ) : filteredReasons.map((reason, index) => {
+            const isHighlighted = highlightedIndex === index
+            const isSelected = String(value || '') === String(reason.id)
+            const head = reason.stoppage_head_name || reason.category || 'General'
 
-          <div className="p-4 border-b">
-            <Input
-              ref={modalSearchRef}
-              value={modalSearch}
-              onChange={(e) => setModalSearch(e.target.value)}
-              onKeyDown={handleModalKeyDown}
-              placeholder="Search stoppage name or head..."
-              autoComplete="off"
-            />
-          </div>
-
-          <div className="max-h-80 overflow-y-auto">
-            {modalFiltered.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-sm text-gray-500">No stoppage found</p>
-              </div>
-            ) : (
-              <div className="py-1">
-                {modalFiltered.map((reason, index) => {
-                  const isHighlighted = modalHighlightedIndex === index
-                  const head = reason.stoppage_head_name || reason.category || 'General'
-                  return (
-                    <div
-                      key={reason.id}
-                      ref={isHighlighted ? modalHighlightedRef : null}
-                      onClick={() => confirmItem(reason)}
-                      onMouseEnter={() => setModalHighlightedIndex(index)}
-                      className={cn(
-                        'px-3 py-2 cursor-pointer flex items-start select-none',
-                        isHighlighted ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-900'
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          'mr-2 h-4 w-4 mt-0.5 shrink-0',
-                          String(value || '') === String(reason.id)
-                            ? isHighlighted ? 'opacity-100 text-white' : 'opacity-100 text-blue-600'
-                            : 'opacity-0'
-                        )}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="grid grid-cols-[1fr_auto] items-center gap-3 min-w-0">
-                          <span className="font-medium text-sm truncate">{reason.stoppage_name}</span>
-                          <span className={cn('text-xs font-semibold truncate', isHighlighted ? 'text-blue-100' : 'text-gray-500')}>
-                            {head}
-                          </span>
-                        </div>
-                        {reason.short_code && (
-                          <div className={cn('text-xs truncate', isHighlighted ? 'text-blue-100' : 'text-gray-500')}>
-                            {reason.short_code}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-              Click to browse, or type to search. Press Enter to select.
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+            return (
+              <button
+                key={reason.id}
+                ref={isHighlighted ? highlightedRef : null}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectReason(reason)}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={cn(
+                  'flex w-full items-start px-3 py-2 text-left select-none',
+                  isHighlighted ? 'bg-blue-600 text-white' : 'text-gray-900 hover:bg-gray-100'
+                )}
+              >
+                <Check className={cn(
+                  'mr-2 mt-0.5 h-4 w-4 shrink-0',
+                  isSelected ? (isHighlighted ? 'text-white opacity-100' : 'text-blue-600 opacity-100') : 'opacity-0'
+                )} />
+                <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                  <span className="truncate text-sm font-medium">{reason.stoppage_name}</span>
+                  <span className={cn('truncate text-xs font-semibold', isHighlighted ? 'text-blue-100' : 'text-gray-500')}>
+                    {head}
+                  </span>
+                  {reason.short_code && (
+                    <span className={cn('col-span-2 truncate text-xs', isHighlighted ? 'text-blue-100' : 'text-gray-500')}>
+                      {reason.short_code}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
