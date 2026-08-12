@@ -13,7 +13,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { Loader2, RefreshCw, Plus, Trash2, Edit, Search, X } from 'lucide-react'
+import { Loader2, Plus, Trash2, Edit, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EnterSelect from '@/components/ui/enter-select'
@@ -465,10 +465,6 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
         </div>
       </div>
 

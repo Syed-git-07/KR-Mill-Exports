@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
@@ -593,10 +593,6 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Loader2, Plus, Trash2, Edit, RefreshCw } from 'lucide-react'
+import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 
@@ -483,10 +483,6 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
               )}
             </div>
             <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleRefreshClick}>
-                <RefreshCw className="h-4 w-4 mr-1" />
-                Refresh
-              </Button>
             </div>
           </div>
 

@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Loader2, RefreshCw, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Label } from "@/components/ui/label"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -617,10 +617,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
           {setupData.length} machines configured
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
         </div>
       </div>
 

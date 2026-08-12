@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -544,10 +544,6 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
           {stoppageData.length} machines | Shift Time: {effectiveTotalTime} mins | Reasons: {stoppageReasons.length}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
         </div>
       </div>
 
