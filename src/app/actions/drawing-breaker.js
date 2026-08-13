@@ -1,11 +1,14 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/drawingBreakerQueries'
 
 export async function getDrawingBreakerMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getDrawingBreakerMachines()
     return { success: true, data: serializeData(data) }
@@ -15,6 +18,7 @@ export async function getDrawingBreakerMachinesAction() {
 }
 
 export async function getDrawingBreakerPageDataAction() {
+  await requireUser()
   try {
     const [machinesResult, countOptionsResult] = await Promise.allSettled([
       queries.getDrawingBreakerMachines(),
@@ -36,6 +40,7 @@ export async function getDrawingBreakerPageDataAction() {
 }
 
 export async function createDrawingBreakerMachineAction(machineData) {
+  await requireUser()
   try {
     const data = await queries.createDrawingBreakerMachine(machineData)
     return { success: true, data: serializeData(data) }
@@ -45,6 +50,7 @@ export async function createDrawingBreakerMachineAction(machineData) {
 }
 
 export async function updateDrawingBreakerMachineAction(id, machineData) {
+  await requireUser()
   try {
     const data = await queries.updateDrawingBreakerMachine(id, machineData)
     return { success: true, data: serializeData(data) }
@@ -54,6 +60,7 @@ export async function updateDrawingBreakerMachineAction(id, machineData) {
 }
 
 export async function deleteDrawingBreakerMachineAction(id) {
+  await requireUser()
   try {
     const data = await queries.deleteDrawingBreakerMachine(id)
     return { success: true, data: serializeData(data) }
@@ -63,6 +70,7 @@ export async function deleteDrawingBreakerMachineAction(id) {
 }
 
 export async function searchDrawingBreakerMachinesAction(field, condition, value) {
+  await requireUser()
   try {
     const data = await queries.searchDrawingBreakerMachines(field, condition, value)
     return { success: true, data: serializeData(data) }
@@ -72,6 +80,7 @@ export async function searchDrawingBreakerMachinesAction(field, condition, value
 }
 
 export async function getDrawingBreakerCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getDrawingBreakerCountOptions()
     return { success: true, data: serializeData(data) }
@@ -81,6 +90,7 @@ export async function getDrawingBreakerCountOptionsAction() {
 }
 
 export async function lookupDrawingBreakerMachineByNoAction(machineNo) {
+  await requireUser()
   try {
     const data = await queries.lookupDrawingBreakerMachineByNo(machineNo)
     return { success: true, data: serializeData(data) }

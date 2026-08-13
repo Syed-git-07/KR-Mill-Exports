@@ -3,6 +3,7 @@ import { calculateSimplexProductionValues as calculateSimplexProductionValuesFro
 import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null
@@ -135,7 +136,7 @@ export async function updateSimplexProductionHeader(id, updates) {
   try {
     const data = await prisma.simplex_production_header.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {
@@ -531,7 +532,7 @@ export async function bulkUpdateSimplexProductionDetails(updates) {
   const promises = updates.map(({ id, ...data }) =>
     prisma.simplex_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   )
 

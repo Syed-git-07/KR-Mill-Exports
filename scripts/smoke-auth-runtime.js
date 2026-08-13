@@ -1,47 +1,82 @@
 const { spawn } = require("node:child_process");
 const assert = require("node:assert/strict");
 const { createHash, randomBytes, randomUUID } = require("node:crypto");
+const { existsSync, readFileSync } = require("node:fs");
 const { PrismaClient } = require("@prisma/client");
+const dotenv = require("dotenv");
 
 const port = 3105;
 const origin = `http://127.0.0.1:${port}`;
+const basePathCandidates = ["", process.env.NEXT_PUBLIC_BASE_PATH];
+for (const envFile of [".env.local", ".env"]) {
+  if (existsSync(envFile)) {
+    basePathCandidates.push(dotenv.parse(readFileSync(envFile)).NEXT_PUBLIC_BASE_PATH);
+  }
+}
+const normalizedBasePaths = [...new Set(basePathCandidates
+  .filter((value) => typeof value === "string")
+  .map((value) => value.trim().replace(/^['"]|['"]$/g, ""))
+  .map((value) => value && value !== "/" ? `/${value.replace(/^\/+|\/+$/g, "")}` : ""))];
+let activeBasePath = "";
 const prisma = new PrismaClient();
 let smokeUserId;
+let serverOutput = "";
 const server = spawn(
   process.execPath,
   ["node_modules/next/dist/bin/next", "start", "-p", String(port)],
   {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: "production", PORT: String(port) },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   },
 );
 
+for (const stream of [server.stdout, server.stderr]) {
+  stream.on("data", (chunk) => {
+    serverOutput = `${serverOutput}${chunk}`.slice(-8192);
+  });
+}
+
 async function waitUntilReady() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    try {
-      const response = await fetch(`${origin}/api/health`);
-      if (response.ok) return;
-    } catch {
-      // The listener is still starting.
+  // Larger production bundles can take longer than 15 seconds to become ready
+  // on the Windows server hardware used for deployment and CI validation.
+  let lastResponse = "no HTTP response";
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (const basePath of normalizedBasePaths) {
+      try {
+        const response = await fetch(`${origin}${basePath}/api/health`);
+        if (response.ok) {
+          activeBasePath = basePath;
+          return;
+        }
+        lastResponse = `${response.status} ${response.url}`;
+      } catch {
+        // The listener is still starting.
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error("Production server did not become ready.");
+  throw new Error(
+    `Production server did not become ready (exit ${server.exitCode ?? "pending"}; ${lastResponse}).\n${serverOutput}`,
+  );
+}
+
+function appUrl(path) {
+  return `${origin}${activeBasePath}${path}`;
 }
 
 async function main() {
   await waitUntilReady();
 
-  const health = await fetch(`${origin}/api/health`);
+  const health = await fetch(appUrl("/api/health"));
   assert.equal(health.status, 200);
 
-  const root = await fetch(`${origin}/`, { redirect: "manual" });
+  const root = await fetch(appUrl("/"), { redirect: "manual" });
   assert.equal(root.status, 303);
   assert.match(root.headers.get("location") || "", /\/login\?returnTo=%2F$/);
 
-  const login = await fetch(`${origin}/login`);
+  const login = await fetch(appUrl("/login"));
   assert.equal(login.status, 200);
   assert.match(login.headers.get("content-security-policy") || "", /default-src 'self'/);
   assert.equal(login.headers.get("x-frame-options"), "DENY");
@@ -49,7 +84,7 @@ async function main() {
   assert.doesNotMatch(await login.text(), /data-app-auth-header/);
 
   const report = await fetch(
-    `${origin}/reports/PREPARATORY%20STOPPAGE%20PERCENTAGE%20REPORT.pdf`,
+    appUrl("/reports/PREPARATORY%20STOPPAGE%20PERCENTAGE%20REPORT.pdf"),
     { redirect: "manual" },
   );
   assert.equal(report.status, 303);
@@ -65,7 +100,7 @@ async function main() {
     "/admin/security-logs/",
   ];
   for (const route of protectedRoutes) {
-    const response = await fetch(`${origin}${route}`, { redirect: "manual" });
+    const response = await fetch(appUrl(route), { redirect: "manual" });
     assert.equal(response.status, 303, `${route} must require login`);
     assert.match(response.headers.get("location") || "", /\/login\?returnTo=/);
   }
@@ -93,14 +128,14 @@ async function main() {
   });
   const authenticatedHeaders = { Cookie: `kr_session=${sessionToken}` };
 
-  const authenticatedHome = await fetch(`${origin}/`, {
+  const authenticatedHome = await fetch(appUrl("/"), {
     headers: authenticatedHeaders,
   });
   assert.equal(authenticatedHome.status, 200);
   const authenticatedHomeHtml = await authenticatedHome.text();
   assert.match(authenticatedHomeHtml, /data-app-auth-header/);
 
-  const authenticatedModule = await fetch(`${origin}/masters/`, {
+  const authenticatedModule = await fetch(appUrl("/masters/"), {
     headers: authenticatedHeaders,
   });
   assert.equal(authenticatedModule.status, 200);
@@ -108,7 +143,7 @@ async function main() {
   assert.match(authenticatedModuleHtml, /data-app-auth-header/);
 
   for (const route of ["/account/security/", "/admin/security-logs/"]) {
-    const response = await fetch(`${origin}${route}`, {
+    const response = await fetch(appUrl(route), {
       headers: authenticatedHeaders,
     });
     assert.equal(response.status, 200);
@@ -120,7 +155,7 @@ async function main() {
     where: { id: smokeSession.id },
     data: { revoked_at: new Date() },
   });
-  const afterLogoutModule = await fetch(`${origin}/masters/`, {
+  const afterLogoutModule = await fetch(appUrl("/masters/"), {
     redirect: "manual",
     headers: authenticatedHeaders,
   });
@@ -130,14 +165,14 @@ async function main() {
     /\/login\?returnTo=/,
   );
 
-  const forgedSession = await fetch(`${origin}/`, {
+  const forgedSession = await fetch(appUrl("/"), {
     redirect: "manual",
     headers: { Cookie: "kr_session=forged-token" },
   });
   assert.equal(forgedSession.status, 303);
   assert.match(forgedSession.headers.get("set-cookie") || "", /kr_session=/);
 
-  const crossOriginPost = await fetch(`${origin}/api/health`, {
+  const crossOriginPost = await fetch(appUrl("/api/health"), {
     method: "POST",
     headers: { Origin: "https://evil.example" },
   });

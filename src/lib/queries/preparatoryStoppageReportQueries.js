@@ -40,7 +40,12 @@ const CATEGORY_DISPLAY_NAMES = {
  * @param {Date} toDate - End date
  * @returns {Promise<Array>} Stoppage entries with details
  */
-async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
+async function getDepartmentStoppageData(
+  departmentCode,
+  fromDate,
+  toDate,
+  { stoppageDetails, stoppageHeads }
+) {
   const dept = Object.values(DEPARTMENTS).find(d => d.code === departmentCode)
   if (!dept) throw new Error(`Invalid department: ${departmentCode}`)
 
@@ -48,14 +53,28 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
   
   // Query the department's production headers within date range
   // Prisma will handle DATE comparison correctly with the normalized UTC dates
-  const headers = await prisma[`${tablePrefix}_production_header`].findMany({
-    where: {
-      entry_date: {
-        gte: fromDate,
-        lte: toDate
+  const [headers, shiftConfigs] = await Promise.all([
+    prisma[`${tablePrefix}_production_header`].findMany({
+      where: {
+        entry_date: {
+          gte: fromDate,
+          lte: toDate
+        }
+      },
+      select: {
+        id: true,
+        entry_date: true,
+        shift: true
       }
-    }
-  })
+    }),
+    prisma.shift_config.findMany({
+      where: {
+        department_code: departmentCode,
+        is_active: true
+      },
+      select: { shift: true, shift_time: true }
+    })
+  ])
 
   if (headers.length === 0) {
     // Return empty result structure
@@ -72,7 +91,8 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
       header_id: {
         in: headerIds
       }
-    }
+    },
+    select: { id: true, header_id: true }
   })
 
   if (details.length === 0) {
@@ -89,29 +109,23 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
       production_detail_id: {
         in: detailIds
       }
-    }
-  })
-
-  // Get shift config for this department  
-  const shiftConfigs = await prisma.shift_config.findMany({
-    where: {
-      department_code: departmentCode,
-      is_active: true
+    },
+    select: {
+      production_detail_id: true,
+      stoppage1_id: true,
+      stoppage1_time: true,
+      stoppage2_id: true,
+      stoppage2_time: true,
+      stoppage3_id: true,
+      stoppage3_time: true,
+      stoppage4_id: true,
+      stoppage4_time: true
     }
   })
 
   const shiftTimeMap = {}
   shiftConfigs.forEach(sc => {
     shiftTimeMap[sc.shift] = sc.shift_time
-  })
-
-  // Get all stoppage details and heads
-  const stoppageDetails = await prisma.stoppage_details.findMany({
-    where: { is_active: true }
-  })
-
-  const stoppageHeads = await prisma.stoppage_heads.findMany({
-    where: { is_active: true }
   })
 
   // Create lookups
@@ -329,10 +343,37 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
     departments: {}
   }
 
-  // Process each department
-  for (const [key, dept] of Object.entries(DEPARTMENTS)) {
+  const [stoppageDetails, stoppageHeads] = await Promise.all([
+    prisma.stoppage_details.findMany({
+      where: { is_active: true },
+      select: {
+        id: true,
+        stoppage_head_id: true,
+        stoppage_name: true,
+        short_code: true
+      }
+    }),
+    prisma.stoppage_heads.findMany({
+      where: { is_active: true },
+      select: { id: true, stoppage_head_name: true }
+    })
+  ])
+  const departments = Object.values(DEPARTMENTS)
+  const results = await Promise.allSettled(
+    departments.map((dept) =>
+      getDepartmentStoppageData(dept.code, fromDate, toDate, {
+        stoppageDetails,
+        stoppageHeads
+      })
+    )
+  )
+
+  for (let index = 0; index < departments.length; index += 1) {
+    const dept = departments[index]
+    const outcome = results[index]
     try {
-      const result = await getDepartmentStoppageData(dept.code, fromDate, toDate)
+      if (outcome.status === 'rejected') throw outcome.reason
+      const result = outcome.value
       const { records, shiftTimeTracker } = result
       const aggregated = aggregateStoppageData(records, shiftTimeTracker)
       const percentages = calculatePercentages(aggregated)
@@ -373,13 +414,19 @@ export async function getPreparatoryDateRange() {
   let minDate = null
   let maxDate = null
 
-  for (const table of tables) {
-    try {
-      const result = await prisma[`${table}_production_header`].aggregate({
+  const results = await Promise.allSettled(
+    tables.map((table) =>
+      prisma[`${table}_production_header`].aggregate({
         _min: { entry_date: true },
         _max: { entry_date: true }
       })
+    )
+  )
 
+  results.forEach((outcome, index) => {
+    try {
+      if (outcome.status === 'rejected') throw outcome.reason
+      const result = outcome.value
       if (result._min.entry_date && (!minDate || result._min.entry_date < minDate)) {
         minDate = result._min.entry_date
       }
@@ -387,9 +434,9 @@ export async function getPreparatoryDateRange() {
         maxDate = result._max.entry_date
       }
     } catch (error) {
-      console.error(`Error getting date range for ${table}:`, error)
+      console.error(`Error getting date range for ${tables[index]}:`, error)
     }
-  }
+  })
 
   return { minDate, maxDate }
 }

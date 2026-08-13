@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -13,6 +15,7 @@ import * as dateShiftQueries from '@/lib/queries/dateShiftListQueries'
  * @param {string} toDate - End date YYYY-MM-DD
  */
 export async function getDateShiftListAction(tableName, fromDate, toDate, shift = null) {
+  await requireUser()
   try {
     // Whitelist allowed table names for security
     const allowedTables = [

@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -12,6 +14,7 @@ import { assertWorkingDate } from '@/lib/holidayValidation'
 // ============================================
 
 export async function getFinisherDrawingShiftConfigAction(shift) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingShiftConfig(shift)
     return { success: true, data: serializeData(data) }
@@ -25,6 +28,7 @@ export async function getFinisherDrawingShiftConfigAction(shift) {
 // ============================================
 
 export async function getFinisherDrawingProductionByDateShiftAction(date, shift) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
@@ -34,6 +38,7 @@ export async function getFinisherDrawingProductionByDateShiftAction(date, shift)
 }
 
 export async function getOrCreateFinisherDrawingHeaderAction(date, shift, supervisorId, maisitryId) {
+  await requireUser()
   try {
     await assertWorkingDate(date)
     const data = await queries.getOrCreateFinisherDrawingHeader(date, shift, supervisorId, maisitryId)
@@ -44,6 +49,7 @@ export async function getOrCreateFinisherDrawingHeaderAction(date, shift, superv
 }
 
 export async function updateFinisherDrawingHeaderAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateFinisherDrawingHeader(id, updates)
     return { success: true, data: serializeData(data) }
@@ -57,6 +63,7 @@ export async function updateFinisherDrawingHeaderAction(id, updates) {
 // ============================================
 
 export async function getFinisherDrawingProductionDetailsAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
@@ -66,6 +73,7 @@ export async function getFinisherDrawingProductionDetailsAction(headerId) {
 }
 
 export async function getFinisherDrawingProductionWithSetupAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
@@ -75,6 +83,7 @@ export async function getFinisherDrawingProductionWithSetupAction(headerId) {
 }
 
 export async function initializeFinisherDrawingDetailsAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.initializeFinisherDrawingDetails(headerId)
     return { success: true, data: serializeData(data) }
@@ -84,6 +93,7 @@ export async function initializeFinisherDrawingDetailsAction(headerId) {
 }
 
 export async function syncFinisherDrawingNewMachinesToHeaderAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.syncFinisherDrawingNewMachinesToHeader(headerId)
     return { success: true, data: serializeData(data) }
@@ -93,6 +103,7 @@ export async function syncFinisherDrawingNewMachinesToHeaderAction(headerId) {
 }
 
 export async function updateFinisherDrawingDetailAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateFinisherDrawingDetail(id, updates)
     return { success: true, data: serializeData(data) }
@@ -102,6 +113,7 @@ export async function updateFinisherDrawingDetailAction(id, updates) {
 }
 
 export async function bulkUpdateFinisherDrawingDetailsAction(updates) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateFinisherDrawingDetails(updates)
     return { success: true, data: serializeData(data) }
@@ -115,6 +127,7 @@ export async function bulkUpdateFinisherDrawingDetailsAction(updates) {
 // ============================================
 
 export async function getFinisherDrawingStoppageEntriesAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
@@ -124,6 +137,7 @@ export async function getFinisherDrawingStoppageEntriesAction(headerId) {
 }
 
 export async function updateFinisherDrawingStoppageEntryAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateFinisherDrawingStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
@@ -133,6 +147,7 @@ export async function updateFinisherDrawingStoppageEntryAction(id, updates) {
 }
 
 export async function getStoppageDetailsAction() {
+  await requireUser()
   try {
     const data = await queries.getStoppageDetails()
     return { success: true, data: serializeData(data) }
@@ -142,6 +157,7 @@ export async function getStoppageDetailsAction() {
 }
 
 export async function applyFinisherDrawingFullStoppageAction(headerId, stoppageData) {
+  await requireUser()
   try {
     const { stoppageId, stoppageTime, slot } = stoppageData
     const result = await queries.applyFinisherDrawingFullStoppage(headerId, stoppageId, stoppageTime, slot)
@@ -152,6 +168,7 @@ export async function applyFinisherDrawingFullStoppageAction(headerId, stoppageD
 }
 
 export async function getFinisherDrawingStoppageReasonsAction() {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingStoppageReasons()
     return { success: true, data: serializeData(data) }
@@ -161,6 +178,7 @@ export async function getFinisherDrawingStoppageReasonsAction() {
 }
 
 export async function applyFinisherDrawingPartialStoppageAction(headerId, fromMachine, toMachine, stoppageId, stoppageTime) {
+  await requireUser()
   try {
     const result = await queries.applyFinisherDrawingPartialStoppage(headerId, fromMachine, toMachine, stoppageId, stoppageTime)
     return { 
@@ -182,6 +200,7 @@ export async function applyFinisherDrawingPartialStoppageAction(headerId, fromMa
 // ============================================
 
 export async function getFinisherDrawingMachineSetupsAction(shift = 1, headerId = null) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingMachineSetups(headerId)
     const shiftConfig = await queries.getFinisherDrawingShiftConfig(shift)
@@ -199,6 +218,7 @@ export async function getFinisherDrawingMachineSetupsAction(shift = 1, headerId 
 }
 
 export async function updateFinisherDrawingMachineSetupAction(machineId, updates) {
+  await requireUser()
   try {
     const data = await queries.updateFinisherDrawingMachineSetup(machineId, updates)
     return { success: true, data: serializeData(data) }
@@ -208,6 +228,7 @@ export async function updateFinisherDrawingMachineSetupAction(machineId, updates
 }
 
 export async function updateFinisherDrawingMachineSpeedAction(machineId, newSpeed) {
+  await requireUser()
   try {
     const data = await queries.updateFinisherDrawingMachineSpeed(machineId, newSpeed)
     return { success: true, data: serializeData(data) }
@@ -217,6 +238,7 @@ export async function updateFinisherDrawingMachineSpeedAction(machineId, newSpee
 }
 
 export async function getFinisherDrawingMixingOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingMixingOptions()
     return { success: true, data: data }
@@ -226,6 +248,7 @@ export async function getFinisherDrawingMixingOptionsAction() {
 }
 
 export async function getFinisherDrawingMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingMachines()
     return { success: true, data: serializeData(data) }
@@ -235,6 +258,7 @@ export async function getFinisherDrawingMachinesAction() {
 }
 
 export async function addFinisherDrawingMachineAction(machineData) {
+  await requireUser()
   try {
     const data = await queries.addFinisherDrawingMachine(machineData)
     return { success: true, data: serializeData(data) }
@@ -244,6 +268,7 @@ export async function addFinisherDrawingMachineAction(machineData) {
 }
 
 export async function removeFinisherDrawingMachineAction(machineId) {
+  await requireUser()
   try {
     const data = await queries.removeFinisherDrawingMachine(machineId)
     return { success: true, data: serializeData(data) }
@@ -253,6 +278,7 @@ export async function removeFinisherDrawingMachineAction(machineId) {
 }
 
 export async function bulkUpdateFinisherDrawingMachineMixingAction(machineIds, mixingValue, headerId = null) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateFinisherDrawingMachineMixing(machineIds, mixingValue, headerId)
     return { success: true, data: serializeData(data) }
@@ -266,6 +292,7 @@ export async function bulkUpdateFinisherDrawingMachineMixingAction(machineIds, m
 // ============================================
 
 export async function getSupervisorsAction() {
+  await requireUser()
   try {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
@@ -275,6 +302,7 @@ export async function getSupervisorsAction() {
 }
 
 export async function copyFinisherDrawingFromPreviousDateAction(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await requireUser()
   try {
     const data = await queries.copyFinisherDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
@@ -284,6 +312,7 @@ export async function copyFinisherDrawingFromPreviousDateAction(targetDate, targ
 }
 
 export async function getFinisherDrawingAvailableDatesAction(currentDate, shift) {
+  await requireUser()
   try {
     const data = await queries.getFinisherDrawingAvailableDates(currentDate, shift)
     return { success: true, data: serializeData(data) }
@@ -293,6 +322,7 @@ export async function getFinisherDrawingAvailableDatesAction(currentDate, shift)
 }
 
 export async function getSpinningCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getSpinningCountOptions()
     return { success: true, data: serializeData(data) }
@@ -302,6 +332,7 @@ export async function getSpinningCountOptionsAction() {
 }
 
 export async function lookupFinisherDrawingMachineByNoAction(machineNo) {
+  await requireUser()
   try {
     const data = await queries.lookupFinisherDrawingMachineByNo(machineNo)
     return { success: true, data: serializeData(data) }

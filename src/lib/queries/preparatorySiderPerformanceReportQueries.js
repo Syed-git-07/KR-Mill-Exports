@@ -53,6 +53,13 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
       employee_name: {
         not: null
       }
+    },
+    select: {
+      employee_name: true,
+      act_prodn: true,
+      [effiField]: true,
+      uti_percent: true,
+      waste_percent: true
     }
   })
 
@@ -119,9 +126,16 @@ export async function generatePreparatorySiderPerformanceReport(fromDate, toDate
 
   let totalEmployees = 0
 
-  // Process all departments
-  for (const dept of Object.values(DEPARTMENTS)) {
-    const employees = await getDepartmentEmployeePerformance(dept.code, fromDate, toDate)
+  const departments = Object.values(DEPARTMENTS)
+  const results = await Promise.all(
+    departments.map(async (dept) => ({
+      dept,
+      employees: await getDepartmentEmployeePerformance(dept.code, fromDate, toDate)
+    }))
+  )
+
+  // Process all departments in the original display order.
+  for (const { dept, employees } of results) {
 
     if (employees.length > 0) {
       reportData.departments[dept.name] = {

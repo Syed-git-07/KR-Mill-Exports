@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -11,6 +13,7 @@ import { assertWorkingDate } from '@/lib/holidayValidation'
 // ============================================
 
 export async function getLapFormerShiftConfigAction(shift) {
+  await requireUser()
   try {
     const shiftTime = await queries.getLapFormerShiftTime(shift)
     const defaultStoppage = await queries.getLapFormerDefaultStoppage(shift)
@@ -32,6 +35,7 @@ export async function getLapFormerShiftConfigAction(shift) {
 // ============================================
 
 export async function getLapFormerProductionByDateShiftAction(date, shift) {
+  await requireUser()
   try {
     const data = await queries.getLapFormerProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
@@ -41,6 +45,7 @@ export async function getLapFormerProductionByDateShiftAction(date, shift) {
 }
 
 export async function getOrCreateLapFormerHeaderAction(date, shift, supervisorId, maisitryId) {
+  await requireUser()
   try {
     await assertWorkingDate(date)
     const data = await queries.getOrCreateLapFormerHeader(date, shift, supervisorId, maisitryId)
@@ -51,6 +56,7 @@ export async function getOrCreateLapFormerHeaderAction(date, shift, supervisorId
 }
 
 export async function updateLapFormerHeaderAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateLapFormerHeader(id, updates)
     return { success: true, data: serializeData(data) }
@@ -64,6 +70,7 @@ export async function updateLapFormerHeaderAction(id, updates) {
 // ============================================
 
 export async function getLapFormerProductionDetailsAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getLapFormerProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
@@ -73,6 +80,7 @@ export async function getLapFormerProductionDetailsAction(headerId) {
 }
 
 export async function getLapFormerProductionWithSetupAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getLapFormerProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
@@ -82,6 +90,7 @@ export async function getLapFormerProductionWithSetupAction(headerId) {
 }
 
 export async function initializeLapFormerDetailsAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.initializeLapFormerDetails(headerId)
     return { success: true, data: serializeData(data) }
@@ -91,6 +100,7 @@ export async function initializeLapFormerDetailsAction(headerId) {
 }
 
 export async function syncNewMachinesToLapFormerHeaderAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.syncNewMachinesToLapFormerHeader(headerId)
     return { success: true, data: serializeData(data) }
@@ -100,6 +110,7 @@ export async function syncNewMachinesToLapFormerHeaderAction(headerId) {
 }
 
 export async function updateLapFormerDetailAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateLapFormerDetail(id, updates)
     return { success: true, data: serializeData(data) }
@@ -109,6 +120,7 @@ export async function updateLapFormerDetailAction(id, updates) {
 }
 
 export async function bulkUpdateLapFormerDetailsAction(updates) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateLapFormerDetails(updates)
     return { success: true, data: serializeData(data) }
@@ -122,6 +134,7 @@ export async function bulkUpdateLapFormerDetailsAction(updates) {
 // ============================================
 
 export async function getLapFormerStoppageEntriesAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getLapFormerStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
@@ -131,6 +144,7 @@ export async function getLapFormerStoppageEntriesAction(headerId) {
 }
 
 export async function updateLapFormerStoppageEntryAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateLapFormerStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
@@ -140,6 +154,7 @@ export async function updateLapFormerStoppageEntryAction(id, updates) {
 }
 
 export async function applyLapFormerFullStoppageAction(headerId, stoppageId, stoppageTime, slot = 1) {
+  await requireUser()
   try {
     const result = await queries.applyLapFormerFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return {
@@ -157,6 +172,7 @@ export async function applyLapFormerFullStoppageAction(headerId, stoppageId, sto
 }
 
 export async function applyLapFormerPartialStoppageAction(headerId, fromMachine, toMachine, stoppageId, stoppageTime) {
+  await requireUser()
   try {
     const result = await queries.applyLapFormerPartialStoppage(headerId, fromMachine, toMachine, stoppageId, stoppageTime)
     return {
@@ -174,6 +190,7 @@ export async function applyLapFormerPartialStoppageAction(headerId, fromMachine,
 }
 
 export async function getLapFormerStoppageReasonsAction() {
+  await requireUser()
   try {
     const data = await queries.getLapFormerStoppageReasons()
     return { success: true, data: serializeData(data) }
@@ -187,6 +204,7 @@ export async function getLapFormerStoppageReasonsAction() {
 // ============================================
 
 export async function getLapFormerMachineSetupsAction(headerId = null) {
+  await requireUser()
   try {
     const data = await queries.getLapFormerMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
@@ -196,6 +214,7 @@ export async function getLapFormerMachineSetupsAction(headerId = null) {
 }
 
 export async function updateLapFormerMachineSetupAction(machineId, updates) {
+  await requireUser()
   try {
     const data = await queries.updateLapFormerMachineSetup(machineId, updates)
     return { success: true, data: serializeData(data) }
@@ -205,6 +224,7 @@ export async function updateLapFormerMachineSetupAction(machineId, updates) {
 }
 
 export async function updateLapFormerMachineSpeedAction(machineId, newSpeed) {
+  await requireUser()
   try {
     const data = await queries.updateLapFormerMachineSpeed(machineId, newSpeed)
     return { success: true, data: serializeData(data) }
@@ -214,6 +234,7 @@ export async function updateLapFormerMachineSpeedAction(machineId, newSpeed) {
 }
 
 export async function getLapFormerMixingOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getLapFormerMixingOptions()
     return { success: true, data: serializeData(data) }
@@ -223,6 +244,7 @@ export async function getLapFormerMixingOptionsAction() {
 }
 
 export async function getLapFormerMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getActiveLapFormerMachines()
     return { success: true, data: serializeData(data) }
@@ -232,6 +254,7 @@ export async function getLapFormerMachinesAction() {
 }
 
 export async function addLapFormerMachineAction(machineData) {
+  await requireUser()
   try {
     const data = await queries.addLapFormerMachine(machineData)
     return { success: true, data: serializeData(data) }
@@ -241,6 +264,7 @@ export async function addLapFormerMachineAction(machineData) {
 }
 
 export async function removeLapFormerMachineAction(machineId) {
+  await requireUser()
   try {
     const data = await queries.removeLapFormerMachine(machineId)
     return { success: true, data: serializeData(data) }
@@ -250,6 +274,7 @@ export async function removeLapFormerMachineAction(machineId) {
 }
 
 export async function bulkUpdateLapFormerMachineMixingAction(machineIds, mixingValue, headerId = null) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateLapFormerMachineMixing(machineIds, mixingValue, headerId)
     return { success: true, data: serializeData(data) }
@@ -259,6 +284,7 @@ export async function bulkUpdateLapFormerMachineMixingAction(machineIds, mixingV
 }
 
 export async function getSpinningCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getSpinningCountOptions()
     return { success: true, data: serializeData(data) }
@@ -268,6 +294,7 @@ export async function getSpinningCountOptionsAction() {
 }
 
 export async function lookupLapFormerMachineByNoAction(machineNo) {
+  await requireUser()
   try {
     const data = await queries.lookupLapFormerMachineByNo(machineNo)
     return { success: true, data: data ? serializeData(data) : null }
@@ -281,6 +308,7 @@ export async function lookupLapFormerMachineByNoAction(machineNo) {
 // ============================================
 
 export async function getSupervisorsAction() {
+  await requireUser()
   try {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
@@ -290,6 +318,7 @@ export async function getSupervisorsAction() {
 }
 
 export async function copyLapFormerFromPreviousDateAction(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await requireUser()
   try {
     const data = await queries.copyLapFormerFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
@@ -299,6 +328,7 @@ export async function copyLapFormerFromPreviousDateAction(targetDate, targetShif
 }
 
 export async function getLapFormerAvailableDatesAction(currentDate, shift) {
+  await requireUser()
   try {
     const data = await queries.getLapFormerAvailableDates(currentDate, shift)
     return { success: true, data: serializeData(data) }
@@ -312,6 +342,7 @@ export async function getLapFormerAvailableDatesAction(currentDate, shift) {
 // ============================================
 
 export async function calculateLapFormerValuesAction(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null) {
+  await requireUser()
   try {
     const data = queries.calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed)
     return { success: true, data: serializeData(data) }

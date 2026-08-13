@@ -1,5 +1,7 @@
 'use server';
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import {
@@ -14,6 +16,7 @@ import {
 import { serializeData } from '@/lib/serialize';
 
 export async function getHOKEntriesAction() {
+  await requireUser()
   try {
     const data = await getHOKEntries();
     return { success: true, data: serializeData(data) };
@@ -24,6 +27,7 @@ export async function getHOKEntriesAction() {
 }
 
 export async function getHOKEntryByIdAction(hokId) {
+  await requireUser()
   try {
     const data = await getHOKEntryById(hokId);
     return { success: true, data: serializeData(data) };
@@ -34,6 +38,7 @@ export async function getHOKEntryByIdAction(hokId) {
 }
 
 export async function createBulkHOKEntriesAction(entriesData) {
+  await requireUser()
   try {
     const data = await createBulkHOKEntries(entriesData);
     return { success: true, data: serializeData(data) };
@@ -44,6 +49,7 @@ export async function createBulkHOKEntriesAction(entriesData) {
 }
 
 export async function updateHOKEntryAction(hokId, hokData) {
+  await requireUser()
   try {
     const data = await updateHOKEntry(hokId, hokData);
     return { success: true, data: serializeData(data) };
@@ -54,6 +60,7 @@ export async function updateHOKEntryAction(hokId, hokData) {
 }
 
 export async function deleteHOKEntryAction(hokId) {
+  await requireUser()
   try {
     await deleteHOKEntry(hokId);
     return { success: true };
@@ -64,6 +71,7 @@ export async function deleteHOKEntryAction(hokId) {
 }
 
 export async function searchHOKEntriesAction(searchParams) {
+  await requireUser()
   try {
     const data = await searchHOKEntries(searchParams);
     return { success: true, data: serializeData(data) };
@@ -74,6 +82,7 @@ export async function searchHOKEntriesAction(searchParams) {
 }
 
 export async function getDepartmentsForDropdownAction() {
+  await requireUser()
   try {
     const data = await getDepartmentsForDropdown();
     return { success: true, data: serializeData(data) };

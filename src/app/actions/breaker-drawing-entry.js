@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -11,6 +13,7 @@ import { assertWorkingDate } from '@/lib/holidayValidation'
 // ============================================
 
 export async function getBreakerDrawingShiftConfigAction(shift) {
+  await requireUser()
   try {
     const shiftTime = await queries.getBreakerDrawingShiftTime(shift)
     const defaultStoppage = await queries.getBreakerDrawingDefaultStoppage(shift)
@@ -32,6 +35,7 @@ export async function getBreakerDrawingShiftConfigAction(shift) {
 // ============================================
 
 export async function getBreakerDrawingProductionByDateShiftAction(date, shift) {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
@@ -41,6 +45,7 @@ export async function getBreakerDrawingProductionByDateShiftAction(date, shift) 
 }
 
 export async function getOrCreateBreakerDrawingHeaderAction(date, shift, supervisorId, maisitryId) {
+  await requireUser()
   try {
     await assertWorkingDate(date)
     const data = await queries.getOrCreateBreakerDrawingHeader(date, shift, supervisorId, maisitryId)
@@ -51,6 +56,7 @@ export async function getOrCreateBreakerDrawingHeaderAction(date, shift, supervi
 }
 
 export async function updateBreakerDrawingHeaderAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateBreakerDrawingHeader(id, updates)
     return { success: true, data: serializeData(data) }
@@ -64,6 +70,7 @@ export async function updateBreakerDrawingHeaderAction(id, updates) {
 // ============================================
 
 export async function getBreakerDrawingProductionDetailsAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingProductionDetails(headerId)
     return { success: true, data: serializeData(data) }
@@ -73,6 +80,7 @@ export async function getBreakerDrawingProductionDetailsAction(headerId) {
 }
 
 export async function getBreakerDrawingProductionWithSetupAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
@@ -82,6 +90,7 @@ export async function getBreakerDrawingProductionWithSetupAction(headerId) {
 }
 
 export async function initializeBreakerDrawingDetailsAction(headerId, shift = 1) {
+  await requireUser()
   try {
     const data = await queries.initializeBreakerDrawingDetails(headerId, shift)
     return { success: true, data: serializeData(data) }
@@ -91,6 +100,7 @@ export async function initializeBreakerDrawingDetailsAction(headerId, shift = 1)
 }
 
 export async function syncNewMachinesToHeaderAction(headerId, shift = 1) {
+  await requireUser()
   try {
     const data = await queries.syncNewMachinesToBreakerDrawingHeader(headerId, shift)
     return { success: true, data: serializeData(data) }
@@ -103,6 +113,7 @@ export async function syncNewMachinesToHeaderAction(headerId, shift = 1) {
 export const syncNewMachinesToBreakerDrawingHeaderAction = syncNewMachinesToHeaderAction
 
 export async function updateProductionDetailAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateBreakerDrawingDetail(id, updates)
     return { success: true, data: serializeData(data) }
@@ -119,6 +130,7 @@ export const updateBreakerDrawingDetailAction = updateProductionDetailAction
 // ============================================
 
 export async function getBreakerDrawingStoppageEntriesAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
@@ -128,6 +140,7 @@ export async function getBreakerDrawingStoppageEntriesAction(headerId) {
 }
 
 export async function updateStoppageEntryAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
@@ -137,6 +150,7 @@ export async function updateStoppageEntryAction(id, updates) {
 }
 
 export async function getBreakerDrawingStoppageReasonsAction() {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingStoppageReasons()
     return { success: true, data: serializeData(data) }
@@ -150,6 +164,7 @@ export async function getBreakerDrawingStoppageReasonsAction() {
 // ============================================
 
 export async function getBreakerDrawingMachineSetupsAction(shift = 1, headerId = null) {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingMachineSetups(headerId)
     // Get shift-based time values (await async function)
@@ -168,6 +183,7 @@ export async function getBreakerDrawingMachineSetupsAction(shift = 1, headerId =
 }
 
 export async function updateMachineSetupAction(machineId, updates) {
+  await requireUser()
   try {
     const data = await queries.updateMachineSetup(machineId, updates)
     return { success: true, data: serializeData(data) }
@@ -177,6 +193,7 @@ export async function updateMachineSetupAction(machineId, updates) {
 }
 
 export async function upsertMachineSetupAction(machineId, setupData) {
+  await requireUser()
   try {
     const data = await queries.upsertMachineSetup(machineId, setupData)
     return { success: true, data: serializeData(data) }
@@ -186,6 +203,7 @@ export async function upsertMachineSetupAction(machineId, setupData) {
 }
 
 export async function getCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getCountOptions()
     return { success: true, data: serializeData(data) }
@@ -195,6 +213,7 @@ export async function getCountOptionsAction() {
 }
 
 export async function addBreakerDrawingMachineAction(machineData) {
+  await requireUser()
   try {
     const data = await queries.addBreakerDrawingMachine(machineData)
     return { success: true, data: serializeData(data) }
@@ -204,6 +223,7 @@ export async function addBreakerDrawingMachineAction(machineData) {
 }
 
 export async function removeBreakerDrawingMachineAction(machineId) {
+  await requireUser()
   try {
     const data = await queries.removeBreakerDrawingMachine(machineId)
     return { success: true, data: serializeData(data) }
@@ -213,6 +233,7 @@ export async function removeBreakerDrawingMachineAction(machineId) {
 }
 
 export async function updateMachineCountAction(machineId, count) {
+  await requireUser()
   try {
     const data = await queries.updateMachineCount(machineId, count)
     return { success: true, data: serializeData(data) }
@@ -222,6 +243,7 @@ export async function updateMachineCountAction(machineId, count) {
 }
 
 export async function bulkUpdateMachineCountAction(machineIds, count) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateMachineCount(machineIds, count)
     return { success: true, data: serializeData(data) }
@@ -232,6 +254,7 @@ export async function bulkUpdateMachineCountAction(machineIds, count) {
 
 // Get mixing options
 export async function getMixingOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getMixingOptions()
     return { success: true, data: serializeData(data) }
@@ -242,6 +265,7 @@ export async function getMixingOptionsAction() {
 
 // Update machine mixing
 export async function updateBreakerDrawingMachineMixingAction(machineId, mixing, headerId = null) {
+  await requireUser()
   try {
     const data = await queries.updateBreakerDrawingMachineMixing(machineId, mixing, headerId)
     return { success: true, data: serializeData(data) }
@@ -252,6 +276,7 @@ export async function updateBreakerDrawingMachineMixingAction(machineId, mixing,
 
 // Bulk update machine mixing
 export async function bulkUpdateBreakerDrawingMachineMixingAction(machineIds, mixing, headerId = null) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateBreakerDrawingMachineMixing(machineIds, mixing, headerId)
     return { success: true, data: serializeData(data) }
@@ -265,6 +290,7 @@ export async function bulkUpdateBreakerDrawingMachineMixingAction(machineIds, mi
 // ============================================
 
 export async function getSupervisorsAction() {
+  await requireUser()
   try {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
@@ -274,6 +300,7 @@ export async function getSupervisorsAction() {
 }
 
 export async function copyBreakerDrawingFromPreviousDateAction(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await requireUser()
   try {
     const data = await queries.copyBreakerDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate)
     return { success: true, data: serializeData(data) }
@@ -283,6 +310,7 @@ export async function copyBreakerDrawingFromPreviousDateAction(targetDate, targe
 }
 
 export async function getBreakerDrawingAvailableDatesAction(currentDate, shift) {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingAvailableDates(currentDate, shift)
     return { success: true, data: serializeData(data) }
@@ -293,6 +321,7 @@ export async function getBreakerDrawingAvailableDatesAction(currentDate, shift) 
 
 // Get machines list
 export async function getBreakerDrawingMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getBreakerDrawingMachines()
     return { success: true, data: serializeData(data) }
@@ -303,6 +332,7 @@ export async function getBreakerDrawingMachinesAction() {
 
 // Apply full stoppage to all machines
 export async function applyBreakerDrawingFullStoppageAction(headerId, stoppageId, stoppageTime, slot) {
+  await requireUser()
   try {
     const data = await queries.applyBreakerDrawingFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: true, data: serializeData(data) }
@@ -313,6 +343,7 @@ export async function applyBreakerDrawingFullStoppageAction(headerId, stoppageId
 
 // Apply partial stoppage (with auto-slot allocation)
 export async function applyBreakerDrawingPartialStoppageAction(headerId, fromMachine, toMachine, stoppageId, stoppageTime) {
+  await requireUser()
   try {
     const data = await queries.applyBreakerDrawingPartialStoppage(headerId, fromMachine, toMachine, stoppageId, stoppageTime)
     return { success: true, data: serializeData(data) }

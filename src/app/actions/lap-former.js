@@ -1,5 +1,7 @@
 'use server';
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize';
@@ -14,6 +16,7 @@ import {
 } from '@/lib/queries/lapFormerQueries';
 
 export async function getLapFormerMachinesAction() {
+  await requireUser()
   try {
     const machines = await getLapFormerMachines();
     return { success: true, data: serializeData(machines) };
@@ -24,6 +27,7 @@ export async function getLapFormerMachinesAction() {
 }
 
 export async function getLapFormerPageDataAction() {
+  await requireUser()
   try {
     const [machinesResult, countOptionsResult] = await Promise.allSettled([
       getLapFormerMachines(),
@@ -46,6 +50,7 @@ export async function getLapFormerPageDataAction() {
 }
 
 export async function createLapFormerMachineAction(data) {
+  await requireUser()
   try {
     const machine = await createLapFormerMachine(data);
     return { success: true, data: serializeData(machine) };
@@ -56,6 +61,7 @@ export async function createLapFormerMachineAction(data) {
 }
 
 export async function updateLapFormerMachineAction(id, data) {
+  await requireUser()
   try {
     const machine = await updateLapFormerMachine(id, data);
     return { success: true, data: serializeData(machine) };
@@ -66,6 +72,7 @@ export async function updateLapFormerMachineAction(id, data) {
 }
 
 export async function deleteLapFormerMachineAction(id) {
+  await requireUser()
   try {
     await deleteLapFormerMachine(id);
     return { success: true };
@@ -76,6 +83,7 @@ export async function deleteLapFormerMachineAction(id) {
 }
 
 export async function searchLapFormerMachinesAction(field, condition, value) {
+  await requireUser()
   try {
     const machines = await searchLapFormerMachines(field, condition, value);
     return { success: true, data: serializeData(machines) };
@@ -86,6 +94,7 @@ export async function searchLapFormerMachinesAction(field, condition, value) {
 }
 
 export async function getActiveLapFormerMachinesAction() {
+  await requireUser()
   try {
     const machines = await getActiveLapFormerMachines();
     return { success: true, data: serializeData(machines) };
@@ -96,6 +105,7 @@ export async function getActiveLapFormerMachinesAction() {
 }
 
 export async function getLapFormerCountOptionsAction() {
+  await requireUser()
   try {
     const data = await getSpinningCountOptions();
     return { success: true, data: serializeData(data) };

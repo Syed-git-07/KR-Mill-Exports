@@ -9,6 +9,7 @@ import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '.
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -644,7 +645,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
 export async function updateFinisherDrawingDetail(id, updates) {
   try {
     // Remove any fields that shouldn't be updated
-    const { speed, machine, stoppage, ...cleanUpdates } = updates
+    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
     
     const data = await prisma.finisher_drawing_production_detail.update({
       where: { id },
@@ -662,7 +663,7 @@ export async function bulkUpdateFinisherDrawingDetails(updates) {
   const promises = updates.map(({ id, ...data }) =>
     prisma.finisher_drawing_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   )
 

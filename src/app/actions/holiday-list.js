@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -20,6 +22,7 @@ import {
 } from '@/lib/queries/holidayListQueries'
 
 export async function getCompaniesAction() {
+  await requireUser()
   try {
     const data = await getCompanies()
     return { success: true, data: serializeData(data) }
@@ -29,6 +32,7 @@ export async function getCompaniesAction() {
 }
 
 export async function getHolidayListsAction(companyId) {
+  await requireUser()
   try {
     const data = await getHolidayLists(companyId ? Number(companyId) : null)
     return { success: true, data: serializeData(data) }
@@ -42,6 +46,7 @@ export async function getHolidayListsAction(companyId) {
 }
 
 export async function searchHolidayListsAction(field, condition, value, companyId) {
+  await requireUser()
   try {
     const data = await searchHolidayLists(field, condition, value, companyId ? Number(companyId) : null)
     return { success: true, data: serializeData(data || []) }
@@ -51,6 +56,7 @@ export async function searchHolidayListsAction(field, condition, value, companyI
 }
 
 export async function createHolidayListAction(listData) {
+  await requireUser()
   try {
     const data = await createHolidayList(listData)
     return { success: true, data: serializeData(data) }
@@ -60,6 +66,7 @@ export async function createHolidayListAction(listData) {
 }
 
 export async function updateHolidayListAction(id, listData) {
+  await requireUser()
   try {
     const data = await updateHolidayList(id, listData)
     return { success: true, data: serializeData(data) }
@@ -69,6 +76,7 @@ export async function updateHolidayListAction(id, listData) {
 }
 
 export async function deleteHolidayListAction(id) {
+  await requireUser()
   try {
     const data = await deleteHolidayList(id)
     return { success: true, data }
@@ -78,6 +86,7 @@ export async function deleteHolidayListAction(id) {
 }
 
 export async function getHolidaysByListIdAction(holidayListId) {
+  await requireUser()
   try {
     const data = await getHolidaysByListId(Number(holidayListId))
     return { success: true, data: serializeData(data || []) }
@@ -87,6 +96,7 @@ export async function getHolidaysByListIdAction(holidayListId) {
 }
 
 export async function createHolidayAction(holidayData) {
+  await requireUser()
   try {
     const data = await createHoliday(holidayData)
     return { success: true, data: serializeData(data) }
@@ -96,6 +106,7 @@ export async function createHolidayAction(holidayData) {
 }
 
 export async function updateHolidayAction(id, holidayData) {
+  await requireUser()
   try {
     const data = await updateHoliday(id, holidayData)
     return { success: true, data: serializeData(data) }
@@ -105,6 +116,7 @@ export async function updateHolidayAction(id, holidayData) {
 }
 
 export async function deleteHolidayAction(id) {
+  await requireUser()
   try {
     const data = await deleteHoliday(id)
     return { success: true, data }
@@ -114,6 +126,7 @@ export async function deleteHolidayAction(id) {
 }
 
 export async function checkIsHolidayAction(dateString) {
+  await requireUser()
   try {
     const data = await isHoliday(dateString)
     return { success: true, isHoliday: !!data, holiday: data }
@@ -123,6 +136,7 @@ export async function checkIsHolidayAction(dateString) {
 }
 
 export async function getAllHolidayDatesAction() {
+  await requireUser()
   try {
     const data = await getAllHolidayDates()
     return { success: true, data: serializeData(data || []) }
@@ -132,6 +146,7 @@ export async function getAllHolidayDatesAction() {
 }
 
 export async function bulkCreateHolidaysAction(holidayListId, records) {
+  await requireUser()
   try {
     const insertedCount = await bulkCreateHolidays(holidayListId, records)
     return { success: true, count: insertedCount }

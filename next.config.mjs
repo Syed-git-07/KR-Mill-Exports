@@ -28,9 +28,6 @@ const nextConfig = {
   // Ensure trailing slashes for proper routing
   trailingSlash: true,
   
-  // Output as standalone for easier deployment
-  output: 'standalone',
-
   // Disable Next.js built-in CSS optimizer (lightningcss) to prevent false
   // warnings on Tailwind print: variant classes like .print\:hidden
   experimental: {

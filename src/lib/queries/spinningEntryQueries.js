@@ -3,6 +3,7 @@ import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { resolveProductionTime } from '../productionFormulaMath'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import {
   createSpinningOptionCheckError,
   normalizeSpinningEntryContext,
@@ -668,10 +669,11 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
 // Update production detail
 export async function updateSpinningProductionDetail(id, updates) {
   try {
+    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
     const data = await prisma.spinning_production_detail.update({
       where: { id },
       data: {
-        ...updates,
+        ...cleanUpdates,
         updated_at: new Date()
       }
     })
@@ -684,19 +686,17 @@ export async function updateSpinningProductionDetail(id, updates) {
 // Batch update production details
 export async function batchUpdateSpinningProductionDetails(updates) {
   try {
-    const results = []
-    for (const update of updates) {
+    const updatedAt = new Date()
+    return await prisma.$transaction(updates.map((update) => {
       const { id, ...data } = update
-      const result = await prisma.spinning_production_detail.update({
+      return prisma.spinning_production_detail.update({
         where: { id },
         data: {
-          ...data,
-          updated_at: new Date()
+          ...sanitizeProductionDetailUpdate(data),
+          updated_at: updatedAt
         }
       })
-      results.push(result)
-    }
-    return results
+    }))
   } catch (error) {
     throw error
   }

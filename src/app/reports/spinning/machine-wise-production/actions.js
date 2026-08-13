@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 const { getSpinningMachineWiseProductionReport } = require('./spinningMachineWiseProductionQueries')
@@ -10,6 +12,7 @@ const { getSpinningMachineWiseProductionReport } = require('./spinningMachineWis
  * @param {string} toDate    YYYY-MM-DD (optional, defaults to fromDate)
  */
 export async function fetchSpinningMachineWiseProductionReport(fromDate, toDate = null) {
+  await requireUser()
   try {
     const data = await getSpinningMachineWiseProductionReport(fromDate, toDate)
     return { success: true, data }

@@ -1,11 +1,14 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/simplexMachineQueries'
 
 export async function getSimplexMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getSimplexMachines()
     return { success: true, data: serializeData(data) }
@@ -15,6 +18,7 @@ export async function getSimplexMachinesAction() {
 }
 
 export async function getSimplexMachinePageDataAction() {
+  await requireUser()
   try {
     const [machinesResult, countOptionsResult] = await Promise.allSettled([
       queries.getSimplexMachines(),
@@ -36,6 +40,7 @@ export async function getSimplexMachinePageDataAction() {
 }
 
 export async function createSimplexMachineAction(machineData) {
+  await requireUser()
   try {
     const data = await queries.createSimplexMachine(machineData)
     return { success: true, data: serializeData(data) }
@@ -45,6 +50,7 @@ export async function createSimplexMachineAction(machineData) {
 }
 
 export async function updateSimplexMachineAction(id, machineData) {
+  await requireUser()
   try {
     const data = await queries.updateSimplexMachine(id, machineData)
     return { success: true, data: serializeData(data) }
@@ -54,6 +60,7 @@ export async function updateSimplexMachineAction(id, machineData) {
 }
 
 export async function deleteSimplexMachineAction(id) {
+  await requireUser()
   try {
     const data = await queries.deleteSimplexMachine(id)
     return { success: true, data: serializeData(data) }
@@ -63,6 +70,7 @@ export async function deleteSimplexMachineAction(id) {
 }
 
 export async function searchSimplexMachinesAction(field, condition, value) {
+  await requireUser()
   try {
     const data = await queries.searchSimplexMachines(field, condition, value)
     return { success: true, data: serializeData(data) }
@@ -72,6 +80,7 @@ export async function searchSimplexMachinesAction(field, condition, value) {
 }
 
 export async function getSimplexCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getSimplexCountOptions()
     return { success: true, data: serializeData(data) }

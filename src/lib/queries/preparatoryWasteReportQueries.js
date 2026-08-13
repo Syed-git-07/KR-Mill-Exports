@@ -139,13 +139,19 @@ export async function generatePreparatoryWasteReport(fromDate, toDate) {
   let grandTotalWaste = 0
   let grandTotalProd = 0
 
-  // Process all departments
-  for (const dept of Object.values(DEPARTMENTS)) {
-    // Get "Up to" data
-    const uptoData = await getDepartmentWasteData(dept.code, upToRange.from, upToRange.to)
-    
-    // Get period data
-    const periodData = await getDepartmentWasteData(dept.code, fromDate, toDate)
+  const departments = Object.values(DEPARTMENTS)
+  const departmentResults = await Promise.all(
+    departments.map(async (dept) => {
+      const [uptoData, periodData] = await Promise.all([
+        getDepartmentWasteData(dept.code, upToRange.from, upToRange.to),
+        getDepartmentWasteData(dept.code, fromDate, toDate)
+      ])
+      return { dept, uptoData, periodData }
+    })
+  )
+
+  // Aggregate in the original department order so report output is unchanged.
+  for (const { dept, uptoData, periodData } of departmentResults) {
 
     const deptResult = {
       department: dept.name,

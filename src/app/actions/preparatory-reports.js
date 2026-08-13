@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { generatePreparatoryStoppageReport, getPreparatoryDateRange } from '@/lib/queries/preparatoryStoppageReportQueries'
@@ -13,6 +15,7 @@ import { generatePreparatorySiderPerformanceReport } from '@/lib/queries/prepara
  * @returns {Promise<Object>} { success, data, error }
  */
 export async function generatePreparatoryStoppageReportAction(fromDate, toDate) {
+  await requireUser()
   try {
     // Convert strings to Date objects if needed
     let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
@@ -52,6 +55,7 @@ export async function generatePreparatoryStoppageReportAction(fromDate, toDate) 
  * @returns {Promise<Object>} { success, data: { minDate, maxDate }, error }
  */
 export async function getPreparatoryDateRangeAction() {
+  await requireUser()
   try {
     const dateRange = await getPreparatoryDateRange()
     
@@ -75,6 +79,7 @@ export async function getPreparatoryDateRangeAction() {
  * @returns {Promise<Object>} { success, data, error }
  */
 export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
+  await requireUser()
   try {
     // Convert strings to Date objects if needed
     let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
@@ -116,6 +121,7 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
  * @returns {Promise<Object>} { success, data, error }
  */
 export async function generatePreparatorySiderPerformanceReportAction(fromDate, toDate) {
+  await requireUser()
   try {
     // Convert strings to Date objects if needed
     let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate

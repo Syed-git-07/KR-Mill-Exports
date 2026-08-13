@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 const { getSpinningShiftCountProductionReport } = require('./spinningShiftCountProductionQueries')
@@ -11,6 +13,7 @@ const { getSpinningShiftCountProductionReport } = require('./spinningShiftCountP
  * @returns {Promise<Object>} Report data
  */
 export async function fetchSpinningShiftCountProductionReport(fromDate, toDate = null) {
+  await requireUser()
   try {
     const reportData = await getSpinningShiftCountProductionReport(fromDate, toDate)
     return {

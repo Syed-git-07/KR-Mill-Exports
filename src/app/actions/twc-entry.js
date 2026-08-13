@@ -1,5 +1,7 @@
 'use server';
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import {
@@ -13,6 +15,7 @@ import {
 import { serializeData } from '@/lib/serialize';
 
 export async function getTWCEntriesAction() {
+  await requireUser()
   try {
     const data = await getTWCEntries();
     return { success: true, data: serializeData(data) };
@@ -23,6 +26,7 @@ export async function getTWCEntriesAction() {
 }
 
 export async function createTWCEntryAction(entryData) {
+  await requireUser()
   try {
     const data = await createTWCEntry(entryData);
     return { success: true, data: serializeData(data) };
@@ -33,6 +37,7 @@ export async function createTWCEntryAction(entryData) {
 }
 
 export async function updateTWCEntryAction(id, entryData) {
+  await requireUser()
   try {
     const data = await updateTWCEntry(id, entryData);
     return { success: true, data: serializeData(data) };
@@ -43,6 +48,7 @@ export async function updateTWCEntryAction(id, entryData) {
 }
 
 export async function deleteTWCEntryAction(id) {
+  await requireUser()
   try {
     await deleteTWCEntry(id);
     return { success: true };
@@ -53,6 +59,7 @@ export async function deleteTWCEntryAction(id) {
 }
 
 export async function searchTWCEntriesAction(field, condition, value) {
+  await requireUser()
   try {
     const data = await searchTWCEntries(field, condition, value);
     return { success: true, data: serializeData(data) };
@@ -63,6 +70,7 @@ export async function searchTWCEntriesAction(field, condition, value) {
 }
 
 export async function getCountsForDropdownAction() {
+  await requireUser()
   try {
     const data = await getCountsForDropdown();
     return { success: true, data: serializeData(data) };

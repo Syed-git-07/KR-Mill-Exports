@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { fetchSpinningDailyProductionReport } from '@/lib/queries/spinningDailyProductionQueries'
 
 /**
@@ -8,5 +10,6 @@ import { fetchSpinningDailyProductionReport } from '@/lib/queries/spinningDailyP
  * @returns {Promise<Object>} Report data
  */
 export async function getSpinningDailyProductionReport(reportDate) {
+  await requireUser()
   return await fetchSpinningDailyProductionReport(reportDate)
 }

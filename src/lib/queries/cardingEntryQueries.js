@@ -4,6 +4,7 @@ import { calculateCardingStdProdn, resolveCardingFormulaInputs } from '../cardin
 import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 function isCardingMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
@@ -644,7 +645,7 @@ export async function updateProductionDetail(id, updates) {
     // Client already recalculates correctly based on full state.
     // We just take the explicitly saved cleanUpdates directly to avoid
     // overwriting accurate UI values with missing/stale server context.
-    const { speed, machine, stoppage, ...cleanUpdates } = updates
+    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
 
     const data = await prisma.carding_production_detail.update({
       where: { id },
@@ -661,7 +662,7 @@ export async function bulkUpdateProductionDetails(updates) {
   const promises = updates.map(({ id, ...data }) =>
     prisma.carding_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   )
 

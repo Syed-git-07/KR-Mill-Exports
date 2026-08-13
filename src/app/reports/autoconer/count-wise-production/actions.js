@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 const { getAutoconerCountWiseProductionReport } = require('./autoconerCountWiseProductionQueries')
@@ -10,6 +12,7 @@ const { getAutoconerCountWiseProductionReport } = require('./autoconerCountWiseP
  * @param {string} toDate    YYYY-MM-DD (optional, defaults to fromDate)
  */
 export async function fetchAutoconerCountWiseProductionReport(fromDate, toDate = null) {
+  await requireUser()
   try {
     const data = await getAutoconerCountWiseProductionReport(fromDate, toDate)
     return { success: true, data }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -12,6 +13,7 @@ import {
   normalizeUsername,
   safeReturnPath,
 } from "../src/lib/security/request.js";
+import { sanitizeProductionDetailUpdate } from "../src/lib/queries/productionDetailUpdate.js";
 
 test("password hashes are salted, opaque, and verifiable", async () => {
   const password = "Correct-Horse-Factory-29!";
@@ -28,8 +30,8 @@ test("password hashes are salted, opaque, and verifiable", async () => {
 });
 
 test("password policy rejects weak and identity-derived passwords", () => {
-  assert.match(validatePassword("short"), /6 characters/);
-  assert.match(validatePassword("123456"), /predictable/);
+  assert.match(validatePassword("short"), /15 characters/);
+  assert.match(validatePassword("12345678901234"), /15 characters/);
   assert.match(
     validatePassword("Admin-operator1-Password-29!", {
       username: "operator1",
@@ -37,7 +39,7 @@ test("password policy rejects weak and identity-derived passwords", () => {
     /username/,
   );
   assert.equal(
-    validatePassword("Mill27", { username: "operator1" }),
+    validatePassword("Mill-Production-27", { username: "operator1" }),
     null,
   );
 });
@@ -67,6 +69,27 @@ test("server actions leave base-path application to Next.js", async () => {
   assert.match(authActions, /redirect\("\/login"\)/);
 });
 
+test("production detail updates cannot change ownership or audit fields", () => {
+  assert.deepEqual(
+    sanitizeProductionDetailUpdate({
+      id: "replacement-id",
+      header_id: "other-header",
+      machine_id: "other-machine",
+      created_at: new Date(0),
+      updated_at: new Date(0),
+      is_verified: true,
+      verified_at: new Date(0),
+      is_locked: true,
+      machine: { id: "synthetic" },
+      stoppage: { id: "synthetic" },
+      speed: 99999,
+      act_prodn: 125.5,
+      remarks: "valid edit",
+    }),
+    { act_prodn: 125.5, remarks: "valid edit" },
+  );
+});
+
 test("login uses a browser-session cookie with an eight-hour server limit", async () => {
   const [sessionSource, constantsSource, authActions] = await Promise.all([
     readFile(path.resolve("src/lib/security/session.js"), "utf8"),
@@ -84,6 +107,34 @@ test("login uses a browser-session cookie with an eight-hour server limit", asyn
   assert.doesNotMatch(setCookieSource, /\bexpires\s*:/);
   assert.doesNotMatch(setCookieSource, /\bmaxAge\s*:/);
   assert.match(authActions, /await setSessionCookie\(token\)/);
+});
+
+test("every exported application Server Action performs its own authentication check", async () => {
+  const actionFiles = (await sourceFiles(path.resolve("src/app"))).filter(
+    (file) =>
+      !file.endsWith(`${path.sep}auth.js`) &&
+      /^["']use server["'];?/m.test(readFileSync(file, "utf8")),
+  );
+
+  assert.ok(actionFiles.length > 0);
+  for (const file of actionFiles) {
+    const source = await readFile(file, "utf8");
+    assert.match(source, /import \{ requireUser \} from ["']@\/lib\/security\/auth["']/);
+    assert.doesNotMatch(
+      source,
+      /^export async function .*\{\r?\n(?!\s+await requireUser\(\))/gm,
+      `${file} exports an action without an authentication guard`,
+    );
+  }
+});
+
+test("middleware passes only its verified user context and defers audit writes", async () => {
+  const source = await readFile(path.resolve("src/middleware.js"), "utf8");
+
+  assert.match(source, /requestHeaders\.delete\(AUTH_CONTEXT_HEADER\)/);
+  assert.match(source, /requestHeaders\.set\(\s*AUTH_CONTEXT_HEADER/);
+  assert.match(source, /event\?\.waitUntil\?\./);
+  assert.match(source, /private, no-store, max-age=0/);
 });
 
 async function sourceFiles(directory) {

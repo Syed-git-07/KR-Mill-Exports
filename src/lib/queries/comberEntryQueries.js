@@ -9,6 +9,7 @@ import {
 import { resolveProductionTime } from '../productionFormulaMath'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 // ============================================
 // COMBER CONSTANTS
@@ -181,7 +182,7 @@ export async function updateComberProductionHeader(id, updates) {
   try {
     const data = await prisma.comber_production_header.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {
@@ -422,7 +423,7 @@ export async function bulkUpdateComberProductionDetails(updates) {
   const promises = updates.map(({ id, ...data }) =>
     prisma.comber_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   )
 

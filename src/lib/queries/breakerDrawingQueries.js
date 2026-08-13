@@ -5,6 +5,7 @@ import { calculateBreakerDrawingStdProdn, getBreakerDrawingActProdnConstant, res
 import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -436,7 +437,7 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
 // Update production detail
 export async function updateBreakerDrawingDetail(id, updates) {
   // Remove any fields that shouldn't be updated (like speed from calculations)
-  const { speed, machine, stoppage, ...cleanUpdates } = updates;
+  const cleanUpdates = sanitizeProductionDetailUpdate(updates);
   
   try {
     const data = await prisma.breaker_drawing_production_detail.update({
@@ -455,7 +456,7 @@ export async function bulkUpdateBreakerDrawingDetails(updates) {
   const promises = updates.map(({ id, ...data }) =>
     prisma.breaker_drawing_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   );
 

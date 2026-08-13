@@ -13,6 +13,7 @@ import { prisma } from '../prisma'
 import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -540,7 +541,7 @@ export async function updateAutoconerProductionDetail(id, updates) {
     // Backend simply saves the data (like carding module)
     const data = await prisma.autoconer_production_detail.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(updates)
     })
     return data
   } catch (error) {

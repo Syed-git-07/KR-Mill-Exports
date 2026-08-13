@@ -10,6 +10,7 @@ import {
 import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 
 function compareLapFormerMachines(a, b) {
   const sortA = a?.sort_order ?? 9999;
@@ -621,7 +622,7 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
 // Update production detail
 export async function updateLapFormerDetail(id, updates) {
   // Remove any fields that shouldn't be updated
-  const { speed, machine, stoppage, ...cleanUpdates } = updates;
+  const cleanUpdates = sanitizeProductionDetailUpdate(updates);
   
   try {
     const data = await prisma.lap_former_production_detail.update({
@@ -640,7 +641,7 @@ export async function bulkUpdateLapFormerDetails(updates) {
   const promises = updates.map(({ id, ...data }) =>
     prisma.lap_former_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   );
 

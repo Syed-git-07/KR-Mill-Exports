@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -7,6 +9,7 @@ import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/cardingMachineQueries'
 
 export async function getCardingMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getCardingMachines()
     return { success: true, data: serializeData(data) }
@@ -16,6 +19,7 @@ export async function getCardingMachinesAction() {
 }
 
 export async function getCardingMachinePageDataAction() {
+  await requireUser()
   try {
     const [machinesResult, countOptionsResult] = await Promise.allSettled([
       queries.getCardingMachines(),
@@ -37,6 +41,7 @@ export async function getCardingMachinePageDataAction() {
 }
 
 export async function createCardingMachineAction(machineData) {
+  await requireUser()
   try {
     const data = await queries.createCardingMachine(machineData)
     return { success: true, data: serializeData(data) }
@@ -46,6 +51,7 @@ export async function createCardingMachineAction(machineData) {
 }
 
 export async function updateCardingMachineAction(id, machineData) {
+  await requireUser()
   try {
     const data = await queries.updateCardingMachine(id, machineData)
     return { success: true, data: serializeData(data) }
@@ -55,6 +61,7 @@ export async function updateCardingMachineAction(id, machineData) {
 }
 
 export async function deleteCardingMachineAction(id) {
+  await requireUser()
   try {
     const data = await queries.deleteCardingMachine(id)
     return { success: true, data: serializeData(data) }
@@ -64,6 +71,7 @@ export async function deleteCardingMachineAction(id) {
 }
 
 export async function searchCardingMachinesAction(field, condition, value) {
+  await requireUser()
   try {
     const data = await queries.searchCardingMachines(field, condition, value)
     return { success: true, data: serializeData(data) }
@@ -73,6 +81,7 @@ export async function searchCardingMachinesAction(field, condition, value) {
 }
 
 export async function getCardingCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getCardingCountOptions()
     return { success: true, data: serializeData(data) }

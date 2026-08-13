@@ -406,7 +406,7 @@ export default function AutoconerMaster() {
         deleteIsDanger={true}
         onSecondaryAction={editingMachine?.is_active ? handleDeactivate : null}
         secondaryActionLabel="Deactivate"
-        saveLabel={editingMachine ? 'Save' : 'Create'}
+        saveLabel={editingMachine ? 'Update' : 'Create'}
       >
         <AutoconerForm
           initialData={editingMachine}

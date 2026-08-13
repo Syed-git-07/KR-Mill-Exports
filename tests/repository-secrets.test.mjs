@@ -45,6 +45,7 @@ test('safe deployment templates and migrations remain available in GitHub ZIPs',
     '.env.example',
     'README.md',
     'SECURE_DEPLOYMENT.md',
+    'scripts/check-production-security.js',
     'prisma/schema.prisma',
     'prisma/migrations/20260730_auth_audit_logging/migration.sql'
   ]
