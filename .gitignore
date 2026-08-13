@@ -34,6 +34,31 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local databases, database exports, and backups
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+*.backup
+*.sql.gz
+*.sql.zip
+/backups/
+/data/
+/storage/
+
+# data-bearing SQL exports (keep schema migrations versioned)
+/schema/*-db.sql
+/schema/kr_production-*.sql
+/schema/*_mock_data.sql
+
+# user-generated/runtime files
+/uploads/
+*.log
+
 # vercel
 .vercel
 
