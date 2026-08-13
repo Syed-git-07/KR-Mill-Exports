@@ -9,8 +9,6 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import EnterSelect from '@/components/ui/enter-select';
 import { getSpinningCountsAction } from '@/app/actions/spinning-entry';
-import { Button } from '@/components/ui/button';
-import { Copy } from 'lucide-react';
 
 const spinningMachineSchema = z.object({
   machine_no: z.string().min(1, 'Machine number is required'),
@@ -95,7 +93,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
   const directHankEntry = watch('direct_hank_entry');
   const countName = watch('count_name');
 
-  const copyCountMasterValues = (val = countName) => {
+  const applyCountMasterValues = (val) => {
     const selectedCount = counts.find(c => c.count_name === val);
     if (selectedCount) {
       // act_count is always present (NOT NULL in DB)
@@ -113,7 +111,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
 
   const handleCountSelect = (val) => {
     setValue('count_name', val);
-    copyCountMasterValues(val);
+    applyCountMasterValues(val);
   };
 
   const onFormSubmit = async (data) => {
@@ -307,10 +305,6 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
             <Input id="c_waste_percent" type="number" step="0.01" {...register('c_waste_percent', { valueAsNumber: true })} onKeyDown={handleNav} />
           </div>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => copyCountMasterValues()} disabled={!countName}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy Data from Count Master
-        </Button>
       </div>
     </form>
   );
