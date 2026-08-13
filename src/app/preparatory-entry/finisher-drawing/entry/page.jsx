@@ -283,12 +283,10 @@ function FinisherDrawingEntryContent() {
       let sourceDateStr, sourceShift
       try {
         const selectedItem = JSON.parse(selectedSourceDate)
-        console.log('Selected item:', selectedItem)
         const parsedDate = new Date(selectedItem.entry_date)
         if (!isNaN(parsedDate.getTime())) {
           sourceDateStr = format(parsedDate, 'yyyy-MM-dd')
           sourceShift = selectedItem.shift
-          console.log('Parsed:', { sourceDateStr, sourceShift })
         } else {
           throw new Error('Invalid date')
         }

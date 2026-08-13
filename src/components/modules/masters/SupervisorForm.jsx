@@ -49,7 +49,6 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
     try {
       const result = await getDepartmentsAction();
       if (result.success) {
-        console.log('Departments loaded:', result.data);
         setDepartments(result.data);
       } else {
         console.error('Failed to load departments:', result.error);

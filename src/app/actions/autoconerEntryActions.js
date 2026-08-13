@@ -42,9 +42,7 @@ export async function getAutoconerShiftConfigAction(shift) {
 
 export async function getAutoconerProductionByDateShiftAction(date, shift) {
   try {
-    console.log(`[HEADER] Getting header for date: ${date}, shift: ${shift}`)
     const data = await queries.getAutoconerProductionByDateShift(date, shift)
-    console.log(`[HEADER] Found header: ${data?.id || 'null'}`)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     console.error(`[HEADER] Error:`, error)
@@ -88,9 +86,7 @@ export async function getAutoconerProductionDetailsAction(headerId) {
 // Also initializes details if header exists but has no details (fixes Shift 3 issue)
 export async function syncNewMachinesToAutoconerHeaderAction(headerId, shift = 1) {
   try {
-    console.log(`[SYNC] Syncing machines for headerId: ${headerId}, shift: ${shift}`)
     const data = await queries.syncNewMachinesToAutoconerHeader(headerId, shift)
-    console.log(`[SYNC] Result:`, data)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     console.error(`[SYNC] Error:`, error)

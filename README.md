@@ -26,8 +26,9 @@ All application routes and server actions require a valid database-backed
 session. The security layer provides:
 
 - memory-hard scrypt password hashing;
-- `HttpOnly`, `Secure`, `SameSite=Strict` session cookies;
-- server-side session expiry and revocation;
+- browser-session `HttpOnly`, `Secure`, `SameSite=Strict` cookies that are not
+  persisted with an expiry date;
+- absolute eight-hour server-side session expiry and immediate revocation;
 - persistent login throttling and account lockout;
 - forced temporary-password replacement;
 - `ADMIN` and `OPERATOR` roles;
@@ -62,6 +63,25 @@ npm audit --omit=dev
 Follow [SECURE_DEPLOYMENT.md](./SECURE_DEPLOYMENT.md). HTTPS, correct reverse
 proxy headers, firewall rules, backups, a process supervisor, and scheduled
 security-data cleanup are required for a production installation.
+
+### Deploying from a GitHub ZIP
+
+GitHub source ZIPs contain committed files only. This repository deliberately
+does not commit `.env` or `.env.local`, so create them on the destination server
+after extracting the ZIP:
+
+1. Copy `.env.example` to `.env` and replace every placeholder with the server's
+   real values.
+2. Create `.env.local` only for values that must override `.env`. Next.js gives
+   `.env.local` higher priority, so do not keep conflicting copies accidentally.
+3. Restrict both files to the Windows account running the application. Do not
+   email them, place them back in the ZIP, or commit them to Git.
+4. Run `npm ci`, `npx prisma generate`, the required migration command, and
+   `npm run build` on the destination using those environment values.
+
+The ZIP should continue to include `.env.example`, Prisma migrations, this
+README, and `SECURE_DEPLOYMENT.md`; they contain templates and operating
+instructions, not live passwords, tokens, or database credentials.
 
 Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before running `npm run build`
 when the application is hosted at `https://krexports.org/kr-production-app`.

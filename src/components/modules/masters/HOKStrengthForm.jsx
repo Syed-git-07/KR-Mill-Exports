@@ -40,14 +40,12 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   });
 
   useEffect(() => {
-    console.log('🔵 HOKStrengthForm mounted/updated with initialData:', initialData);
     loadDepartmentsAndData();
   }, [initialData?.hok_id]); // Only re-run when hok_id changes
 
   const loadDepartmentsAndData = async () => {
     try {
       setLoading(true);
-      console.log('🔵 HOKStrengthForm - Loading data, initialData:', initialData);
       
       const deptResult = await getDepartmentsForDropdownAction();
       if (!deptResult.success) {
@@ -56,7 +54,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
       }
       
       const deptData = deptResult.data;
-      console.log('🔵 Loaded', deptData.length, 'departments:', deptData.map(d => d.dept_name));
       setDepartments(deptData);
       
       // Initialize grid with one row per department
@@ -70,7 +67,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
       
       // If editing, load the edit data
       if (initialData?.hok_id) {
-        console.log('🟡 EDIT MODE - Loading data for HOK ID:', initialData.hok_id);
         const editResult = await getHOKEntryByIdAction(initialData.hok_id);
         
         if (!editResult.success) {
@@ -80,8 +76,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
         }
         
         const editData = editResult.data;
-        console.log('🟡 Loaded edit data - Header:', editData.header);
-        console.log('🟡 Loaded edit data - Details:', editData.details);
         
         if (editData) {
           setHokId(editData.header.hok_id);
@@ -93,14 +87,6 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
           const populatedGrid = initialGrid.map(row => {
             const detail = editData.details.find(d => d.department_id === row.department_id);
             if (detail) {
-              console.log('  ✓ Found data for', row.dept_name, ':', {
-                shift1: detail.shift1,
-                shift2: detail.shift2,
-                shift3: detail.shift3,
-                shift1_type: typeof detail.shift1,
-                shift2_type: typeof detail.shift2,
-                shift3_type: typeof detail.shift3
-              });
               return {
                 ...row,
                 shift1: Number(detail.shift1) || 0,
@@ -108,15 +94,11 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                 shift3: Number(detail.shift3) || 0,
               };
             }
-            console.log('  ⚠ No data for', row.dept_name);
             return row;
           });
-          console.log('🟢 Grid populated with', populatedGrid.length, 'rows');
-          console.log('🟢 First row sample:', populatedGrid[0]);
           setGridData(populatedGrid);
         }
       } else {
-        console.log('🟢 CREATE MODE - Initializing empty grid with', initialGrid.length, 'departments');
         setGridData(initialGrid);
       }
     } catch (error) {

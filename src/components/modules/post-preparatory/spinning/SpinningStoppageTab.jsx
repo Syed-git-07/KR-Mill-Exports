@@ -230,7 +230,6 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       }
 
       if (reasonsResult.success) {
-        console.log('Spinning Stoppage Reasons Loaded:', reasonsResult.data)
         setStoppageReasons(reasonsResult.data || [])
       } else {
         console.error('Failed to load stoppage reasons:', reasonsResult.error)

@@ -1818,7 +1818,6 @@ export async function getSpinningStoppageReasons() {
       category: headMap[item.stoppage_head_id] || 'OTHERS'
     }))
     
-    console.log(`Found ${enrichedData?.length || 0} stoppage reasons for SPINNING department`)
     return enrichedData || []
   } catch (error) {
     console.error('Error fetching spinning stoppage reasons:', error)

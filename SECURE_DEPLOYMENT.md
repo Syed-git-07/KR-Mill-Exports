@@ -12,8 +12,12 @@ SHA-256 digests.
   account. Do not use the MySQL root account.
 - Put the application behind Apache, nginx, IIS, or another reverse proxy that
   terminates HTTPS. Redirect all HTTP traffic to HTTPS.
-- Copy `.env.example` to `.env` on the server and replace every placeholder.
-  Never commit or copy a development `.env` into source control.
+- After extracting the GitHub source ZIP, copy `.env.example` to `.env` on the
+  server and replace every placeholder. Create `.env.local` only when a setting
+  must intentionally override `.env`; Next.js gives `.env.local` higher
+  priority. Never add either file to the ZIP or source control.
+- Restrict `.env` and `.env.local` with operating-system permissions so only
+  administrators and the application service account can read them.
 - Set `AUTH_TRUSTED_ORIGINS` to the exact external HTTPS origin. Multiple
   origins are comma-separated.
 - Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before building. This value

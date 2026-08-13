@@ -46,8 +46,6 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
 
   const tablePrefix = dept.table
   
-  console.log(`[${departmentCode}] Querying dates:`, fromDate.toISOString(), 'to', toDate.toISOString())
-  
   // Query the department's production headers within date range
   // Prisma will handle DATE comparison correctly with the normalized UTC dates
   const headers = await prisma[`${tablePrefix}_production_header`].findMany({
@@ -58,8 +56,6 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
       }
     }
   })
-
-  console.log(`[${departmentCode}] Headers found: ${headers.length}`)
 
   if (headers.length === 0) {
     // Return empty result structure
@@ -103,8 +99,6 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
       is_active: true
     }
   })
-
-  console.log(`[${departmentCode}] Shift configs found: ${shiftConfigs.length}`)
 
   const shiftTimeMap = {}
   shiftConfigs.forEach(sc => {
@@ -197,9 +191,6 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
     }
   })
 
-  console.log(`[${departmentCode}] Stoppage records created: ${stoppageRecords.length}`)
-  console.log(`[${departmentCode}] Shift time summary:`, Object.keys(shiftTimeTracker).map(k => `${k}: ${shiftTimeTracker[k].count} machines x ${shiftTimeTracker[k].timePerMachine}min`).join(', '))
-
   // Add shift time info to records for aggregation
   return { records: stoppageRecords, shiftTimeTracker }
 }
@@ -212,8 +203,6 @@ async function getDepartmentStoppageData(departmentCode, fromDate, toDate) {
  */
 function aggregateStoppageData(records, shiftTimeTracker) {
   const aggregated = {}
-
-  console.log(`Aggregating ${records?.length || 0} records`)
 
   // If no records or no tracker, return empty
   if (!records || records.length === 0 || !shiftTimeTracker || Object.keys(shiftTimeTracker).length === 0) {
@@ -232,8 +221,6 @@ function aggregateStoppageData(records, shiftTimeTracker) {
     const tracker = shiftTimeTracker[key]
     totalShiftTimes[`shift${shiftNum}`] = tracker.count * tracker.timePerMachine
   })
-
-  console.log('Total shift times:', totalShiftTimes)
 
   records.forEach(record => {
     const { category, reason, shift, stoppageTime } = record

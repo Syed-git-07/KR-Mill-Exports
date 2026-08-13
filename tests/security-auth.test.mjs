@@ -67,6 +67,25 @@ test("server actions leave base-path application to Next.js", async () => {
   assert.match(authActions, /redirect\("\/login"\)/);
 });
 
+test("login uses a browser-session cookie with an eight-hour server limit", async () => {
+  const [sessionSource, constantsSource, authActions] = await Promise.all([
+    readFile(path.resolve("src/lib/security/session.js"), "utf8"),
+    readFile(path.resolve("src/lib/security/constants.js"), "utf8"),
+    readFile(path.resolve("src/app/actions/auth.js"), "utf8"),
+  ]);
+  const setCookieSource = sessionSource.slice(
+    sessionSource.indexOf("export async function setSessionCookie"),
+    sessionSource.indexOf("export async function clearSessionCookie"),
+  );
+
+  assert.match(constantsSource, /SESSION_DURATION_MS\s*=\s*8\s*\*\s*60\s*\*\s*60\s*\*\s*1000/);
+  assert.match(setCookieSource, /httpOnly:\s*true/);
+  assert.match(setCookieSource, /sameSite:\s*"strict"/);
+  assert.doesNotMatch(setCookieSource, /\bexpires\s*:/);
+  assert.doesNotMatch(setCookieSource, /\bmaxAge\s*:/);
+  assert.match(authActions, /await setSessionCookie\(token\)/);
+});
+
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];

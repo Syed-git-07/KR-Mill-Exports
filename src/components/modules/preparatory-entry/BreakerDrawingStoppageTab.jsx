@@ -317,13 +317,6 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       const machineList = machineListRes?.data || []
       const setups = setupsRes?.data || []
       
-      console.log('Loaded stoppage data:', {
-        stoppagesCount: stoppages.length,
-        reasonsCount: reasons.length,
-        machinesCount: machineList.length,
-        setupsCount: setups.length
-      })
-      
       // Sort by natural machine number order (BD1, BD2, BD3, BD4)
       const sortedStoppages = stoppages?.sort((a, b) => {
         const aNum = parseInt(a.production_detail?.machine?.machine_no?.replace(/\D/g, '') || '0')

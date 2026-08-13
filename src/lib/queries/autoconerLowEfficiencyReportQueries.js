@@ -11,8 +11,6 @@ import { prisma } from '../prisma'
  * @returns {Promise<Object>} Report data grouped by shift
  */
 export async function generateAutoconerLowEfficiencyReport(selectedDate) {
-  console.log('Generating Autoconer Low Efficiency Report for:', selectedDate)
-
   // Get production headers for the selected date
   const headers = await prisma.autoconer_production_header.findMany({
     where: {
@@ -24,7 +22,6 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
   })
 
   if (headers.length === 0) {
-    console.log('No data found for the selected date')
     return {
       date: selectedDate,
       shifts: []
@@ -44,7 +41,6 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
   })
 
   if (details.length === 0) {
-    console.log('No production details found')
     return {
       date: selectedDate,
       shifts: []
@@ -177,8 +173,6 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
       })
     }
   })
-
-  console.log(`Found ${shiftData.length} shifts with low efficiency machines`)
 
   return {
     date: selectedDate,

@@ -25,11 +25,8 @@ export default function SpinningCountPage() {
 
   const loadSpinningCounts = async () => {
     try {
-      console.log('Loading spinning counts...')
       const result = await getSpinningCountsAction()
       if (result.success) {
-        console.log('Spinning counts loaded:', result.data?.length, 'records')
-        console.log('Sample data:', result.data?.slice(0, 2))
         setSpinningCounts(result.data)
         if (!result.data || result.data.length === 0) {
           console.warn('No data returned from database')

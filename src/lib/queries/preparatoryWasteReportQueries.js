@@ -102,13 +102,8 @@ function getUpToDateRange(selectedDate) {
  * Generate Preparatory Waste Abstract Report
  */
 export async function generatePreparatoryWasteReport(fromDate, toDate) {
-  console.log('Generating Preparatory Waste Report...')
-  console.log('  Period From:', fromDate.toISOString())
-  console.log('  Period To:', toDate.toISOString())
-
   // Calculate "Up to" date range (from start of month to day before fromDate)
   const upToRange = getUpToDateRange(fromDate)
-  console.log('  Up To Range:', upToRange.from.toISOString(), 'to', upToRange.to.toISOString())
 
   const reportData = {
     period: {
@@ -146,8 +141,6 @@ export async function generatePreparatoryWasteReport(fromDate, toDate) {
 
   // Process all departments
   for (const dept of Object.values(DEPARTMENTS)) {
-    console.log(`Processing ${dept.name}...`)
-
     // Get "Up to" data
     const uptoData = await getDepartmentWasteData(dept.code, upToRange.from, upToRange.to)
     
@@ -196,6 +189,5 @@ export async function generatePreparatoryWasteReport(fromDate, toDate) {
     wastePercent: grandTotalProd > 0 ? parseFloat(((grandTotalWaste / grandTotalProd) * 100).toFixed(2)) : 0
   }
 
-  console.log('Report generation complete!')
   return reportData
 }

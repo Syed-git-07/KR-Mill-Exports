@@ -22,10 +22,6 @@ export async function generateSpinningStoppageReportAction(selectedDate) {
   try {
     const normalizedDate = normalizeDate(selectedDate)
     
-    console.log('Spinning Stoppage Report requested:')
-    console.log('  Original date:', selectedDate)
-    console.log('  Normalized date:', normalizedDate.toISOString())
-    
     const reportData = await generateSpinningStoppageReport(normalizedDate)
     
     // Convert dates to ISO strings for JSON serialization

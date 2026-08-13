@@ -32,12 +32,6 @@ export async function generatePreparatoryStoppageReportAction(fromDate, toDate) 
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
     const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
 
-    console.log('Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
-
     const report = await generatePreparatoryStoppageReport(normalizedFrom, normalizedTo)
     
     return {
@@ -100,12 +94,6 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
     const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
 
-    console.log('Waste Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
-
     const report = await generatePreparatoryWasteReport(normalizedFrom, normalizedTo)
     
     return {
@@ -146,12 +134,6 @@ export async function generatePreparatorySiderPerformanceReportAction(fromDate, 
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
     const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Sider Performance Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
 
     const report = await generatePreparatorySiderPerformanceReport(normalizedFrom, normalizedTo)
     

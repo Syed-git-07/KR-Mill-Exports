@@ -162,7 +162,7 @@ export async function loginAction(_previousState, formData) {
     return { error: GENERIC_LOGIN_ERROR, username };
   }
 
-  const { token, expiresAt } = await createSession(user.id, context);
+  const { token } = await createSession(user.id, context);
   await prisma.$transaction([
     prisma.app_users.update({
       where: { id: user.id },
@@ -198,7 +198,7 @@ export async function loginAction(_previousState, formData) {
     });
   }
 
-  await setSessionCookie(token, expiresAt);
+  await setSessionCookie(token);
   await writeAuditLog({
     eventType: "AUTH_LOGIN",
     outcome: "SUCCESS",

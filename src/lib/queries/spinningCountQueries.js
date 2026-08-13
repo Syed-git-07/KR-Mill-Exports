@@ -16,8 +16,6 @@ export async function getSpinningCounts() {
 
 // Create new spinning count
 export async function createSpinningCount(countData) {
-  console.log('Create called with data:', countData)
-  
   // Remove any undefined or empty values, system fields, and set proper nulls
   const cleanData = {}
   for (const [key, value] of Object.entries(countData)) {
@@ -43,14 +41,11 @@ export async function createSpinningCount(countData) {
   
   cleanData.is_active = true
   
-  console.log('Clean data to insert:', cleanData)
-  
   try {
     const data = await prisma.spinning_counts.create({
       data: cleanData
     });
     
-    console.log('Create successful:', data)
     return data
   } catch (error) {
     console.error('Create error details:', error)
@@ -60,9 +55,6 @@ export async function createSpinningCount(countData) {
 
 // Update spinning count
 export async function updateSpinningCount(id, countData) {
-  console.log('Update called with ID:', id)
-  console.log('Update data:', countData)
-  
   if (!id) {
     throw new Error('No ID provided for update')
   }
@@ -76,8 +68,6 @@ export async function updateSpinningCount(id, countData) {
     if (!existingRecord) {
       throw new Error(`Record with ID ${id} not found`)
     }
-    
-    console.log('Existing record found:', existingRecord)
     
     // Remove system fields and prepare clean data
     const cleanData = {}
@@ -94,14 +84,11 @@ export async function updateSpinningCount(id, countData) {
       }
     }
     
-    console.log('Clean data to update:', cleanData)
-    
     const data = await prisma.spinning_counts.update({
       where: { id },
       data: cleanData
     });
     
-    console.log('Update successful:', data)
     return data
   } catch (error) {
     console.error('Update error details:', error)

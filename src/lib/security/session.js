@@ -27,7 +27,9 @@ export async function createSession(userId, context) {
   return { token, expiresAt };
 }
 
-export async function setSessionCookie(token, expiresAt) {
+// Deliberately omit `expires` and `maxAge`: this is a browser-session cookie.
+// The database record still enforces the absolute eight-hour session limit.
+export async function setSessionCookie(token) {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
@@ -36,7 +38,6 @@ export async function setSessionCookie(token, expiresAt) {
       process.env.AUTH_COOKIE_SECURE === "true",
     sameSite: "strict",
     path: "/",
-    expires: expiresAt,
     priority: "high",
   });
 }
@@ -70,4 +71,3 @@ export async function revokeSession(token) {
     data: { revoked_at: new Date() },
   });
 }
-

@@ -1387,11 +1387,6 @@ export async function copyComberFromPreviousDate(targetDate, targetShift, target
       throw new Error('Invalid source date format')
     }
     
-    console.log('Searching for comber header:', {
-      sourceDateStr,
-      sourceShift
-    })
-    
     // Query using DATE() function in raw SQL to avoid timezone issues
     // This ensures we compare date-only values without timezone conversion
     const sourceHeaders = await prisma.$queryRaw`
@@ -1402,8 +1397,6 @@ export async function copyComberFromPreviousDate(targetDate, targetShift, target
     `
     
     const sourceHeader = sourceHeaders?.[0]
-    
-    console.log('Source header found:', sourceHeader ? 'Yes' : 'No')
     
     if (!sourceHeader) {
       throw new Error('Source date data not found')

@@ -83,8 +83,6 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
   const autoconerActive = watch('autoconer_active')
 
   const handleFormSubmit = (data) => {
-    console.log('Form submitted with raw data:', data)
-    
     // Transform data to ensure correct types
     const transformedData = {
       count_name: data.count_name,
@@ -112,7 +110,6 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       sliver_hank: optionalNumber(data.sliver_hank)
     }
     
-    console.log('Transformed data:', transformedData)
     onSubmit(transformedData)
   }
 

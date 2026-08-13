@@ -157,6 +157,5 @@ export async function getDepartmentsForDropdown() {
     orderBy: { dept_name: 'asc' }
   });
 
-  console.log('Departments query result:', data);
   return data;
 }

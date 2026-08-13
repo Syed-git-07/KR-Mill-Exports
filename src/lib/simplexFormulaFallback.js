@@ -37,13 +37,13 @@ export function resolveSimplexShiftFallbackTime(shift) {
 }
 
 export function resolveSimplexFormulaInputs({ machine, setup, overrides } = {}) {
-  const speed = toNumber(overrides?.speed) || toNumber(setup?.speed) || toNumber(machine?.speed) || SIMPLEX_FORMULA_FALLBACK.speed
-  const tpi = toNumber(overrides?.tpi) || toNumber(setup?.tpi) || toNumber(machine?.tpi) || SIMPLEX_FORMULA_FALLBACK.tpi
-  const slHank = toNumber(overrides?.hank) || toNumber(setup?.sl_hank) || SIMPLEX_FORMULA_FALLBACK.slHank
+  const speed = toNumber(overrides?.speed) ?? toNumber(setup?.speed) ?? toNumber(machine?.speed) ?? SIMPLEX_FORMULA_FALLBACK.speed
+  const tpi = toNumber(overrides?.tpi) ?? toNumber(setup?.tpi) ?? toNumber(machine?.tpi) ?? SIMPLEX_FORMULA_FALLBACK.tpi
+  const slHank = toNumber(overrides?.hank) ?? toNumber(setup?.sl_hank) ?? SIMPLEX_FORMULA_FALLBACK.slHank
   const mcEffiPercent = resolveSimplexMcEffiPercent(
-    toNumber(overrides?.mcEffi) || toNumber(setup?.mc_effi) || toNumber(machine?.mc_effi) || SIMPLEX_FORMULA_FALLBACK.mcEffiPercent
+    toNumber(overrides?.mcEffi) ?? toNumber(setup?.mc_effi) ?? toNumber(machine?.mc_effi) ?? SIMPLEX_FORMULA_FALLBACK.mcEffiPercent
   )
-  const totalSpindles = toNumber(overrides?.totalSpindles) || toNumber(setup?.spindles) || toNumber(machine?.no_of_spindles) || SIMPLEX_FORMULA_FALLBACK.totalSpindles
+  const totalSpindles = toNumber(overrides?.totalSpindles) ?? toNumber(setup?.spindles) ?? toNumber(machine?.no_of_spindles) ?? SIMPLEX_FORMULA_FALLBACK.totalSpindles
 
   return {
     speed,

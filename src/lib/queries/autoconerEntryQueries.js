@@ -209,8 +209,6 @@ export async function getInheritedMachineSetups(dateObj, shiftNum, headerId) {
 // Now accepts shift parameter to determine correct runtime (like Carding)
 async function initializeAutoconerProductionDetails(headerId, shift = 1) {
   try {
-    console.log(`[INIT] Starting initialization for headerId: ${headerId}, shift: ${shift}`)
-
     // Fetch entry_date from header for date-range visibility
     const header = await prisma.autoconer_production_header.findUnique({
       where: { id: headerId },
@@ -236,8 +234,6 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
       ]
     })
 
-    console.log(`[INIT] Found ${machines?.length || 0} machines visible on ${entryDate}`)
-
     if (!machines || machines.length === 0) return
 
     // Get existing production details for this header
@@ -247,12 +243,8 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     })
     const existingMachineIds = new Set(existingDetails.map(d => d.machine_id))
 
-    console.log(`[INIT] Found ${existingDetails?.length || 0} existing details for this header`)
-
     // Filter out machines that already have entries
     const newMachines = machines.filter(m => !existingMachineIds.has(m.id))
-
-    console.log(`[INIT] ${newMachines.length} new machines need entries`)
 
     if (newMachines.length === 0) return existingDetails
 
