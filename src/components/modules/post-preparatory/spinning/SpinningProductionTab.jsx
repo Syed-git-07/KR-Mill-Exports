@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
@@ -457,10 +457,6 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefreshClick}>
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
         </div>
       </div>
 
