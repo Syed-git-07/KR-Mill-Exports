@@ -51,9 +51,10 @@ export async function getExistingHeaders(tableName) {
  * @param {string} tableName - Prisma model name
  * @param {string} fromDate - Start date YYYY-MM-DD
  * @param {string} toDate - End date YYYY-MM-DD
+ * @param {number|null} shift - Optional shift filter (1, 2, or 3)
  * @returns {Object} - { entries: Array, totalCount, existingCount }
  */
-export async function getDateShiftList(tableName, fromDate, toDate) {
+export async function getDateShiftList(tableName, fromDate, toDate, shift = null) {
   try {
     const model = prisma[tableName]
     if (!model) {
@@ -68,7 +69,8 @@ export async function getDateShiftList(tableName, fromDate, toDate) {
         entry_date: {
           gte: start,
           lte: end
-        }
+        },
+        ...(shift !== null && { shift })
       },
       select: {
         id: true,

@@ -6,6 +6,7 @@ import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/spinningEntryQueries'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { SPINNING_OPTION_CHECK_ERROR_CODE } from '@/lib/spinningOptionCheck'
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -319,7 +320,26 @@ export async function applySpinningOptionCheckAction(payload) {
     const data = await queries.applySpinningOptionCheck(payload)
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    return { success: false, error: safeActionError(error) }
+    return {
+      success: false,
+      error: error?.code === SPINNING_OPTION_CHECK_ERROR_CODE
+        ? error.message
+        : safeActionError(error)
+    }
+  }
+}
+
+export async function getSpinningOptionCheckSourceAction(payload) {
+  try {
+    const data = await queries.getSpinningOptionCheckSource(payload)
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.code === SPINNING_OPTION_CHECK_ERROR_CODE
+        ? error.message
+        : safeActionError(error)
+    }
   }
 }
 

@@ -493,6 +493,7 @@ function FinisherDrawingEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="finisher_drawing_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>

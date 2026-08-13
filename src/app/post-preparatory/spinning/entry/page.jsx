@@ -457,6 +457,7 @@ function SpinningEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="spinning_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>

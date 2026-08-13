@@ -12,7 +12,7 @@ import * as dateShiftQueries from '@/lib/queries/dateShiftListQueries'
  * @param {string} fromDate - Start date YYYY-MM-DD
  * @param {string} toDate - End date YYYY-MM-DD
  */
-export async function getDateShiftListAction(tableName, fromDate, toDate) {
+export async function getDateShiftListAction(tableName, fromDate, toDate, shift = null) {
   try {
     // Whitelist allowed table names for security
     const allowedTables = [
@@ -30,7 +30,12 @@ export async function getDateShiftListAction(tableName, fromDate, toDate) {
       return { success: false, error: `Invalid table: ${tableName}` }
     }
 
-    const data = await dateShiftQueries.getDateShiftList(tableName, fromDate, toDate)
+    const parsedShift = shift == null || shift === '' ? null : Number(shift)
+    if (parsedShift !== null && ![1, 2, 3].includes(parsedShift)) {
+      return { success: false, error: 'Invalid shift' }
+    }
+
+    const data = await dateShiftQueries.getDateShiftList(tableName, fromDate, toDate, parsedShift)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

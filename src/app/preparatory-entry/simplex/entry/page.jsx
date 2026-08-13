@@ -429,6 +429,7 @@ function SimplexEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="simplex_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>

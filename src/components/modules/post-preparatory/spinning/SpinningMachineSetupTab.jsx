@@ -5,7 +5,20 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import EnterSelect from "@/components/ui/enter-select"
+import HolidayAwareCalendar from '@/components/common/HolidayAwareCalendar'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +26,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { format } from 'date-fns'
+import { CalendarIcon, Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Label } from "@/components/ui/label"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -23,6 +37,7 @@ import {
   updateSpinningMachineSetupAction,
   batchUpdateSpinningMachineSetupsAction,
   applySpinningOptionCheckAction,
+  getSpinningOptionCheckSourceAction,
   upsertSpinningMachineSetupAction,
   getSpinningCountsAction,
   getSpinningMachinesAction,
@@ -155,13 +170,116 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   const [countChangeDialog, setCountChangeDialog] = useState(false)
   const [newCountName, setNewCountName] = useState('')
 
-  // Option check (carry-forward from immediate previous shift)
+  // Option check (carry-forward from a selected earlier entry)
   const [optionCheck, setOptionCheck] = useState({
     copySpeed: false,
     copyTpi: false,
     copyTwCon: false,
     copyCount: false
   })
+  const [optionSourceDate, setOptionSourceDate] = useState('')
+  const [optionSourceShift, setOptionSourceShift] = useState('')
+  const [availableSourceShifts, setAvailableSourceShifts] = useState([])
+  const [isLoadingOptionSource, setIsLoadingOptionSource] = useState(false)
+  const [optionSourceStatus, setOptionSourceStatus] = useState('loading')
+  const [optionCalendarOpen, setOptionCalendarOpen] = useState(false)
+  const optionSourceRequestRef = useRef(0)
+
+  const loadOptionCheckSource = useCallback(async (requestedDate = '', preferredShift = '') => {
+    const requestId = ++optionSourceRequestRef.current
+    setIsLoadingOptionSource(true)
+    setOptionSourceStatus('loading')
+
+    if (!requestedDate) {
+      setOptionSourceDate('')
+      setOptionSourceShift('')
+      setAvailableSourceShifts([])
+    }
+
+    try {
+      const result = await getSpinningOptionCheckSourceAction({
+        targetDate: entryDate,
+        targetShift: parseInt(shift),
+        sourceDate: requestedDate || null
+      })
+
+      if (requestId !== optionSourceRequestRef.current) return
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to find previous spinning entries')
+      }
+
+      const source = result.data || {}
+      const sourceDate = requestedDate || source.sourceDate || ''
+      const sourceShifts = (source.availableShifts || []).map(String)
+      const sourceShift = requestedDate
+        ? String(preferredShift || '')
+        : source.sourceShift
+          ? String(source.sourceShift)
+          : ''
+
+      setOptionSourceDate(sourceDate)
+      setAvailableSourceShifts(sourceShifts)
+      setOptionSourceShift(sourceShift)
+      setOptionSourceStatus(
+        sourceDate && sourceShift && sourceShifts.includes(sourceShift)
+          ? 'available'
+          : 'none'
+      )
+    } catch (error) {
+      if (requestId !== optionSourceRequestRef.current) return
+
+      console.error('Error loading option check source:', error)
+      setOptionSourceShift('')
+      setAvailableSourceShifts([])
+      setOptionSourceStatus('error')
+      toast.error(error.message || 'Failed to find previous spinning entries')
+    } finally {
+      if (requestId === optionSourceRequestRef.current) {
+        setIsLoadingOptionSource(false)
+      }
+    }
+  }, [entryDate, shift])
+
+  useServerDataLoader(
+    () => loadOptionCheckSource(),
+    [entryDate, shift]
+  )
+
+  const handleOptionSourceDateChange = (selectedDate) => {
+    if (!selectedDate) return
+
+    const sourceDate = format(selectedDate, 'yyyy-MM-dd')
+    setOptionSourceDate(sourceDate)
+    setAvailableSourceShifts([])
+    setOptionCalendarOpen(false)
+    loadOptionCheckSource(sourceDate, optionSourceShift)
+  }
+
+  const handleOptionSourceShiftChange = (sourceShift) => {
+    setOptionSourceShift(sourceShift)
+    setOptionSourceStatus(
+      optionSourceDate && availableSourceShifts.includes(sourceShift)
+        ? 'available'
+        : 'none'
+    )
+  }
+
+  const optionSourceDateValue = optionSourceDate
+    ? new Date(`${optionSourceDate}T00:00:00`)
+    : undefined
+  const optionCalendarMonth = optionSourceDateValue || (
+    entryDate ? new Date(`${entryDate}T00:00:00`) : undefined
+  )
+  const isOptionSourceDateDisabled = (day) => {
+    if (!entryDate) return false
+
+    const dayKey = format(day, 'yyyy-MM-dd')
+    if (dayKey > entryDate) return true
+    if (dayKey < entryDate) return false
+
+    return !optionSourceShift || parseInt(optionSourceShift) >= parseInt(shift)
+  }
 
   // Add machine dialog
   const [addMachineDialog, setAddMachineDialog] = useState(false)
@@ -469,8 +587,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   }
 
   const handleOptionCheckApply = async () => {
-    if (!confirmDiscardLocalEdits()) return
-
     if (!entryDate) {
       toast.warning('Current entry date is not available')
       return
@@ -481,11 +597,30 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       return
     }
 
+    if (!optionSourceDate || !optionSourceShift) {
+      if (optionSourceStatus === 'none') {
+        toast.warning(
+          optionSourceDate
+            ? `No spinning entry exists for ${optionSourceDate}, Shift ${optionSourceShift || '-'}. Choose another source date or shift.`
+            : 'No previous spinning entry is available. Initialize an earlier date and shift first.'
+        )
+      } else if (optionSourceStatus === 'error') {
+        toast.error('Previous entries could not be loaded. Try selecting the source date again.')
+      } else {
+        toast.warning('Select a source date and shift')
+      }
+      return
+    }
+
+    if (!confirmDiscardLocalEdits()) return
+
     setIsSaving(true)
     try {
       const result = await applySpinningOptionCheckAction({
         targetDate: entryDate,
         targetShift: parseInt(shift),
+        sourceDate: optionSourceDate,
+        sourceShift: parseInt(optionSourceShift),
         options: optionCheck
       })
 
@@ -777,9 +912,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <div className="flex items-center gap-3 rounded border border-gray-300 px-2 py-1">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 items-center gap-2 rounded border border-gray-300 px-2 py-1">
             <span className="text-xs font-medium text-gray-700">Option Check</span>
             <label className="flex items-center gap-1 text-xs">
               <Checkbox
@@ -809,11 +944,89 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               />
               <span>Count</span>
             </label>
+            <span className="border-l border-gray-300 pl-2 text-[11px] font-medium text-gray-600">
+              From
+            </span>
+            <Popover open={optionCalendarOpen} onOpenChange={setOptionCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSaving || isLoadingOptionSource}
+                  aria-label="Option Check source date"
+                  aria-invalid={optionSourceStatus === 'none' || optionSourceStatus === 'error'}
+                  title={
+                    optionSourceStatus === 'none'
+                      ? optionSourceDate
+                        ? `No initialized spinning entry exists for ${optionSourceDate}, Shift ${optionSourceShift || '-'}`
+                        : 'No earlier initialized spinning entry is available'
+                      : optionSourceStatus === 'error'
+                        ? 'Previous entries could not be loaded'
+                        : 'Source date'
+                  }
+                  className="h-8 w-[126px] justify-start px-2 text-xs font-normal"
+                >
+                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
+                  {optionSourceDateValue
+                    ? format(optionSourceDateValue, 'dd-MMM-yy')
+                    : 'Select date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <HolidayAwareCalendar
+                  mode="single"
+                  selected={optionSourceDateValue}
+                  onSelect={handleOptionSourceDateChange}
+                  tableName="spinning_production_header"
+                  shift={optionSourceShift || undefined}
+                  defaultMonth={optionCalendarMonth}
+                  disabled={isOptionSourceDateDisabled}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <Select
+              value={optionSourceShift}
+              onValueChange={handleOptionSourceShiftChange}
+              disabled={isSaving || isLoadingOptionSource}
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Option Check source shift"
+                title={
+                  optionSourceStatus === 'none'
+                    ? 'No initialized previous entry is available'
+                    : optionSourceStatus === 'error'
+                      ? 'Previous entries could not be loaded'
+                      : 'Source shift'
+                }
+                className="w-[92px] text-xs"
+              >
+                <SelectValue
+                  placeholder={
+                    isLoadingOptionSource
+                      ? 'Loading...'
+                      : optionSourceStatus === 'none'
+                        ? 'No entry'
+                        : optionSourceStatus === 'error'
+                          ? 'Load failed'
+                          : 'Shift'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {['1', '2', '3'].map(sourceShift => (
+                  <SelectItem key={sourceShift} value={sourceShift}>
+                    Shift {sourceShift}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
               onClick={handleOptionCheckApply}
-              disabled={isSaving || !hasOptionSelected}
+              disabled={isSaving || isLoadingOptionSource || !hasOptionSelected}
             >
               Check
             </Button>
@@ -845,7 +1058,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             Remove machine {selectedRows.length > 0 && `(${selectedRows.length})`}
           </Button>
         </div>
-        <span className="text-sm text-gray-500">
+        <span className="ml-auto shrink-0 text-sm text-gray-500">
           {selectedRows.length > 0 && (
             <span className="text-blue-600 font-medium mr-4">
               {selectedRows.length} machine(s) selected

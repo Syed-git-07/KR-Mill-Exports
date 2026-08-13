@@ -3,6 +3,12 @@ import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { resolveProductionTime } from '../productionFormulaMath'
+import {
+  createSpinningOptionCheckError,
+  normalizeSpinningEntryContext,
+  normalizeSpinningEntryDate,
+  validateSpinningOptionCheckSource
+} from '../spinningOptionCheck'
 
 const SPINNING_DEFAULT_SETUP_DATE_KEY = '2026-04-01'
 const SPINNING_DEFAULT_SETUP_DATE = new Date(`${SPINNING_DEFAULT_SETUP_DATE_KEY}T00:00:00.000Z`)
@@ -1449,40 +1455,98 @@ export async function batchUpdateSpinningMachineSetups(updates, shift = null) {
   }
 }
 
-function resolvePreviousShiftContext(targetDate, targetShift) {
-  const parsedShift = parseInt(targetShift)
-  const sourceDate = new Date(targetDate)
-
-  if (Number.isNaN(sourceDate.getTime())) {
-    throw new Error('Invalid target date')
-  }
-
-  if (![1, 2, 3].includes(parsedShift)) {
-    throw new Error('Invalid target shift')
-  }
-
-  if (parsedShift === 1) {
-    sourceDate.setDate(sourceDate.getDate() - 1)
-    return { sourceDate, sourceShift: 3 }
-  }
-
-  if (parsedShift === 2) {
-    return { sourceDate, sourceShift: 1 }
-  }
-
-  return { sourceDate, sourceShift: 2 }
-}
-
 function toDateOnlyString(dateValue) {
   const d = new Date(dateValue)
   if (Number.isNaN(d.getTime())) return ''
   return d.toISOString().slice(0, 10)
 }
 
+function getPreviousSpinningHeaderWhere(target) {
+  return {
+    shift: { in: [1, 2, 3] },
+    OR: [
+      { entry_date: { lt: target.date } },
+      {
+        entry_date: target.date,
+        shift: { lt: target.shift }
+      }
+    ]
+  }
+}
+
+async function getAvailableSourceShifts(entryDate, target) {
+  const headers = await prisma.spinning_production_header.findMany({
+    where: {
+      entry_date: entryDate,
+      ...getPreviousSpinningHeaderWhere(target)
+    },
+    select: { shift: true },
+    orderBy: { shift: 'desc' }
+  })
+
+  return [...new Set(headers.map(header => header.shift))]
+    .filter(sourceShift => [1, 2, 3].includes(sourceShift))
+    .sort((a, b) => b - a)
+}
+
+// Resolve the newest initialized entry, or the available initialized shifts
+// for a date chosen by the user. Only entries earlier than the current context
+// are returned.
+export async function getSpinningOptionCheckSource(payload) {
+  const {
+    targetDate,
+    targetShift,
+    sourceDate
+  } = payload || {}
+  const target = normalizeSpinningEntryContext(targetDate, targetShift, 'Current entry')
+
+  if (sourceDate) {
+    const selectedDate = normalizeSpinningEntryDate(sourceDate, 'Source date')
+    const availableShifts = await getAvailableSourceShifts(selectedDate.date, target)
+
+    return {
+      sourceDate: selectedDate.dateKey,
+      sourceShift: availableShifts[0] || null,
+      availableShifts
+    }
+  }
+
+  const latestHeader = await prisma.spinning_production_header.findFirst({
+    where: getPreviousSpinningHeaderWhere(target),
+    select: {
+      entry_date: true,
+      shift: true
+    },
+    orderBy: [
+      { entry_date: 'desc' },
+      { shift: 'desc' }
+    ]
+  })
+
+  if (!latestHeader) {
+    return {
+      sourceDate: '',
+      sourceShift: null,
+      availableShifts: []
+    }
+  }
+
+  const availableShifts = await getAvailableSourceShifts(latestHeader.entry_date, target)
+  return {
+    sourceDate: toDateOnlyString(latestHeader.entry_date),
+    sourceShift: availableShifts.includes(latestHeader.shift)
+      ? latestHeader.shift
+      : availableShifts[0] || null,
+    availableShifts
+  }
+}
+
 export async function applySpinningOptionCheck(payload) {
   const {
     targetDate,
     targetShift,
+    sourceDate,
+    sourceShift,
     options = {}
   } = payload || {}
 
@@ -1492,16 +1556,21 @@ export async function applySpinningOptionCheck(payload) {
   const copyCount = options.copyCount === true
 
   if (!copySpeed && !copyTpi && !copyTwCon && !copyCount) {
-    throw new Error('Select at least one option')
+    throw createSpinningOptionCheckError('Select at least one option to copy')
   }
 
-  const { sourceDate, sourceShift } = resolvePreviousShiftContext(targetDate, targetShift)
+  const { source, target } = validateSpinningOptionCheckSource({
+    targetDate,
+    targetShift,
+    sourceDate,
+    sourceShift
+  })
 
   return await prisma.$transaction(async (tx) => {
     const targetHeader = await tx.spinning_production_header.findFirst({
       where: {
-        entry_date: new Date(targetDate),
-        shift: parseInt(targetShift)
+        entry_date: target.date,
+        shift: target.shift
       },
       select: {
         id: true,
@@ -1511,13 +1580,15 @@ export async function applySpinningOptionCheck(payload) {
     })
 
     if (!targetHeader) {
-      throw new Error('Target entry not found')
+      throw createSpinningOptionCheckError(
+        'Current spinning entry was not found. Refresh the page and try again.'
+      )
     }
 
     const sourceHeader = await tx.spinning_production_header.findFirst({
       where: {
-        entry_date: new Date(toDateOnlyString(sourceDate)),
-        shift: sourceShift
+        entry_date: source.date,
+        shift: source.shift
       },
       select: {
         id: true,
@@ -1527,7 +1598,9 @@ export async function applySpinningOptionCheck(payload) {
     })
 
     if (!sourceHeader) {
-      throw new Error('Source header not found')
+      throw createSpinningOptionCheckError(
+        `No spinning entry exists for ${source.dateKey}, Shift ${source.shift}. Choose another source date and shift.`
+      )
     }
 
     const targetDetails = await tx.spinning_production_detail.findMany({
@@ -1539,7 +1612,7 @@ export async function applySpinningOptionCheck(payload) {
     if (targetMachineIds.length === 0) {
       return {
         sourceDate: toDateOnlyString(sourceHeader.entry_date),
-        sourceShift,
+        sourceShift: source.shift,
         totalEligibleMachines: 0,
         machinesUpdated: 0,
         machinesSkipped: 0
@@ -1549,8 +1622,20 @@ export async function applySpinningOptionCheck(payload) {
     const targetMachines = await tx.spinning_machines.findMany({
       where: {
         id: { in: targetMachineIds },
-        activated_at: { lte: targetHeader.entry_date },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: targetHeader.entry_date } }]
+        AND: [
+          {
+            OR: [
+              { activated_at: null },
+              { activated_at: { lte: targetHeader.entry_date } }
+            ]
+          },
+          {
+            OR: [
+              { deactivated_at: null },
+              { deactivated_at: { gt: targetHeader.entry_date } }
+            ]
+          }
+        ]
       },
       select: { id: true }
     })
@@ -1560,7 +1645,8 @@ export async function applySpinningOptionCheck(payload) {
     const targetSetups = await tx.spinning_machine_setup.findMany({
       where: { 
         machine_id: { in: [...eligibleMachineIds] },
-        entry_date: targetHeader.entry_date
+        entry_date: targetHeader.entry_date,
+        shift: target.shift
       },
       select: {
         id: true,
@@ -1578,7 +1664,8 @@ export async function applySpinningOptionCheck(payload) {
       ? await tx.spinning_machine_setup.findMany({
           where: { 
             machine_id: { in: sourceMachineIds },
-            entry_date: sourceHeader.entry_date
+            entry_date: sourceHeader.entry_date,
+            shift: source.shift
           },
           select: {
             machine_id: true,
@@ -1636,7 +1723,7 @@ export async function applySpinningOptionCheck(payload) {
 
     return {
       sourceDate: toDateOnlyString(sourceHeader.entry_date),
-      sourceShift,
+      sourceShift: source.shift,
       totalEligibleMachines: targetSetups.length,
       machinesUpdated,
       machinesSkipped

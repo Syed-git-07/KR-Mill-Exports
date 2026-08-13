@@ -479,6 +479,7 @@ function CardingEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="carding_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>

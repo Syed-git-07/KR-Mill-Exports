@@ -502,6 +502,7 @@ function LapFormerEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="lap_former_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>

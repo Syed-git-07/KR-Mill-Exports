@@ -353,6 +353,7 @@ function AutoconerEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="autoconer_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>
