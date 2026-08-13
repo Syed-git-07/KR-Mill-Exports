@@ -26,21 +26,6 @@ async function upsertDefaultSpinningSetup(machineId, setupFields) {
   });
 }
 
-async function syncDatedSpinningSetups(machineId, setupFields) {
-  const data = Object.fromEntries(
-    Object.entries(setupFields).filter(([, value]) => value !== undefined)
-  );
-  if (Object.keys(data).length === 0) return;
-
-  await prisma.spinning_machine_setup.updateMany({
-    where: {
-      machine_id: machineId,
-      NOT: { entry_date: SPINNING_DEFAULT_SETUP_DATE },
-    },
-    data: { ...data, updated_at: new Date() },
-  });
-}
-
 /**
  * Spinning Machine Master CRUD Operations
  */
@@ -226,19 +211,6 @@ export async function updateSpinningMachine(id, machineData) {
     tw_con: finalTwCon,
     doff_loss: finalDoffLoss,
     c_waste_percent: finalWastePercent,
-    allocated_spindles: processedData.allocated_spindles,
-  });
-
-  // The machine master is the machine-specific source of truth. Keep existing
-  // post-preparatory setup rows aligned when the user clicks Update.
-  await syncDatedSpinningSetups(id, {
-    speed,
-    count_name,
-    act_count,
-    tpi,
-    tw_con,
-    doff_loss,
-    c_waste_percent,
     allocated_spindles: processedData.allocated_spindles,
   });
 
