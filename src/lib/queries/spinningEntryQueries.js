@@ -795,6 +795,7 @@ export async function getSpinningStoppageEntries(headerId) {
         return {
           id: detail.id,
           machine_id: detail.machine_id,
+          setup_id: setup.id || null,
           // Nested structure to match production query
           production_detail: {
             machine: {

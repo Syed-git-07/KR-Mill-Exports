@@ -16,6 +16,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
+import EnterSelect from '@/components/ui/enter-select'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
@@ -43,7 +44,9 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   sharedDraftEdits,
   onSharedDraftEditsChange,
   productionDraftEdits,
-  setupDraftEdits
+  setupDraftEdits,
+  countOptions = [],
+  onCountChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [stoppageData, setStoppageData] = useState([])
@@ -585,8 +588,21 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                   <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     {row.production_detail?.session_no ?? '-'}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap">
-                    {row.count_name || '-'}
+                  <td className="border border-gray-300 px-0 py-0">
+                    <EnterSelect
+                      value={findSetupDraftForMachine(row.machine_id)?.count_name || row.count_name || ''}
+                      options={countOptions.map(count => ({ value: count.count_name, label: count.count_name }))}
+                      onChange={(countName) => onCountChange?.({
+                        setupId: row.setup_id,
+                        machineId: row.machine_id,
+                        countName
+                      })}
+                      placeholder="Select..."
+                      searchable
+                      className="h-9 rounded-none text-xs"
+                      cleanCell
+                      editingHighlight
+                    />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {effectiveTotalTime}

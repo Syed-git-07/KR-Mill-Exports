@@ -353,6 +353,16 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   useServerDataLoader(loadData, [shift, entryDate])
 
+  // Count changes made in Production/Stoppage are shared as setup drafts.
+  useEffect(() => {
+    if (!setupData.length) return
+    setSetupData(prev => prev.map(row => {
+      const draft = editedRows[row.id] || editedRows[String(row.id)] ||
+        Object.values(editedRows).find(value => String(value?.machine_id) === String(row.machine_id))
+      return draft ? { ...row, ...draft } : row
+    }))
+  }, [editedRows, setupData.length])
+
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
     let processedValue = value

@@ -46,7 +46,9 @@ import {
   getMaisitriesAction,
   copySpinningFromPreviousDateAction,
   getSpinningAvailableDatesAction,
-  getSpinningShiftConfigAction
+  getSpinningShiftConfigAction,
+  getSpinningCountsAction,
+  batchUpdateSpinningMachineSetupsAction
 } from '@/app/actions/spinning-entry'
 
 function SpinningEntryContent() {
@@ -66,6 +68,7 @@ function SpinningEntryContent() {
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const [countOptions, setCountOptions] = useState([])
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [shiftTime, setShiftTime] = useState(resolveSpinningShiftFallbackTime(shift)) // Dynamic shift time from database
   // Copy Previous Speed states
@@ -90,6 +93,36 @@ function SpinningEntryContent() {
   const setSetupDraftEdits = useCallback((updates) => {
     setSharedDrafts(prev => ({ ...prev, setup: updates || {} }))
   }, [])
+
+  useEffect(() => {
+    getSpinningCountsAction().then(result => {
+      if (result.success) setCountOptions(result.data || [])
+    }).catch(error => console.error('Error loading spinning counts:', error))
+  }, [])
+
+  const handleSharedCountChange = useCallback(({ setupId, machineId, countName }) => {
+    const selected = countOptions.find(count => count.count_name === countName)
+    if (!selected || !machineId) return
+
+    const countFields = {
+      machine_id: machineId,
+      count_name: countName,
+      ...(selected.act_count != null && { act_count: parseFloat(selected.act_count) }),
+      ...(selected.speed != null && { speed: parseInt(selected.speed) }),
+      ...(selected.tpi != null && { tpi: parseFloat(selected.tpi) }),
+      ...(selected.tw_con != null && { tw_con: parseInt(selected.tw_con) }),
+      ...(selected.doff_loss != null && { doff_loss: parseFloat(selected.doff_loss) }),
+      ...(selected.waste_percent != null && { c_waste_percent: parseFloat(selected.waste_percent) })
+    }
+    const draftKey = setupId || `machine-${machineId}`
+    setSharedDrafts(prev => ({
+      ...prev,
+      setup: {
+        ...prev.setup,
+        [draftKey]: { ...prev.setup[draftKey], ...countFields }
+      }
+    }))
+  }, [countOptions])
 
   const getUnsavedEditCount = useCallback(() => {
     const sharedCount =
@@ -352,14 +385,20 @@ function SpinningEntryContent() {
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
-      const setupResult = await (
-        setupTabRef.current?.saveChanges?.({
-          suppressNoChangesToast: true,
-          suppressSuccessToast: true,
-          skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
+      const setupDraftUpdates = Object.entries(sharedDrafts.setup || {})
+        .filter(([id]) => !String(id).startsWith('machine-'))
+        .map(([id, update]) => ({ id, ...update }))
+      const setupResult = setupTabRef.current?.saveChanges
+        ? await setupTabRef.current.saveChanges({
+           suppressNoChangesToast: true,
+           suppressSuccessToast: true,
+           skipParentRefresh: true,
+           dependencyDrafts: sharedDrafts
+          })
+        : setupDraftUpdates.length > 0
+          ? await batchUpdateSpinningMachineSetupsAction(setupDraftUpdates, parseInt(shift))
+              .then(result => ({ ...result, saved: result.success ? setupDraftUpdates.length : 0 }))
+          : { success: true, saved: 0 }
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
@@ -654,6 +693,8 @@ function SpinningEntryContent() {
                   onSharedDraftEditsChange={setProductionDraftEdits}
                   setupDraftEdits={sharedDrafts.setup}
                   stoppageDraftEdits={sharedDrafts.stoppage}
+                  countOptions={countOptions}
+                  onCountChange={handleSharedCountChange}
                 />
                 </DeferredMount>
               </TabsContent>
@@ -671,6 +712,8 @@ function SpinningEntryContent() {
                   onSharedDraftEditsChange={setStoppageDraftEdits}
                   setupDraftEdits={sharedDrafts.setup}
                   productionDraftEdits={sharedDrafts.production}
+                  countOptions={countOptions}
+                  onCountChange={handleSharedCountChange}
                 />
                 </DeferredMount>
               </TabsContent>

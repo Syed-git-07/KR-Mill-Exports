@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
+import EnterSelect from '@/components/ui/enter-select'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -44,7 +45,9 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   setupDraftEdits,
   sharedDraftEdits,
   onSharedDraftEditsChange,
-  stoppageDraftEdits
+  stoppageDraftEdits,
+  countOptions = [],
+  onCountChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [productionData, setProductionData] = useState([])
@@ -521,8 +524,21 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                         onEnterNavigation={() => focusNextRow(index, 'sider2_name')}
                       />
                     </td>
-                    <td className="border border-gray-300 px-3 py-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {row.count_name || row.setup?.count_name || '-'}
+                    <td className="border border-gray-300 px-0 py-0">
+                      <EnterSelect
+                        value={getEffectiveSetup(row)?.count_name || row.count_name || ''}
+                        options={countOptions.map(count => ({ value: count.count_name, label: count.count_name }))}
+                        onChange={(countName) => onCountChange?.({
+                          setupId: row.setup?.id,
+                          machineId: row.machine_id,
+                          countName
+                        })}
+                        placeholder="Select..."
+                        searchable
+                        className="h-9 rounded-none text-xs"
+                        cleanCell
+                        editingHighlight
+                      />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput
