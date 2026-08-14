@@ -452,7 +452,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           Total Machines: <span className="font-semibold">{productionData.length}</span>
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

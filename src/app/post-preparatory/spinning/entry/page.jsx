@@ -33,6 +33,7 @@ import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 
 import SpinningProductionTab from '@/components/modules/post-preparatory/spinning/SpinningProductionTab'
 import SpinningStoppageTab from '@/components/modules/post-preparatory/spinning/SpinningStoppageTab'
@@ -248,6 +249,8 @@ function SpinningEntryContent() {
     loadProductionHeader()
   }
 
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
+
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
@@ -429,7 +432,7 @@ function SpinningEntryContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push('/post-preparatory/spinning')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/post-preparatory/spinning')}
               className="flex items-center gap-1"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -679,6 +682,7 @@ function SpinningEntryContent() {
                 <DeferredMount active={activeTab === 'setup'}>
                 <SpinningMachineSetupTab 
                   ref={setupTabRef}
+                  headerId={headerId}
                   key={`setup-${refreshKey}`} 
                   entryDate={format(date, 'yyyy-MM-dd')}
                   shift={parseInt(shift)}

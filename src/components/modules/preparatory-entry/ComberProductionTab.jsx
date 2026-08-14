@@ -377,6 +377,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
         return updateComberProductionDetailAction(row.id, {
           ...changes,
           ...calculated,
+          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
           run_hrs: runHrs,
           waste: waste
@@ -450,7 +451,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
           {productionData.length} machines | Shift Time: {totalTime} mins | MCEffi: setup-based
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

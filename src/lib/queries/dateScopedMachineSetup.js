@@ -24,6 +24,9 @@ export function cloneDateScopedSetup(row, entryDate, shift, setupOverrides = {})
   ])
 
   Object.assign(cloned, setupOverrides)
+  // Inclusion is entry-local. A machine excluded from one entry is eligible
+  // again when a future entry is initialized from Machine Master.
+  cloned.is_included = true
 
   // Recalculate derived standard production from the complete effective
   // snapshot. Explicit zero master values must remain zero rather than being
@@ -61,7 +64,11 @@ export async function getOrCreateDateScopedSetups({
   if (!headerId) {
     // Legacy callers (master lookup/add-machine flows) use the baseline rows.
     return setupModel.findMany({
-      where: { entry_date: new Date('1970-01-01T00:00:00.000Z'), shift: 1 },
+      where: {
+        entry_date: new Date('1970-01-01T00:00:00.000Z'),
+        shift: 1,
+        is_included: true
+      },
       orderBy: { machine_id: 'asc' }
     })
   }
@@ -76,7 +83,7 @@ export async function getOrCreateDateScopedSetups({
   const shift = Number(header.shift)
   const machineFilter = machineIds ? { machine_id: { in: machineIds } } : {}
   let targetRows = await setupModel.findMany({
-    where: { ...machineFilter, entry_date: entryDate, shift },
+    where: { ...machineFilter, entry_date: entryDate, shift, is_included: true },
     orderBy: { machine_id: 'asc' }
   })
 
@@ -113,7 +120,7 @@ export async function getOrCreateDateScopedSetups({
       skipDuplicates: true
     })
     targetRows = await setupModel.findMany({
-      where: { ...machineFilter, entry_date: entryDate, shift },
+      where: { ...machineFilter, entry_date: entryDate, shift, is_included: true },
       orderBy: { machine_id: 'asc' }
     })
   }

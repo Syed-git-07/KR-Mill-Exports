@@ -29,8 +29,6 @@ import {
   updateMachineSetupAction,
   addBreakerDrawingMachineAction,
   removeBreakerDrawingMachineAction,
-  updateBreakerDrawingMachineMixingAction,
-  bulkUpdateBreakerDrawingMachineMixingAction,
   getMixingOptionsAction
 } from '@/app/actions/breaker-drawing-entry'
 import { lookupDrawingBreakerMachineByNoAction } from '@/app/actions/drawing-breaker'
@@ -337,12 +335,12 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const response = await addBreakerDrawingMachineAction(newMachine)
+      const response = await addBreakerDrawingMachineAction({ ...newMachine, headerId })
       if (!response?.success) {
         throw new Error(response?.error || 'Failed to add machine')
       }
       const result = response.data
-      toast.success(result.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+      toast.success(result.reactivated ? 'Machine added back to this entry' : 'Machine added to this entry')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
@@ -379,9 +377,11 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     setIsSaving(true)
     try {
       const removePromises = selectedRows.map(machineId => 
-        removeBreakerDrawingMachineAction(machineId)
+        removeBreakerDrawingMachineAction(machineId, headerId)
       )
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -397,8 +397,6 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
   // Change mixing for selected machines
   const handleChangeMixing = async () => {
-    if (!confirmDiscardLocalEdits()) return
-
     const mixingValue = newMixing === 'custom' ? customMixing : newMixing
     
     if (!mixingValue) {
@@ -411,22 +409,27 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       return
     }
 
-    setIsSaving(true)
-    try {
-      await bulkUpdateBreakerDrawingMachineMixingAction(selectedRows, mixingValue, headerId)
-      toast.success(`Mixing updated for ${selectedRows.length} machine(s)`)
-      setShowMixingChangeDialog(false)
-      setNewMixing('')
-      setCustomMixing('')
-      setSelectedRows([])
-      await loadData()
-      onRefresh?.()
-    } catch (error) {
-      console.error('Error updating mixing:', error)
-      toast.error('Failed to update mixing')
-    } finally {
-      setIsSaving(false)
-    }
+    const selectedSet = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      setupData.forEach(row => {
+        const machineId = row.machine_id ?? row.machine?.id
+        if (!selectedSet.has(String(machineId))) return
+        next[row.id] = { ...next[row.id], machine_id: machineId, prodn_mixing: mixingValue }
+      })
+      return next
+    })
+    setSetupData(prev => prev.map(row => {
+      const machineId = row.machine_id ?? row.machine?.id
+      return selectedSet.has(String(machineId))
+        ? { ...row, prodn_mixing: mixingValue, machine: { ...row.machine, prodn_mixing: mixingValue } }
+        : row
+    }))
+    toast.success(`Mixing staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setShowMixingChangeDialog(false)
+    setNewMixing('')
+    setCustomMixing('')
+    setSelectedRows([])
   }
 
   if (isLoading) {
@@ -446,7 +449,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
@@ -498,7 +501,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
                     {row.machine?.make_name || ''}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">
-                    {row.machine?.prodn_mixing || ''}
+                    {row.prodn_mixing || row.machine?.prodn_mixing || ''}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     1
@@ -583,7 +586,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
             onClick={() => setShowAddDialog(true)}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add new machine
+            Add Master machine
           </Button>
           <Button 
             variant="outline" 
@@ -617,8 +620,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Add New Machine</DialogTitle>
-            <DialogDescription className="text-sm">Enter details for the new Breaker Drawing machine</DialogDescription>
+            <DialogTitle className="text-lg font-semibold">Add Master Machine to Entry</DialogTitle>
+            <DialogDescription className="text-sm">Look up an existing Breaker Drawing Machine Master record for this entry.</DialogDescription>
           </DialogHeader>
           <div className="space-y-5 py-2">
             <div className="grid grid-cols-2 gap-5">

@@ -318,17 +318,17 @@ export async function getMaisitriesAction() {
 export async function addSpinningMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addSpinningMachine(machineData)
+    const data = await queries.addSpinningEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeSpinningMachineAction(id) {
+export async function removeSpinningMachineAction(id, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeSpinningMachine(id)
+    const data = await queries.removeSpinningMachine(id, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/dialog'
 import { 
   updateSimplexMachineSetupAction,
-  bulkUpdateSimplexMachineCountAction,
   getSimplexCountOptionsAction,
   addSimplexMachineAction,
   removeSimplexMachineAction,
@@ -349,32 +348,15 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       return
     }
 
-    setIsSaving(true)
-    try {
-      // Extract machine IDs from selected setup row IDs
-      const machineIds = selectedRows.map(rowId => {
-        const setup = setupData.find(r => r.id === rowId)
-        return setup?.machine?.id
-      }).filter(Boolean)
-      
-      await bulkUpdateSimplexMachineCountAction(machineIds, countToSet)
-      toast.success(`Count updated for ${selectedRows.length} machine(s)`)
-      setShowCountChangeDialog(false)
-      setNewCount('')
-      setCustomCount('')
-      setSelectedRows([])
-      
-      await loadData()
-      onRefresh?.()
-    } catch (error) {
-      console.error('Error updating count:', error)
-      toast.error('Failed to update count')
-    } finally {
-      setIsSaving(false)
-    }
+    selectedRows.forEach(rowId => handleInputChange(rowId, 'prodn_mixing', countToSet))
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setShowCountChangeDialog(false)
+    setNewCount('')
+    setCustomCount('')
+    setSelectedRows([])
   }
 
-  // Handle add new machine (creates both machine and setup - like Comber)
+  // Add an existing Machine Master record to this entry snapshot.
   const handleAddMachine = async () => {
     if (!newMachine.machine_no) {
       toast.warning('Please enter machine number')
@@ -385,6 +367,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     try {
       const selectedCountTpi = getSelectedCountTpi(newMachine.prodn_mixing)
       const result = await addSimplexMachineAction({
+        headerId,
         machine_no: newMachine.machine_no,
         description: newMachine.description,
         make_name: newMachine.make_name,
@@ -406,7 +389,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         throw new Error(result?.error || 'Failed to add machine')
       }
       
-      toast.success('New machine added successfully')
+      toast.success('Machine added to this entry')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
@@ -444,7 +427,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       for (const rowId of selectedRows) {
         const machineSetup = setupData.find(s => s.id === rowId)
         if (machineSetup?.machine?.id) {
-          await removeSimplexMachineAction(machineSetup.machine.id)
+          const result = await removeSimplexMachineAction(machineSetup.machine.id, headerId)
+          if (!result?.success) throw new Error(result?.error || 'Failed to remove machine')
         }
       }
       
@@ -478,7 +462,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
               <span className="text-sm text-gray-600">{setupData.length} machines</span>
               {Object.keys(editedRows).length > 0 && (
                 <span className="text-yellow-600 font-medium text-sm">
-                  • Auto-saved draft: {Object.keys(editedRows).length}
+                  • Unsaved draft: {Object.keys(editedRows).length}
                 </span>
               )}
             </div>
@@ -678,7 +662,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           onClick={() => setShowAddDialog(true)}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Add new machine
+          Add Master machine
         </Button>
         <Button 
           variant="outline"
@@ -748,7 +732,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add New Machine</DialogTitle>
+            <DialogTitle>Add Master Machine to Entry</DialogTitle>
             <DialogDescription>
               Create or reactivate a simplex machine and add it to setup
             </DialogDescription>

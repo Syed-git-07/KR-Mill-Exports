@@ -215,37 +215,17 @@ export async function getCountOptionsAction() {
 export async function addBreakerDrawingMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addBreakerDrawingMachine(machineData)
+    const data = await queries.addBreakerDrawingEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeBreakerDrawingMachineAction(machineId) {
+export async function removeBreakerDrawingMachineAction(machineId, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeBreakerDrawingMachine(machineId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function updateMachineCountAction(machineId, count) {
-  await requireUser()
-  try {
-    const data = await queries.updateMachineCount(machineId, count)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function bulkUpdateMachineCountAction(machineIds, count) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateMachineCount(machineIds, count)
+    const data = await queries.removeBreakerDrawingMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -257,28 +237,6 @@ export async function getMixingOptionsAction() {
   await requireUser()
   try {
     const data = await queries.getMixingOptions()
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-// Update machine mixing
-export async function updateBreakerDrawingMachineMixingAction(machineId, mixing, headerId = null) {
-  await requireUser()
-  try {
-    const data = await queries.updateBreakerDrawingMachineMixing(machineId, mixing, headerId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-// Bulk update machine mixing
-export async function bulkUpdateBreakerDrawingMachineMixingAction(machineIds, mixing, headerId = null) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateBreakerDrawingMachineMixing(machineIds, mixing, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

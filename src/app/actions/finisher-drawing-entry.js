@@ -227,16 +227,6 @@ export async function updateFinisherDrawingMachineSetupAction(machineId, updates
   }
 }
 
-export async function updateFinisherDrawingMachineSpeedAction(machineId, newSpeed) {
-  await requireUser()
-  try {
-    const data = await queries.updateFinisherDrawingMachineSpeed(machineId, newSpeed)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 export async function getFinisherDrawingMixingOptionsAction() {
   await requireUser()
   try {
@@ -260,27 +250,17 @@ export async function getFinisherDrawingMachinesAction() {
 export async function addFinisherDrawingMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addFinisherDrawingMachine(machineData)
+    const data = await queries.addFinisherDrawingEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeFinisherDrawingMachineAction(machineId) {
+export async function removeFinisherDrawingMachineAction(machineId, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeFinisherDrawingMachine(machineId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function bulkUpdateFinisherDrawingMachineMixingAction(machineIds, mixingValue, headerId = null) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateFinisherDrawingMachineMixing(machineIds, mixingValue, headerId)
+    const data = await queries.removeFinisherDrawingMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

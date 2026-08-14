@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeaderUnlocked, assertEntrySetupUnlocked, assertEntryStoppageUnlocked, removeMachineFromEntrySnapshot, updateEntryMixingSnapshot } from './entryMachineSnapshot';
 import { resolveFinisherDrawingShiftFallbackTime } from '../finisherDrawingShiftFallback';
 import {
   FINISHER_DRAWING_FORMULA_FALLBACK,
@@ -10,6 +11,7 @@ import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -218,12 +220,16 @@ export async function getOrCreateFinisherDrawingHeader(date, shift, supervisorId
     const data = await getFinisherDrawingProductionByDateShift(date, shift)
     return data
   } catch (error) {
+    const racedHeader = await getFinisherDrawingProductionByDateShift(date, shift)
+    if (racedHeader) return racedHeader
     throw error
   }
 }
 
 // Update production header
 export async function updateFinisherDrawingHeader(id, updates) {
+  await assertEntryHeaderUnlocked('finisherDrawing', id)
+  updates = sanitizeEntryHeaderUpdate(updates)
   try {
     const data = await prisma.finisher_drawing_production_header.update({
       where: { id },
@@ -412,6 +418,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
+        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(Number.isFinite(rawEfficiency) && {
           std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
         })
@@ -442,7 +449,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
       return {
         header_id: headerId,
         machine_id: machine.id,
-        prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+        prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
         act_hank: 0,
         act_prodn: 0,
         std_prodn: Math.round(stdProdn * 100) / 100,
@@ -458,7 +465,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
     })
 
     await prisma.finisher_drawing_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -481,7 +489,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
     }))
 
     await prisma.finisher_drawing_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -525,6 +534,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
+        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(Number.isFinite(rawEfficiency) && {
           std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
         })
@@ -553,22 +563,9 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
       select: { id: true, machine_id: true }
     })
 
-    const validMachineIds = machinesWithSetup.map(m => m.id)
     const existingMachineIds = existingDetails.map(d => d.machine_id)
-
-    // === STALE ROW DELETION: remove rows for machines not valid on entry_date ===
-    const staleDetailIds = existingDetails
-      .filter(d => !validMachineIds.includes(d.machine_id))
-      .map(d => d.id)
-
-    if (staleDetailIds.length > 0) {
-      await prisma.finisher_drawing_stoppage_entry.deleteMany({
-        where: { production_detail_id: { in: staleDetailIds } }
-      })
-      await prisma.finisher_drawing_production_detail.deleteMany({
-        where: { id: { in: staleDetailIds } }
-      })
-    }
+    // Existing detail rows are immutable entry snapshots. Explicit entry-level
+    // removal handles deletion; current Master state never removes history.
 
     // Find machines that don't have entries
     const newMachines = machinesWithSetup.filter(m => !existingMachineIds.includes(m.id))
@@ -589,7 +586,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
       return {
         header_id: headerId,
         machine_id: machine.id,
-        prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+        prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
         act_hank: 0,
         act_prodn: 0,
         std_prodn: Math.round(stdProdn * 100) / 100,
@@ -606,7 +603,8 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     })
 
     await prisma.finisher_drawing_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the newly created details
@@ -632,7 +630,8 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     }))
 
     await prisma.finisher_drawing_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return { added: createdDetails.length, machines: newMachines.map(m => m.machine_no) }
@@ -643,6 +642,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
 
 // Update production detail
 export async function updateFinisherDrawingDetail(id, updates) {
+  await assertEntryDetailUnlocked('finisherDrawing', id)
   try {
     // Remove any fields that shouldn't be updated
     const cleanUpdates = sanitizeProductionDetailUpdate(updates)
@@ -660,6 +660,7 @@ export async function updateFinisherDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateFinisherDrawingDetails(updates) {
+  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('finisherDrawing', id)))
   const promises = updates.map(({ id, ...data }) =>
     prisma.finisher_drawing_production_detail.update({
       where: { id },
@@ -777,6 +778,8 @@ export async function getFinisherDrawingStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateFinisherDrawingStoppageEntry(id, updates) {
+  await assertEntryStoppageUnlocked('finisherDrawing', id)
+  updates = sanitizeEntryStoppageUpdate(updates)
   try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
     const existing = await prisma.finisher_drawing_stoppage_entry.findUnique({
@@ -855,6 +858,7 @@ export async function updateFinisherDrawingStoppageEntry(id, updates) {
 
 // Apply full stoppage to all machines and recalculate production
 export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('finisherDrawing', headerId)
   try {
     const header = await prisma.finisher_drawing_production_header.findUnique({
       where: { id: headerId },
@@ -937,6 +941,7 @@ export async function applyFinisherDrawingFullStoppage(headerId, stoppageId, sto
 
 // Apply partial stoppage to selected machines with auto-slot allocation (no manual slot parameter)
 export async function applyFinisherDrawingPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('finisherDrawing', headerId)
   try {
     // Helper to pick first available slot (1 -> 2 -> 3 -> 4)
     const pickFirstAvailableSlot = (entry) => {
@@ -1116,6 +1121,7 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
+        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(Number.isFinite(rawEfficiency) && {
           std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
         })
@@ -1164,6 +1170,8 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
 
 // Update machine setup - accepts machine_id
 export async function updateFinisherDrawingMachineSetup(setupId, updates) {
+  await assertEntrySetupUnlocked('finisherDrawing', setupId)
+  updates = sanitizeEntrySetupUpdate(updates)
   try {
     const hasSpeedUpdate = updates.speed != null
     const hasFormulaRuntimeUpdate = (
@@ -1540,6 +1548,7 @@ export async function getFinisherDrawingAvailableDates(beforeDate, shift, limit 
 }
 
 export async function copyFinisherDrawingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await assertEntryHeaderUnlocked('finisherDrawing', targetHeaderId)
   return copyPreviousSpeeds({
     setupModel: prisma.finisher_drawing_machine_setup,
     targetDate,
@@ -1779,13 +1788,18 @@ export async function addFinisherDrawingMachine(machineData) {
 }
 
 // Remove (deactivate) finisher drawing machine
-export async function removeFinisherDrawingMachine(machineId) {
-  // Soft delete - set is_active to false and record the deactivation date
-  const data = await prisma.drawing_finisher_machines.update({
-    where: { id: machineId },
-    data: { is_active: false, deactivated_at: new Date() }
+export async function addFinisherDrawingEntryMachine(machineData) {
+  const result = await addMachineToEntrySnapshot('finisherDrawing', machineData.headerId, {
+    machineId: machineData.machine_id,
+    machineNo: machineData.machine_no,
+    setupOverrides: machineData
   })
-  return data
+  await syncFinisherDrawingNewMachinesToHeader(machineData.headerId)
+  return { ...result, reactivated: false, entryOnly: true }
+}
+
+export async function removeFinisherDrawingMachine(machineId, headerId) {
+  return removeMachineFromEntrySnapshot('finisherDrawing', headerId, machineId)
 }
 
 // Lookup finisher drawing machine by machine_no (for setup tab auto-fill)
@@ -1809,30 +1823,10 @@ export async function lookupFinisherDrawingMachineByNo(machineNo) {
 
 // Update machine mixing/count
 export async function updateFinisherDrawingMachineMixing(machineId, newMixing, headerId = null) {
-  if (headerId) {
-    await prisma.drawing_finisher_production_detail.updateMany({
-      where: { header_id: headerId, machine_id: machineId },
-      data: { prodn_mixing: newMixing }
-    })
-  }
-  const data = await prisma.finisher_drawing_machine_setup.updateMany({
-    where: { machine_id: machineId },
-    data: { prodn_mixing: newMixing }
-  })
-  return data
+  return updateEntryMixingSnapshot('finisherDrawing', headerId, [machineId], newMixing)
 }
 
 // Bulk update machine mixing/count
 export async function bulkUpdateFinisherDrawingMachineMixing(machineIds, newMixing, headerId = null) {
-  if (headerId && machineIds?.length > 0) {
-    await prisma.drawing_finisher_production_detail.updateMany({
-      where: { header_id: headerId, machine_id: { in: machineIds } },
-      data: { prodn_mixing: newMixing }
-    })
-  }
-  const data = await prisma.finisher_drawing_machine_setup.updateMany({
-    where: { machine_id: { in: machineIds } },
-    data: { prodn_mixing: newMixing }
-  })
-  return data
+  return updateEntryMixingSnapshot('finisherDrawing', headerId, machineIds, newMixing)
 }

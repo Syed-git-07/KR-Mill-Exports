@@ -33,6 +33,7 @@ import { CalendarIcon, Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-rea
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveLapFormerShiftFallbackTime } from '@/lib/lapFormerShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 
 import LapFormerProductionTab from '@/components/modules/preparatory-entry/LapFormerProductionTab'
 import LapFormerStoppageTab from '@/components/modules/preparatory-entry/LapFormerStoppageTab'
@@ -121,6 +122,8 @@ function LapFormerEntryContent() {
     const refs = [productionTabRef.current, stoppageTabRef.current, setupTabRef.current]
     return refs.reduce((sum, tab) => sum + (tab?.getEditedCount?.() || 0), 0)
   }, [sharedDrafts])
+
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
 
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
@@ -474,7 +477,7 @@ function LapFormerEntryContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push('/preparatory-entry/lap-former')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/preparatory-entry/lap-former')}
               className="flex items-center gap-1"
             >
               <ArrowLeft className="h-4 w-4" />

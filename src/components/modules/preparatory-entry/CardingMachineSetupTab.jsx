@@ -41,8 +41,6 @@ import {
   updateMachineSetupAction,
   addCardingMachineAction,
   removeCardingMachineAction,
-  updateMachineCountAction,
-  bulkUpdateMachineCountAction,
   getCountOptionsAction,
   lookupCardingMachineByNoAction
 } from '@/app/actions/carding-entry'
@@ -62,6 +60,7 @@ const formatNumber = (value, decimals = 2) => {
 }
 
 const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
+  headerId,
   entryDate,
   shift = 1,
   totalTime,
@@ -413,12 +412,12 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     }
     setIsSaving(true)
     try {
-      const result = await addCardingMachineAction(newMachine)
+      const result = await addCardingMachineAction({ ...newMachine, headerId })
       if (result.success) {
         if (result.data?.reactivated) {
-          toast.success('Machine reactivated successfully')
+          toast.success('Machine added back to this entry')
         } else {
-          toast.success('New machine added successfully')
+          toast.success('Machine added to this entry')
         }
         setShowAddDialog(false)
         setNewMachine({
@@ -457,8 +456,10 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const promises = selectedRows.map(id => removeCardingMachineAction(id))
-      await Promise.all(promises)
+      const promises = selectedRows.map(id => removeCardingMachineAction(id, headerId))
+      const results = await Promise.all(promises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -493,22 +494,15 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       ? parseFloat(foundCount.sliver_hank)
       : null
 
-    setIsSaving(true)
-    try {
-      await bulkUpdateMachineCountAction(selectedRows, countToSet, sliverHank)
-      toast.success(`Count updated for ${selectedRows.length} machine(s)`)
-      setShowCountChangeDialog(false)
-      setNewCount('')
-      setCustomCount('')
-      setSelectedRows([])
-      await loadData()
-      onRefresh?.()
-    } catch (error) {
-      console.error('Error changing count:', error)
-      toast.error('Failed to change count')
-    } finally {
-      setIsSaving(false)
-    }
+    setupData
+      .filter(row => selectedRows.includes(row.machine_id ?? row.machine?.id))
+      .forEach(row => handleInputChange(row.id, 'prodn_mixing', countToSet))
+
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setShowCountChangeDialog(false)
+    setNewCount('')
+    setCustomCount('')
+    setSelectedRows([])
   }
 
   if (isLoading) {
@@ -528,7 +522,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
@@ -583,7 +577,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
                   </td>
                   <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="prodn_mixing">
                     <EnterSelect
-                      value={row.machine?.prodn_mixing || ''}
+                      value={row.prodn_mixing || row.machine?.prodn_mixing || ''}
                       options={countOptions.map(c => ({ value: c.count_name, label: c.count_name }))}
                       onChange={(v) => handleInputChange(row.id, 'prodn_mixing', v)}
                       onNextRow={() => focusRowByDelta(index, 1, 'prodn_mixing')}
@@ -658,7 +652,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
             onClick={() => setShowAddDialog(true)}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add new machine
+            Add Master machine
           </Button>
           <Button 
             variant="outline" 

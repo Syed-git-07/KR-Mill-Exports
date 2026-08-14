@@ -322,16 +322,6 @@ export async function minutesToRunHoursAction(minutes) {
 // MACHINE MANAGEMENT ACTIONS
 // ============================================
 
-export async function bulkUpdateSimplexMachineCountAction(machineIds, countValue, headerId = null) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateSimplexMachineCount(machineIds, countValue, headerId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 export async function getSimplexCountOptionsAction() {
   await requireUser()
   try {
@@ -345,7 +335,7 @@ export async function getSimplexCountOptionsAction() {
 export async function addSimplexMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addSimplexMachine(machineData)
+    const data = await queries.addSimplexEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -362,10 +352,10 @@ export async function lookupSimplexMachineByNoAction(machineNo) {
   }
 }
 
-export async function removeSimplexMachineAction(machineId) {
+export async function removeSimplexMachineAction(machineId, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeSimplexMachine(machineId)
+    const data = await queries.removeSimplexMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

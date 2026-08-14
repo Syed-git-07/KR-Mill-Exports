@@ -10,10 +10,12 @@
  */
 
 import { prisma } from '../prisma'
+import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeaderUnlocked, assertEntrySetupUnlocked, assertEntryStoppageUnlocked, removeMachineFromEntrySnapshot } from './entryMachineSnapshot'
 import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildAutoconerCountSnapshot } from '../countMasterSnapshots'
 
 // ============================================
@@ -114,6 +116,8 @@ export async function createAutoconerProductionHeader(headerData) {
 
 // Update production header
 export async function updateAutoconerProductionHeader(id, updates) {
+  await assertEntryHeaderUnlocked('autoconer', id)
+  updates = sanitizeEntryHeaderUpdate(updates)
   try {
     const data = await prisma.autoconer_production_header.update({
       where: { id },
@@ -130,18 +134,24 @@ export async function getOrCreateAutoconerHeader(date, shift, supervisorId = nul
   let header = await getAutoconerProductionByDateShift(date, shift)
 
   if (!header) {
-    // Get shift configuration for total_time from database
-    const shiftConfig = await getAutoconerShiftConfiguration(shift)
+    try {
+      // Get shift configuration for total_time from database
+      const shiftConfig = await getAutoconerShiftConfiguration(shift)
 
-    header = await createAutoconerProductionHeader({
-      entry_date: new Date(date),
-      shift,
-      supervisor_id: supervisorId,
-      total_time: shiftConfig.totalTime
-    })
+      header = await createAutoconerProductionHeader({
+        entry_date: new Date(date),
+        shift,
+        supervisor_id: supervisorId,
+        total_time: shiftConfig.totalTime
+      })
 
-    // Initialize production details for all active machines with shift-specific times
-    await initializeAutoconerProductionDetails(header.id, shift)
+      // Initialize production details for all active machines with shift-specific times
+      await initializeAutoconerProductionDetails(header.id, shift)
+    } catch (error) {
+      const racedHeader = await getAutoconerProductionByDateShift(date, shift)
+      if (racedHeader) return racedHeader
+      throw error
+    }
   }
 
   return header
@@ -225,7 +235,8 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     })
 
     await prisma.autoconer_production_detail.createMany({
-      data: detailInserts
+      data: detailInserts,
+      skipDuplicates: true
     })
 
     // Get the created details to create stoppage entries
@@ -244,7 +255,8 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     }))
 
     await prisma.autoconer_stoppage_entry.createMany({
-      data: stoppageInserts
+      data: stoppageInserts,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -323,7 +335,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
       }
     })
 
-    await prisma.autoconer_production_detail.createMany({ data: detailInserts })
+    await prisma.autoconer_production_detail.createMany({ data: detailInserts, skipDuplicates: true })
 
     const createdDetails = await prisma.autoconer_production_detail.findMany({
       where: { header_id: headerId, machine_id: { in: newMachines.map(m => m.id) } }
@@ -335,7 +347,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
       total_stoppage_time: defaultStoppage
     }))
 
-    await prisma.autoconer_stoppage_entry.createMany({ data: stoppageInserts })
+    await prisma.autoconer_stoppage_entry.createMany({ data: stoppageInserts, skipDuplicates: true })
 
     return createdDetails
   } catch (error) {
@@ -445,6 +457,7 @@ export async function getAutoconerProductionDetails(headerId) {
 
 // Update production detail
 export async function updateAutoconerProductionDetail(id, updates) {
+  await assertEntryDetailUnlocked('autoconer', id)
   try {
     // Note: Front-end now calculates all values using calculateAutoconerProductionValues()
     // Backend simply saves the data (like carding module)
@@ -460,6 +473,7 @@ export async function updateAutoconerProductionDetail(id, updates) {
 
 // Batch update production details
 export async function batchUpdateAutoconerProductionDetails(updates) {
+  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('autoconer', id)))
   const promises = updates.map(({ id, ...data }) =>
     updateAutoconerProductionDetail(id, data)
   )
@@ -581,6 +595,8 @@ export async function getAutoconerStoppageEntries(headerId) {
 
 // Update stoppage entry - merges with existing values like Carding
 export async function updateAutoconerStoppageEntry(id, updates) {
+  await assertEntryStoppageUnlocked('autoconer', id)
+  updates = sanitizeEntryStoppageUpdate(updates)
   try {
     // First, fetch the existing record to get current stoppage values
     const existing = await prisma.autoconer_stoppage_entry.findUnique({
@@ -670,6 +686,7 @@ export async function updateAutoconerStoppageEntry(id, updates) {
 
 // Apply full stoppage to all machines (with slot selection like Carding)
 export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('autoconer', headerId)
   // Get all stoppage entries for this header
   const stoppages = await getAutoconerStoppageEntries(headerId)
 
@@ -688,6 +705,7 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
 
 // Apply partial stoppage to machine range (like Carding)
 export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('autoconer', headerId)
   try {
     // Get all stoppage entries with machine info
     const stoppages = await getAutoconerStoppageEntries(headerId)
@@ -783,7 +801,7 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
     })
 
     if (setups.length > 0) {
-      return setups
+      return setups.filter(setup => setup.is_included)
     }
 
     // 2. Fallback: Inherit from the most recent chronologically prior setups in the database (implicitly, no confirmation)
@@ -807,7 +825,8 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
       const prevSetups = await prisma.autoconer_machine_setup.findMany({
         where: {
           entry_date: latestPreviousSetup.entry_date,
-          shift: latestPreviousSetup.shift
+          shift: latestPreviousSetup.shift,
+          is_included: true
         }
       })
 
@@ -856,6 +875,7 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
         if (!cloneDataMap.has(targetMachineId)) {
           cloneDataMap.set(targetMachineId, {
             ...rest,
+            is_included: true,
             machine_id: targetMachineId,
             ...buildAutoconerCountSnapshot(currentCount),
             entry_date: dateObj,
@@ -877,7 +897,8 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
       return await prisma.autoconer_machine_setup.findMany({
         where: {
           entry_date: dateObj,
-          shift: shiftNum
+          shift: shiftNum,
+          is_included: true
         }
       })
     }
@@ -904,6 +925,7 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
       const matchedCount = countById.get(m.count_id)
       return {
         machine_id: m.id,
+        is_included: true,
         entry_date: dateObj,
         shift: shiftNum,
         ...buildAutoconerCountSnapshot(matchedCount),
@@ -924,7 +946,8 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
     return await prisma.autoconer_machine_setup.findMany({
       where: {
         entry_date: dateObj,
-        shift: shiftNum
+        shift: shiftNum,
+        is_included: true
       }
     })
   } catch (error) {
@@ -1056,6 +1079,8 @@ async function updateAutoconerSetupInTransaction(db, id, updates) {
 }
 
 export async function updateAutoconerMachineSetup(id, updates) {
+  await assertEntrySetupUnlocked('autoconer', id)
+  updates = sanitizeEntrySetupUpdate(updates)
   return prisma.$transaction(tx => updateAutoconerSetupInTransaction(tx, id, updates))
 }
 
@@ -1064,7 +1089,13 @@ export async function upsertAutoconerMachineSetup(machineId, entryDate, shift, u
   return prisma.$transaction(async tx => {
     const dateObj = new Date(entryDate)
     const shiftNum = parseInt(shift)
-    const prepared = await prepareAutoconerSetupUpdate(tx, updates)
+    const header = await tx.autoconer_production_header.findFirst({
+      where: { entry_date: dateObj, shift: shiftNum },
+      select: { is_locked: true }
+    })
+    if (!header) throw new Error('Entry not found')
+    if (header.is_locked) throw new Error('This entry is locked and cannot be changed')
+    const prepared = await prepareAutoconerSetupUpdate(tx, sanitizeEntrySetupUpdate(updates))
     const data = await tx.autoconer_machine_setup.upsert({
       where: {
         idx_autoconer_machine_setup_date: {
@@ -1077,9 +1108,10 @@ export async function upsertAutoconerMachineSetup(machineId, entryDate, shift, u
         machine_id: machineId,
         entry_date: dateObj,
         shift: shiftNum,
-        ...prepared.data
+        ...prepared.data,
+        is_included: true
       },
-      update: prepared.data
+      update: { ...prepared.data, is_included: true }
     })
     if (prepared.changesCount) await syncAutoconerSetupCountToDetail(tx, data)
     return data
@@ -1088,10 +1120,11 @@ export async function upsertAutoconerMachineSetup(machineId, entryDate, shift, u
 
 // Batch update machine setups
 export async function batchUpdateAutoconerMachineSetups(updates, shift = null) {
+  await Promise.all(updates.map(({ id }) => assertEntrySetupUnlocked('autoconer', id)))
   return prisma.$transaction(async tx => {
     const results = []
     for (const { id, machine_id: _machineId, ...data } of updates) {
-      results.push(await updateAutoconerSetupInTransaction(tx, id, data))
+      results.push(await updateAutoconerSetupInTransaction(tx, id, sanitizeEntrySetupUpdate(data)))
     }
     return results
   })
@@ -1148,6 +1181,7 @@ export async function getAutoconerAvailablePreviousDates(beforeDate, shift, limi
 
 // Copy data from a previous date
 export async function copyAutoconerFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await assertEntryHeaderUnlocked('autoconer', targetHeaderId)
   try {
     let previousDate = sourceDate
     if (!previousDate) {
@@ -1548,16 +1582,33 @@ export async function addAutoconerMachine(machineData) {
 // entryDate: the production entry date from which the machine is being removed.
 // deactivated_at is set to entryDate so the machine is hidden from that date onwards
 // but remains visible on all prior dates.
-export async function removeAutoconerMachine(id, entryDate) {
-  try {
-    const data = await prisma.autoconer_machines.update({
-      where: { id },
-      data: { is_active: false, deactivated_at: entryDate ? new Date(entryDate) : new Date() }
-    })
-    return data
-  } catch (error) {
-    throw error
+export async function addAutoconerEntryMachine(machineData) {
+  const selectedCount = machineData.count_id || machineData.count_name
+    ? await prisma.spinning_counts.findFirst({
+        where: {
+          is_active: true,
+          autoconer_active: true,
+          ...(machineData.count_id ? { id: machineData.count_id } : { count_name: machineData.count_name })
+        }
+      })
+    : null
+  if ((machineData.count_id || machineData.count_name) && !selectedCount) {
+    throw new Error('Selected Autoconer count is not active')
   }
+  const result = await addMachineToEntrySnapshot('autoconer', machineData.headerId, {
+    machineId: machineData.machine_id,
+    machineNo: machineData.machine_no,
+    setupOverrides: {
+      ...machineData,
+      ...(selectedCount && buildAutoconerCountSnapshot(selectedCount))
+    }
+  })
+  await syncNewMachinesToAutoconerHeader(machineData.headerId, result.header.shift)
+  return { ...result, reactivated: false, entryOnly: true }
+}
+
+export async function removeAutoconerMachine(id, headerId) {
+  return removeMachineFromEntrySnapshot('autoconer', headerId, id)
 }
 
 // Remove machine setups by IDs

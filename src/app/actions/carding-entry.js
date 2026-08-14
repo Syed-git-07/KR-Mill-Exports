@@ -301,7 +301,7 @@ export async function getCountOptionsAction() {
 export async function addCardingMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addCardingMachine(machineData)
+    const data = await queries.addCardingEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -318,30 +318,10 @@ export async function lookupCardingMachineByNoAction(machineNo) {
   }
 }
 
-export async function removeCardingMachineAction(machineId) {
+export async function removeCardingMachineAction(machineId, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeCardingMachine(machineId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function updateMachineCountAction(machineId, countMixing) {
-  await requireUser()
-  try {
-    const data = await queries.updateMachineCount(machineId, countMixing)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function bulkUpdateMachineCountAction(machineIds, countMixing, hank_constant) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateMachineCount(machineIds, countMixing, hank_constant ?? null)
+    const data = await queries.removeCardingMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

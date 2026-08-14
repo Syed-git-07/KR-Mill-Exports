@@ -23,7 +23,6 @@ import {
   updateFinisherDrawingMachineSetupAction,
   addFinisherDrawingMachineAction,
   removeFinisherDrawingMachineAction,
-  bulkUpdateFinisherDrawingMachineMixingAction,
   getFinisherDrawingMixingOptionsAction,
   getSpinningCountOptionsAction,
   lookupFinisherDrawingMachineByNoAction
@@ -397,6 +396,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     setIsSaving(true)
     try {
       const result = await addFinisherDrawingMachineAction({
+        headerId,
         machine_no: newMachine.machine_no,
         description: newMachine.description || `Finisher Drawing Machine ${newMachine.machine_no}`,
         shift,
@@ -412,7 +412,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         delivery: newMachine.delivery
       })
       if (result.success) {
-        toast.success(result.data.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+        toast.success(result.data.reactivated ? 'Machine added back to this entry' : 'Machine added to this entry')
         setShowAddDialog(false)
         setNewMachine({
           machine_no: '',
@@ -451,9 +451,11 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     setIsSaving(true)
     try {
       const removePromises = selectedRows.map(machineId => 
-        removeFinisherDrawingMachineAction(machineId)
+        removeFinisherDrawingMachineAction(machineId, headerId)
       )
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -481,26 +483,23 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       return
     }
 
-    setIsSaving(true)
-    try {
-      const result = await bulkUpdateFinisherDrawingMachineMixingAction(selectedRows, mixingValue, headerId)
-      if (result.success) {
-        toast.success(`Mixing updated for ${selectedRows.length} machine(s)`)
-        setShowMixingChangeDialog(false)
-        setNewMixing('')
-        setCustomMixing('')
-        setSelectedRows([])
-        await loadData({ force: true })
-        onRefresh?.()
-      } else {
-        throw new Error(result.error)
-      }
-    } catch (error) {
-      console.error('Error updating mixing:', error)
-      toast.error('Failed to update mixing')
-    } finally {
-      setIsSaving(false)
-    }
+    const selectedSet = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      setupData.forEach(row => {
+        if (!selectedSet.has(String(row.machine_id))) return
+        next[row.id] = { ...next[row.id], machine_id: row.machine_id, prodn_mixing: mixingValue }
+      })
+      return next
+    })
+    setSetupData(prev => prev.map(row => selectedSet.has(String(row.machine_id))
+      ? { ...row, mixing: mixingValue, prodn_mixing: mixingValue }
+      : row))
+    toast.success(`Mixing staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setShowMixingChangeDialog(false)
+    setNewMixing('')
+    setCustomMixing('')
+    setSelectedRows([])
   }
 
   if (isLoading) {
@@ -520,7 +519,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
@@ -625,7 +624,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           onClick={() => setShowAddDialog(true)}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Add new machine
+          Add Master machine
         </Button>
         <Button 
           variant="outline" 
@@ -663,9 +662,9 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add New Machine</DialogTitle>
+            <DialogTitle>Add Master Machine to Entry</DialogTitle>
             <DialogDescription>
-              Add a new Finisher Drawing machine to the system.
+              Look up an existing Finisher Drawing Machine Master record for this entry.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-5 py-2">

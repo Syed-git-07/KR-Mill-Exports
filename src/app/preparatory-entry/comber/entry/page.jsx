@@ -25,6 +25,7 @@ import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 
 import ComberProductionTab from '@/components/modules/preparatory-entry/ComberProductionTab'
 import ComberStoppageTab from '@/components/modules/preparatory-entry/ComberStoppageTab'
@@ -94,6 +95,8 @@ function ComberEntryContent() {
     const refs = [productionTabRef.current, stoppageTabRef.current, setupTabRef.current]
     return refs.reduce((sum, tab) => sum + (tab?.getEditedCount?.() || 0), 0)
   }, [sharedDrafts])
+
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
 
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
@@ -338,7 +341,7 @@ function ComberEntryContent() {
               variant="outline"
               size="sm"
               className="border-blue-300 text-blue-600 hover:bg-blue-50"
-              onClick={() => router.push('/preparatory-entry/comber')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/preparatory-entry/comber')}
             >
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to List

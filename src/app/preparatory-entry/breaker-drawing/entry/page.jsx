@@ -33,6 +33,7 @@ import { CalendarIcon, Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-rea
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveBreakerDrawingShiftFallbackTime } from '@/lib/breakerDrawingShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 
 import BreakerDrawingProductionTab from '@/components/modules/preparatory-entry/BreakerDrawingProductionTab'
 import BreakerDrawingStoppageTab from '@/components/modules/preparatory-entry/BreakerDrawingStoppageTab'
@@ -385,6 +386,8 @@ function BreakerDrawingEntryContent() {
     }
   }
 
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
+
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
@@ -444,7 +447,7 @@ function BreakerDrawingEntryContent() {
               variant="outline"
               size="sm"
               className="border-blue-300 text-blue-600 hover:bg-blue-50"
-              onClick={() => router.push('/preparatory-entry/breaker-drawing')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/preparatory-entry/breaker-drawing')}
             >
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to List

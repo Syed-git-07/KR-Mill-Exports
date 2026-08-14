@@ -199,7 +199,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
             run_time: effectiveTotalTime,  // Use shift-based time from props
             work_time: effectiveTotalTime - toNumber(row.total_stoppage_mins),  // Recalculate work_time
             uti_percent: Math.round(((effectiveTotalTime - toNumber(row.total_stoppage_mins)) / effectiveTotalTime) * 100 * 100) / 100,  // Recalculate UTI%
-            count_mixing: machineSetup?.machine?.prodn_mixing || row.count_mixing  // Fetch from machine setup
+            count_mixing: machineSetup?.prodn_mixing || row.count_mixing || machineSetup?.machine?.prodn_mixing
           }
         })
         const mergedRows = mergeServerRowsWithDrafts(dataWithCorrectValues, setupMap)
@@ -413,6 +413,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         const result = await updateProductionDetailAction(row.id, {
           ...changes,
           ...calculatedWithoutWaste,
+          count_mixing: setup?.prodn_mixing ?? changes.count_mixing ?? row.count_mixing,
           act_hank: actHank,
           act_prodn: actProdn,
           waste: wasteValue,
@@ -486,7 +487,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
           {productionData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

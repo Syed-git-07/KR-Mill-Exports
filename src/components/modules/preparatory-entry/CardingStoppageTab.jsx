@@ -640,7 +640,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
           {stoppageData.length} machines | Shift Time: {effectiveTotalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

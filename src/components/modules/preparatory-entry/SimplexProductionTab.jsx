@@ -313,6 +313,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
         const result = await updateSimplexProductionDetailAction(row.id, {
           employee_name: effectiveRow.employee_name,
+          prodn_mixing: setup?.prodn_mixing ?? effectiveRow.prodn_mixing,
           run_hrs: effectiveRow.run_hrs,
           run_min: calculated.run_min,
           run_time: totalTime,
@@ -389,7 +390,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           {productionData.length} machines | Shift Time: {totalTime} mins | MCEffi: 92%
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

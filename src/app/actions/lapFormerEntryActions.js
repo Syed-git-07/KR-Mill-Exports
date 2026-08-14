@@ -223,16 +223,6 @@ export async function updateLapFormerMachineSetupAction(machineId, updates) {
   }
 }
 
-export async function updateLapFormerMachineSpeedAction(machineId, newSpeed) {
-  await requireUser()
-  try {
-    const data = await queries.updateLapFormerMachineSpeed(machineId, newSpeed)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 export async function getLapFormerMixingOptionsAction() {
   await requireUser()
   try {
@@ -256,27 +246,17 @@ export async function getLapFormerMachinesAction() {
 export async function addLapFormerMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addLapFormerMachine(machineData)
+    const data = await queries.addLapFormerEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeLapFormerMachineAction(machineId) {
+export async function removeLapFormerMachineAction(machineId, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeLapFormerMachine(machineId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function bulkUpdateLapFormerMachineMixingAction(machineIds, mixingValue, headerId = null) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateLapFormerMachineMixing(machineIds, mixingValue, headerId)
+    const data = await queries.removeLapFormerMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

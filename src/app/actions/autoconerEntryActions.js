@@ -280,17 +280,17 @@ export async function getSpinningCountsAction() {
 export async function addAutoconerMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addAutoconerMachine(machineData)
+    const data = await queries.addAutoconerEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeAutoconerMachineAction(id, entryDate) {
+export async function removeAutoconerMachineAction(id, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeAutoconerMachine(id, entryDate)
+    const data = await queries.removeAutoconerMachine(id, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

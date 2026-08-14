@@ -25,6 +25,7 @@ import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, ArrowLeft } from 'lucid
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 
 import AutoconerProductionTab from '@/components/modules/post-preparatory/autoconer/AutoconerProductionTab'
 import AutoconerStoppageTab from '@/components/modules/post-preparatory/autoconer/AutoconerStoppageTab'
@@ -209,6 +210,8 @@ function AutoconerEntryContent() {
     loadProductionHeader()
   }
 
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
+
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
@@ -325,7 +328,7 @@ function AutoconerEntryContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push('/post-preparatory/autoconer')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/post-preparatory/autoconer')}
               className="flex items-center gap-1"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -479,6 +482,7 @@ function AutoconerEntryContent() {
                 <DeferredMount active={activeTab === 'setup'}>
                 <AutoconerMachineSetupTab 
                   ref={setupTabRef}
+                  headerId={headerId}
                   key={`setup-${refreshKey}`} 
                   shift={parseInt(shift)}
                   totalTime={totalTime}

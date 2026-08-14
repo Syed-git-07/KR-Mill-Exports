@@ -33,6 +33,7 @@ import {
 
 import SimplexProductionTab from '@/components/modules/preparatory-entry/SimplexProductionTab'
 import SimplexStoppageTab from '@/components/modules/preparatory-entry/SimplexStoppageTab'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 import SimplexMachineSetupTab from '@/components/modules/preparatory-entry/SimplexMachineSetupTab'
 
 function SimplexEntryContent() {
@@ -189,6 +190,7 @@ function SimplexEntryContent() {
     setup: Object.keys(sharedDrafts.setup || {}).length
   }
   const totalEditedCount = editedCounts.header + editedCounts.production + editedCounts.stoppage + editedCounts.setup
+  useUnsavedChangesWarning(totalEditedCount > 0)
 
   const confirmUnsavedDiscard = useCallback((actionLabel) => {
     if (totalEditedCount === 0) return true

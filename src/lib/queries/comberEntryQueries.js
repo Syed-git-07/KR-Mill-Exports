@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeaderUnlocked, assertEntrySetupUnlocked, assertEntryStoppageUnlocked, removeMachineFromEntrySnapshot, updateEntryMixingSnapshot } from './entryMachineSnapshot'
 import { format } from 'date-fns'
 import { resolveComberShiftFallbackTime } from '../comberShiftFallback'
 import {
@@ -10,6 +11,7 @@ import { resolveProductionTime } from '../productionFormulaMath'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 
 // ============================================
 // COMBER CONSTANTS
@@ -173,12 +175,16 @@ export async function getOrCreateComberProductionHeader(date, shift, supervisorI
     const data = await getComberProductionByDateShift(date, shift)
     return data
   } catch (error) {
+    const racedHeader = await getComberProductionByDateShift(date, shift)
+    if (racedHeader) return racedHeader
     throw error
   }
 }
 
 // Update production header
 export async function updateComberProductionHeader(id, updates) {
+  await assertEntryHeaderUnlocked('comber', id)
+  updates = sanitizeEntryHeaderUpdate(updates)
   try {
     const data = await prisma.comber_production_header.update({
       where: { id },
@@ -377,7 +383,8 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
     })
 
     await prisma.comber_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -396,7 +403,8 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
     }))
 
     await prisma.comber_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -407,6 +415,7 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
 
 // Update production detail
 export async function updateComberProductionDetail(id, updates) {
+  await assertEntryDetailUnlocked('comber', id)
   try {
     const data = await prisma.comber_production_detail.update({
       where: { id },
@@ -420,6 +429,7 @@ export async function updateComberProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateComberProductionDetails(updates) {
+  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('comber', id)))
   const promises = updates.map(({ id, ...data }) =>
     prisma.comber_production_detail.update({
       where: { id },
@@ -570,6 +580,8 @@ export async function getComberStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateComberStoppageEntry(id, updates) {
+  await assertEntryStoppageUnlocked('comber', id)
+  updates = sanitizeEntryStoppageUpdate(updates)
   try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
     const existing = await prisma.comber_stoppage_entry.findUnique({
@@ -663,6 +675,7 @@ export async function updateComberStoppageEntry(id, updates) {
 
 // Apply full stoppage to all machines
 export async function applyComberFullStoppage(headerId, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('comber', headerId)
   try {
     // Get all stoppage entries for this header
     const stoppages = await getComberStoppageEntries(headerId)
@@ -694,6 +707,7 @@ export async function applyComberFullStoppage(headerId, stoppageId, stoppageTime
 
 // Apply partial stoppage to machine range (auto-slot allocation, no manual slot parameter)
 export async function applyComberPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('comber', headerId)
   try {
     // Helper to pick first available slot (1 -> 2 -> 3 -> 4)
     const pickFirstAvailableSlot = (entry) => {
@@ -895,6 +909,8 @@ export async function getComberMachineSetups(headerId = null) {
 
 // Update machine setup
 export async function updateComberMachineSetup(setupId, updates) {
+  await assertEntrySetupUnlocked('comber', setupId)
+  updates = sanitizeEntrySetupUpdate(updates)
   try {
     // Recalculate constant if sl_hank changes
     if (updates.sl_hank !== undefined) {
@@ -1090,16 +1106,18 @@ export async function addComberMachine(machineData) {
 }
 
 // Remove comber machine (soft delete)
-export async function removeComberMachine(machineId) {
-  try {
-    const data = await prisma.comber_machines.update({
-      where: { id: machineId },
-      data: { is_active: false, deactivated_at: new Date() }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+export async function addComberEntryMachine(machineData) {
+  const result = await addMachineToEntrySnapshot('comber', machineData.headerId, {
+    machineId: machineData.machine_id,
+    machineNo: machineData.machine_no,
+    setupOverrides: machineData
+  })
+  await syncNewMachinesToComberHeader(machineData.headerId, result.header.shift)
+  return { ...result, reactivated: false, entryOnly: true }
+}
+
+export async function removeComberMachine(machineId, headerId) {
+  return removeMachineFromEntrySnapshot('comber', headerId, machineId)
 }
 
 // Delete machine setup
@@ -1163,43 +1181,12 @@ export async function getComberStoppageReasons() {
 
 // Update machine count (alias for updateComberMachineSetup for count/mixing)
 export async function updateComberMachineCount(machineId, newCount, headerId = null) {
-  try {
-    if (headerId) {
-      await prisma.comber_production_detail.updateMany({
-        where: { header_id: headerId, machine_id: machineId },
-        data: { prodn_mixing: newCount }
-      })
-    }
-    const data = await prisma.comber_machine_setup.updateMany({
-      where: { machine_id: machineId },
-      data: { prodn_mixing: newCount }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+  return updateEntryMixingSnapshot('comber', headerId, [machineId], newCount)
 }
 
 // Bulk update machine count (alias for updateComberMachineSetup for count/mixing)
 export async function bulkUpdateComberMachineCount(machineIds, newCount, headerId = null) {
-  try {
-    if (headerId && machineIds?.length > 0) {
-      await prisma.comber_production_detail.updateMany({
-        where: { header_id: headerId, machine_id: { in: machineIds } },
-        data: { prodn_mixing: newCount }
-      })
-    }
-    const setupPromises = machineIds.map(id => 
-      prisma.comber_machine_setup.updateMany({
-        where: { machine_id: id },
-        data: { prodn_mixing: newCount }
-      })
-    )
-    const setups = await Promise.all(setupPromises)
-    return setups
-  } catch (error) {
-    throw error
-  }
+  return updateEntryMixingSnapshot('comber', headerId, machineIds, newCount)
 }
 
 // Sync new machines to header - create production details for newly added machines
@@ -1372,6 +1359,7 @@ export async function getComberAvailableDates(beforeDate, shift, limit = 30) {
 
 // Copy production data from previous date
 export async function copyComberFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate, sourceShift) {
+  await assertEntryHeaderUnlocked('comber', targetHeaderId)
   try {
     // Handle various date formats - ensure we get yyyy-mm-dd string
     let sourceDateStr

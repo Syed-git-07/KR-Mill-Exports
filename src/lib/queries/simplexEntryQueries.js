@@ -1,9 +1,11 @@
 import { prisma } from '../prisma'
+import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeaderUnlocked, assertEntrySetupUnlocked, assertEntryStoppageUnlocked, removeMachineFromEntrySnapshot, updateEntryMixingSnapshot } from './entryMachineSnapshot'
 import { calculateSimplexProductionValues as calculateSimplexProductionValuesFromUtils } from '../utils/simplexCalculations'
 import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null
@@ -127,12 +129,16 @@ export async function getOrCreateSimplexProductionHeader(date, shift, supervisor
     })
     return data
   } catch (error) {
+    const racedHeader = await getSimplexProductionByDateShift(date, shift)
+    if (racedHeader) return racedHeader
     throw new Error(`Failed to create production header: ${error.message}`)
   }
 }
 
 // Update production header
 export async function updateSimplexProductionHeader(id, updates) {
+  await assertEntryHeaderUnlocked('simplex', id)
+  updates = sanitizeEntryHeaderUpdate(updates)
   try {
     const data = await prisma.simplex_production_header.update({
       where: { id },
@@ -278,10 +284,8 @@ export async function initializeSimplexProductionDetails(headerId) {
     })
     const entryDate = header?.entry_date || new Date()
 
-    // Only include machines that exist in setup
-    const machineIdsWithSetup = (await prisma.simplex_machine_setup.findMany({
-      select: { machine_id: true }
-    })).map(s => s.machine_id)
+    const setups = await getSimplexMachineSetups(headerId)
+    const machineIdsWithSetup = setups.map(s => s.machine_id)
 
     // Get all machines visible on this entry date
     const machines = await prisma.simplex_machines.findMany({
@@ -294,9 +298,6 @@ export async function initializeSimplexProductionDetails(headerId) {
     })
 
     if (!machines || machines.length === 0) return []
-
-    // Materialize this header's setup snapshot from the current master values.
-    const setups = await getSimplexMachineSetups(headerId)
 
     // Create a map of machine_id to setup
     const setupMap = {}
@@ -312,7 +313,7 @@ export async function initializeSimplexProductionDetails(headerId) {
       return {
         header_id: headerId,
         machine_id: machine.id,
-        prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+        prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
         run_hrs: 0,
         run_min: 0,
         idle_spindles: 0,
@@ -329,7 +330,8 @@ export async function initializeSimplexProductionDetails(headerId) {
     })
 
     await prisma.simplex_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -348,7 +350,8 @@ export async function initializeSimplexProductionDetails(headerId) {
     }))
 
     await prisma.simplex_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -367,10 +370,8 @@ export async function addMissingSimplexProductionDetails(headerId) {
     })
     const entryDate = headerForDate?.entry_date || new Date()
 
-    // Only include machines that exist in setup
-    const machineIdsWithSetup = (await prisma.simplex_machine_setup.findMany({
-      select: { machine_id: true }
-    })).map(s => s.machine_id)
+    const setups = await getSimplexMachineSetups(headerId)
+    const machineIdsWithSetup = setups.map(s => s.machine_id)
 
     // Get machines visible on this entry date
     const machines = await prisma.simplex_machines.findMany({
@@ -406,39 +407,7 @@ export async function addMissingSimplexProductionDetails(headerId) {
 
     const existingMachineIds = validExistingDetails.map(d => d.machine_id)
 
-    // Remove detail rows for machines that are deactivated for this entry date
-    // or that have no setup row
-    const allExistingMachines = existingMachineIds.length > 0
-      ? await prisma.simplex_machines.findMany({
-          where: { id: { in: existingMachineIds } }
-        })
-      : []
-
-    const existingMachineMap = {}
-    allExistingMachines.forEach(m => { existingMachineMap[m.id] = m })
-
-    const deactivatedDetailIds = validExistingDetails
-      .filter(d => {
-        const m = existingMachineMap[d.machine_id]
-        if (!m) return false
-        if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return true
-        if (!machineIdsWithSetup.includes(m.id)) return true
-        return false
-      })
-      .map(d => d.id)
-
-    if (deactivatedDetailIds.length > 0) {
-      await prisma.simplex_stoppage_entry.deleteMany({
-        where: { production_detail_id: { in: deactivatedDetailIds } }
-      })
-      await prisma.simplex_production_detail.deleteMany({
-        where: { id: { in: deactivatedDetailIds } }
-      })
-    }
-
-    const remainingMachineIds = validExistingDetails
-      .filter(d => !deactivatedDetailIds.includes(d.id))
-      .map(d => d.machine_id)
+    const remainingMachineIds = validExistingDetails.map(d => d.machine_id)
 
     // Find machines that don't have production details yet
     const missingMachines = machines.filter(m => !remainingMachineIds.includes(m.id))
@@ -447,8 +416,6 @@ export async function addMissingSimplexProductionDetails(headerId) {
       return [] // No new machines to add
     }
 
-    // Get machine setup for default values
-    const setups = await prisma.simplex_machine_setup.findMany()
     const setupMap = {}
     setups?.forEach(s => {
       setupMap[s.machine_id] = s
@@ -466,7 +433,7 @@ export async function addMissingSimplexProductionDetails(headerId) {
       return {
         header_id: headerId,
         machine_id: machine.id,
-        prodn_mixing: machine.prodn_mixing || '64COMBED GOLD',
+        prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
         run_hrs: 0,
         run_min: 0,
         idle_spindles: 0,
@@ -483,7 +450,8 @@ export async function addMissingSimplexProductionDetails(headerId) {
     })
 
     await prisma.simplex_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details
@@ -505,7 +473,8 @@ export async function addMissingSimplexProductionDetails(headerId) {
     }))
 
     await prisma.simplex_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return createdDetails
@@ -516,6 +485,7 @@ export async function addMissingSimplexProductionDetails(headerId) {
 
 // Update production detail
 export async function updateSimplexProductionDetail(id, updates) {
+  await assertEntryDetailUnlocked('simplex', id)
   try {
     const data = await prisma.simplex_production_detail.update({
       where: { id },
@@ -529,6 +499,7 @@ export async function updateSimplexProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateSimplexProductionDetails(updates) {
+  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('simplex', id)))
   const promises = updates.map(({ id, ...data }) =>
     prisma.simplex_production_detail.update({
       where: { id },
@@ -639,6 +610,8 @@ export async function getSimplexStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateSimplexStoppageEntry(id, updates) {
+  await assertEntryStoppageUnlocked('simplex', id)
+  updates = sanitizeEntryStoppageUpdate(updates)
   try {
     // First, fetch the existing record to get current stoppage values and production_detail_id
     const existing = await prisma.simplex_stoppage_entry.findUnique({
@@ -754,6 +727,7 @@ export async function updateSimplexStoppageEntry(id, updates) {
 
 // Apply full stoppage to all machines and recalculate production
 export async function applySimplexFullStoppage(headerId, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('simplex', headerId)
   // Get all stoppage entries for this header with production details
   const stoppages = await getSimplexStoppageEntries(headerId)
   
@@ -838,6 +812,7 @@ function pickFirstAvailableSlot(stoppageEntry) {
 
 // Apply partial stoppage to machine range and recalculate production
 export async function applySimplexPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('simplex', headerId)
   try {
     const header = await prisma.simplex_production_header.findUnique({
       where: { id: headerId },
@@ -1010,6 +985,7 @@ export async function getSimplexMachineSetups(headerId = null) {
       machineSpeedMap[m.id] = m.speed;
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
+        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(m.tpi != null && { tpi: m.tpi }),
         ...(m.mc_effi != null && { mc_effi: m.mc_effi }),
         ...(m.no_of_spindles != null && { spindles: m.no_of_spindles })
@@ -1069,6 +1045,8 @@ export async function getSimplexMachineSetupByMachineId(machineId) {
 
 // Update machine setup
 export async function updateSimplexMachineSetup(id, updates) {
+  await assertEntrySetupUnlocked('simplex', id)
+  updates = sanitizeEntrySetupUpdate(updates)
   try {
     const currentSetup = await prisma.simplex_machine_setup.findUnique({
       where: { id },
@@ -1328,25 +1306,7 @@ export function calculateSimplexProductionValues(params) {
 
 // Bulk update machine count on setup table and header details
 export async function bulkUpdateSimplexMachineCount(machineIds, countValue, headerId = null) {
-  try {
-    if (headerId && machineIds?.length > 0) {
-      await prisma.simplex_production_detail.updateMany({
-        where: { header_id: headerId, machine_id: { in: machineIds } },
-        data: { prodn_mixing: countValue }
-      })
-    }
-    const setupPromises = machineIds.map(id => 
-      prisma.simplex_machine_setup.updateMany({
-        where: { machine_id: id },
-        data: { prodn_mixing: countValue }
-      })
-    )
-    
-    const setups = await Promise.all(setupPromises)
-    return setups
-  } catch (error) {
-    throw error
-  }
+  return updateEntryMixingSnapshot('simplex', headerId, machineIds, countValue)
 }
 
 // Get count options for simplex (using spinning_counts table)
@@ -1549,16 +1509,21 @@ export async function addSimplexMachine(machineData) {
 }
 
 // Remove simplex machine (soft delete)
-export async function removeSimplexMachine(machineId) {
-  try {
-    const data = await prisma.simplex_machines.update({
-      where: { id: machineId },
-      data: { is_active: false, deactivated_at: new Date(), updated_at: new Date() }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+export async function addSimplexEntryMachine(machineData) {
+  const result = await addMachineToEntrySnapshot('simplex', machineData.headerId, {
+    machineId: machineData.machine_id,
+    machineNo: machineData.machine_no,
+    setupOverrides: {
+      ...machineData,
+      spindles: machineData.spindles ?? machineData.no_of_spindles
+    }
+  })
+  await addMissingSimplexProductionDetails(machineData.headerId)
+  return { ...result, reactivated: false, entryOnly: true }
+}
+
+export async function removeSimplexMachine(machineId, headerId) {
+  return removeMachineFromEntrySnapshot('simplex', headerId, machineId)
 }
 
 // ============================================
@@ -1582,6 +1547,7 @@ export async function getSimplexAvailableDates(beforeDate, shift, limit = 30) {
 
 // Copy data from a previous date
 export async function copySimplexFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await assertEntryHeaderUnlocked('simplex', targetHeaderId)
   // If no sourceDate provided, calculate yesterday's date
   let previousDate = sourceDate;
   if (!previousDate) {

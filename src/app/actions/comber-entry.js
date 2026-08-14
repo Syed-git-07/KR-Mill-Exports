@@ -208,17 +208,17 @@ export async function updateComberMachineSetupAction(id, updates) {
 export async function addComberMachineAction(machineData) {
   await requireUser()
   try {
-    const data = await queries.addComberMachine(machineData)
+    const data = await queries.addComberEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeComberMachineAction(machineId) {
+export async function removeComberMachineAction(machineId, headerId) {
   await requireUser()
   try {
-    const data = await queries.removeComberMachine(machineId)
+    const data = await queries.removeComberMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -229,16 +229,6 @@ export async function updateComberMachineCountAction(machineId, newCount) {
   await requireUser()
   try {
     const data = await queries.updateComberMachineCount(machineId, newCount)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function bulkUpdateComberMachineCountAction(machineIds, newCount, headerId = null) {
-  await requireUser()
-  try {
-    const data = await queries.bulkUpdateComberMachineCount(machineIds, newCount, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

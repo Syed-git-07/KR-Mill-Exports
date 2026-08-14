@@ -58,6 +58,7 @@ import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
  */
 
 const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
+  headerId,
   shift = 1,
   totalTime,
   entryDate,
@@ -657,6 +658,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       // Convert empty strings to null for integer fields
       const result = await addSpinningMachineAction({
         ...newMachineData,
+        headerId,
         entryDate,
         shift: parseInt(shift),
         run_time: totalTime, // Use current shift's totalTime
@@ -675,9 +677,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       if (!result.success) throw new Error(result.error)
       
       if (result.data.reactivated) {
-        toast.success(`Machine ${newMachineData.machine_no} reactivated successfully`)
+        toast.success(`Machine ${newMachineData.machine_no} added back to this entry`)
       } else {
-        toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added successfully`)
+        toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added to this entry`)
       }
       
       setAddMachineDialog(false)
@@ -693,7 +695,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     }
   }
 
-  // Remove selected machines from setup AND deactivate the machine master
+  // Remove selected machines from this entry snapshot only.
   const handleRemoveMachines = async () => {
     if (!confirmDiscardLocalEdits()) return
 
@@ -709,9 +711,10 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
         .filter(id => id !== undefined)
 
-      // Deactivate machines in master table (like Autoconer)
-      const removePromises = machineIds.map(id => removeSpinningMachineAction(id))
-      await Promise.all(removePromises)
+      const removePromises = machineIds.map(id => removeSpinningMachineAction(id, headerId))
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setRemoveDialog(false)
@@ -1036,7 +1039,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             onClick={() => { resetMachineForm(); setAddMachineDialog(true); }}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add new machine
+            Add Master machine
           </Button>
           <Button 
             variant="outline" 
@@ -1242,7 +1245,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               Are you sure you want to remove {selectedRows.length} machine(s)?
             </p>
             <p className="text-sm text-red-600">
-              This will deactivate the machines in the master table. They can be reactivated later if needed.
+              This removes the selected machines only from this date and shift. Machine Master and other entries are unchanged.
             </p>
           </div>
           <DialogFooter>

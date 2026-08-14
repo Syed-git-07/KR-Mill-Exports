@@ -33,6 +33,7 @@ import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 
 import CardingProductionTab from '@/components/modules/preparatory-entry/CardingProductionTab'
 import CardingStoppageTab from '@/components/modules/preparatory-entry/CardingStoppageTab'
@@ -321,6 +322,8 @@ function CardingEntryContent() {
     }
   }
 
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
+
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
@@ -451,7 +454,7 @@ function CardingEntryContent() {
               variant="outline"
               size="sm"
               className="border-blue-300 text-blue-600 hover:bg-blue-50"
-              onClick={() => router.push('/preparatory-entry/carding')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/preparatory-entry/carding')}
             >
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to List
@@ -704,6 +707,7 @@ function CardingEntryContent() {
                 <DeferredMount active={activeTab === 'setup'}>
                 <CardingMachineSetupTab 
                   ref={setupTabRef}
+                  headerId={headerId}
                   key={`setup-${refreshKey}`} 
                   entryDate={date}
                   shift={parseInt(shift)}
