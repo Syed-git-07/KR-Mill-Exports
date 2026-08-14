@@ -146,6 +146,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     )
     return {
       ...calculated,
+      // Prodn Effi is a manual entry. Formula recalculation must not replace it.
+      prodn_effi: changes.prodn_effi ?? row.prodn_effi ?? 0,
       _totalDrums: totalDrums
     }
   }, [totalTime, findSetupDraft])
@@ -332,13 +334,20 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
         // uti_percent is a display-only calculation for AutoCorner.  Unlike
         // other production modules it is not a column on
         // autoconer_production_detail, so it must never be sent to Prisma.
-        const { _idleDrumPercent, _drumEfficiency, uti_percent: _utiPercent, ...dbFields } = calculated
+        const {
+          _idleDrumPercent,
+          _drumEfficiency,
+          uti_percent: _utiPercent,
+          prodn_effi: _calculatedProdnEffi,
+          ...dbFields
+        } = calculated
 
         return {
           id: rowId,
           ...changes,
           ...dbFields,
           act_prodn: actProdn,
+          prodn_effi: changes.prodn_effi ?? row.prodn_effi ?? 0,
           waste_kg: wasteKg,
           idle_drum: idleDrum,
           run_time: totalTime,
@@ -508,8 +517,19 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                       />
                     </td>
                     {/* Production Efficiency (Manual Entry) */}
-                    <td className={`border border-gray-300 px-2 py-1 text-right text-xs tabular-nums ${effiColor}`}>
-                      {Number(row.prodn_effi || 0).toFixed(2)}
+                    <td className="border border-gray-300 px-0 py-0">
+                      <NumberInput
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row.prodn_effi ?? '0.00'}
+                        onChange={(e) => handleInputChange(row.id, 'prodn_effi', e.target.value)}
+                        onKeyDown={(e) => handleEnterNavigation(e, index, 'prodn_effi')}
+                        data-row={index}
+                        data-col="prodn_effi"
+                        className={`h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100 ${effiColor}`}
+                        placeholder="0.00"
+                      />
                     </td>
                     {/* Red Light */}
                     <td className="border border-gray-300 px-0 py-0">

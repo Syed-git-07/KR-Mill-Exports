@@ -226,6 +226,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
         count_name: setup.count_name || null,
         count_id: setup.count_id || null,
         session_no: setup.session_no || 1,
+        prodn_effi: 0,
         waste_kg: null,
         waste_percent: null,
         run_time: totalTime,               // Shift-specific runtime
@@ -327,6 +328,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
         count_name: setup.count_name || null,
         count_id: setup.count_id || null,
         session_no: setup.session_no || 1,
+        prodn_effi: 0,
         waste_kg: null,
         waste_percent: null,
         run_time: totalTime,
@@ -673,8 +675,7 @@ export async function updateAutoconerStoppageEntry(id, updates) {
       data: {
         total_stoppage_mins: calculated.total_stoppage_mins,
         work_time: calculated.work_time,
-        run_time: calculated.run_time,
-        prodn_effi: calculated.prodn_effi
+        run_time: calculated.run_time
       }
     })
 
