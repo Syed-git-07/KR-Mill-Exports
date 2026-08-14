@@ -814,7 +814,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         value={row.count_id || ''}
                         options={counts.map(c => ({ value: c.id, label: c.count_name }))}
                         onChange={(v) => handleInputChange(row.id, 'count_id', v)}
-                        onNextRow={() => focusRowByDelta(index, 1, 'act_count')}
                         placeholder="Select..."
                         className="h-9 rounded-none text-xs"
                         cleanCell
