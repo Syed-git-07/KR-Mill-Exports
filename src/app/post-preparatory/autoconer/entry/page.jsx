@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
 import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
+import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 
 import AutoconerProductionTab from '@/components/modules/post-preparatory/autoconer/AutoconerProductionTab'
 import AutoconerStoppageTab from '@/components/modules/post-preparatory/autoconer/AutoconerStoppageTab'
@@ -36,7 +37,8 @@ import {
   getOrCreateAutoconerHeaderAction,
   updateAutoconerProductionHeaderAction,
   getSupervisorsAction,
-  getAutoconerShiftConfigAction
+  getAutoconerShiftConfigAction,
+  getSpinningCountsAction
 } from '@/app/actions/autoconerEntryActions'
 
 function AutoconerEntryContent() {
@@ -48,6 +50,7 @@ function AutoconerEntryContent() {
   const [shift, setShift] = useState(paramShift || '1')
   const [supervisorId, setSupervisorId] = useState('')
   const [supervisors, setSupervisors] = useState([])
+  const [counts, setCounts] = useState([])
   const [headerId, setHeaderId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitializing, setIsInitializing] = useState(false)
@@ -96,6 +99,20 @@ function AutoconerEntryContent() {
     updateTabDrafts('setup', nextDrafts)
   }, [updateTabDrafts])
 
+  const handleMachineCountChange = useCallback((setupId, machineId, countId) => {
+    const count = counts.find(item => String(item.id) === String(countId))
+    if (!setupId || !count) return
+
+    updateTabDrafts('setup', previous => ({
+      ...previous,
+      [setupId]: {
+        ...(previous[setupId] || {}),
+        ...(machineId ? { machine_id: machineId } : {}),
+        ...buildAutoconerCountSnapshot(count)
+      }
+    }))
+  }, [counts, updateTabDrafts])
+
   const getUnsavedEditCount = useCallback(() => {
     const currentDrafts = sharedDraftsRef.current
     const productionShared = Object.keys(currentDrafts.production || {}).length
@@ -123,6 +140,14 @@ function AutoconerEntryContent() {
       }
     }
     loadSupervisors()
+  }, [])
+
+  useEffect(() => {
+    const loadCounts = async () => {
+      const result = await getSpinningCountsAction()
+      if (result.success) setCounts(result.data || [])
+    }
+    loadCounts()
   }, [])
 
   // Load shift time when shift changes
@@ -468,6 +493,8 @@ function AutoconerEntryContent() {
                   onSharedDraftEditsChange={handleProductionDraftsChange}
                   stoppageDraftEdits={sharedDrafts.stoppage}
                   setupDraftEdits={sharedDrafts.setup}
+                  counts={counts}
+                  onMachineCountChange={handleMachineCountChange}
                 />
                 </DeferredMount>
               </TabsContent>
@@ -485,6 +512,8 @@ function AutoconerEntryContent() {
                   onSharedDraftEditsChange={handleStoppageDraftsChange}
                   productionDraftEdits={sharedDrafts.production}
                   setupDraftEdits={sharedDrafts.setup}
+                  counts={counts}
+                  onMachineCountChange={handleMachineCountChange}
                 />
                 </DeferredMount>
               </TabsContent>

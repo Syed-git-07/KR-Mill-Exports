@@ -489,6 +489,10 @@ export async function batchUpdateAutoconerProductionDetails(updates) {
 // Get stoppage entries for a header
 export async function getAutoconerStoppageEntries(headerId) {
   try {
+    const header = await prisma.autoconer_production_header.findUnique({
+      where: { id: headerId },
+      select: { entry_date: true, shift: true }
+    })
     const details = await prisma.autoconer_production_detail.findMany({
       where: {
         header_id: headerId
@@ -500,7 +504,7 @@ export async function getAutoconerStoppageEntries(headerId) {
     const detailIds = details.map(d => d.id)
     const machineIds = details.map(d => d.machine_id)
 
-    const [stoppages, machines] = await Promise.all([
+    const [stoppages, machines, setups] = await Promise.all([
       prisma.autoconer_stoppage_entry.findMany({
         where: { production_detail_id: { in: detailIds } }
       }),
@@ -515,7 +519,16 @@ export async function getAutoconerStoppageEntries(headerId) {
           activated_at: true,
           deactivated_at: true
         }
-      })
+      }),
+      header
+        ? prisma.autoconer_machine_setup.findMany({
+          where: {
+            machine_id: { in: machineIds },
+            entry_date: header.entry_date,
+            shift: header.shift
+          }
+        })
+        : []
     ])
 
     const reasonIds = []
@@ -543,6 +556,9 @@ export async function getAutoconerStoppageEntries(headerId) {
     const machineMap = {}
     machines.forEach(m => { machineMap[m.id] = m })
 
+    const setupMap = {}
+    setups.forEach(setup => { setupMap[setup.machine_id] = setup })
+
     const reasonMap = {}
     reasons.forEach(r => { reasonMap[r.id] = r })
 
@@ -553,7 +569,8 @@ export async function getAutoconerStoppageEntries(headerId) {
         production_detail: detail
           ? {
             ...detail,
-            machine: machineMap[detail.machine_id] || null
+            machine: machineMap[detail.machine_id] || null,
+            setup: setupMap[detail.machine_id] || null
           }
           : null,
         stoppage1: reasonMap[s.stoppage1_id] || null,

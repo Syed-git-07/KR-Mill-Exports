@@ -224,6 +224,15 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   useServerDataLoader(loadData, [shift, entryDate])
 
+  useEffect(() => {
+    const drafts = sharedDraftEdits || {}
+    if (Object.keys(drafts).length === 0) return
+    setSetupData(rows => rows.map(row => {
+      const draft = drafts[row.id] || drafts[String(row.id)]
+      return draft ? { ...row, ...draft } : row
+    }))
+  }, [sharedDraftEdits])
+
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
     const baseRow = setupData.find(row => row.id === rowId)
@@ -640,10 +649,6 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
                           ...counts.map(c => ({ value: c.id, label: c.count_name }))
                         ]}
                         onChange={(val) => handleCountChange(row.id, val === 'none' ? null : val)}
-                        onNextRow={() => {
-                          const next = tableRef.current?.querySelector(`td[data-row="${index + 1}"][data-col="count_name"] button`)
-                          if (next) next.focus()
-                        }}
                         placeholder="Select count"
                         className="h-9 rounded-none"
                         cleanCell

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHand
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import StoppageAutocomplete from "@/components/ui/stoppage-autocomplete"
+import EnterSelect from "@/components/ui/enter-select"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {
@@ -61,7 +62,9 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
   sharedDraftEdits,
   onSharedDraftEditsChange,
   productionDraftEdits,
-  setupDraftEdits
+  setupDraftEdits,
+  counts = [],
+  onMachineCountChange
 }, ref) {
   const [stoppageData, setStoppageData] = useState([])
   const [stoppageReasons, setStoppageReasons] = useState([])
@@ -512,9 +515,12 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
                 const machine = row.production_detail?.machine
                 const setupDraft = findMachineSetupDraft(
                   setupDraftEdits,
-                  null,
+                  row.production_detail?.setup?.id,
                   row.production_detail?.machine_id
                 )
+                const effectiveSetup = setupDraft
+                  ? { ...(row.production_detail?.setup || {}), ...setupDraft }
+                  : (row.production_detail?.setup || {})
                 const totalStoppage =
                   toNumber(row.stoppage1_time) + toNumber(row.stoppage2_time) +
                   toNumber(row.stoppage3_time) + toNumber(row.stoppage4_time)
@@ -533,8 +539,21 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
                     <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                       {row.production_detail?.session_no ?? '-'}
                     </td>
-                    <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap">
-                      {setupDraft?.count_name || row.production_detail?.count_name || '-'}
+                    <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="count_name">
+                      <EnterSelect
+                        value={effectiveSetup.count_id || row.production_detail?.count_id || ''}
+                        options={counts.map(count => ({ value: count.id, label: count.count_name }))}
+                        onChange={value => onMachineCountChange?.(
+                          row.production_detail?.setup?.id,
+                          row.production_detail?.machine_id,
+                          value
+                        )}
+                        placeholder={effectiveSetup.count_name || row.production_detail?.count_name || '-'}
+                        className="h-9 rounded-none"
+                        cleanCell
+                        editingHighlight
+                        searchable
+                      />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <StoppageAutocomplete

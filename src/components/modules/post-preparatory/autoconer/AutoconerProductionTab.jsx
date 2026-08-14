@@ -48,7 +48,9 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   sharedDraftEdits,
   onSharedDraftEditsChange,
   stoppageDraftEdits,
-  setupDraftEdits
+  setupDraftEdits,
+  counts = [],
+  onMachineCountChange
 }, ref) {
   const [productionData, setProductionData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -451,6 +453,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                 // Target efficiency is snapshotted from Count Master for this entry.
                 const setupDraft = findSetupDraft(row)
                 const effectiveSetup = setupDraft ? { ...(row.setup || {}), ...setupDraft } : (row.setup || {})
+                const effectiveCountName = effectiveSetup.count_name || row.count_name || row.count?.count_name || '-'
                 const hasTargetEffi = effectiveSetup.target_effi !== null && effectiveSetup.target_effi !== undefined && effectiveSetup.target_effi !== ''
                 const targetEffi = hasTargetEffi ? parseFloat(effectiveSetup.target_effi) : null
                 const currentEffi = parseFloat(row.prodn_effi) || 0
@@ -486,8 +489,21 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                       />
                     </td>
                     {/* Count Name */}
-                    <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-                      {effectiveSetup.count_name || row.count_name || row.count?.count_name || '-'}
+                    <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="count_name">
+                      <EnterSelect
+                        value={effectiveSetup.count_id || row.count_id || ''}
+                        options={counts.map(count => ({ value: count.id, label: count.count_name }))}
+                        onChange={value => onMachineCountChange?.(
+                          row.setup?.id,
+                          row.machine_id ?? row.machine?.id,
+                          value
+                        )}
+                        placeholder={effectiveCountName}
+                        className="h-9 rounded-none"
+                        cleanCell
+                        editingHighlight
+                        searchable
+                      />
                     </td>
                     {/* Drum From */}
                     <td className="border border-gray-300 px-2 py-1 text-center text-xs">
