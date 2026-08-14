@@ -162,7 +162,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       ...(d.act_count != null && { act_count: parseFloat(d.act_count) }),
       ...(d.tpi != null && { tpi: parseFloat(d.tpi) }),
       ...(d.speed != null && { speed: parseInt(d.speed) }),
-      ...(d.tw_con != null && { tw_con: parseInt(d.tw_con) }),
+      ...(d.tw_con != null && { tw_con: parseFloat(d.tw_con) }),
       ...(d.doff_loss != null && { doff_loss: parseFloat(d.doff_loss) }),
       ...(d.c_waste_percent != null && { c_waste_percent: parseFloat(d.c_waste_percent) }),
     }))
@@ -308,7 +308,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     act_count: countData?.act_count != null ? parseFloat(countData.act_count) : 0,
     session_no: 1,
     run_time: effectiveTotalTime,
-    tw_con: countData?.tw_con != null ? parseInt(countData.tw_con) : 0,
+    tw_con: countData?.tw_con != null ? parseFloat(countData.tw_con) : 0,
     doff_loss: countData?.doff_loss != null ? parseFloat(countData.doff_loss) : 0,
     c_waste_percent: countData?.waste_percent != null ? parseFloat(countData.waste_percent) : 0,
     speed: countData?.speed != null ? parseInt(countData.speed) : 0,
@@ -846,6 +846,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput
                         type="number"
+                        step="0.001"
                         value={row.tw_con ?? ''}
                         onChange={(e) => handleInputChange(row.id, 'tw_con', e.target.value)}
                         onKeyDown={(e) => handleEnterNavigation(e, index, 'tw_con')}

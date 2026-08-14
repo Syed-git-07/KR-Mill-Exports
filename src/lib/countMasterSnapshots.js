@@ -27,7 +27,7 @@ export function buildSpinningCountSnapshot(count, { machineSpeed = null } = {}) 
     count_name: count.count_name,
     act_count: nullableNumber(count.act_count),
     tpi: nullableNumber(count.tpi),
-    tw_con: nullableNumber(count.tw_con, { integer: true }),
+    tw_con: nullableNumber(count.tw_con),
     doff_loss: nullableNumber(count.doff_loss),
     c_waste_percent: nullableNumber(count.waste_percent),
     conv_40s_value: nullableNumber(count.conv_40s_value),

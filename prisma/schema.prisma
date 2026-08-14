@@ -1038,7 +1038,7 @@ model spinning_machine_setup {
   act_count          Decimal?          @default(69.50) @db.Decimal(10, 2)
   tpi                Decimal?          @default(13.00) @db.Decimal(5, 2)
   allocated_spindles Int?              @default(1104)
-  tw_con             Int?              @default(4)
+  tw_con             Decimal?          @default(4.000) @db.Decimal(10, 3)
   doff_loss          Decimal?          @default(0.70) @db.Decimal(5, 2)
   c_waste_percent    Decimal?          @default(0.90) @db.Decimal(5, 2)
   conv_40s_value     Decimal?          @db.Decimal(10, 2)
