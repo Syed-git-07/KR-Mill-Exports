@@ -1290,7 +1290,8 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
       throw new Error('entryDate is required for getCardingMachineSetups')
     }
 
-    const setups = await getOrCreateCardingMachineSetups(entryDate, shift)
+    const dateObj = new Date(entryDate)
+    const setups = await getOrCreateCardingMachineSetups(dateObj, shift)
     if (!setups || setups.length === 0) return []
 
     const machineIds = setups.map(s => s.machine_id).filter(Boolean)
@@ -1305,7 +1306,9 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
             description: true,
             make_name: true,
             prodn_mixing: true,
-            is_active: true
+            is_active: true,
+            activated_at: true,
+            deactivated_at: true
           }
         })
       : []
@@ -1316,7 +1319,9 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
     })
 
     const data = setups
-      .filter(setup => !!machineMap[setup.machine_id])
+      // Setup snapshots are retained for history, but the setup grid must use
+      // the same date-effective machine lifecycle rule as Production/Stoppage.
+      .filter(setup => isCardingMachineVisibleOnDate(machineMap[setup.machine_id], dateObj))
       .map(setup => ({
         ...setup,
         machine: machineMap[setup.machine_id]

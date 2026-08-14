@@ -6,6 +6,7 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import MachineActiveStatus from '@/components/modules/masters/MachineActiveStatus';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
 
@@ -407,15 +408,7 @@ export default function LapFormerForm({ initialData, onSubmit, isLoading, countO
 
       {/* Row 5: Is Active */}
       <div className="grid grid-cols-1 pt-2">
-        <div className="flex items-center space-x-2 p-3 border rounded-lg max-w-xs">
-          <Checkbox
-            id="is_active"
-            checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
-            disabled={isLoading}
-          />
-          <Label htmlFor="is_active" className="cursor-pointer">Is Active</Label>
-        </div>
+        <MachineActiveStatus isActive={isActive} />
       </div>
     </form>
   );

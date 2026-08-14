@@ -188,6 +188,15 @@ export default function DrawingFinisherPage() {
     }
   };
 
+  const handleActivate = async () => {
+    if (!isEditing || !selectedMachine || selectedMachine.is_active) return;
+    if (!confirm(`Activate machine "${selectedMachine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
+    const result = await updateDrawingFinisherMachineAction(selectedMachine.id, { is_active: true });
+    if (!result.success) return toast.error('Failed to activate: ' + result.error);
+    toast.success('Machine activated');
+    setIsModalOpen(false); setSelectedMachine(null); setIsEditing(false); loadMachines();
+  };
+
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
@@ -393,8 +402,8 @@ export default function DrawingFinisherPage() {
         showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={isEditing && selectedMachine?.is_active ? handleDeactivate : null}
-        secondaryActionLabel="Deactivate"
+        onSecondaryAction={isEditing && selectedMachine ? (selectedMachine.is_active ? handleDeactivate : handleActivate) : null}
+        secondaryActionLabel={selectedMachine?.is_active ? "Deactivate" : "Activate"}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >

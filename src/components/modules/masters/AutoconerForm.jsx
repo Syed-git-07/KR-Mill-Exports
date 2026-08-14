@@ -7,6 +7,7 @@ import * as z from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import MachineActiveStatus from './MachineActiveStatus'
 import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
 import { getAutoconerCountsAction } from '@/app/actions/autoconer'
@@ -303,17 +304,7 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
           />
         </div>
 
-        {/* Row 6: Checkboxes */}
-        <div className="flex items-center gap-2 pt-4">
-          <Checkbox
-            id="is_active"
-            checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
-          />
-          <Label htmlFor="is_active" className="cursor-pointer text-sm">
-            Active (Yes / No)
-          </Label>
-        </div>
+        <div className="pt-4"><MachineActiveStatus isActive={isActive} /></div>
 
         <div className="flex items-center gap-2 pt-4">
           <Checkbox

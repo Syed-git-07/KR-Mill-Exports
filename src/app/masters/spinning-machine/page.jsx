@@ -188,6 +188,16 @@ export default function SpinningMachineMaster() {
     }
   };
 
+  const handleActivate = async () => {
+    const machine = editingMachine;
+    if (!machine || machine.is_active) return;
+    if (!confirm(`Activate machine "${machine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
+    const result = await updateSpinningMachineAction(machine.id, { is_active: true });
+    if (!result.success) return toast.error('Failed to activate: ' + result.error);
+    toast.success('Machine activated');
+    setIsModalOpen(false); setEditingMachine(null); setSelectedRowId(null); loadMachines();
+  };
+
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk permanent delete
@@ -396,8 +406,8 @@ export default function SpinningMachineMaster() {
         showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={editingMachine?.is_active ? handleDeactivate : null}
-        secondaryActionLabel="Deactivate"
+        onSecondaryAction={editingMachine ? (editingMachine.is_active ? handleDeactivate : handleActivate) : null}
+        secondaryActionLabel={editingMachine?.is_active ? "Deactivate" : "Activate"}
         saveLabel={editingMachine ? "Update" : "Create"}
       >
         <SpinningMachineForm

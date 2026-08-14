@@ -7,6 +7,7 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import MachineActiveStatus from './MachineActiveStatus';
 import EnterSelect from '@/components/ui/enter-select';
 import { getSpinningCountsAction } from '@/app/actions/spinning-entry';
 
@@ -201,17 +202,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
           />
         </div>
 
-        {/* Active Checkbox */}
-        <div className="space-y-2 flex items-center gap-2">
-          <Checkbox
-            id="is_active"
-            checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
-          />
-          <Label htmlFor="is_active" className="cursor-pointer">
-            Active
-          </Label>
-        </div>
+        <MachineActiveStatus isActive={isActive} />
 
         {/* Production Kgs Manual Entry */}
         <div className="space-y-2 flex items-center gap-2">

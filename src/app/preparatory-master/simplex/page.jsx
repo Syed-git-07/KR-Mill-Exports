@@ -229,6 +229,15 @@ export default function SimplexMachinePage() {
     }
   };
 
+  const handleActivate = async () => {
+    if (!isEditing || !selectedMachine || selectedMachine.is_active) return;
+    if (!confirm(`Activate machine "${selectedMachine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
+    const result = await updateSimplexMachineAction(selectedMachine.id, { is_active: true });
+    if (!result.success) return toast.error('Failed to activate: ' + result.error);
+    toast.success('Machine activated');
+    setIsModalOpen(false); setSelectedMachine(null); setIsEditing(false); loadMachines();
+  };
+
   const handleSelectRow = (row) => {
     setSelectedRows(prev => {
       const exists = prev.some(r => r.id === row.id);
@@ -399,8 +408,8 @@ export default function SimplexMachinePage() {
         showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={isEditing && selectedMachine?.is_active ? handleDeactivate : null}
-        secondaryActionLabel="Deactivate"
+        onSecondaryAction={isEditing && selectedMachine ? (selectedMachine.is_active ? handleDeactivate : handleActivate) : null}
+        secondaryActionLabel={selectedMachine?.is_active ? "Deactivate" : "Activate"}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >
