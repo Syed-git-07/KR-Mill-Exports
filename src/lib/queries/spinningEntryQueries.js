@@ -3,7 +3,7 @@ import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeader
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
-import { resolveProductionTime } from '../productionFormulaMath'
+import { calculateSpinningExpectedGps, resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildSpinningCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
@@ -193,15 +193,24 @@ export function calculateGps(actProdn, workedSpindles) {
 
 /**
  * Calculate Expected GPS
- * Formula: Exp_GPS = 7.2 × Speed / TPI / Count × Effi
+ * Formula: Exp_GPS = 7.2 × Speed / TPI / Count × Loss_Effi
+ * Loss_Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
  * @param {number} speed - Machine speed (RPM)
  * @param {number} tpi - Twists per inch
  * @param {number} count - Act Count value (e.g., 69.5 from machine setup)
- * @param {number} efficiency - Efficiency (0.95 = 95%)
+ * @param {number} twCon - TW.Con loss percentage
+ * @param {number} doffLoss - Doff loss percentage
+ * @param {number} cWastePercent - C.Waste percentage
  */
-export function calculateExpGps(speed, tpi, count, efficiency = 0.95) {
-  if (!speed || !tpi || !count) return 0
-  return (7.2 * speed / tpi / count) * efficiency
+export function calculateExpGps(speed, tpi, count, twCon = 0, doffLoss = 0, cWastePercent = 0) {
+  return calculateSpinningExpectedGps({
+    speed,
+    tpi,
+    count,
+    twCon,
+    doffLoss,
+    cWastePercent
+  })
 }
 
 /**
@@ -217,10 +226,12 @@ export function calculateSpinningProduction(params) {
     shift = 1,
     stoppageMins = 0,
     runTime = 0,
-    efficiency = 0.95,
     speed = 0,
     tpi = 0,
-    count = 0
+    count = 0,
+    twCon = 0,
+    doffLoss = 0,
+    cWastePercent = 0
   } = params
 
   // Calculate No of Spindles based on shift
@@ -232,7 +243,7 @@ export function calculateSpinningProduction(params) {
   const stoppedSpindles = calculateStoppedSpindles(stoppageMins, runTime, totalSpindles)
   const workedSpindles = calculateWorkedSpindles(totalSpindles, stoppedSpindles)
   const gps = calculateGps(actProdn, workedSpindles)
-  const expGps = calculateExpGps(speed, tpi, count, efficiency)
+  const expGps = calculateExpGps(speed, tpi, count, twCon, doffLoss, cWastePercent)
 
   return {
     totalSpindles: totalSpindles,
@@ -242,7 +253,7 @@ export function calculateSpinningProduction(params) {
     stoppedSpindles: Math.round(stoppedSpindles * 100) / 100,
     workedSpindles: workedSpindles,
     gps: Math.round(gps * 100) / 100,
-    expGps: Math.round(expGps * 100) / 100
+    expGps: Math.round(expGps * 1000) / 1000
   }
 }
 
@@ -770,6 +781,9 @@ export async function getSpinningStoppageEntries(headerId) {
           efficiency: toFiniteNumber(setup.efficiency, 0.95),
           speed: toFiniteNumber(setup.speed),
           tpi: toFiniteNumber(setup.tpi),
+          tw_con: toFiniteNumber(setup.tw_con),
+          doff_loss: toFiniteNumber(setup.doff_loss),
+          c_waste_percent: toFiniteNumber(setup.c_waste_percent),
           stoppage_entry_id: stoppage.id,
           stoppage1_id: stoppage.stoppage1_id,
           stoppage1: stoppageReasonMap[stoppage.stoppage1_id] || null,

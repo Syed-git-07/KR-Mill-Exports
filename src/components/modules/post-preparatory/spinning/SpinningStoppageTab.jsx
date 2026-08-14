@@ -26,6 +26,7 @@ import {
   getSpinningMachinesAction
 } from '@/app/actions/spinning-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { calculateSpinningExpectedGps } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Stoppage Entry Tab
@@ -59,6 +60,16 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const editedRowsRef = useRef({})
   const shiftTimeVal = effectiveTotalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
+
+  const formatExpectedGps = (value) => {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return '-'
+    return numeric.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 3,
+      useGrouping: false
+    })
+  }
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
@@ -153,7 +164,6 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     const allocatedSpindles = setupDraft?.allocated_spindles ?? row.total_spindles ?? 1104
     const runTime = effectiveTotalTime
     const actCount = setupDraft?.act_count ?? row.act_count ?? 0
-    const efficiency = setupDraft?.efficiency ?? row.efficiency ?? 0.95
     const productionDraft = productionDraftEdits?.[row.id] || productionDraftEdits?.[String(row.id)]
     const actHank = productionDraft?.act_hank ?? row.act_hank ?? 0
 
@@ -182,13 +192,20 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
 
     // Expected GPS = 7.2 × Speed / TPI / Count × Effi
-    const expGps = speed && tpi && count ? ((7.2 * speed / tpi / count) * efficiency) : 0
+    const expGps = calculateSpinningExpectedGps({
+      speed,
+      tpi,
+      count,
+      twCon: setupDraft?.tw_con ?? row.tw_con,
+      doffLoss: setupDraft?.doff_loss ?? row.doff_loss,
+      cWastePercent: setupDraft?.c_waste_percent ?? row.c_waste_percent
+    })
 
     return {
       stoppedSpindles: Math.round(stoppedSpindles * 100) / 100,
       workedSpindles: Math.round(workedSpindles * 100) / 100,
       gps: Math.round(gps * 100) / 100,
-      expGps: Math.round(expGps * 100) / 100
+      expGps: Math.round(expGps * 1000) / 1000
     }
   }, [effectiveTotalTime, findSetupDraftForMachine, productionDraftEdits])
 
@@ -617,7 +634,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                     {row.gps?.toFixed(2) || '-'}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center text-purple-600 tabular-nums whitespace-nowrap">
-                    {row.expGps?.toFixed(2) || '-'}
+                    {formatExpectedGps(row.expGps)}
                   </td>
                   <td className="border border-gray-300 px-0 py-0">
                     <StoppageAutocomplete

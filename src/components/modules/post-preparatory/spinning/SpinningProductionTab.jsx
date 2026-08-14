@@ -22,7 +22,7 @@ import {
   mergeSetupDraft,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
-import { resolveProductionTime } from '@/lib/productionFormulaMath'
+import { calculateSpinningExpectedGps, resolveProductionTime } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Production Entry Tab
@@ -87,6 +87,16 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     return numeric.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
   }
 
+  const formatExpectedGps = (value) => {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return '-'
+    return numeric.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 3,
+      useGrouping: false
+    })
+  }
+
   // Calculate production values based on formulas
   const getEffectiveSetup = useCallback((row, drafts = setupDraftEdits) => {
     const baseSetup = row.setup || {}
@@ -99,9 +109,6 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const allocatedSpindles = setup.allocated_spindles != null && setup.allocated_spindles !== ''
       ? Number(setup.allocated_spindles)
       : (row.machine?.allocated_spindles ?? 1104)
-    const efficiency = setup.efficiency != null && setup.efficiency !== ''
-      ? Number(setup.efficiency)
-      : 0.95
     const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
     const productionTime = resolveProductionTime(effectiveTotalTime, requestedStoppageMins)
     const stoppageMins = productionTime.stoppageTime
@@ -142,7 +149,14 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
 
     // Calculate Expected GPS = 7.2 × Speed / TPI / Count × Effi
-    const expGps = speed && tpi && count ? ((7.2 * speed / tpi / count) * efficiency) : 0
+    const expGps = calculateSpinningExpectedGps({
+      speed,
+      tpi,
+      count,
+      twCon: setup.tw_con,
+      doffLoss: setup.doff_loss,
+      cWastePercent: setup.c_waste_percent
+    })
 
     const result = {
       act_prodn: Math.round(actProdn * 100) / 100,
@@ -150,7 +164,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       stopped_spindles: Math.round(stoppedSpindles * 100) / 100,
       worked_spindles: workedSpindles,
       gps: Math.round(gps * 100) / 100,
-      exp_gps: Math.round(expGps * 100) / 100,
+      exp_gps: Math.round(expGps * 1000) / 1000,
       work_time: runTime - stoppageMins,
       _constant: Math.round(constant * 1000) / 1000,
       _totalSpindles: totalSpindles
@@ -583,7 +597,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                       {formatWorkedSpindles(row.worked_spindles ?? row._totalSpindles)}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-center text-purple-600 tabular-nums whitespace-nowrap">
-                      {row.exp_gps?.toFixed(2) || '-'}
+                      {formatExpectedGps(row.exp_gps)}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
                       {row.run_time || effectiveTotalTime}

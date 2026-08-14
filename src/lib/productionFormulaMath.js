@@ -23,6 +23,41 @@ export function resolveProductionTime(totalTime, stoppageTime) {
   }
 }
 
+export function calculateSpinningExpectedGpsEfficiency({
+  twCon,
+  doffLoss,
+  cWastePercent,
+}) {
+  const totalLossPercent =
+    toFiniteNumber(twCon) +
+    toFiniteNumber(doffLoss) +
+    toFiniteNumber(cWastePercent)
+
+  return (100 - totalLossPercent) / 100
+}
+
+export function calculateSpinningExpectedGps({
+  speed,
+  tpi,
+  count,
+  twCon,
+  doffLoss,
+  cWastePercent,
+}) {
+  const safeSpeed = toFiniteNumber(speed)
+  const safeTpi = toFiniteNumber(tpi)
+  const safeCount = toFiniteNumber(count)
+  if (!safeSpeed || !safeTpi || !safeCount) return 0
+
+  const efficiency = calculateSpinningExpectedGpsEfficiency({
+    twCon,
+    doffLoss,
+    cWastePercent,
+  })
+
+  return (7.2 * safeSpeed / safeTpi / safeCount) * efficiency
+}
+
 /**
  * Shared workbook rules for Carding, Breaker Drawing, Finisher Drawing and
  * Lap Former:
