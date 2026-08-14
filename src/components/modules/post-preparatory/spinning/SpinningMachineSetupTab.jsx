@@ -853,7 +853,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         data-row={index}
                         data-col="tw_con"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        zeroAsEmpty
                       />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
@@ -866,7 +865,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         data-row={index}
                         data-col="doff_loss"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        zeroAsEmpty
                       />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
@@ -879,7 +877,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         data-row={index}
                         data-col="c_waste_percent"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        zeroAsEmpty
                       />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
