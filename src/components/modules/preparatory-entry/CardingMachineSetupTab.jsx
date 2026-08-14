@@ -317,7 +317,8 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -326,7 +327,6 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const currentEdits = editedRowsRef.current || editedRows || {}
       const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
       const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const row = setupData.find(r => String(r.id) === String(rowId))

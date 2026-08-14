@@ -27,7 +27,7 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 import {
   getAutoconerMachineSetupsAction,
-  updateAutoconerMachineSetupAction,
+  batchUpdateAutoconerMachineSetupsAction,
   upsertAutoconerMachineSetupAction,
   getSpinningCountsAction,
   getAutoconerMachinesAction,
@@ -291,14 +291,19 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
     const count = counts.find(c => c.id === newCountId)
     
-    selectedRows.forEach(rowId => {
-      setEditedRows(prev => ({
-        ...prev,
-        [rowId]: {
-          ...prev[rowId],
+    const selectedIds = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      for (const row of setupData) {
+        if (!selectedIds.has(String(row.id))) continue
+        const machineId = row.machine_id ?? row.machine?.id
+        next[row.id] = {
+          ...next[row.id],
+          ...(machineId ? { machine_id: machineId } : {}),
           ...buildAutoconerCountSnapshot(count)
         }
-      }))
+      }
+      return next
     })
 
     setSetupData(prev => prev.map(row => 
@@ -309,12 +314,15 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
     setCountChangeDialog(false)
     setNewCountId('')
-    toast.success(`Count changed for ${selectedRows.length} machines`)
+    setSelectedRows([])
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
   }
 
   // Save all changes
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    const editedIds = Object.keys(currentEdits)
+    if (editedIds.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -323,14 +331,10 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) =>
-        updateAutoconerMachineSetupAction(rowId, changes, shift)
-      )
-
-      const results = await Promise.all(updatePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to save an Autoconer setup row')
-      const savedCount = Object.keys(editedRows).length
+      const updates = editedIds.map(id => ({ id, ...currentEdits[id] }))
+      const result = await batchUpdateAutoconerMachineSetupsAction(updates, shift)
+      if (!result?.success) throw new Error(result?.error || 'Failed to save Autoconer setups')
+      const savedCount = updates.length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Setup data saved successfully')
@@ -372,7 +376,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])

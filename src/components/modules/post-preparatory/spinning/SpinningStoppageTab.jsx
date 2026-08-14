@@ -352,11 +352,12 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -366,7 +367,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     setIsSaving(true)
     try {
       // Map editedRows (keyed by production_detail id) to use the correct stoppage_entry_id
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const row = stoppageData.find(r => r.id === rowId)
         const stoppageEntryId = row?.stoppage_entry_id
         if (!stoppageEntryId) {
@@ -390,7 +391,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
         }
       }
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!skipParentRefresh) {
         await loadData()
@@ -428,7 +429,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])

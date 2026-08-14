@@ -80,29 +80,32 @@ function BreakerDrawingEntryContent() {
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const sharedDraftsRef = useRef(sharedDrafts)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
+  const saveInFlightRef = useRef(false)
 
   const updateTabDrafts = useCallback((tabKey, nextDraftOrUpdater) => {
-    setSharedDrafts(prev => {
-      const currentTabDrafts = prev?.[tabKey] || {}
-      const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
-        ? nextDraftOrUpdater(currentTabDrafts)
-        : (nextDraftOrUpdater || {})
-      if (nextTabDrafts === currentTabDrafts) {
-        return prev
-      }
-      return {
-        ...prev,
-        [tabKey]: nextTabDrafts
-      }
-    })
+    const current = sharedDraftsRef.current
+    const currentTabDrafts = current?.[tabKey] || {}
+    const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
+      ? nextDraftOrUpdater(currentTabDrafts)
+      : (nextDraftOrUpdater || {})
+    if (nextTabDrafts === currentTabDrafts) return
+    const next = { ...current, [tabKey]: nextTabDrafts }
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
+  }, [])
+
+  const replaceAllDrafts = useCallback((next) => {
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
-  }, [])
+    replaceAllDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+  }, [replaceAllDrafts])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
     updateTabDrafts('production', nextDrafts)
@@ -117,11 +120,12 @@ function BreakerDrawingEntryContent() {
   }, [updateTabDrafts])
 
   const getUnsavedEditCount = useCallback(() => {
+    const currentDrafts = sharedDraftsRef.current
     const sharedCount =
-      Object.keys(sharedDrafts.production || {}).length +
-      Object.keys(sharedDrafts.stoppage || {}).length +
-      Object.keys(sharedDrafts.setup || {}).length +
-      (Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0)
+      Object.keys(currentDrafts.production || {}).length +
+      Object.keys(currentDrafts.stoppage || {}).length +
+      Object.keys(currentDrafts.setup || {}).length +
+      (Object.keys(currentDrafts.header || {}).length > 0 ? 1 : 0)
 
     if (sharedCount > 0) return sharedCount
 
@@ -326,7 +330,7 @@ function BreakerDrawingEntryContent() {
   }
 
   const handleSaveAllTabs = async () => {
-    if (!headerId || isSavingAll) return
+    if (!headerId || saveInFlightRef.current) return
 
     const totalPending = getUnsavedEditCount()
 
@@ -335,6 +339,8 @@ function BreakerDrawingEntryContent() {
       return
     }
 
+    const draftsAtSaveStart = sharedDraftsRef.current
+    saveInFlightRef.current = true
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
@@ -343,7 +349,7 @@ function BreakerDrawingEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -352,7 +358,7 @@ function BreakerDrawingEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -361,11 +367,11 @@ function BreakerDrawingEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
-      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
-        ? await updateBreakerDrawingHeaderAction(headerId, sharedDrafts.header)
+      const headerResult = Object.keys(draftsAtSaveStart.header || {}).length > 0
+        ? await updateBreakerDrawingHeaderAction(headerId, draftsAtSaveStart.header)
         : { success: true, saved: 0 }
 
       const results = [prodResult, stoppageResult, setupResult, headerResult]
@@ -373,15 +379,20 @@ function BreakerDrawingEntryContent() {
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
       if (failures.length > 0) {
-        toast.error(`Saved ${totalSaved} change(s), but ${failures.length} tab(s) failed`)
+        replaceAllDrafts(draftsAtSaveStart)
+        toast.error(`Update incomplete: ${failures.length} section(s) failed. Your drafts were retained; click Update to retry.`)
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
+        clearAllDrafts()
         router.push('/preparatory-entry/breaker-drawing')
         return
       }
-
-      handleRefresh()
+    } catch (error) {
+      replaceAllDrafts(draftsAtSaveStart)
+      console.error('Error saving Breaker Drawing entry:', error)
+      toast.error('Update failed. Your unsaved drafts were retained.')
     } finally {
+      saveInFlightRef.current = false
       setIsSavingAll(false)
     }
   }
@@ -419,11 +430,13 @@ function BreakerDrawingEntryContent() {
   const handleDateChange = (nextDate) => {
     if (!nextDate) return
     if (!confirmIfUnsaved('Changing date will reload entry data.')) return
+    clearAllDrafts()
     setDate(nextDate)
   }
 
   const handleShiftChange = (nextShift) => {
     if (!confirmIfUnsaved('Changing shift will reload entry data.')) return
+    clearAllDrafts()
     setShift(nextShift)
   }
 

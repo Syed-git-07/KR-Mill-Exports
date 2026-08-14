@@ -329,7 +329,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges,
     refreshData: () => loadData({ force: true })

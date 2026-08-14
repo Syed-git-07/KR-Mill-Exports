@@ -520,15 +520,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSaveAll,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSaveAll, editedRows, isSaving, discardChanges])
 
   // Bulk count change
-  const handleCountChange = async () => {
-    if (!confirmDiscardLocalEdits()) return
-
+  const handleCountChange = () => {
     if (selectedRows.length === 0) {
       toast.warning('Please select machines first')
       return
@@ -541,32 +539,35 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     // Find the selected count details
     const selectedCount = counts.find(c => c.id === newCountId)
 
-    setIsSaving(true)
-    try {
-      const updates = selectedRows.map(id => ({
-        id,
-        count_id: selectedCount?.id,
-      }))
-
-      const result = await batchUpdateSpinningMachineSetupsAction(updates, shift)
-      
-      if (result.success) {
-        toast.success(`Updated count for ${selectedRows.length} machine(s)`)
-        setCountChangeDialog(false)
-        setNewCountId('')
-        setSelectedRows([])
-        setEditedRows({})
-        await loadData()
-        onRefresh?.()
-      } else {
-        throw new Error(result.error)
-      }
-    } catch (error) {
-      console.error('Error changing count:', error)
-      toast.error('Failed to change count')
-    } finally {
-      setIsSaving(false)
+    if (!selectedCount) {
+      toast.error('Selected count is no longer available')
+      return
     }
+
+    const selectedIds = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      for (const row of setupData) {
+        if (!selectedIds.has(String(row.id))) continue
+        const machineId = row.machine_id ?? row.machine?.id
+        next[row.id] = {
+          ...next[row.id],
+          ...(machineId ? { machine_id: machineId } : {}),
+          ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: row.machine?.speed })
+        }
+      }
+      return next
+    })
+    setSetupData(prev => prev.map(row => (
+      selectedIds.has(String(row.id))
+        ? { ...row, ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: row.machine?.speed }) }
+        : row
+    )))
+
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setCountChangeDialog(false)
+    setNewCountId('')
+    setSelectedRows([])
   }
 
   const hasOptionSelected = optionCheck.copySpeed || optionCheck.copyTpi || optionCheck.copyTwCon || optionCheck.copyCount

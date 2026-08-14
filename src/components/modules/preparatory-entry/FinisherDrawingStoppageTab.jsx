@@ -485,11 +485,12 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -499,7 +500,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
         return updateFinisherDrawingStoppageEntryAction(rowId, persistedChanges)
       })
@@ -518,7 +519,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         latestDetailMap[detail.id] = detail
       })
 
-      const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {
+      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -530,7 +531,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         const machineSpeed = setup?.speed ?? prodDetail.machine?.speed ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
         
         // Calculate new total stoppage (4 slots for Finisher Drawing)
-        const editedChanges = editedRows[rowId]
+        const editedChanges = currentEdits[rowId]
         const newTotalStoppage = 
           (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
           (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
@@ -560,7 +561,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
       
       await Promise.all(productionUpdatePromises.filter(Boolean))
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved and production recalculated')
@@ -602,7 +603,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges,
     refreshData: () => loadData({ force: true })

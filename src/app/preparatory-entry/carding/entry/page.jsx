@@ -83,29 +83,32 @@ function CardingEntryContent() {
   const [isCopying, setIsCopying] = useState(false)
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const sharedDraftsRef = useRef(sharedDrafts)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
+  const saveInFlightRef = useRef(false)
 
   const updateTabDrafts = useCallback((tabKey, nextDraftOrUpdater) => {
-    setSharedDrafts(prev => {
-      const currentTabDrafts = prev?.[tabKey] || {}
-      const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
-        ? nextDraftOrUpdater(currentTabDrafts)
-        : (nextDraftOrUpdater || {})
-      if (nextTabDrafts === currentTabDrafts) {
-        return prev
-      }
-      return {
-        ...prev,
-        [tabKey]: nextTabDrafts
-      }
-    })
+    const current = sharedDraftsRef.current
+    const currentTabDrafts = current?.[tabKey] || {}
+    const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
+      ? nextDraftOrUpdater(currentTabDrafts)
+      : (nextDraftOrUpdater || {})
+    if (nextTabDrafts === currentTabDrafts) return
+    const next = { ...current, [tabKey]: nextTabDrafts }
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
+  }, [])
+
+  const replaceAllDrafts = useCallback((next) => {
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
-  }, [])
+    replaceAllDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+  }, [replaceAllDrafts])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
     updateTabDrafts('production', nextDrafts)
@@ -120,10 +123,11 @@ function CardingEntryContent() {
   }, [updateTabDrafts])
 
   const getUnsavedEditCount = useCallback(() => {
-    const productionShared = Object.keys(sharedDrafts.production || {}).length
-    const stoppageShared = Object.keys(sharedDrafts.stoppage || {}).length
-    const setupShared = Object.keys(sharedDrafts.setup || {}).length
-    const headerShared = Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0
+    const currentDrafts = sharedDraftsRef.current
+    const productionShared = Object.keys(currentDrafts.production || {}).length
+    const stoppageShared = Object.keys(currentDrafts.stoppage || {}).length
+    const setupShared = Object.keys(currentDrafts.setup || {}).length
+    const headerShared = Object.keys(currentDrafts.header || {}).length > 0 ? 1 : 0
 
     const productionCount = productionShared || (productionTabRef.current?.getEditedCount?.() || 0)
     const stoppageCount = stoppageShared || (stoppageTabRef.current?.getEditedCount?.() || 0)
@@ -264,7 +268,7 @@ function CardingEntryContent() {
   }
 
   const handleSaveAllTabs = async () => {
-    if (!headerId || isSavingAll) return
+    if (!headerId || saveInFlightRef.current) return
 
     const totalPending = getUnsavedEditCount()
 
@@ -273,6 +277,8 @@ function CardingEntryContent() {
       return
     }
 
+    const draftsAtSaveStart = sharedDraftsRef.current
+    saveInFlightRef.current = true
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
@@ -281,18 +287,18 @@ function CardingEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
-      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
-        ? await updateProductionHeaderAction(headerId, sharedDrafts.header)
+      const headerResult = Object.keys(draftsAtSaveStart.header || {}).length > 0
+        ? await updateProductionHeaderAction(headerId, draftsAtSaveStart.header)
         : { success: true, saved: 0 }
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const prodResult = await (
@@ -300,7 +306,7 @@ function CardingEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
 
@@ -309,15 +315,20 @@ function CardingEntryContent() {
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
       if (failures.length > 0) {
-        toast.error(`Saved ${totalSaved} change(s), but ${failures.length} tab(s) failed`)
+        replaceAllDrafts(draftsAtSaveStart)
+        toast.error(`Update incomplete: ${failures.length} section(s) failed. Your drafts were retained; click Update to retry.`)
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
+        clearAllDrafts()
         router.push('/preparatory-entry/carding')
         return
       }
-
-      handleRefresh()
+    } catch (error) {
+      replaceAllDrafts(draftsAtSaveStart)
+      console.error('Error saving Carding entry:', error)
+      toast.error('Update failed. Your unsaved drafts were retained.')
     } finally {
+      saveInFlightRef.current = false
       setIsSavingAll(false)
     }
   }

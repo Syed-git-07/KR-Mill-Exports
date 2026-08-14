@@ -332,7 +332,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save an Autoconer stoppage row')
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(draftRows).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved successfully')

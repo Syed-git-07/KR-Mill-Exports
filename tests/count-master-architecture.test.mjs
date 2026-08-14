@@ -4,7 +4,8 @@ import test from 'node:test'
 
 import {
   buildAutoconerCountSnapshot,
-  buildSpinningCountSnapshot
+  buildSpinningCountSnapshot,
+  mergeCountSnapshotWithEntryEdits
 } from '../src/lib/countMasterSnapshots.js'
 
 test('spinning count selection creates a complete count-controlled snapshot', () => {
@@ -66,6 +67,27 @@ test('autoconer snapshot uses only Count Master speed and efficiency', () => {
     act_count: 62,
     speed: 1500,
     target_effi: 81.5
+  })
+})
+
+test('Count changes retain explicit entry overrides while keeping canonical Count identity', () => {
+  const resolved = mergeCountSnapshotWithEntryEdits({
+    count_id: 'count-61',
+    count_name: '61 COMBED STAR',
+    tpi: 31,
+    speed: 14500
+  }, {
+    count_id: 'stale-count-id',
+    count_name: 'stale count name',
+    tpi: 31.75,
+    speed: 14750
+  })
+
+  assert.deepEqual(resolved, {
+    count_id: 'count-61',
+    count_name: '61 COMBED STAR',
+    tpi: 31.75,
+    speed: 14750
   })
 })
 

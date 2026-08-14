@@ -6,7 +6,7 @@ import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPrevio
 import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
-import { buildSpinningCountSnapshot } from '../countMasterSnapshots'
+import { buildSpinningCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
 import {
   createSpinningOptionCheckError,
   normalizeSpinningEntryContext,
@@ -1277,10 +1277,10 @@ async function prepareSpinningSetupUpdate(db, existing, updates) {
     select: { speed: true }
   })
   return {
-    data: {
-      ...clean,
-      ...buildSpinningCountSnapshot(count, { machineSpeed: machine?.speed })
-    },
+    data: mergeCountSnapshotWithEntryEdits(
+      buildSpinningCountSnapshot(count, { machineSpeed: machine?.speed }),
+      clean
+    ),
     changesCount: true
   }
 }

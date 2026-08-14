@@ -16,7 +16,7 @@ import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
-import { buildAutoconerCountSnapshot } from '../countMasterSnapshots'
+import { buildAutoconerCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -1048,7 +1048,7 @@ async function prepareAutoconerSetupUpdate(db, updates) {
     : null
   if ((countId || countName) && !count) throw new Error('Selected Autoconer count is not active')
   return {
-    data: { ...clean, ...buildAutoconerCountSnapshot(count) },
+    data: mergeCountSnapshotWithEntryEdits(buildAutoconerCountSnapshot(count), clean),
     changesCount: true
   }
 }

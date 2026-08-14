@@ -224,7 +224,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -233,7 +234,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
         updateComberMachineSetupAction(rowId, changes)
       )
 
@@ -241,7 +242,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
@@ -280,7 +281,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])

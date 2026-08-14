@@ -55,3 +55,27 @@ export function buildAutoconerCountSnapshot(count) {
     target_effi: nullableNumber(count.effi_actual_prodn ?? count.auto_effi)
   }
 }
+
+/**
+ * Resolve a Count Master snapshot without discarding explicit entry-level edits.
+ *
+ * The selected Count determines the canonical identity and supplies defaults for
+ * all count-controlled fields. Values explicitly present in the entry draft are
+ * applied afterwards so a user can select a Count, adjust TPI/speed/etc., and
+ * persist that adjustment as part of the dated entry snapshot.
+ */
+export function mergeCountSnapshotWithEntryEdits(snapshot, entryEdits = {}) {
+  const merged = {
+    ...(snapshot || {}),
+    ...(entryEdits || {})
+  }
+
+  if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'count_id')) {
+    merged.count_id = snapshot.count_id
+  }
+  if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'count_name')) {
+    merged.count_name = snapshot.count_name
+  }
+
+  return merged
+}

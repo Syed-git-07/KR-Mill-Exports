@@ -57,6 +57,87 @@ test('bulk Count and Mixing controls remain browser drafts until final Update', 
     assert.match(source, /Click Update to save\./)
     assert.doesNotMatch(source, /await bulkUpdate(?:MachineCount|BreakerDrawingMachineMixing|ComberMachineCount|FinisherDrawingMachineMixing|LapFormerMachineMixing|SimplexMachineCount)Action/)
   }
+
+
+  const spinning = read('src/components/modules/post-preparatory/spinning/SpinningMachineSetupTab.jsx')
+  const spinningBulkHandler = spinning.match(/const handleCountChange = \(\) => \{([\s\S]*?)\r?\n  \}\r?\n\r?\n  const hasOptionSelected/)?.[1] || ''
+  assert.match(spinningBulkHandler, /Click Update to save\./)
+  assert.doesNotMatch(spinningBulkHandler, /batchUpdateSpinningMachineSetupsAction/)
+
+  const autoconer = read('src/components/modules/post-preparatory/autoconer/AutoconerMachineSetupTab.jsx')
+  const autoconerBulkHandler = autoconer.match(/const handleBulkCountChange = \(\) => \{([\s\S]*?)\r?\n  \}\r?\n\r?\n  \/\/ Save all changes/)?.[1] || ''
+  assert.match(autoconerBulkHandler, /Click Update to save\./)
+})
+
+test('failed multi-tab Updates retain the complete draft snapshot for a safe retry', () => {
+  const pages = [
+    'src/app/preparatory-entry/carding/entry/page.jsx',
+    'src/app/preparatory-entry/breaker-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/comber/entry/page.jsx',
+    'src/app/preparatory-entry/finisher-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/lap-former/entry/page.jsx',
+    'src/app/preparatory-entry/simplex/entry/page.jsx',
+    'src/app/post-preparatory/spinning/entry/page.jsx',
+    'src/app/post-preparatory/autoconer/entry/page.jsx',
+  ]
+
+  for (const page of pages) {
+    const source = read(page)
+    assert.match(source, /const draftsAtSaveStart = sharedDraftsRef\.current/, page)
+    assert.match(source, /(?:replaceAllDrafts|setSharedDrafts)\(draftsAtSaveStart\)/, page)
+    assert.match(source, /drafts were retained/i, page)
+  }
+})
+
+test('all entry tabs and pages read the synchronous latest draft before Update', () => {
+  const pageFiles = [
+    'src/app/preparatory-entry/carding/entry/page.jsx',
+    'src/app/preparatory-entry/breaker-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/comber/entry/page.jsx',
+    'src/app/preparatory-entry/finisher-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/lap-former/entry/page.jsx',
+    'src/app/preparatory-entry/simplex/entry/page.jsx',
+    'src/app/post-preparatory/spinning/entry/page.jsx',
+    'src/app/post-preparatory/autoconer/entry/page.jsx',
+  ]
+  for (const page of pageFiles) {
+    const source = read(page)
+    assert.match(source, /sharedDraftsRef = useRef\(sharedDrafts\)/, page)
+    assert.match(source, /dependencyDrafts: draftsAtSaveStart/, page)
+    assert.match(source, /saveInFlightRef\.current/, page)
+  }
+
+  const tabFiles = [
+    ...['Carding', 'BreakerDrawing', 'Comber', 'FinisherDrawing', 'LapFormer', 'Simplex']
+      .flatMap(name => [`${name}ProductionTab.jsx`, `${name}MachineSetupTab.jsx`, `${name}StoppageTab.jsx`])
+      .map(file => `src/components/modules/preparatory-entry/${file}`),
+    ...['Spinning', 'Autoconer']
+      .flatMap(name => [`${name}ProductionTab.jsx`, `${name}MachineSetupTab.jsx`, `${name}StoppageTab.jsx`])
+      .map(file => `src/components/modules/post-preparatory/${file.startsWith('Spinning') ? 'spinning' : 'autoconer'}/${file}`),
+  ]
+  for (const tab of tabFiles) {
+    const source = read(tab)
+    assert.match(source, /getEditedCount: \(\) => Object\.keys\(editedRowsRef\.current/, tab)
+  }
+})
+
+test('confirmed date or shift changes clear drafts before loading another entry', () => {
+  const pages = [
+    'src/app/preparatory-entry/carding/entry/page.jsx',
+    'src/app/preparatory-entry/breaker-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/comber/entry/page.jsx',
+    'src/app/preparatory-entry/finisher-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/lap-former/entry/page.jsx',
+    'src/app/post-preparatory/spinning/entry/page.jsx',
+    'src/app/post-preparatory/autoconer/entry/page.jsx',
+  ]
+  for (const page of pages) {
+    const source = read(page)
+    const dateHandler = source.match(/const handleDateChange[\s\S]*?(?=\r?\n  const handleShiftChange)/)?.[0] || ''
+    const shiftHandler = source.match(/const handleShiftChange[\s\S]*?(?=\r?\n  const )/)?.[0] || ''
+    assert.match(dateHandler, /(?:clearAllDrafts|replaceAllDrafts)\(/, page)
+    assert.match(shiftHandler, /(?:clearAllDrafts|replaceAllDrafts)\(/, page)
+  }
 })
 
 test('all eight entry pages warn before browser navigation with unsaved drafts', () => {

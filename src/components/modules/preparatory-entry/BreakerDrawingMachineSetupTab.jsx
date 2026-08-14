@@ -247,7 +247,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -256,7 +257,6 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const currentEdits = editedRowsRef.current || editedRows || {}
       const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => 
         updateMachineSetupAction(rowId, changes)
       )
