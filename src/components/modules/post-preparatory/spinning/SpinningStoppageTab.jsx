@@ -16,6 +16,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
+import EnterSelect from '@/components/ui/enter-select'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
@@ -43,7 +44,9 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   sharedDraftEdits,
   onSharedDraftEditsChange,
   productionDraftEdits,
-  setupDraftEdits
+  setupDraftEdits,
+  counts = [],
+  onMachineCountChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [stoppageData, setStoppageData] = useState([])
@@ -587,8 +590,21 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                   <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     {row.production_detail?.session_no ?? '-'}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap">
-                    {setupDraft?.count_name || row.count_name || '-'}
+                  <td className="border border-gray-300 px-0 py-0">
+                    <EnterSelect
+                      value={setupDraft?.count_id || row.count_id || ''}
+                      options={counts.map(count => ({ value: count.id, label: count.count_name }))}
+                      onChange={(countId) => onMachineCountChange?.(
+                        row.setup_id,
+                        row.machine_id,
+                        countId,
+                        setupDraft?.speed ?? row.speed
+                      )}
+                      placeholder="Select count..."
+                      searchable
+                      cleanCell
+                      className="h-9 rounded-none text-xs"
+                    />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {effectiveTotalTime}

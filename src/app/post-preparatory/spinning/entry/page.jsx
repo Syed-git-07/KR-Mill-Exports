@@ -34,6 +34,7 @@ import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
+import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
 
 import SpinningProductionTab from '@/components/modules/post-preparatory/spinning/SpinningProductionTab'
 import SpinningStoppageTab from '@/components/modules/post-preparatory/spinning/SpinningStoppageTab'
@@ -47,7 +48,8 @@ import {
   getMaisitriesAction,
   copySpinningFromPreviousDateAction,
   getSpinningAvailableDatesAction,
-  getSpinningShiftConfigAction
+  getSpinningShiftConfigAction,
+  getSpinningCountsAction
 } from '@/app/actions/spinning-entry'
 
 function SpinningEntryContent() {
@@ -66,6 +68,7 @@ function SpinningEntryContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [isInitializing, setIsInitializing] = useState(false)
   const [activeTab, setActiveTab] = useState('production')
+  const [spinningCounts, setSpinningCounts] = useState([])
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
   const sharedDraftsRef = useRef(sharedDrafts)
   const [refreshKey, setRefreshKey] = useState(0) // Key to force tab refresh
@@ -100,6 +103,20 @@ function SpinningEntryContent() {
     setSharedDrafts(next)
   }, [])
 
+  const handleMachineCountChange = useCallback((setupId, machineId, countId, machineSpeed = null) => {
+    const selectedCount = spinningCounts.find(count => String(count.id) === String(countId))
+    if (!selectedCount || !setupId) return
+
+    setSetupDraftEdits({
+      ...(sharedDraftsRef.current.setup || {}),
+      [setupId]: {
+        ...(sharedDraftsRef.current.setup?.[setupId] || {}),
+        ...(machineId ? { machine_id: machineId } : {}),
+        ...buildSpinningCountSnapshot(selectedCount, { machineSpeed })
+      }
+    })
+  }, [spinningCounts, setSetupDraftEdits])
+
   const replaceAllDrafts = useCallback((next) => {
     sharedDraftsRef.current = next
     setSharedDrafts(next)
@@ -133,6 +150,13 @@ function SpinningEntryContent() {
       }
     }
     loadSupervisors()
+  }, [])
+
+  useEffect(() => {
+    getSpinningCountsAction().then(result => {
+      if (result.success) setSpinningCounts(result.data || [])
+      else toast.error(result.error || 'Failed to load spinning counts')
+    })
   }, [])
 
   // Load maisitries
@@ -684,6 +708,8 @@ function SpinningEntryContent() {
                   onSharedDraftEditsChange={setProductionDraftEdits}
                   setupDraftEdits={sharedDrafts.setup}
                   stoppageDraftEdits={sharedDrafts.stoppage}
+                  counts={spinningCounts}
+                  onMachineCountChange={handleMachineCountChange}
                 />
                 </DeferredMount>
               </TabsContent>
@@ -701,6 +727,8 @@ function SpinningEntryContent() {
                   onSharedDraftEditsChange={setStoppageDraftEdits}
                   setupDraftEdits={sharedDrafts.setup}
                   productionDraftEdits={sharedDrafts.production}
+                  counts={spinningCounts}
+                  onMachineCountChange={handleMachineCountChange}
                 />
                 </DeferredMount>
               </TabsContent>

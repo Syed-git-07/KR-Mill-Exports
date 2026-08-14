@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
+import EnterSelect from "@/components/ui/enter-select"
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -44,7 +45,9 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   setupDraftEdits,
   sharedDraftEdits,
   onSharedDraftEditsChange,
-  stoppageDraftEdits
+  stoppageDraftEdits,
+  counts = [],
+  onMachineCountChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [productionData, setProductionData] = useState([])
@@ -487,6 +490,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                 const isEdited = !!editedRows[row.id]
                 const bgClass = isEdited ? 'bg-yellow-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')
                 const effectiveSetup = getEffectiveSetup(row)
+                const effectiveCountName = effectiveSetup?.count_name || row.count_name || row.setup?.count_name || ''
                 
                 return (
                   <tr key={row.id} className={`${bgClass} hover:bg-blue-50`}>
@@ -522,8 +526,21 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                         onEnterNavigation={() => focusNextRow(index, 'sider2_name')}
                       />
                     </td>
-                    <td className="border border-gray-300 px-3 py-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {effectiveSetup?.count_name || row.count_name || row.setup?.count_name || '-'}
+                    <td className="border border-gray-300 px-0 py-0">
+                      <EnterSelect
+                        value={effectiveSetup?.count_id || ''}
+                        options={counts.map(count => ({ value: count.id, label: count.count_name }))}
+                        onChange={(countId) => onMachineCountChange?.(
+                          row.setup?.id,
+                          row.machine_id,
+                          countId,
+                          effectiveSetup?.speed ?? row.machine?.speed
+                        )}
+                        placeholder={effectiveCountName || 'Select count...'}
+                        searchable
+                        cleanCell
+                        className="h-9 rounded-none text-xs"
+                      />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput

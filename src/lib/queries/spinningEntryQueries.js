@@ -750,6 +750,7 @@ export async function getSpinningStoppageEntries(headerId) {
         return {
           id: detail.id,
           machine_id: detail.machine_id,
+          setup_id: setup.id || null,
           // Nested structure to match production query
           production_detail: {
             machine: {
@@ -761,6 +762,7 @@ export async function getSpinningStoppageEntries(headerId) {
           machine_no: machine.machine_no || '',
           frame_no: machine.description || setup.frame_no || '',
           count_name: detail.count_name || setup.count_name || '',
+          count_id: setup.count_id || null,
           session_no: detail.session_no ?? null,
           run_time: detail.run_time ?? fallbackRunTime,
           total_spindles: firstProvidedNumber([setup.allocated_spindles, machine.allocated_spindles], 1104),

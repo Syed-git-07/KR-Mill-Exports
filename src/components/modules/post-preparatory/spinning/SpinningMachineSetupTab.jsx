@@ -93,6 +93,15 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     editedRowsRef.current = editedRows
   }, [editedRows])
 
+  // Count changes staged from Production/Stoppage must be visible here immediately.
+  useEffect(() => {
+    if (!sharedDraftEdits || Object.keys(sharedDraftEdits).length === 0) return
+    setSetupData(rows => rows.map(row => {
+      const draft = sharedDraftEdits[row.id] || sharedDraftEdits[String(row.id)]
+      return draft ? { ...row, ...draft } : row
+    }))
+  }, [sharedDraftEdits])
+
   // Ref for table container (Enter/Arrow row navigation)
   const tableRef = useRef(null)
   const focusRowByDelta = useCallback((rowIndex, delta, colName) => {
