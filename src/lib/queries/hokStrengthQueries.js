@@ -1,4 +1,45 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
+
+const HOK_TRANSACTION_OPTIONS = { isolationLevel: 'Serializable' };
+
+async function runHOKTransaction(operation) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, HOK_TRANSACTION_OPTIONS);
+    } catch (error) {
+      const isRetryable = error?.code === 'P2034' || error?.code === 'P2002';
+      if (!isRetryable || attempt === 2) throw error;
+    }
+  }
+}
+
+function calculateHOKTotals(entries) {
+  return {
+    total_shift1: entries.reduce((sum, entry) => sum + Number(entry.shift1 || 0), 0),
+    total_shift2: entries.reduce((sum, entry) => sum + Number(entry.shift2 || 0), 0),
+    total_shift3: entries.reduce((sum, entry) => sum + Number(entry.shift3 || 0), 0)
+  };
+}
+
+async function insertHOKDetails(tx, hokId, entries) {
+  const maxDetail = await tx.hok_strength_detail.findFirst({
+    orderBy: { id: 'desc' },
+    select: { id: true }
+  });
+  let nextId = (maxDetail?.id || 0) + 1;
+
+  await tx.hok_strength_detail.createMany({
+    data: entries.map(entry => ({
+      id: nextId++,
+      hok_id: hokId,
+      department_id: entry.department_id,
+      shift1: Number(entry.shift1),
+      shift2: Number(entry.shift2),
+      shift3: Number(entry.shift3)
+    }))
+  });
+}
 
 // Get all HOK strength headers (for list view)
 export async function getHOKEntries() {
@@ -63,59 +104,25 @@ export async function getHOKEntryById(hokId) {
 
 // Create HOK strength entry (header + details)
 export async function createHOKEntry(hokData) {
-  try {
-    let { date, entries } = hokData;
-    
-    // Convert date string to Date object if needed
-    if (typeof date === 'string') {
-      date = new Date(date);
-    }
+  const { date, entries } = hokData;
+  const totals = calculateHOKTotals(entries);
 
-    // Calculate totals
-    const total_shift1 = entries.reduce((sum, e) => sum + (parseFloat(e.shift1) || 0), 0);
-    const total_shift2 = entries.reduce((sum, e) => sum + (parseFloat(e.shift2) || 0), 0);
-    const total_shift3 = entries.reduce((sum, e) => sum + (parseFloat(e.shift3) || 0), 0);
-
-    // Insert header
-    const header = await prisma.hok_strength_head.create({
+  return runHOKTransaction(async (tx) => {
+    const header = await tx.hok_strength_head.create({
       data: {
         date,
-        total_shift1,
-        total_shift2,
-        total_shift3
+        ...totals
       }
     });
 
-    // Get max id from hok_strength_detail to generate new IDs
-    const maxDetail = await prisma.hok_strength_detail.findFirst({
-      orderBy: { id: 'desc' },
-      select: { id: true }
-    });
-    
-    let nextId = (maxDetail?.id || 0) + 1;
+    await insertHOKDetails(tx, header.hok_id, entries);
 
-    // Insert details with generated IDs
-    const detailsToInsert = entries.map(entry => ({
-      id: nextId++,
-      hok_id: header.hok_id,
-      department_id: entry.department_id,
-      shift1: parseFloat(entry.shift1) || 0,
-      shift2: parseFloat(entry.shift2) || 0,
-      shift3: parseFloat(entry.shift3) || 0
-    }));
-
-    await prisma.hok_strength_detail.createMany({
-      data: detailsToInsert
-    });
-
-    const details = await prisma.hok_strength_detail.findMany({
+    const details = await tx.hok_strength_detail.findMany({
       where: { hok_id: header.hok_id }
     });
 
     return { header, details };
-  } catch (error) {
-    throw error;
-  }
+  });
 }
 
 // Create multiple HOK strength entries (bulk insert for grid)
@@ -125,87 +132,62 @@ export async function createBulkHOKEntries(entriesData) {
 
 // Update HOK strength entry
 export async function updateHOKEntry(hokId, hokData) {
-  try {
-    let { date, entries } = hokData;
-    
-    // Convert date string to Date object if needed
-    if (date && typeof date === 'string') {
-      date = new Date(date);
-    }
+  const { date, entries } = hokData;
+  const totals = calculateHOKTotals(entries);
 
-    // Calculate totals
-    const total_shift1 = entries.reduce((sum, e) => sum + (parseFloat(e.shift1) || 0), 0);
-    const total_shift2 = entries.reduce((sum, e) => sum + (parseFloat(e.shift2) || 0), 0);
-    const total_shift3 = entries.reduce((sum, e) => sum + (parseFloat(e.shift3) || 0), 0);
-
-    // Update header
-    const header = await prisma.hok_strength_head.update({
+  return runHOKTransaction(async (tx) => {
+    const header = await tx.hok_strength_head.update({
       where: { hok_id: hokId },
       data: {
         date,
-        total_shift1,
-        total_shift2,
-        total_shift3
+        ...totals
       }
     });
 
-    // Delete existing details
-    await prisma.hok_strength_detail.deleteMany({
+    await tx.hok_strength_detail.deleteMany({
       where: { hok_id: hokId }
     });
 
-    // Get max id from hok_strength_detail to generate new IDs
-    const maxDetail = await prisma.hok_strength_detail.findFirst({
-      orderBy: { id: 'desc' },
-      select: { id: true }
-    });
-    
-    let nextId = (maxDetail?.id || 0) + 1;
+    await insertHOKDetails(tx, hokId, entries);
 
-    // Insert new details with generated IDs
-    const detailsToInsert = entries.map(entry => ({
-      id: nextId++,
-      hok_id: hokId,
-      department_id: entry.department_id,
-      shift1: parseFloat(entry.shift1) || 0,
-      shift2: parseFloat(entry.shift2) || 0,
-      shift3: parseFloat(entry.shift3) || 0
-    }));
-
-    await prisma.hok_strength_detail.createMany({
-      data: detailsToInsert
-    });
-
-    const details = await prisma.hok_strength_detail.findMany({
+    const details = await tx.hok_strength_detail.findMany({
       where: { hok_id: hokId }
     });
 
     return { header, details };
-  } catch (error) {
-    throw error;
-  }
+  });
 }
   
 // Delete HOK strength entry (header and details cascade delete)
 export async function deleteHOKEntry(hokId) {
-  try {
-    await prisma.hok_strength_head.delete({
+  return prisma.$transaction(async (tx) => {
+    await tx.hok_strength_detail.deleteMany({
       where: { hok_id: hokId }
     });
-  } catch (error) {
-    throw error;
-  }
+    await tx.hok_strength_head.delete({
+      where: { hok_id: hokId }
+    });
+  });
 }
 
 // Delete all entries for a specific date
 export async function deleteHOKEntriesByDate(date) {
-  try {
-    await prisma.hok_strength_head.deleteMany({
+  return prisma.$transaction(async (tx) => {
+    const headers = await tx.hok_strength_head.findMany({
+      where: { date },
+      select: { hok_id: true }
+    });
+    const hokIds = headers.map(header => header.hok_id);
+
+    if (hokIds.length) {
+      await tx.hok_strength_detail.deleteMany({
+        where: { hok_id: { in: hokIds } }
+      });
+    }
+    await tx.hok_strength_head.deleteMany({
       where: { date }
     });
-  } catch (error) {
-    throw error;
-  }
+  });
 }
 
 // Get all departments for HOK grid (all departments from departments table)
@@ -230,60 +212,12 @@ export async function getDepartmentsForDropdown() {
 // Search HOK entries
 export async function searchHOKEntries(searchParams) {
   try {
-    let whereClause = {};
-
-    if (searchParams.field && searchParams.value) {
-      const { field, operator, value } = searchParams;
-      
-      // hok_id is INT - handle numeric operations
-      if (field === 'hok_id') {
-        const numValue = parseInt(value);
-        if (isNaN(numValue)) {
-          return []; // Return empty if invalid number
-        }
-        
-        switch (operator) {
-          case 'Like':
-          case 'Equal':
-          case '=':
-            whereClause[field] = numValue;
-            break;
-          case 'Not Equal':
-            whereClause[field] = { not: numValue };
-            break;
-          case 'Greater':
-            whereClause[field] = { gt: numValue };
-            break;
-          case 'Less':
-            whereClause[field] = { lt: numValue };
-            break;
-          default:
-            whereClause[field] = numValue;
-        }
-      } else {
-        // For other fields (like date)
-        switch (operator) {
-          case 'Like':
-            whereClause[field] = { contains: value };
-            break;
-          case 'Equal':
-          case '=':
-            whereClause[field] = value;
-            break;
-          case 'Not Equal':
-            whereClause[field] = { not: value };
-            break;
-          case 'Greater':
-            whereClause[field] = { gt: value };
-            break;
-          case 'Less':
-            whereClause[field] = { lt: value };
-            break;
-          default:
-            whereClause[field] = value;
-        }
-      }
-    }
+    const whereClause = buildTypedSearchWhere(
+      searchParams.field,
+      searchParams.operator,
+      searchParams.value,
+      { hok_id: 'number', date: 'date' }
+    );
 
     const data = await prisma.hok_strength_head.findMany({
       where: whereClause,

@@ -9,8 +9,11 @@ import DepartmentForm from '@/components/modules/masters/DepartmentForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety'
+import { useAuthUser } from '@/components/auth/AuthUserContext'
 
 export default function DepartmentPage() {
+  const { canManageMasters } = useAuthUser()
   const [departments, setDepartments] = useState([])
   const [selectedDepartment, setSelectedDepartment] = useState(null)
   const [selectedRows, setSelectedRows] = useState([])
@@ -186,7 +189,7 @@ export default function DepartmentPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Department Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage department information</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -202,11 +205,11 @@ export default function DepartmentPage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedDepartment}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -233,6 +236,7 @@ export default function DepartmentPage() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return
             e.preventDefault();
             setSelectedDepartment(row);
             setIsEditing(true);
@@ -253,8 +257,8 @@ export default function DepartmentPage() {
         title="Department Master"
         description={isEditing ? "Modify department details" : "Add new department"}
         onCancel={() => setIsModalOpen(false)}
-        onDelete={isEditing ? handleDelete : null}
-        showDelete={isEditing}
+        onDelete={null}
+        showDelete={false}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >

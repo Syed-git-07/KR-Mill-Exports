@@ -6,6 +6,7 @@ import NumberInputWheelGuard from "@/components/common/NumberInputWheelGuard";
 import AppHeader from "@/components/layout/AppHeader";
 import { withBasePath } from "@/lib/app-path";
 import { getCurrentUser } from "@/lib/security/auth";
+import { AuthUserProvider } from "@/components/auth/AuthUserContext";
 import "@/lib/utils/suppressHydrationWarnings";
 
 const geistSans = Geist({
@@ -37,13 +38,15 @@ export default async function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <GlobalRequestLoader />
-        <NumberInputWheelGuard />
-        <div className="min-h-screen bg-gray-50">
-          {user && <AppHeader user={user} />}
-          {children}
-        </div>
-        <Toaster />
+        <AuthUserProvider user={user}>
+          <GlobalRequestLoader />
+          <NumberInputWheelGuard />
+          <div className="min-h-screen bg-gray-50">
+            {user && <AppHeader user={user} />}
+            {children}
+          </div>
+          <Toaster />
+        </AuthUserProvider>
       </body>
     </html>
   );

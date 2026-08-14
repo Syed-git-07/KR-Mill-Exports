@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * Comber Machine Master - CRUD Operations
@@ -35,9 +36,6 @@ export async function createComberMachine(machineData) {
     installedDate = new Date(installedDate);
   }
 
-  // Ensure mc_id is a valid number
-  const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
-
   // Fetch max sort_order for new machine
   const maxSortResult = await prisma.comber_machines.aggregate({ _max: { sort_order: true } });
   const nextSortOrder = (maxSortResult._max.sort_order ?? 0) + 1;
@@ -45,7 +43,9 @@ export async function createComberMachine(machineData) {
   const data = await prisma.comber_machines.create({
     data: {
       machine_no: machineData.machine_no,
-      mc_id: mcId,
+      ...(machineData.mc_id !== undefined && machineData.mc_id !== null && {
+        mc_id: parseInt(machineData.mc_id, 10)
+      }),
       description: machineData.description,
       make_name: machineData.make_name,
       model: machineData.model,
@@ -72,9 +72,6 @@ export async function updateComberMachine(id, machineData) {
     installedDate = new Date(installedDate);
   }
 
-  // Ensure mc_id is a valid number
-  const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
-
   // Older Comber headers may not yet have their own dated setup row. Capture
   // the pre-update template for those existing entries before changing master
   // data, so a later read can never materialize them from the new master.
@@ -96,6 +93,7 @@ export async function updateComberMachine(id, machineData) {
     })
   ]);
 
+  let missingSnapshots = [];
   if (templateSetup && existingDetails.length > 0) {
     const headerIds = new Set(existingDetails.map(detail => detail.header_id));
     const snapshotHeaders = headers.filter(header => headerIds.has(header.id));
@@ -113,20 +111,13 @@ export async function updateComberMachine(id, machineData) {
       existingSnapshots.map(setup => `${setup.entry_date.toISOString()}-${setup.shift}`)
     );
     const { id: setupId, created_at, updated_at, entry_date, shift, ...templateValues } = templateSetup;
-    const missingSnapshots = snapshotHeaders
+    missingSnapshots = snapshotHeaders
       .filter(header => !existingSnapshotKeys.has(`${header.entry_date.toISOString()}-${Number(header.shift)}`))
       .map(header => ({
         ...templateValues,
         entry_date: header.entry_date,
         shift: Number(header.shift)
       }));
-
-    if (missingSnapshots.length > 0) {
-      await prisma.comber_machine_setup.createMany({
-        data: missingSnapshots,
-        skipDuplicates: true
-      });
-    }
   }
 
   // Handle activation/deactivation timestamps
@@ -138,27 +129,6 @@ export async function updateComberMachine(id, machineData) {
     timestampData.deactivated_at = new Date();
   }
 
-  const data = await prisma.comber_machines.update({
-    where: { id },
-    data: {
-      machine_no: machineData.machine_no,
-      mc_id: mcId,
-      description: machineData.description,
-      make_name: machineData.make_name,
-      model: machineData.model,
-      prodn_mixing: machineData.prodn_mixing,
-      speed: machineData.speed,
-      sliver_hank: machineData.sliver_hank ?? null,
-      mc_effi: machineData.mc_effi,
-      installed_date: installedDate,
-      is_active: machineData.is_active,
-      direct_hank_entry: machineData.direct_hank_entry,
-      direct_kgs_entry: machineData.direct_kgs_entry,
-      ...timestampData,
-      updated_at: new Date(),
-    }
-  });
-
   // Update only the undated master setup template. Dated rows belong to
   // already-created production entries and must remain historical snapshots.
   const templateUpdates = {};
@@ -166,18 +136,50 @@ export async function updateComberMachine(id, machineData) {
   if (machineData.prodn_mixing !== undefined) templateUpdates.prodn_mixing = machineData.prodn_mixing;
   if (machineData.sliver_hank !== undefined) templateUpdates.sl_hank = machineData.sliver_hank;
   if (machineData.mc_effi !== undefined) templateUpdates.mc_effi = machineData.mc_effi;
-  if (Object.keys(templateUpdates).length > 0) {
-    await prisma.comber_machine_setup.updateMany({
-      where: {
-        machine_id: id,
-        entry_date: new Date('1970-01-01T00:00:00.000Z'),
-        shift: 1
-      },
-      data: templateUpdates
-    });
-  }
+  return prisma.$transaction(async (tx) => {
+    if (missingSnapshots.length > 0) {
+      await tx.comber_machine_setup.createMany({
+        data: missingSnapshots,
+        skipDuplicates: true
+      });
+    }
 
-  return data;
+    const data = await tx.comber_machines.update({
+      where: { id },
+      data: {
+        machine_no: machineData.machine_no,
+        ...(machineData.mc_id !== undefined && machineData.mc_id !== null && {
+          mc_id: parseInt(machineData.mc_id, 10)
+        }),
+        description: machineData.description,
+        make_name: machineData.make_name,
+        model: machineData.model,
+        prodn_mixing: machineData.prodn_mixing,
+        speed: machineData.speed,
+        sliver_hank: machineData.sliver_hank ?? null,
+        mc_effi: machineData.mc_effi,
+        installed_date: installedDate,
+        is_active: machineData.is_active,
+        direct_hank_entry: machineData.direct_hank_entry,
+        direct_kgs_entry: machineData.direct_kgs_entry,
+        ...timestampData,
+        updated_at: new Date(),
+      }
+    });
+
+    if (Object.keys(templateUpdates).length > 0) {
+      await tx.comber_machine_setup.updateMany({
+        where: {
+          machine_id: id,
+          entry_date: new Date('1970-01-01T00:00:00.000Z'),
+          shift: 1
+        },
+        data: templateUpdates
+      });
+    }
+
+    return data;
+  });
 }
 
 // Delete a comber machine
@@ -190,26 +192,9 @@ export async function deleteComberMachine(id) {
 
 // Search comber machines (all machines)
 export async function searchComberMachines(field, condition, value) {
-  let where = {};
-
-  // Apply search condition based on field and condition type
-  // MySQL is case-insensitive by default
-  switch (condition) {
-    case 'contains':
-      where[field] = { contains: value };
-      break;
-    case 'equals':
-      where[field] = value;
-      break;
-    case 'startsWith':
-      where[field] = { startsWith: value };
-      break;
-    case 'endsWith':
-      where[field] = { endsWith: value };
-      break;
-    default:
-      where[field] = { contains: value };
-  }
+  const where = buildTypedSearchWhere(field, condition, value, {
+    machine_no: 'text', description: 'text', make_name: 'text', prodn_mixing: 'text'
+  });
 
   const data = await prisma.comber_machines.findMany({
     where,

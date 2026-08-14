@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null;
@@ -164,26 +165,9 @@ export async function deleteSimplexMachine(id) {
 
 // Search simplex machines (only active ones)
 export async function searchSimplexMachines(field, condition, value) {
-  let where = {};
-
-  // Apply search condition based on field and condition type
-  // MySQL is case-insensitive by default
-  switch (condition) {
-    case 'contains':
-      where[field] = { contains: value };
-      break;
-    case 'equals':
-      where[field] = value;
-      break;
-    case 'startsWith':
-      where[field] = { startsWith: value };
-      break;
-    case 'endsWith':
-      where[field] = { endsWith: value };
-      break;
-    default:
-      where[field] = { contains: value };
-  }
+  const where = buildTypedSearchWhere(field, condition, value, {
+    machine_no: 'text', description: 'text', make_name: 'text', prodn_mixing: 'text'
+  });
 
   const data = await prisma.simplex_machines.findMany({
     where,

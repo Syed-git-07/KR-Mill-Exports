@@ -1153,7 +1153,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
           activated_at: { lte: dateObj },
           OR: [
             { deactivated_at: null },
-            { deactivated_at: { gte: dateObj } }
+            { deactivated_at: { gt: dateObj } }
           ]
         },
         orderBy: { is_active: 'desc' }
@@ -1240,7 +1240,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         activated_at: { lte: dateObj },
         OR: [
           { deactivated_at: null },
-          { deactivated_at: { gte: dateObj } }
+          { deactivated_at: { gt: dateObj } }
         ]
       },
       orderBy: { is_active: 'desc' }

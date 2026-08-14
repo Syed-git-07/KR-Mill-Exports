@@ -15,7 +15,12 @@
     "security:smoke": "node scripts/smoke-auth-runtime.js",
     "schema:extract-structure": "powershell -ExecutionPolicy Bypass -File schema/schema-structure/extract-structure.ps1",
     "backup": "node scripts/db-backup.js",
-    "backup:service": "node scripts/backup-service.js"
+    "backup:service": "node scripts/backup-service.js",
+    "integrity:masters": "node scripts/master-integrity-report.js",
+    "integrity:masters:summary": "node scripts/master-integrity-report.js --summary",
+    "integrity:masters:check": "node scripts/master-integrity-report.js --summary --check",
+    "repair:master-duplicates": "node scripts/repair-master-duplicates.js",
+    "repair:master-orphans": "node scripts/repair-master-orphans.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

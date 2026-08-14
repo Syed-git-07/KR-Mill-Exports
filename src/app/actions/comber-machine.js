@@ -1,8 +1,11 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { comberMachineCreateSchema, comberMachineUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/comberMachineQueries'
@@ -40,9 +43,12 @@ export async function getComberMachinePageDataAction() {
 }
 
 export async function createComberMachineAction(machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.createComberMachine(machineData)
+    const validated = comberMachineCreateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.comber-machine', changes: validated
+    }, () => queries.createComberMachine(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -50,23 +56,22 @@ export async function createComberMachineAction(machineData) {
 }
 
 export async function updateComberMachineAction(id, machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.updateComberMachine(id, machineData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = comberMachineUpdateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.comber-machine', targetId: validatedId, changes: validated
+    }, () => queries.updateComberMachine(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteComberMachineAction(id) {
-  await requireUser()
-  try {
-    const data = await queries.deleteComberMachine(id)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+export async function deleteComberMachineAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
 }
 
 export async function searchComberMachinesAction(field, condition, value) {

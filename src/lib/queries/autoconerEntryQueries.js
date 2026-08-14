@@ -14,6 +14,7 @@ import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { buildAutoconerCountSnapshot } from '../countMasterSnapshots'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -150,62 +151,6 @@ export async function getOrCreateAutoconerHeader(date, shift, supervisorId = nul
 // PRODUCTION DETAIL OPERATIONS
 // ============================================
 
-// Helper to fetch inherited machine setups from the chronologically prior shift/date's production details
-export async function getInheritedMachineSetups(dateObj, shiftNum, headerId) {
-  try {
-    const d = new Date(dateObj)
-    const s = parseInt(shiftNum)
-
-    // Find the most recent chronologically entered header prior to (d, s)
-    const priorHeader = await prisma.autoconer_production_header.findFirst({
-      where: {
-        id: { not: headerId },
-        OR: [
-          { entry_date: { lt: d } },
-          {
-            entry_date: d,
-            shift: { lt: s }
-          }
-        ]
-      },
-      orderBy: [
-        { entry_date: 'desc' },
-        { shift: 'desc' }
-      ]
-    })
-
-    if (!priorHeader) {
-      return {}
-    }
-
-    // Fetch production details for this prior header
-    const details = await prisma.autoconer_production_detail.findMany({
-      where: { header_id: priorHeader.id },
-      select: {
-        machine_id: true,
-        count_name: true,
-        count_id: true,
-        session_no: true
-      }
-    })
-
-    // Convert to map: machine_id -> { count_name, count_id, session_no }
-    const inheritedMap = {}
-    details.forEach(detail => {
-      inheritedMap[detail.machine_id] = {
-        count_name: detail.count_name,
-        count_id: detail.count_id,
-        session_no: detail.session_no
-      }
-    })
-
-    return inheritedMap
-  } catch (error) {
-    console.error('Error in getInheritedMachineSetups (Autoconer):', error)
-    return {}
-  }
-}
-
 // Initialize production details for all active machines
 // Now accepts shift parameter to determine correct runtime (like Carding)
 async function initializeAutoconerProductionDetails(headerId, shift = 1) {
@@ -213,7 +158,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     // Fetch entry_date from header for date-range visibility
     const header = await prisma.autoconer_production_header.findUnique({
       where: { id: headerId },
-      select: { entry_date: true }
+      select: { entry_date: true, shift: true }
     })
     const entryDate = header?.entry_date || new Date()
 
@@ -255,9 +200,6 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
       setupMap[s.machine_id] = s
     })
 
-    // Fetch inherited machine setups from the chronologically prior shift/date's production details
-    const inheritedSetups = await getInheritedMachineSetups(entryDate, shift, headerId)
-
     // Get shift-specific runtime from configuration (like Carding)
     // Shift 1: 510 mins, Shift 2: 510 mins, Shift 3: 420 mins
     const totalTime = await getAutoconerShiftTime(shift)
@@ -267,18 +209,13 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     // Create production detail for each NEW machine with shift-specific times
     const detailInserts = newMachines.map(m => {
       const setup = setupMap[m.id] || {}
-      const inherited = inheritedSetups[m.id] || {}
-
-      const countName = inherited.count_name !== undefined ? inherited.count_name : (setup.count_name || null)
-      const countId = inherited.count_id !== undefined ? inherited.count_id : (setup.count_id || null)
-      const sessionNo = inherited.session_no !== undefined ? inherited.session_no : (setup.session_no || 1)
 
       return {
         header_id: headerId,
         machine_id: m.id,
-        count_name: countName,
-        count_id: countId,
-        session_no: sessionNo,
+        count_name: setup.count_name || null,
+        count_id: setup.count_id || null,
+        session_no: setup.session_no || 1,
         waste_kg: null,
         waste_percent: null,
         run_time: totalTime,               // Shift-specific runtime
@@ -339,7 +276,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
         activated_at: { lte: entryDate },
         OR: [
           { deactivated_at: null },
-          { deactivated_at: { gte: entryDate } }
+          { deactivated_at: { gt: entryDate } }
         ]
       },
       orderBy: [{ group_id: 'asc' }, { machine_no: 'asc' }]
@@ -353,39 +290,9 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
     const existingMachineIds = existingDetails.map(d => d.machine_id)
 
     // 4. Find stale rows — machines deactivated on or before entry_date OR with no setup
-    const allExistingMachines = existingMachineIds.length > 0
-      ? await prisma.autoconer_machines.findMany({
-        where: { id: { in: existingMachineIds } }
-      })
-      : []
-    const existingMachineMap = {}
-    allExistingMachines.forEach(m => { existingMachineMap[m.id] = m })
-
-    const deactivatedDetailIds = existingDetails
-      .filter(d => {
-        const m = existingMachineMap[d.machine_id]
-        if (!m) return false
-        // Remove if deactivated on or before the entry date
-        if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return true
-        // Remove if machine has no setup (created via master only, not via Machine Setup tab)
-        if (!machineIdsWithSetup.includes(m.id)) return true
-        return false
-      })
-      .map(d => d.id)
-
-    if (deactivatedDetailIds.length > 0) {
-      await prisma.autoconer_stoppage_entry.deleteMany({
-        where: { production_detail_id: { in: deactivatedDetailIds } }
-      })
-      await prisma.autoconer_production_detail.deleteMany({
-        where: { id: { in: deactivatedDetailIds } }
-      })
-    }
-
-    // 5. Remaining machines after cleanup
-    const remainingMachineIds = existingDetails
-      .filter(d => !deactivatedDetailIds.includes(d.id))
-      .map(d => d.machine_id)
+    // Existing detail rows are entry snapshots. Master revisions and later
+    // deactivations must not delete or replace them.
+    const remainingMachineIds = existingMachineIds
 
     // 6. Add only truly new machines
     const newMachines = machines.filter(m => !remainingMachineIds.includes(m.id))
@@ -395,27 +302,19 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
     const setupMap = {}
     setups.forEach(s => { setupMap[s.machine_id] = s })
 
-    // Fetch inherited machine setups from the chronologically prior shift/date's production details
-    const inheritedSetups = await getInheritedMachineSetups(entryDate, shift, headerId)
-
     const totalTime = await getAutoconerShiftTime(shift)
     const defaultStoppage = await getAutoconerDefaultStoppage(shift)
     const defaultWorkTime = totalTime - defaultStoppage
 
     const detailInserts = newMachines.map(m => {
       const setup = setupMap[m.id] || {}
-      const inherited = inheritedSetups[m.id] || {}
-
-      const countName = inherited.count_name !== undefined ? inherited.count_name : (setup.count_name || null)
-      const countId = inherited.count_id !== undefined ? inherited.count_id : (setup.count_id || null)
-      const sessionNo = inherited.session_no !== undefined ? inherited.session_no : (setup.session_no || 1)
 
       return {
         header_id: headerId,
         machine_id: m.id,
-        count_name: countName,
-        count_id: countId,
-        session_no: sessionNo,
+        count_name: setup.count_name || null,
+        count_id: setup.count_id || null,
+        session_no: setup.session_no || 1,
         waste_kg: null,
         waste_percent: null,
         run_time: totalTime,
@@ -450,7 +349,7 @@ export async function getAutoconerProductionDetails(headerId) {
     // Fetch entry_date for date-range visibility filtering
     const header = await prisma.autoconer_production_header.findUnique({
       where: { id: headerId },
-      select: { entry_date: true }
+      select: { entry_date: true, shift: true }
     })
     const entryDate = header?.entry_date || new Date()
 
@@ -463,7 +362,7 @@ export async function getAutoconerProductionDetails(headerId) {
     const machineIds = data.map(d => d.machine_id)
     const detailIds = data.map(d => d.id)
 
-    const [machines, stoppages] = await Promise.all([
+    const [machines, stoppages, setups] = await Promise.all([
       prisma.autoconer_machines.findMany({
         where: { id: { in: machineIds } },
         select: {
@@ -473,7 +372,6 @@ export async function getAutoconerProductionDetails(headerId) {
           from_drum: true,
           to_drum: true,
           no_of_drums: true,
-          act_effi: true,
           make_name: true,
           is_active: true,
           activated_at: true,
@@ -482,6 +380,13 @@ export async function getAutoconerProductionDetails(headerId) {
       }),
       prisma.autoconer_stoppage_entry.findMany({
         where: { production_detail_id: { in: detailIds } }
+      }),
+      prisma.autoconer_machine_setup.findMany({
+        where: {
+          machine_id: { in: machineIds },
+          entry_date: entryDate,
+          shift: header?.shift || 1
+        }
       })
     ])
 
@@ -491,9 +396,13 @@ export async function getAutoconerProductionDetails(headerId) {
     const stoppageMap = {}
     stoppages?.forEach(s => { stoppageMap[s.production_detail_id] = s })
 
+    const setupMap = {}
+    setups?.forEach(setup => { setupMap[setup.machine_id] = setup })
+
     const enriched = data.map(detail => ({
       ...detail,
       machine: machineMap[detail.machine_id] || null,
+      setup: setupMap[detail.machine_id] || null,
       stoppage: stoppageMap[detail.id] ? [stoppageMap[detail.id]] : []
     }))
 
@@ -564,13 +473,6 @@ export async function batchUpdateAutoconerProductionDetails(updates) {
 // Get stoppage entries for a header
 export async function getAutoconerStoppageEntries(headerId) {
   try {
-    // Fetch entry_date for date-range visibility filtering
-    const header = await prisma.autoconer_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = header?.entry_date || new Date()
-
     const details = await prisma.autoconer_production_detail.findMany({
       where: {
         header_id: headerId
@@ -593,7 +495,6 @@ export async function getAutoconerStoppageEntries(headerId) {
           machine_no: true,
           group_id: true,
           no_of_drums: true,
-          act_effi: true,
           is_active: true,
           activated_at: true,
           deactivated_at: true
@@ -865,7 +766,8 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 // MACHINE SETUP OPERATIONS
 // ============================================
 
-// Helper to get or create machine setups for a given date (with inheritance)
+// Get or create dated setup snapshots. Machine identity/count defaults come
+// from the current masters; permitted operational fields retain the old flow.
 export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
   try {
     const dateObj = new Date(entryDate)
@@ -914,56 +816,48 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
       const previousMachineIds = [...new Set(prevSetups.map(s => s.machine_id))]
       const previousMachines = await prisma.autoconer_machines.findMany({
         where: { id: { in: previousMachineIds } },
-        select: { id: true, mc_id: true, machine_no: true }
+        select: { id: true, mc_id: true, machine_no: true, count_id: true }
       })
       const activeMachines = await prisma.autoconer_machines.findMany({
         where: {
           activated_at: { lte: dateObj },
           OR: [
             { deactivated_at: null },
-            { deactivated_at: { gte: dateObj } }
+            { deactivated_at: { gt: dateObj } }
           ]
         },
-        select: { id: true, mc_id: true, machine_no: true }
+        select: { id: true, mc_id: true, machine_no: true, count_id: true }
       })
       const previousMachineMap = new Map(previousMachines.map(machine => [machine.id, machine]))
-      const activeByMcId = new Map(activeMachines.filter(machine => machine.mc_id != null).map(machine => [machine.mc_id, machine.id]))
-      const activeByMachineNo = new Map(activeMachines.map(machine => [machine.machine_no, machine.id]))
+      const activeByMcId = new Map(activeMachines.filter(machine => machine.mc_id != null).map(machine => [machine.mc_id, machine]))
+      const activeByMachineNo = new Map(activeMachines.map(machine => [machine.machine_no, machine]))
 
-      const countIds = [...new Set(prevSetups.map(s => s.count_id).filter(Boolean))]
-      const countNames = [...new Set(prevSetups.map(s => s.count_name).filter(Boolean))]
+      const countIds = [...new Set(activeMachines.map(machine => machine.count_id).filter(Boolean))]
       const currentCounts = await prisma.spinning_counts.findMany({
-        where: {
-          is_active: true,
-          OR: [
-            ...(countIds.length ? [{ id: { in: countIds } }] : []),
-            ...(countNames.length ? [{ count_name: { in: countNames } }] : [])
-          ]
-        }
+        where: { id: { in: countIds } }
       })
       const countById = new Map(currentCounts.map(count => [count.id, count]))
-      const countByName = new Map(currentCounts.map(count => [count.count_name, count]))
 
       const cloneDataMap = new Map()
 
       prevSetups.forEach(s => {
         const { id, created_at, updated_at, ...rest } = s
-        const currentCount = countById.get(s.count_id) || countByName.get(s.count_name)
         const previousMachine = previousMachineMap.get(s.machine_id)
         
         // If the machine doesn't exist in the DB anymore (e.g., due to data migration), skip it
         if (!previousMachine) return
         
-        const activeMachineId = activeByMcId.get(previousMachine.mc_id) || activeByMachineNo.get(previousMachine.machine_no)
-          
-        const targetMachineId = activeMachineId || s.machine_id
+        const activeMachine = activeByMcId.get(previousMachine.mc_id) || activeByMachineNo.get(previousMachine.machine_no)
+        if (!activeMachine) return
+        const targetMachineId = activeMachine.id
+        const currentCount = countById.get(activeMachine.count_id)
         
         // Avoid duplicate machine_ids which cause 'A record with this value already exists'
         if (!cloneDataMap.has(targetMachineId)) {
           cloneDataMap.set(targetMachineId, {
             ...rest,
             machine_id: targetMachineId,
-            ...(currentCount?.act_count != null && { act_count: currentCount.act_count }),
+            ...buildAutoconerCountSnapshot(currentCount),
             entry_date: dateObj,
             shift: shiftNum,
             run_time: targetShiftTime
@@ -994,25 +888,25 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
         activated_at: { lte: dateObj },
         OR: [
           { deactivated_at: null },
-          { deactivated_at: { gte: dateObj } }
+          { deactivated_at: { gt: dateObj } }
         ]
       },
       orderBy: { is_active: 'desc' }
     })
 
-    const counts = await prisma.spinning_counts.findMany({
-      where: { autoconer_active: true, is_active: true }
-    })
+    const countIds = [...new Set(activeMachines.map(machine => machine.count_id).filter(Boolean))]
+    const counts = countIds.length
+      ? await prisma.spinning_counts.findMany({ where: { id: { in: countIds } } })
+      : []
+    const countById = new Map(counts.map(count => [count.id, count]))
 
     const defaultSetups = activeMachines.map(m => {
-      const matchedCount = counts.find(c => c.count_name === m.count)
+      const matchedCount = countById.get(m.count_id)
       return {
         machine_id: m.id,
         entry_date: dateObj,
         shift: shiftNum,
-        count_name: m.count || '',
-        count_id: matchedCount?.id || null,
-        act_count: matchedCount?.act_count ?? 69.50,
+        ...buildAutoconerCountSnapshot(matchedCount),
         session_no: 1,
         run_time: targetShiftTime
       }
@@ -1105,56 +999,73 @@ export async function getAutoconerMachineSetups(entryDate, shift = 1) {
   }
 }
 
-// Update machine setup by ID - also syncs count to production details strictly for this date & shift
-export async function updateAutoconerMachineSetup(id, updates, shift = null) {
-  try {
-    const data = await prisma.autoconer_machine_setup.update({
-      where: { id },
-      data: {
-        ...updates,
-        updated_at: new Date()
-      }
-    })
+const autoconerSetupFields = new Set([
+  'count_id', 'count_name', 'act_count', 'speed', 'target_effi',
+  'session_no', 'run_time'
+])
+const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key)
 
-    // If count_id or count_name is being updated, sync to production details strictly on this date & shift
-    if ((updates.count_id || updates.count_name) && data.machine_id && data.entry_date) {
-      const headers = await prisma.autoconer_production_header.findMany({
+async function prepareAutoconerSetupUpdate(db, updates) {
+  const clean = Object.fromEntries(
+    Object.entries(updates).filter(([key]) => autoconerSetupFields.has(key))
+  )
+  const changesCount = owns(clean, 'count_id') || owns(clean, 'count_name')
+  if (!changesCount) return { data: clean, changesCount: false }
+
+  const countId = clean.count_id || null
+  const countName = clean.count_name || null
+  const count = countId || countName
+    ? await db.spinning_counts.findFirst({
         where: {
-          entry_date: data.entry_date,
-          ...(shift !== null && { shift: parseInt(shift) })
-        },
-        select: { id: true }
+          is_active: true,
+          autoconer_active: true,
+          ...(countId ? { id: countId } : { count_name: countName })
+        }
       })
-
-      const headerIds = headers.map(h => h.id)
-      if (headerIds.length > 0) {
-        const updateData = {}
-        if (updates.count_id) updateData.count_id = updates.count_id
-        if (updates.count_name) updateData.count_name = updates.count_name
-
-        await prisma.autoconer_production_detail.updateMany({
-          where: {
-            machine_id: data.machine_id,
-            header_id: { in: headerIds }
-          },
-          data: updateData
-        })
-      }
-    }
-
-    return data
-  } catch (error) {
-    throw error
+    : null
+  if ((countId || countName) && !count) throw new Error('Selected Autoconer count is not active')
+  return {
+    data: { ...clean, ...buildAutoconerCountSnapshot(count) },
+    changesCount: true
   }
+}
+
+async function syncAutoconerSetupCountToDetail(db, setup) {
+  const headers = await db.autoconer_production_header.findMany({
+    where: { entry_date: setup.entry_date, shift: setup.shift },
+    select: { id: true }
+  })
+  const headerIds = headers.map(header => header.id)
+  if (headerIds.length === 0) return
+  await db.autoconer_production_detail.updateMany({
+    where: { machine_id: setup.machine_id, header_id: { in: headerIds } },
+    data: { count_id: setup.count_id, count_name: setup.count_name }
+  })
+}
+
+async function updateAutoconerSetupInTransaction(db, id, updates) {
+  const existing = await db.autoconer_machine_setup.findUnique({ where: { id } })
+  if (!existing) throw new Error('Autoconer machine setup not found')
+  const prepared = await prepareAutoconerSetupUpdate(db, updates)
+  const result = await db.autoconer_machine_setup.update({
+    where: { id },
+    data: { ...prepared.data, updated_at: new Date() }
+  })
+  if (prepared.changesCount) await syncAutoconerSetupCountToDetail(db, result)
+  return result
+}
+
+export async function updateAutoconerMachineSetup(id, updates) {
+  return prisma.$transaction(tx => updateAutoconerSetupInTransaction(tx, id, updates))
 }
 
 // Upsert machine setup by machine_id, entryDate, and shift
 export async function upsertAutoconerMachineSetup(machineId, entryDate, shift, updates) {
-  try {
+  return prisma.$transaction(async tx => {
     const dateObj = new Date(entryDate)
     const shiftNum = parseInt(shift)
-
-    const data = await prisma.autoconer_machine_setup.upsert({
+    const prepared = await prepareAutoconerSetupUpdate(tx, updates)
+    const data = await tx.autoconer_machine_setup.upsert({
       where: {
         idx_autoconer_machine_setup_date: {
           machine_id: machineId,
@@ -1166,50 +1077,24 @@ export async function upsertAutoconerMachineSetup(machineId, entryDate, shift, u
         machine_id: machineId,
         entry_date: dateObj,
         shift: shiftNum,
-        ...updates
+        ...prepared.data
       },
-      update: updates
+      update: prepared.data
     })
-
-    // Sync count strictly to production details for this date and shift
-    if ((updates.count_id || updates.count_name) && machineId && dateObj) {
-      const headers = await prisma.autoconer_production_header.findMany({
-        where: {
-          entry_date: dateObj,
-          shift: shiftNum
-        },
-        select: { id: true }
-      })
-
-      const headerIds = headers.map(h => h.id)
-      if (headerIds.length > 0) {
-        const updateData = {}
-        if (updates.count_id) updateData.count_id = updates.count_id
-        if (updates.count_name) updateData.count_name = updates.count_name
-
-        await prisma.autoconer_production_detail.updateMany({
-          where: {
-            machine_id: machineId,
-            header_id: { in: headerIds }
-          },
-          data: updateData
-        })
-      }
-    }
-
+    if (prepared.changesCount) await syncAutoconerSetupCountToDetail(tx, data)
     return data
-  } catch (error) {
-    throw error
-  }
+  })
 }
 
 // Batch update machine setups
 export async function batchUpdateAutoconerMachineSetups(updates, shift = null) {
-  const promises = updates.map(({ id, machine_id, ...data }) => {
-    const targetId = id || machine_id
-    return updateAutoconerMachineSetup(targetId, data, shift)
+  return prisma.$transaction(async tx => {
+    const results = []
+    for (const { id, machine_id: _machineId, ...data } of updates) {
+      results.push(await updateAutoconerSetupInTransaction(tx, id, data))
+    }
+    return results
   })
-  return Promise.all(promises)
 }
 
 // Get spinning counts for autoconer
@@ -1225,6 +1110,7 @@ export async function getAutoconerSpinningCounts() {
         count_name: true,
         act_count: true,
         speed_autoconer: true,
+        effi_actual_prodn: true,
         auto_effi: true
       },
       orderBy: { count_name: 'asc' }
@@ -1532,9 +1418,23 @@ export async function addAutoconerMachine(machineData) {
       ...rest
     } = machineData
 
+    const selectedCount = count_id || count_name
+      ? await prisma.spinning_counts.findFirst({
+          where: {
+            is_active: true,
+            autoconer_active: true,
+            ...(count_id ? { id: count_id } : { count_name })
+          }
+        })
+      : null
+    if ((count_id || count_name) && !selectedCount) {
+      throw new Error('Selected Autoconer count is not active')
+    }
+
     // Check if machine already exists
     const existingMachine = await prisma.autoconer_machines.findFirst({
-      where: { machine_no: machine_no }
+      where: { machine_no: machine_no },
+      orderBy: { is_active: 'desc' }
     })
 
     let machine
@@ -1542,10 +1442,10 @@ export async function addAutoconerMachine(machineData) {
 
     if (existingMachine) {
       if (!existingMachine.is_active) {
-        // Reactivate existing machine
-        machine = await prisma.autoconer_machines.update({
-          where: { id: existingMachine.id },
+        // Create a new active revision so historical entries keep the old row.
+        machine = await prisma.autoconer_machines.create({
           data: {
+            machine_no,
             is_active: true,
             activated_at: new Date(),
             deactivated_at: null,
@@ -1555,12 +1455,14 @@ export async function addAutoconerMachine(machineData) {
             from_drum,
             to_drum,
             no_of_drums,
-            speed,
-            count,
-            act_effi: act_effi || 0,
+            speed: null,
+            count: selectedCount?.count_name ?? null,
+            count_id: selectedCount?.id ?? null,
+            act_effi: null,
             installed_date,
             mc_id,
-            group_id
+            group_id,
+            direct_prod_entry: direct_prod_entry || false
           }
         })
         reactivated = true
@@ -1583,9 +1485,10 @@ export async function addAutoconerMachine(machineData) {
           from_drum,
           to_drum,
           no_of_drums,
-          speed,
-          count: count || '',
-          act_effi: act_effi || 0,
+          speed: null,
+          count: selectedCount?.count_name ?? null,
+          count_id: selectedCount?.id ?? null,
+          act_effi: null,
           installed_date,
           direct_prod_entry: direct_prod_entry || false,
           is_active: true,
@@ -1594,75 +1497,42 @@ export async function addAutoconerMachine(machineData) {
       })
     }
 
-    // Create or update machine setup (always create for new/reactivated machines)
+    // Create only the requested entry snapshot. Count-dependent values are
+    // resolved from Count Master and never duplicated in the machine master.
     let setup = null
-    if (machine) {
+    if (machine && machineData.entryDate) {
       // Resolve setup runtime from payload first; fallback from shift_config (shift 1) if missing.
+      const activeShift = parseInt(machineData.shift) || 1
       const parsedRunTime = Number.parseInt(String(run_time), 10)
       const resolvedRunTime = Number.isFinite(parsedRunTime) && parsedRunTime > 0
         ? parsedRunTime
-        : await getAutoconerShiftTime(1)
+        : await getAutoconerShiftTime(activeShift)
 
-      // Check if default historical setup already exists
-      const existingSetup = await prisma.autoconer_machine_setup.findFirst({
-        where: {
-          machine_id: machine.id,
-          entry_date: new Date('2026-04-01'),
-          shift: 1
+      setup = await upsertAutoconerMachineSetup(
+        machine.id,
+        machineData.entryDate,
+        activeShift,
+        {
+          ...buildAutoconerCountSnapshot(selectedCount),
+          ...(speed != null && speed !== '' && { speed: Number(speed) }),
+          ...(act_effi != null && act_effi !== '' && { target_effi: Number(act_effi) }),
+          session_no: session_no || 1,
+          run_time: resolvedRunTime
         }
-      })
-
-      if (existingSetup) {
-        setup = existingSetup
-      } else {
-        // Create setup for the machine (default historical setup)
-        setup = await prisma.autoconer_machine_setup.create({
-          data: {
-            machine_id: machine.id,
-            entry_date: new Date('2026-04-01'),
-            shift: 1,
-            count_id: count_id || null,
-            count_name: count_name || null,
-            session_no: session_no || 1,
-            run_time: resolvedRunTime
-          }
-        })
-      }
-
-      // Also create setup for the active entryDate if it's provided, different, and not already existing
-      if (machineData.entryDate) {
-        const activeDateObj = new Date(machineData.entryDate)
-        const activeShift = parseInt(machineData.shift) || 1
-        if (activeDateObj.toISOString().split('T')[0] !== '2026-04-01') {
-          const existingActiveSetup = await prisma.autoconer_machine_setup.findFirst({
-            where: {
-              machine_id: machine.id,
-              entry_date: activeDateObj,
-              shift: activeShift
-            }
-          })
-          if (!existingActiveSetup) {
-            await prisma.autoconer_machine_setup.create({
-              data: {
-                machine_id: machine.id,
-                entry_date: activeDateObj,
-                shift: activeShift,
-                count_id: count_id || null,
-                count_name: count_name || null,
-                session_no: session_no || 1,
-                run_time: resolvedRunTime
-              }
-            })
-          }
-        }
-      }
+      )
     }
 
-    // Sync new/reactivated machine to ALL existing production headers
-    const existingHeaders = await prisma.autoconer_production_header.findMany({
-      where: { entry_date: { gte: new Date(new Date().setDate(new Date().getDate() - 30)) } },
-      select: { id: true, shift: true }  // Include shift for proper shift-wise data
-    })
+    // Sync only the entry in which the machine was added. Older entries remain
+    // independent snapshots.
+    const existingHeaders = machineData.entryDate
+      ? await prisma.autoconer_production_header.findMany({
+          where: {
+            entry_date: new Date(machineData.entryDate),
+            shift: parseInt(machineData.shift) || 1
+          },
+          select: { id: true, shift: true }
+        })
+      : []
 
     for (const header of existingHeaders) {
       await syncNewMachinesToAutoconerHeader(header.id, header.shift)  // Pass shift

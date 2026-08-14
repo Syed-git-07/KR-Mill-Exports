@@ -1,12 +1,5 @@
 import { prisma } from '../prisma'
-
-const SPINNING_DEFAULT_SETUP_DATE = new Date('2026-04-01T00:00:00.000Z')
-
-const setupNumber = value => {
-  if (value === null || value === undefined || value === '') return null
-  const number = Number(value)
-  return Number.isFinite(number) ? number : null
-}
+import { buildTypedSearchWhere } from '../masterSearch'
 
 /**
  * Spinning Count Master CRUD Operations
@@ -92,39 +85,13 @@ export async function updateSpinningCount(id, countData) {
       }
     }
     
-    console.log('Clean data to update:', cleanData)
-    
-    // Count Master is the head of the spinning defaults hierarchy. Update the
-    // canonical machine baselines in the same transaction, but never touch a
-    // dated setup snapshot: historical entries must retain their old values.
-    const data = await prisma.$transaction(async tx => {
-      const updatedCount = await tx.spinning_counts.update({
-        where: { id },
-        data: cleanData
-      })
-
-      await tx.spinning_machine_setup.updateMany({
-        where: {
-          entry_date: SPINNING_DEFAULT_SETUP_DATE,
-          shift: 1,
-          count_name: existingRecord.count_name
-        },
-        data: {
-          count_name: updatedCount.count_name,
-          act_count: setupNumber(updatedCount.act_count),
-          tpi: setupNumber(updatedCount.tpi),
-          speed: setupNumber(updatedCount.speed),
-          tw_con: setupNumber(updatedCount.tw_con),
-          doff_loss: setupNumber(updatedCount.doff_loss),
-          c_waste_percent: setupNumber(updatedCount.waste_percent),
-          updated_at: new Date()
-        }
-      })
-
-      return updatedCount
+    // Dated machine setups are entry snapshots. Count Master changes are used
+    // only when a future setup is initialized or an entry count is changed.
+    const data = await prisma.spinning_counts.update({
+      where: { id },
+      data: cleanData
     })
     
-    console.log('Update successful:', data)
     return data
   } catch (error) {
     console.error('Update error details:', error)
@@ -143,41 +110,10 @@ export async function deleteSpinningCount(id) {
 
 // Search spinning counts
 export async function searchSpinningCounts(field, condition, value) {
-  const numericFields = ['act_count', 'tpi', 'twist_multiplier'];
-  let whereClause = { is_active: true };
-
-  if (value && value.trim() !== '') {
-    switch (condition) {
-      case 'Like':
-        // MySQL doesn't support mode: 'insensitive', string comparisons are case-insensitive by default
-        whereClause[field] = { contains: value };
-        break;
-      case 'Equal':
-        if (numericFields.includes(field)) {
-          whereClause[field] = parseFloat(value);
-        } else {
-          whereClause[field] = value;
-        }
-        break;
-      case 'Not Equal':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { not: parseFloat(value) };
-        } else {
-          whereClause[field] = { not: value };
-        }
-        break;
-      case 'Greater':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { gt: parseFloat(value) };
-        }
-        break;
-      case 'Less':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { lt: parseFloat(value) };
-        }
-        break;
-    }
-  }
+  const whereClause = {
+    is_active: true,
+    ...buildTypedSearchWhere(field, condition, value, { count_name: 'text' })
+  };
 
   const data = await prisma.spinning_counts.findMany({
     where: whereClause,

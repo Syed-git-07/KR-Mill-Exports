@@ -1,8 +1,11 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { cardingMachineCreateSchema, cardingMachineUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
 import { serializeData } from '@/lib/serialize'
 
@@ -41,9 +44,12 @@ export async function getCardingMachinePageDataAction() {
 }
 
 export async function createCardingMachineAction(machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.createCardingMachine(machineData)
+    const validated = cardingMachineCreateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.carding-machine', changes: validated
+    }, () => queries.createCardingMachine(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -51,23 +57,22 @@ export async function createCardingMachineAction(machineData) {
 }
 
 export async function updateCardingMachineAction(id, machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.updateCardingMachine(id, machineData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = cardingMachineUpdateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.carding-machine', targetId: validatedId, changes: validated
+    }, () => queries.updateCardingMachine(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteCardingMachineAction(id) {
-  await requireUser()
-  try {
-    const data = await queries.deleteCardingMachine(id)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+export async function deleteCardingMachineAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
 }
 
 export async function searchCardingMachinesAction(field, condition, value) {

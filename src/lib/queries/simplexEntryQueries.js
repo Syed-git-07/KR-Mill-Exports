@@ -997,7 +997,7 @@ export async function getSimplexMachineSetups(headerId = null) {
             activated_at: { lte: header.entry_date },
             OR: [
               { deactivated_at: null },
-              { deactivated_at: { gte: header.entry_date } }
+              { deactivated_at: { gt: header.entry_date } }
             ]
           }
         : { is_active: true },

@@ -338,7 +338,7 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
           activated_at: { lte: entryDate },
           OR: [
             { deactivated_at: null },
-            { deactivated_at: { gte: entryDate } }
+            { deactivated_at: { gt: entryDate } }
           ]
         },
         orderBy: { sort_order: 'asc' }
@@ -828,7 +828,7 @@ export async function getComberMachineSetups(headerId = null) {
             activated_at: { lte: header.entry_date },
             OR: [
               { deactivated_at: null },
-              { deactivated_at: { gte: header.entry_date } }
+              { deactivated_at: { gt: header.entry_date } }
             ]
           }
         : { is_active: true },
@@ -1221,7 +1221,7 @@ export async function syncNewMachinesToComberHeader(headerId, shift = null) {
           activated_at: { lte: entryDate },
           OR: [
             { deactivated_at: null },
-            { deactivated_at: { gte: entryDate } }
+            { deactivated_at: { gt: entryDate } }
           ]
         },
         select: { id: true, machine_no: true, prodn_mixing: true },

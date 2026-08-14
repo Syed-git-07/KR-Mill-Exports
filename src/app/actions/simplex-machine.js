@@ -1,8 +1,11 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { masterUuidSchema, simplexMachineCreateSchema, simplexMachineUpdateSchema } from '@/lib/validation/masterSchemas'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/simplexMachineQueries'
@@ -40,9 +43,12 @@ export async function getSimplexMachinePageDataAction() {
 }
 
 export async function createSimplexMachineAction(machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.createSimplexMachine(machineData)
+    const validated = simplexMachineCreateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.simplex-machine', changes: validated
+    }, () => queries.createSimplexMachine(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -50,23 +56,22 @@ export async function createSimplexMachineAction(machineData) {
 }
 
 export async function updateSimplexMachineAction(id, machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.updateSimplexMachine(id, machineData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = simplexMachineUpdateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.simplex-machine', targetId: validatedId, changes: validated
+    }, () => queries.updateSimplexMachine(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteSimplexMachineAction(id) {
-  await requireUser()
-  try {
-    const data = await queries.deleteSimplexMachine(id)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+export async function deleteSimplexMachineAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
 }
 
 export async function searchSimplexMachinesAction(field, condition, value) {

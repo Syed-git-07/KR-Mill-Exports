@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { resolveLapFormerShiftFallbackTime } from '../lapFormerShiftFallback';
 import {
@@ -182,25 +183,9 @@ export async function deleteLapFormerMachine(id) {
 
 // Search lap former machines
 export async function searchLapFormerMachines(field, condition, value) {
-  let where = {};
-
-  // Apply search condition based on field and condition type
-  switch (condition) {
-    case 'contains':
-      where[field] = { contains: value };
-      break;
-    case 'equals':
-      where[field] = value;
-      break;
-    case 'startsWith':
-      where[field] = { startsWith: value };
-      break;
-    case 'endsWith':
-      where[field] = { endsWith: value };
-      break;
-    default:
-      where[field] = { contains: value };
-  }
+  const where = buildTypedSearchWhere(field, condition, value, {
+    machine_no: 'text', description: 'text', make_name: 'text', prodn_mixing: 'text'
+  });
 
   const data = await prisma.lap_former_machines.findMany({ where });
   
@@ -1101,7 +1086,7 @@ export async function getLapFormerMachineSetups(headerId = null) {
             activated_at: { lte: header.entry_date },
             OR: [
               { deactivated_at: null },
-              { deactivated_at: { gte: header.entry_date } }
+              { deactivated_at: { gt: header.entry_date } }
             ]
           }
         : { is_active: true },

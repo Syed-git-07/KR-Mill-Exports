@@ -571,8 +571,9 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
               </tr>
             </thead>
             <tbody>
-              {stoppageData.map((row, index) => (
-                <tr 
+              {stoppageData.map((row, index) => {
+                const setupDraft = findSetupDraftForMachine(row.machine_id)
+                return <tr
                   key={row.id}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                 >
@@ -586,7 +587,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                     {row.production_detail?.session_no ?? '-'}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap">
-                    {row.count_name || '-'}
+                    {setupDraft?.count_name || row.count_name || '-'}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {effectiveTotalTime}
@@ -717,7 +718,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                     {row.total_stoppage_time || 0}
                   </td>
                 </tr>
-              ))}
+              })}
             </tbody>
           </table>
         </div>

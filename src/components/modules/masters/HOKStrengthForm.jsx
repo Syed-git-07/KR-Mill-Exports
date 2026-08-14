@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getDepartmentsForDropdownAction, getHOKEntryByIdAction } from '@/app/actions/hok-strength';
@@ -30,6 +29,8 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   const {
     register,
     handleSubmit,
+    reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(hokStrengthSchema),
@@ -38,6 +39,13 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
       entries: [],
     },
   });
+
+  const toFormEntries = (rows) => rows.map(row => ({
+    department_id: row.department_id,
+    shift1: row.shift1,
+    shift2: row.shift2,
+    shift3: row.shift3,
+  }));
 
   useEffect(() => {
     loadDepartmentsAndData();
@@ -82,9 +90,22 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
           // Format date for date input (yyyy-MM-dd)
           const formattedDate = format(new Date(editData.header.date), 'yyyy-MM-dd');
           setSelectedDate(formattedDate);
+
+          // Preserve historical departments that are no longer active. An edit
+          // must never silently drop an existing detail row.
+          const activeDepartmentIds = new Set(initialGrid.map(row => row.department_id));
+          const historicalRows = editData.details
+            .filter(detail => !activeDepartmentIds.has(detail.department_id))
+            .map(detail => ({
+              department_id: detail.department_id,
+              dept_name: detail.departments?.dept_name || `Inactive department (${detail.department_id})`,
+              shift1: 0,
+              shift2: 0,
+              shift3: 0,
+            }));
           
           // Populate grid with existing detail values
-          const populatedGrid = initialGrid.map(row => {
+          const populatedGrid = [...initialGrid, ...historicalRows].map(row => {
             const detail = editData.details.find(d => d.department_id === row.department_id);
             if (detail) {
               return {
@@ -97,9 +118,14 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
             return row;
           });
           setGridData(populatedGrid);
+          reset({ date: formattedDate, entries: toFormEntries(populatedGrid) });
         }
       } else {
         setGridData(initialGrid);
+        const currentDate = format(new Date(), 'yyyy-MM-dd');
+        setSelectedDate(currentDate);
+        setHokId(null);
+        reset({ date: currentDate, entries: toFormEntries(initialGrid) });
       }
     } catch (error) {
       console.error('❌ Error loading departments and data:', error);
@@ -109,12 +135,16 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
   };
 
   const handleGridChange = (deptId, field, value) => {
-    setGridData(prev => prev.map(row => {
+    setGridData(prev => {
+      const nextRows = prev.map(row => {
       if (row.department_id === deptId) {
         return { ...row, [field]: parseFloat(value) || 0 };
       }
       return row;
-    }));
+      });
+      setValue('entries', toFormEntries(nextRows), { shouldValidate: true });
+      return nextRows;
+    });
   };
 
   const calculateTotals = (field) => {
@@ -123,14 +153,9 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
 
   const handleFormSubmit = async (formData) => {
     const submissionData = {
-      date: selectedDate,
+      date: formData.date,
       hok_id: hokId,
-      entries: gridData.map(row => ({
-        department_id: row.department_id,
-        shift1: row.shift1,
-        shift2: row.shift2,
-        shift3: row.shift3,
-      })),
+      entries: formData.entries,
     };
     await onSubmit(submissionData);
   };
@@ -154,14 +179,24 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
           <Input
             id="date"
             type="date"
+            {...register('date')}
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(event) => {
+              setSelectedDate(event.target.value);
+              setValue('date', event.target.value, { shouldValidate: true });
+            }}
           />
           {errors.date && (
             <p className="text-sm text-red-500">{errors.date.message}</p>
           )}
         </div>
       </div>
+
+      {errors.entries && (
+        <p className="text-sm text-red-500">
+          Every shift strength must be a number greater than or equal to zero.
+        </p>
+      )}
 
       {/* Department Grid */}
       <div className="border rounded-lg overflow-hidden">
@@ -185,6 +220,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                     <Input
                       type="number"
                       step="0.1"
+                      min="0"
                       value={row.shift1}
                       onChange={(e) =>
                         handleGridChange(row.department_id, 'shift1', e.target.value)
@@ -196,6 +232,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                     <Input
                       type="number"
                       step="0.1"
+                      min="0"
                       value={row.shift2}
                       onChange={(e) =>
                         handleGridChange(row.department_id, 'shift2', e.target.value)
@@ -207,6 +244,7 @@ export default function HOKStrengthForm({ initialData, onSubmit, onCancel }) {
                     <Input
                       type="number"
                       step="0.1"
+                      min="0"
                       value={row.shift3}
                       onChange={(e) =>
                         handleGridChange(row.department_id, 'shift3', e.target.value)

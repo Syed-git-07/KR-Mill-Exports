@@ -48,6 +48,7 @@ import {
   lookupSpinningMachineByNoAction
 } from '@/app/actions/spinning-entry'
 import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
+import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
 
 /**
  * Spinning Machine Setup Tab
@@ -146,6 +147,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         ? String(d.installed_date).split('T')[0]
         : prev.installed_date,
       // Setup fields from spinning_machine_setup (may come from inactive machine's setup as fallback)
+      ...(d.count_id != null && { count_id: d.count_id }),
       ...(d.count_name != null && { count_name: d.count_name }),
       ...(d.act_count != null && { act_count: parseFloat(d.act_count) }),
       ...(d.tpi != null && { tpi: parseFloat(d.tpi) }),
@@ -168,7 +170,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   // Count change dialog
   const [countChangeDialog, setCountChangeDialog] = useState(false)
-  const [newCountName, setNewCountName] = useState('')
+  const [newCountId, setNewCountId] = useState('')
 
   // Option check (carry-forward from a selected earlier entry)
   const [optionCheck, setOptionCheck] = useState({
@@ -291,6 +293,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     allocated_spindles: 1104,
     installed_date: new Date().toISOString().split('T')[0],
     // Setup fields - populated from spinning_counts master
+    count_id: countData?.id || '',
     count_name: countData?.count_name || '',
     act_count: countData?.act_count != null ? parseFloat(countData.act_count) : 0,
     session_no: 1,
@@ -364,19 +367,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       processedValue = parseFloat(value) || 0
     }
     
-    // When count_name changes, auto-populate act_count, speed, tpi, tw_con, doff_loss, c_waste_percent from spinning_counts
-    if (field === 'count_name') {
-      const selectedCount = counts.find(c => c.count_name === value)
+    // Selecting a count fully replaces every count-controlled snapshot value.
+    if (field === 'count_id') {
+      const selectedCount = counts.find(c => c.id === value)
       if (selectedCount) {
-        const countFields = {
-          count_name: value,
-          ...(selectedCount.act_count != null && { act_count: parseFloat(selectedCount.act_count) }),
-          ...(selectedCount.speed != null && { speed: parseInt(selectedCount.speed) }),
-          ...(selectedCount.tpi != null && { tpi: parseFloat(selectedCount.tpi) }),
-          ...(selectedCount.tw_con != null && { tw_con: parseInt(selectedCount.tw_con) }),
-          ...(selectedCount.doff_loss != null && { doff_loss: parseFloat(selectedCount.doff_loss) }),
-          ...(selectedCount.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
-        }
+        const countFields = buildSpinningCountSnapshot(selectedCount, {
+          machineSpeed: baseRow?.machine?.speed
+        })
         
         setEditedRows(prev => ({
           ...prev,
@@ -535,25 +532,19 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       toast.warning('Please select machines first')
       return
     }
-    if (!newCountName) {
+    if (!newCountId) {
       toast.warning('Please select a count')
       return
     }
 
     // Find the selected count details
-    const selectedCount = counts.find(c => c.count_name === newCountName)
+    const selectedCount = counts.find(c => c.id === newCountId)
 
     setIsSaving(true)
     try {
       const updates = selectedRows.map(id => ({
         id,
-        count_name: newCountName,
-        ...(selectedCount?.act_count != null && { act_count: parseFloat(selectedCount.act_count) }),
-        ...(selectedCount?.speed != null && { speed: parseInt(selectedCount.speed) }),
-        ...(selectedCount?.tpi != null && { tpi: parseFloat(selectedCount.tpi) }),
-        ...(selectedCount?.tw_con != null && { tw_con: parseInt(selectedCount.tw_con) }),
-        ...(selectedCount?.doff_loss != null && { doff_loss: parseFloat(selectedCount.doff_loss) }),
-        ...(selectedCount?.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
+        count_id: selectedCount?.id,
       }))
 
       const result = await batchUpdateSpinningMachineSetupsAction(updates, shift)
@@ -561,7 +552,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       if (result.success) {
         toast.success(`Updated count for ${selectedRows.length} machine(s)`)
         setCountChangeDialog(false)
-        setNewCountName('')
+        setNewCountId('')
         setSelectedRows([])
         setEditedRows({})
         await loadData()
@@ -807,9 +798,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <EnterSelect
-                        value={row.count_name || ''}
-                        options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
-                        onChange={(v) => handleInputChange(row.id, 'count_name', v)}
+                        value={row.count_id || ''}
+                        options={counts.map(c => ({ value: c.id, label: c.count_name }))}
+                        onChange={(v) => handleInputChange(row.id, 'count_id', v)}
                         onNextRow={() => focusRowByDelta(index, 1, 'act_count')}
                         placeholder="Select..."
                         className="h-9 rounded-none text-xs"
@@ -1083,9 +1074,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               This will update the count for {selectedRows.length} selected machine(s).
             </p>
             <EnterSelect
-              value={newCountName || ''}
-              options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
-              onChange={setNewCountName}
+              value={newCountId || ''}
+              options={counts.map(c => ({ value: c.id, label: c.count_name }))}
+              onChange={setNewCountId}
               placeholder="Select new count..."
               searchable
               className="w-full mt-1"
@@ -1095,7 +1086,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             <Button variant="outline" onClick={() => setCountChangeDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCountChange} disabled={isSaving || !newCountName}>
+            <Button onClick={handleCountChange} disabled={isSaving || !newCountId}>
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
               Apply
             </Button>
@@ -1198,19 +1189,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <div>
                   <Label>Count</Label>
                   <EnterSelect
-                    value={newMachineData.count_name || ''}
-                    options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
+                    value={newMachineData.count_id || ''}
+                    options={counts.map(c => ({ value: c.id, label: c.count_name }))}
                     onChange={(val) => {
-                      const selectedCount = counts.find(c => c.count_name === val)
+                      const selectedCount = counts.find(c => c.id === val)
                       setNewMachineData(prev => ({
                         ...prev,
-                        count_name: val,
-                        ...(selectedCount?.act_count != null && { act_count: parseFloat(selectedCount.act_count) }),
-                        ...(selectedCount?.speed != null && { speed: parseInt(selectedCount.speed) }),
-                        ...(selectedCount?.tpi != null && { tpi: parseFloat(selectedCount.tpi) }),
-                        ...(selectedCount?.tw_con != null && { tw_con: parseInt(selectedCount.tw_con) }),
-                        ...(selectedCount?.doff_loss != null && { doff_loss: parseFloat(selectedCount.doff_loss) }),
-                        ...(selectedCount?.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
+                        ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: prev.speed }),
                       }))
                     }}
                     placeholder="Select count..."

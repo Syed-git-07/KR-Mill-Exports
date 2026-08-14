@@ -25,6 +25,7 @@ import {
   syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
+import { findSetupDraft as findMachineSetupDraft } from '@/lib/entryDraftSync'
 
 // Helper function to safely convert any value to a number
 const toNumber = (value) => {
@@ -509,6 +510,11 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
             <tbody>
               {stoppageData.map((row, index) => {
                 const machine = row.production_detail?.machine
+                const setupDraft = findMachineSetupDraft(
+                  setupDraftEdits,
+                  null,
+                  row.production_detail?.machine_id
+                )
                 const totalStoppage =
                   toNumber(row.stoppage1_time) + toNumber(row.stoppage2_time) +
                   toNumber(row.stoppage3_time) + toNumber(row.stoppage4_time)
@@ -528,7 +534,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
                       {row.production_detail?.session_no ?? '-'}
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap">
-                      {row.production_detail?.count_name || '-'}
+                      {setupDraft?.count_name || row.production_detail?.count_name || '-'}
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <StoppageAutocomplete

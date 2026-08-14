@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
+import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 import {
   getAutoconerMachineSetupsAction,
   updateAutoconerMachineSetupAction,
@@ -188,8 +189,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       return
     }
     const found = result.data
-    const matchedCount = counts.find(c => c.count_name === found.count)
-    const derivedActEffi = found.act_effi ?? matchedCount?.effi_actual_prodn ?? matchedCount?.auto_effi
+    const matchedCount = counts.find(c => c.id === found.count_id)
+      || counts.find(c => c.count_name === found.count)
+    const derivedActEffi = matchedCount?.effi_actual_prodn ?? matchedCount?.auto_effi
     const dateStr = found.installed_date
       ? String(found.installed_date).split('T')[0]
       : new Date().toISOString().split('T')[0]
@@ -203,9 +205,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       from_drum: found.from_drum?.toString() || '',
       to_drum: found.to_drum?.toString() || '',
       no_of_drums: found.no_of_drums?.toString() || '',
-      speed: found.speed?.toString() || '',
+      speed: matchedCount?.speed_autoconer?.toString() || '',
       count: found.count || '',
-      count_id: matchedCount?.id || '',
+      count_id: found.count_id || matchedCount?.id || '',
       count_name: found.count || '',
       act_effi: derivedActEffi != null ? derivedActEffi.toString() : '',
       installed_date: dateStr,
@@ -266,7 +268,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     ))
   }
 
-  // Handle count change for a row - includes act_count from spinning_counts
+    // A count change fully refreshes every count-controlled snapshot field.
   const handleCountChange = (rowId, countId) => {
     const count = counts.find(c => c.id === countId)
     const baseRow = setupData.find(row => row.id === rowId)
@@ -277,14 +279,12 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       [rowId]: {
         ...prev[rowId],
         ...(machineId ? { machine_id: machineId } : {}),
-        count_id: countId,
-        count_name: count?.count_name,
-        act_count: count?.act_count || 0
+        ...buildAutoconerCountSnapshot(count)
       }
     }))
 
     setSetupData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, count_id: countId, count_name: count?.count_name, act_count: count?.act_count || 0 } : row
+      row.id === rowId ? { ...row, ...buildAutoconerCountSnapshot(count) } : row
     ))
   }
 
@@ -306,7 +306,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     }
   }
 
-  // Apply count change to selected rows - includes act_count from spinning_counts
+    // Apply the full selected Count Master snapshot to selected rows.
   const handleBulkCountChange = () => {
     if (!newCountId) {
       toast.warning('Please select a count')
@@ -320,16 +320,14 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         ...prev,
         [rowId]: {
           ...prev[rowId],
-          count_id: newCountId,
-          count_name: count?.count_name,
-          act_count: count?.act_count || 0
+          ...buildAutoconerCountSnapshot(count)
         }
       }))
     })
 
     setSetupData(prev => prev.map(row => 
       selectedRows.includes(row.id) 
-        ? { ...row, count_id: newCountId, count_name: count?.count_name, act_count: count?.act_count || 0 } 
+        ? { ...row, ...buildAutoconerCountSnapshot(count) }
         : row
     ))
 

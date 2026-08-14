@@ -17,7 +17,7 @@ export default function MastersPage() {
     },
     {
       title: "Spinning Machine Master",
-      description: "Ring frame machines management with 33 machines",
+      description: "Manage ring frame machines and their production defaults",
       href: "/masters/spinning-machine",
       icon: Cog,
       status: "Ready",
@@ -33,8 +33,16 @@ export default function MastersPage() {
     },
     {
       title: "Stoppage Head Master",
-      description: "Downtime category management with 10 categories",
+      description: "Manage top-level downtime categories",
       href: "/masters/stoppage-head",
+      icon: Activity,
+      status: "Ready",
+      color: "blue"
+    },
+    {
+      title: "Stoppage Detail Master",
+      description: "Manage department-specific stoppage reasons and codes",
+      href: "/masters/stoppage-detail",
       icon: Activity,
       status: "Ready",
       color: "blue"
@@ -49,7 +57,7 @@ export default function MastersPage() {
     },
     {
       title: "Spinning Count Master",
-      description: "Yarn count specifications (21 counts)",
+      description: "Manage yarn count specifications and production defaults",
       href: "/masters/spinning-count",
       icon: Hash,
       status: "Ready",

@@ -16,8 +16,10 @@ import {
 } from '@/app/actions/twc-entry';
 import { Plus, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 
 export default function TWCEntryMaster() {
+  const { canManageMasters } = useAuthUser();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -240,7 +242,7 @@ export default function TWCEntryMaster() {
           <h1 className="text-xl sm:text-2xl font-bold">TWC Entry Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Twist Weight Count data entry and tracking</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -292,6 +294,7 @@ export default function TWCEntryMaster() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             const editData = {
               ...row,

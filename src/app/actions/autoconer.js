@@ -1,8 +1,11 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { autoconerMachineCreateSchema, autoconerMachineUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
 import * as autoconerQueries from '@/lib/queries/autoconerQueries'
 import { serializeData } from '@/lib/serialize'
@@ -18,9 +21,12 @@ export async function getAutoconerMachinesAction() {
 }
 
 export async function createAutoconerMachineAction(machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await autoconerQueries.createAutoconerMachine(machineData)
+    const validated = autoconerMachineCreateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.autoconer-machine', changes: validated
+    }, () => autoconerQueries.createAutoconerMachine(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -28,19 +34,28 @@ export async function createAutoconerMachineAction(machineData) {
 }
 
 export async function updateAutoconerMachineAction(id, machineData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await autoconerQueries.updateAutoconerMachine(id, machineData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = autoconerMachineUpdateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.autoconer-machine', targetId: validatedId, changes: validated
+    }, () => autoconerQueries.updateAutoconerMachine(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteAutoconerMachineAction(id) {
+export async function deleteAutoconerMachineAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
+}
+
+export async function getAutoconerCountsAction() {
   await requireUser()
   try {
-    const data = await autoconerQueries.deleteAutoconerMachine(id)
+    const data = await autoconerQueries.getAutoconerCounts()
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

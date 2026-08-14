@@ -392,7 +392,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
     const machines = await prisma.drawing_finisher_machines.findMany({
       where: {
         activated_at: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gte: entryDate } }]
+        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       select: {
         id: true,

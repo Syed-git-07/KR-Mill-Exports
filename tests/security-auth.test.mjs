@@ -30,8 +30,9 @@ test("password hashes are salted, opaque, and verifiable", async () => {
 });
 
 test("password policy rejects weak and identity-derived passwords", () => {
-  assert.match(validatePassword("short"), /15 characters/);
-  assert.match(validatePassword("12345678901234"), /15 characters/);
+  assert.match(validatePassword("short"), /6 characters/);
+  assert.equal(validatePassword("Ab3!xy"), null);
+  assert.match(validatePassword("123456"), /less predictable/);
   assert.match(
     validatePassword("Admin-operator1-Password-29!", {
       username: "operator1",
@@ -119,11 +120,11 @@ test("every exported application Server Action performs its own authentication c
   assert.ok(actionFiles.length > 0);
   for (const file of actionFiles) {
     const source = await readFile(file, "utf8");
-    assert.match(source, /import \{ requireUser \} from ["']@\/lib\/security\/auth["']/);
+    assert.match(source, /import \{[^}]*requireUser[^}]*\} from ["']@\/lib\/security\/auth["']/);
     assert.doesNotMatch(
       source,
-      /^export async function .*\{\r?\n(?!\s+await requireUser\(\))/gm,
-      `${file} exports an action without an authentication guard`,
+      /^export async function .*\{\r?\n(?!\s+(?:const user = )?await require(?:User|Role)\()/gm,
+      `${file} exports an action without an authentication or role guard`,
     );
   }
 });

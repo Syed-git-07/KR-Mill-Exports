@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { runBulkActions } from '@/lib/actionResults';
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
@@ -17,6 +20,7 @@ import {
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
 export default function LapFormerPage() {
+  const { canManageMasters } = useAuthUser();
   const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRowId, setSelectedRowId] = useState(null);
@@ -132,11 +136,15 @@ export default function LapFormerPage() {
       }
       if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
       try {
-        await Promise.all(activeRows.map(row => updateLapFormerMachineAction(row.id, { is_active: false })));
-        toast.success(`${activeRows.length} machine(s) deactivated`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadMachines();
+        const { succeeded, failed } = await runBulkActions(
+          activeRows,
+          row => updateLapFormerMachineAction(row.id, { is_active: false })
+        );
+        if (succeeded.length) toast.success(`${succeeded.length} machine(s) deactivated`);
+        if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
+        setSelectedRows(failed.map(outcome => outcome.item));
+        setIsSelectMode(failed.length > 0);
+        if (succeeded.length) loadMachines();
       } catch (error) {
         toast.error('Failed to deactivate: ' + error.message);
       }
@@ -269,7 +277,7 @@ export default function LapFormerPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Lap Former Machine Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage lap former machine details</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -298,11 +306,11 @@ export default function LapFormerPage() {
           <Button
             onClick={handleDelete}
             className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedRowId}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Remove Permanently</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -338,8 +346,9 @@ export default function LapFormerPage() {
               ? '!bg-red-100 hover:!bg-red-200 text-red-700'
               : '!bg-white hover:!bg-yellow-100'
           }
-          onRowDoubleClick={openEditForm}
+          onRowDoubleClick={canManageMasters ? openEditForm : undefined}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             openEditForm(row);
           }}
@@ -365,8 +374,8 @@ export default function LapFormerPage() {
           setIsModalOpen(false);
           setEditingMachine(null);
         }}
-        onDelete={editingMachine ? handleDelete : null}
-        showDelete={editingMachine}
+        onDelete={null}
+        showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
         onSecondaryAction={editingMachine?.is_active ? handleDeactivate : null}

@@ -439,9 +439,11 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
             </thead>
             <tbody>
               {productionData.map((row, index) => {
-                // Color efficiency based on machine target (act_effi from machine master)
-                const hasTargetEffi = row.machine?.act_effi !== null && row.machine?.act_effi !== undefined && row.machine?.act_effi !== ''
-                const targetEffi = hasTargetEffi ? parseFloat(row.machine?.act_effi) : null
+                // Target efficiency is snapshotted from Count Master for this entry.
+                const setupDraft = findSetupDraft(row)
+                const effectiveSetup = setupDraft ? { ...(row.setup || {}), ...setupDraft } : (row.setup || {})
+                const hasTargetEffi = effectiveSetup.target_effi !== null && effectiveSetup.target_effi !== undefined && effectiveSetup.target_effi !== ''
+                const targetEffi = hasTargetEffi ? parseFloat(effectiveSetup.target_effi) : null
                 const currentEffi = parseFloat(row.prodn_effi) || 0
                 
                 // Green if efficiency meets or exceeds target, red if below target
@@ -476,7 +478,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     </td>
                     {/* Count Name */}
                     <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-                      {row.count_name || row.count?.count_name || '-'}
+                      {effectiveSetup.count_name || row.count_name || row.count?.count_name || '-'}
                     </td>
                     {/* Drum From */}
                     <td className="border border-gray-300 px-2 py-1 text-center text-xs">
@@ -559,9 +561,9 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                         searchable
                       />
                     </td>
-                    {/* Act Effi (from machine master) */}
+                    {/* Target efficiency from this entry's count snapshot */}
                     <td className="border border-gray-300 px-2 py-1 text-center text-xs bg-gray-100">
-                      {row.machine?.act_effi ?? '-'}
+                      {effectiveSetup.target_effi ?? '-'}
                     </td>
                     {/* Waste Kg */}
                     <td className="border border-gray-300 px-0 py-0">

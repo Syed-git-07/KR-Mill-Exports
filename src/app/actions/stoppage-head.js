@@ -1,8 +1,11 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { masterUuidSchema, stoppageHeadCreateSchema, stoppageHeadUpdateSchema } from '@/lib/validation/masterSchemas'
 
 import { serializeData } from '@/lib/serialize'
 
@@ -19,9 +22,12 @@ export async function getStoppageHeadsAction() {
 }
 
 export async function createStoppageHeadAction(stoppageData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.createStoppageHead(stoppageData)
+    const validated = stoppageHeadCreateSchema.parse(stoppageData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.stoppage-head', changes: validated
+    }, () => queries.createStoppageHead(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -29,23 +35,22 @@ export async function createStoppageHeadAction(stoppageData) {
 }
 
 export async function updateStoppageHeadAction(id, stoppageData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.updateStoppageHead(id, stoppageData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = stoppageHeadUpdateSchema.parse(stoppageData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.stoppage-head', targetId: validatedId, changes: validated
+    }, () => queries.updateStoppageHead(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteStoppageHeadAction(id) {
-  await requireUser()
-  try {
-    const data = await queries.deleteStoppageHead(id)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+export async function deleteStoppageHeadAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
 }
 
 export async function searchStoppageHeadsAction(field, condition, value) {

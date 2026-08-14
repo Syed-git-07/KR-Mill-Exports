@@ -1,8 +1,10 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { masterUuidSchema, tpiEntryCreateSchema, tpiEntryUpdateSchema } from '@/lib/validation/masterSchemas'
 
 import { serializeData } from '@/lib/serialize'
 
@@ -19,9 +21,12 @@ export async function getTPIEntriesAction() {
 }
 
 export async function createTPIEntryAction(entryData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.createTPIEntry(entryData)
+    const validated = tpiEntryCreateSchema.parse(entryData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.tpi-entry', changes: validated
+    }, () => queries.createTPIEntry(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -29,9 +34,13 @@ export async function createTPIEntryAction(entryData) {
 }
 
 export async function updateTPIEntryAction(id, entryData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.updateTPIEntry(id, entryData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = tpiEntryUpdateSchema.parse(entryData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.tpi-entry', targetId: validatedId, changes: validated
+    }, () => queries.updateTPIEntry(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -39,9 +48,12 @@ export async function updateTPIEntryAction(id, entryData) {
 }
 
 export async function deleteTPIEntryAction(id) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.deleteTPIEntry(id)
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.tpi-entry', targetId: validatedId
+    }, () => queries.deleteTPIEntry(validatedId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

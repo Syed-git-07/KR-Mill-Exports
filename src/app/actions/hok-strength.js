@@ -1,6 +1,6 @@
 'use server';
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
 
@@ -14,6 +14,8 @@ import {
   getDepartmentsForDropdown
 } from '@/lib/queries/hokStrengthQueries';
 import { serializeData } from '@/lib/serialize';
+import { hokEntrySchema, hokIdSchema } from '@/lib/validation/masterSchemas';
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit';
 
 export async function getHOKEntriesAction() {
   await requireUser()
@@ -29,7 +31,7 @@ export async function getHOKEntriesAction() {
 export async function getHOKEntryByIdAction(hokId) {
   await requireUser()
   try {
-    const data = await getHOKEntryById(hokId);
+    const data = await getHOKEntryById(hokIdSchema.parse(hokId));
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error fetching HOK entry:', error);
@@ -38,9 +40,12 @@ export async function getHOKEntryByIdAction(hokId) {
 }
 
 export async function createBulkHOKEntriesAction(entriesData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await createBulkHOKEntries(entriesData);
+    const validatedData = hokEntrySchema.parse(entriesData);
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.hok-strength', changes: validatedData
+    }, () => createBulkHOKEntries(validatedData));
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error creating HOK entries:', error);
@@ -49,9 +54,17 @@ export async function createBulkHOKEntriesAction(entriesData) {
 }
 
 export async function updateHOKEntryAction(hokId, hokData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await updateHOKEntry(hokId, hokData);
+    const validatedId = hokIdSchema.parse(hokId);
+    const validatedData = hokEntrySchema.parse(hokData);
+    const data = await executeAuditedMasterMutation({
+      user,
+      action: 'UPDATE',
+      resource: 'master.hok-strength',
+      targetId: validatedId,
+      changes: validatedData
+    }, () => updateHOKEntry(validatedId, validatedData));
     return { success: true, data: serializeData(data) };
   } catch (error) {
     console.error('Error updating HOK entry:', error);
@@ -60,9 +73,12 @@ export async function updateHOKEntryAction(hokId, hokData) {
 }
 
 export async function deleteHOKEntryAction(hokId) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    await deleteHOKEntry(hokId);
+    const validatedId = hokIdSchema.parse(hokId);
+    await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.hok-strength', targetId: validatedId
+    }, () => deleteHOKEntry(validatedId));
     return { success: true };
   } catch (error) {
     console.error('Error deleting HOK entry:', error);

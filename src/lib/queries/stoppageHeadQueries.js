@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * Stoppage Head Master CRUD Operations
@@ -53,62 +54,9 @@ export async function deleteStoppageHead(id) {
 
 // Search stoppage heads
 export async function searchStoppageHeads(field, condition, value) {
-  let whereClause = {};
-
-  if (value && value.trim() !== '') {
-    const trimmedValue = value.trim();
-    
-    switch (condition) {
-      case 'Like':
-        if (field === 'code') {
-          // For code field, use exact match
-          const numValue = parseInt(trimmedValue);
-          if (!isNaN(numValue)) {
-            whereClause[field] = numValue;
-          }
-        } else {
-          // MySQL doesn't support mode: 'insensitive', but string comparisons are case-insensitive by default
-          whereClause[field] = { contains: trimmedValue };
-        }
-        break;
-      case 'Equal':
-        if (field === 'code') {
-          const numValue = parseInt(trimmedValue);
-          if (!isNaN(numValue)) {
-            whereClause[field] = numValue;
-          }
-        } else {
-          whereClause[field] = trimmedValue;
-        }
-        break;
-      case 'Not Equal':
-        if (field === 'code') {
-          const numValue = parseInt(trimmedValue);
-          if (!isNaN(numValue)) {
-            whereClause[field] = { not: numValue };
-          }
-        } else {
-          whereClause[field] = { not: trimmedValue };
-        }
-        break;
-      case 'Greater':
-        if (field === 'code') {
-          const numValue = parseInt(trimmedValue);
-          if (!isNaN(numValue)) {
-            whereClause[field] = { gt: numValue };
-          }
-        }
-        break;
-      case 'Less':
-        if (field === 'code') {
-          const numValue = parseInt(trimmedValue);
-          if (!isNaN(numValue)) {
-            whereClause[field] = { lt: numValue };
-          }
-        }
-        break;
-    }
-  }
+  const whereClause = buildTypedSearchWhere(field, condition, value, {
+    code: 'number', stoppage_head_name: 'text'
+  });
 
   const data = await prisma.stoppage_heads.findMany({
     where: whereClause,

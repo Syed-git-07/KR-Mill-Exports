@@ -1,10 +1,13 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { departmentCreateSchema, departmentUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
-import { getDepartments, createDepartment, updateDepartment, deleteDepartment, searchDepartments } from '@/lib/queries/queries'
+import { getDepartments, createDepartment, updateDepartment, searchDepartments } from '@/lib/queries/queries'
 import { serializeData } from '@/lib/serialize'
 
 export async function getDepartmentsAction() {
@@ -18,9 +21,12 @@ export async function getDepartmentsAction() {
 }
 
 export async function createDepartmentAction(departmentData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await createDepartment(departmentData)
+    const validated = departmentCreateSchema.parse(departmentData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.department', changes: validated
+    }, () => createDepartment(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -28,23 +34,22 @@ export async function createDepartmentAction(departmentData) {
 }
 
 export async function updateDepartmentAction(id, departmentData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await updateDepartment(id, departmentData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = departmentUpdateSchema.parse(departmentData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.department', targetId: validatedId, changes: validated
+    }, () => updateDepartment(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteDepartmentAction(id) {
-  await requireUser()
-  try {
-    const data = await deleteDepartment(id)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+export async function deleteDepartmentAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
 }
 
 export async function searchDepartmentsAction(field, condition, value) {

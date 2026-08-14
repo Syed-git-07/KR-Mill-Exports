@@ -486,6 +486,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
               {productionData.map((row, index) => {
                 const isEdited = !!editedRows[row.id]
                 const bgClass = isEdited ? 'bg-yellow-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')
+                const effectiveSetup = getEffectiveSetup(row)
                 
                 return (
                   <tr key={row.id} className={`${bgClass} hover:bg-blue-50`}>
@@ -522,7 +523,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                       />
                     </td>
                     <td className="border border-gray-300 px-3 py-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {row.count_name || row.setup?.count_name || '-'}
+                      {effectiveSetup?.count_name || row.count_name || row.setup?.count_name || '-'}
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput

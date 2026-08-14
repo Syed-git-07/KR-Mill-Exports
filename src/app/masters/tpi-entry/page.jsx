@@ -16,8 +16,11 @@ import {
 } from '@/app/actions/tpi-entry';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { runBulkActions } from '@/lib/actionResults';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 
 export default function TPIEntryMaster() {
+  const { canManageMasters } = useAuthUser();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -165,11 +168,15 @@ export default function TPIEntryMaster() {
       }
 
       try {
-        await Promise.all(selectedRows.map(row => deleteTPIEntryAction(row.id)));
-        toast.success(`${selectedRows.length} entry(ies) deleted successfully`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadEntries();
+        const { succeeded, failed } = await runBulkActions(
+          selectedRows,
+          row => deleteTPIEntryAction(row.id)
+        );
+        if (succeeded.length) toast.success(`${succeeded.length} entry(ies) deleted successfully`);
+        if (failed.length) toast.error(`${failed.length} entry(ies) failed: ${failed[0].error}`);
+        setSelectedRows(failed.map(outcome => outcome.item));
+        setIsSelectMode(failed.length > 0);
+        if (succeeded.length) loadEntries();
       } catch (error) {
         toast.error('Failed to delete entries: ' + error.message);
       }
@@ -237,7 +244,7 @@ export default function TPIEntryMaster() {
           <h1 className="text-xl sm:text-2xl font-bold">TPI Entry Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Twist Per Inch data entry and tracking</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -289,6 +296,7 @@ export default function TPIEntryMaster() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             const editData = {
               ...row,

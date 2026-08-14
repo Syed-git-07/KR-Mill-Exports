@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { NumberInput } from '@/components/ui/number-input'
 import EnterSelect from '@/components/ui/enter-select'
-import { getSpinningCountsAction } from '@/app/actions/spinning-entry'
+import { getAutoconerCountsAction } from '@/app/actions/autoconer'
 
 const autoconerSchema = z.object({
   group_id: z.preprocess(
@@ -32,15 +32,8 @@ const autoconerSchema = z.object({
     (val) => (val === '' || val === null || val === undefined || isNaN(Number(val))) ? 0 : Number(val),
     z.number().optional().default(0)
   ),
-  speed: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined || isNaN(Number(val))) ? null : Number(val),
-    z.number().optional().nullable()
-  ),
   count: z.string().optional().nullable(),
-  act_effi: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined || isNaN(Number(val))) ? 0 : Number(val),
-    z.number().optional().default(0)
-  ),
+  count_id: z.string().uuid().optional().nullable(),
   installed_date: z.string().optional().nullable(),
   is_active: z.boolean().default(true),
   direct_prod_entry: z.boolean().default(false),
@@ -51,7 +44,7 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
   const [counts, setCounts] = useState([])
 
   useEffect(() => {
-    getSpinningCountsAction().then(result => {
+    getAutoconerCountsAction().then(result => {
       if (result.success) setCounts(result.data || [])
     })
   }, [])
@@ -73,9 +66,8 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
       from_drum: initialData?.from_drum ?? null,
       to_drum: initialData?.to_drum ?? null,
       no_of_drums: initialData?.no_of_drums ?? 0,
-      speed: initialData?.speed ?? null,
       count: initialData?.count ?? '',
-      act_effi: initialData?.act_effi ?? 0,
+      count_id: initialData?.count_id ?? null,
       installed_date: initialData?.installed_date
         ? String(initialData.installed_date).split('T')[0]
         : new Date().toISOString().split('T')[0],
@@ -90,27 +82,13 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
   const fromDrum     = watch('from_drum')
   const toDrum       = watch('to_drum')
   const noDrums      = watch('no_of_drums')
-  const speed        = watch('speed')
-  const actEffi      = watch('act_effi')
   const isActive     = watch('is_active')
   const directProdEntry = watch('direct_prod_entry')
 
-  // Auto-fill dependent values from selected spinning count
   const handleCountChange = (val) => {
-    setValue('count', val || '')
-    const selectedCount = counts.find(c => c.count_name === val)
-    if (!selectedCount) return
-
-    // Prefer the new spinning count field; keep fallbacks for old datasets
-    const derivedActEffi = selectedCount.effi_actual_prodn ?? selectedCount.auto_effi
-    if (derivedActEffi !== null && derivedActEffi !== undefined && derivedActEffi !== '') {
-      setValue('act_effi', Number(derivedActEffi))
-    }
-
-    const derivedSpeed = selectedCount.speed_autoconer
-    if (derivedSpeed !== null && derivedSpeed !== undefined && derivedSpeed !== '') {
-      setValue('speed', Number(derivedSpeed))
-    }
+    const selectedCount = counts.find(c => c.id === val)
+    setValue('count_id', val || null, { shouldDirty: true })
+    setValue('count', selectedCount?.count_name || '')
   }
 
   // Navigate to next / previous visible input (Enter / ArrowDown = next, ArrowUp = prev)
@@ -158,11 +136,10 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
       no_of_drums: parseInt(data.no_of_drums) || 0,
       from_drum: data.from_drum != null ? parseInt(data.from_drum) : null,
       to_drum: data.to_drum != null ? parseInt(data.to_drum) : null,
-      speed: data.speed != null ? parseInt(data.speed) : null,
-      act_effi: parseInt(data.act_effi) || 0,
       make_name: data.make_name || 'MURT',
       model: data.model || null,
       count: data.count || null,
+      count_id: data.count_id || null,
       installed_date: data.installed_date || null,
     })
   }
@@ -299,7 +276,7 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
           />
         </div>
 
-        {/* Row 5: No. of Drums (auto) & Speed */}
+        {/* Row 5: No. of Drums (auto) & Count */}
         <div className="space-y-1">
           <Label htmlFor="no_of_drums">No. of Drums</Label>
           <NumberInput
@@ -315,50 +292,18 @@ export default function AutoconerForm({ initialData, onSubmit, onCancel, machine
         </div>
 
         <div className="space-y-1">
-          <Label htmlFor="speed">Speed</Label>
-          <NumberInput
-            id="speed"
-            type="number"
-            value={speed ?? ''}
-            onChange={(e) => setValue('speed', e.target.value ? parseInt(e.target.value) : null)}
-            onKeyDown={handleKeyNav}
-            zeroAsEmpty
-          />
-        </div>
-
-        {/* Row 6: Count & Act Effi */}
-        <div className="space-y-1">
           <Label htmlFor="count">Count</Label>
           <EnterSelect
-            value={watch('count') || ''}
-            options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
+            value={watch('count_id') || ''}
+            options={counts.map(c => ({ value: c.id, label: c.count_name }))}
             onChange={handleCountChange}
-
             placeholder="Select count..."
             searchable
             className="w-full"
           />
         </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="act_effi">Act Effi (%)</Label>
-          <NumberInput
-            id="act_effi"
-            type="number"
-            min="0"
-            max="100"
-            value={actEffi ?? ''}
-            onChange={(e) => setValue('act_effi', e.target.value ? parseInt(e.target.value) : 0)}
-            onKeyDown={handleKeyNav}
-            zeroAsEmpty
-            className={errors.act_effi ? 'border-red-500' : ''}
-          />
-          {errors.act_effi && (
-            <p className="text-xs text-red-500">{errors.act_effi.message}</p>
-          )}
-        </div>
-
-        {/* Row 7: Checkboxes */}
+        {/* Row 6: Checkboxes */}
         <div className="flex items-center gap-2 pt-4">
           <Checkbox
             id="is_active"

@@ -9,8 +9,11 @@ import SpinningCountForm from '@/components/modules/masters/SpinningCountForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety'
+import { useAuthUser } from '@/components/auth/AuthUserContext'
 
 export default function SpinningCountPage() {
+  const { canManageMasters } = useAuthUser()
   const [spinningCounts, setSpinningCounts] = useState([])
   const [selectedSpinningCount, setSelectedSpinningCount] = useState(null)
   const [selectedRows, setSelectedRows] = useState([])
@@ -182,7 +185,7 @@ export default function SpinningCountPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Spinning Count Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage spinning count specifications</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -198,11 +201,11 @@ export default function SpinningCountPage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedSpinningCount}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -227,6 +230,7 @@ export default function SpinningCountPage() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return
             e.preventDefault();
             setSelectedSpinningCount(row);
             setIsEditing(true);
@@ -249,8 +253,8 @@ export default function SpinningCountPage() {
         title="Spinning Count Master"
         description={isEditing ? "To Modify the Spinning Count Details" : "Add new spinning count"}
         onCancel={() => setIsModalOpen(false)}
-        onDelete={isEditing ? handleDelete : null}
-        showDelete={isEditing}
+        onDelete={null}
+        showDelete={false}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Save"}
       >
