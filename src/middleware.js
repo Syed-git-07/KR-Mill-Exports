@@ -6,6 +6,7 @@ import {
   AUTH_CONTEXT_HEADER,
   SESSION_COOKIE_NAME,
 } from "@/lib/security/constants";
+import { resolveServerActionOperation } from "@/lib/security/serverActionManifest";
 import { withBasePath, withoutBasePath } from "@/lib/app-path";
 
 const PUBLIC_PATHS = new Set([
@@ -297,6 +298,9 @@ export async function middleware(request, event) {
     process.env.AUDIT_SERVER_ACTIONS !== "false"
   ) {
     try {
+      const operation = await resolveServerActionOperation(
+        request.headers.get("next-action"),
+      );
       backgroundTasks.push(
         prisma.audit_logs
           .create({
@@ -305,7 +309,7 @@ export async function middleware(request, event) {
               username: session.user.username,
               event_type: "SERVER_ACTION_REQUEST",
               outcome: "ACCEPTED",
-              action: "server_action",
+              action: operation,
               resource: pathname.slice(0, 255),
               request_id: requestId,
               ip_address: (

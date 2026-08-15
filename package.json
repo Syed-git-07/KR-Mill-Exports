@@ -38,6 +38,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "jspdf": "^4.1.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.554.0",
@@ -66,6 +67,7 @@
   "overrides": {
     "brace-expansion": "5.0.9",
     "postcss": "8.5.25",
-    "sharp": "0.35.0"
+    "sharp": "0.35.0",
+    "uuid": "11.1.1"
   }
 }
