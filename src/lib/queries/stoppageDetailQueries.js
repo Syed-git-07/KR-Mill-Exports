@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { buildTypedSearchWhere } from '../masterSearch'
 
 /**
  * Get all stoppage details with joined data
@@ -178,53 +179,36 @@ export async function deleteStoppageDetail(id) {
  * Search stoppage details
  */
 export async function searchStoppageDetails(field, condition, value) {
-  let whereClause = {};
+  let whereClause;
 
-  const trimmedValue = value.trim()
-
-  // Handle numeric fields
-  const numericFields = ['code']
-  const isNumericField = numericFields.includes(field)
-
-  if (condition === 'Like') {
-    if (isNumericField) {
-      // For numeric fields, use exact match with Like
-      const numValue = parseInt(trimmedValue, 10)
-      if (!isNaN(numValue)) {
-        whereClause[field] = numValue;
-      }
-    } else {
-      // MySQL doesn't support mode: 'insensitive', but string comparisons are case-insensitive by default
-      whereClause[field] = { contains: trimmedValue };
-    }
-  } else if (condition === 'Equal') {
-    if (isNumericField) {
-      const numValue = parseInt(trimmedValue, 10)
-      if (!isNaN(numValue)) {
-        whereClause[field] = numValue;
-      }
-    } else {
-      whereClause[field] = trimmedValue;
-    }
-  } else if (condition === 'Not Equal') {
-    if (isNumericField) {
-      const numValue = parseInt(trimmedValue, 10)
-      if (!isNaN(numValue)) {
-        whereClause[field] = { not: numValue };
-      }
-    } else {
-      whereClause[field] = { not: trimmedValue };
-    }
-  } else if (condition === 'Greater' && isNumericField) {
-    const numValue = parseInt(trimmedValue, 10)
-    if (!isNaN(numValue)) {
-      whereClause[field] = { gt: numValue };
-    }
-  } else if (condition === 'Less' && isNumericField) {
-    const numValue = parseInt(trimmedValue, 10)
-    if (!isNaN(numValue)) {
-      whereClause[field] = { lt: numValue };
-    }
+  if (field === 'stoppage_head_name') {
+    const relatedCondition = condition === 'Not Equal' ? 'Equal' : condition;
+    const relatedWhere = buildTypedSearchWhere('stoppage_head_name', relatedCondition, value, {
+      stoppage_head_name: 'text'
+    });
+    const matches = await prisma.stoppage_heads.findMany({
+      where: relatedWhere,
+      select: { id: true }
+    });
+    if (matches.length === 0 && condition !== 'Not Equal') return [];
+    whereClause = condition === 'Not Equal'
+      ? { stoppage_head_id: { notIn: matches.map(item => item.id) } }
+      : { stoppage_head_id: { in: matches.map(item => item.id) } };
+  } else if (field === 'dept_name') {
+    const relatedCondition = condition === 'Not Equal' ? 'Equal' : condition;
+    const relatedWhere = buildTypedSearchWhere('dept_name', relatedCondition, value, { dept_name: 'text' });
+    const matches = await prisma.departments.findMany({
+      where: relatedWhere,
+      select: { id: true }
+    });
+    if (matches.length === 0 && condition !== 'Not Equal') return [];
+    whereClause = condition === 'Not Equal'
+      ? { department_id: { notIn: matches.map(item => item.id) } }
+      : { department_id: { in: matches.map(item => item.id) } };
+  } else {
+    whereClause = buildTypedSearchWhere(field, condition, value, {
+      code: 'number', stoppage_name: 'text'
+    });
   }
 
   const data = await prisma.stoppage_details.findMany({

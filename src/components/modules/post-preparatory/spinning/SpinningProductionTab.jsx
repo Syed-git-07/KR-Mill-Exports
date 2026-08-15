@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
+import EnterSelect from "@/components/ui/enter-select"
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -21,7 +22,7 @@ import {
   mergeSetupDraft,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
-import { resolveProductionTime } from '@/lib/productionFormulaMath'
+import { calculateSpinningExpectedGps, resolveProductionTime } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Production Entry Tab
@@ -44,7 +45,9 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   setupDraftEdits,
   sharedDraftEdits,
   onSharedDraftEditsChange,
-  stoppageDraftEdits
+  stoppageDraftEdits,
+  counts = [],
+  onMachineCountChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [productionData, setProductionData] = useState([])
@@ -84,6 +87,16 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     return numeric.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
   }
 
+  const formatExpectedGps = (value) => {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return '-'
+    return numeric.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 3,
+      useGrouping: false
+    })
+  }
+
   // Calculate production values based on formulas
   const getEffectiveSetup = useCallback((row, drafts = setupDraftEdits) => {
     const baseSetup = row.setup || {}
@@ -96,9 +109,6 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const allocatedSpindles = setup.allocated_spindles != null && setup.allocated_spindles !== ''
       ? Number(setup.allocated_spindles)
       : (row.machine?.allocated_spindles ?? 1104)
-    const efficiency = setup.efficiency != null && setup.efficiency !== ''
-      ? Number(setup.efficiency)
-      : 0.95
     const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
     const productionTime = resolveProductionTime(effectiveTotalTime, requestedStoppageMins)
     const stoppageMins = productionTime.stoppageTime
@@ -139,7 +149,14 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
 
     // Calculate Expected GPS = 7.2 × Speed / TPI / Count × Effi
-    const expGps = speed && tpi && count ? ((7.2 * speed / tpi / count) * efficiency) : 0
+    const expGps = calculateSpinningExpectedGps({
+      speed,
+      tpi,
+      count,
+      twCon: setup.tw_con,
+      doffLoss: setup.doff_loss,
+      cWastePercent: setup.c_waste_percent
+    })
 
     const result = {
       act_prodn: Math.round(actProdn * 100) / 100,
@@ -147,7 +164,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       stopped_spindles: Math.round(stoppedSpindles * 100) / 100,
       worked_spindles: workedSpindles,
       gps: Math.round(gps * 100) / 100,
-      exp_gps: Math.round(expGps * 100) / 100,
+      exp_gps: Math.round(expGps * 1000) / 1000,
       work_time: runTime - stoppageMins,
       _constant: Math.round(constant * 1000) / 1000,
       _totalSpindles: totalSpindles
@@ -430,7 +447,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])
@@ -452,7 +469,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           Total Machines: <span className="font-semibold">{productionData.length}</span>
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
@@ -486,6 +503,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
               {productionData.map((row, index) => {
                 const isEdited = !!editedRows[row.id]
                 const bgClass = isEdited ? 'bg-yellow-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')
+                const effectiveSetup = getEffectiveSetup(row)
+                const effectiveCountName = effectiveSetup?.count_name || row.count_name || row.setup?.count_name || ''
                 
                 return (
                   <tr key={row.id} className={`${bgClass} hover:bg-blue-50`}>
@@ -521,8 +540,21 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                         onEnterNavigation={() => focusNextRow(index, 'sider2_name')}
                       />
                     </td>
-                    <td className="border border-gray-300 px-3 py-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {row.count_name || row.setup?.count_name || '-'}
+                    <td className="border border-gray-300 px-0 py-0">
+                      <EnterSelect
+                        value={effectiveSetup?.count_id || ''}
+                        options={counts.map(count => ({ value: count.id, label: count.count_name }))}
+                        onChange={(countId) => onMachineCountChange?.(
+                          row.setup?.id,
+                          row.machine_id,
+                          countId,
+                          effectiveSetup?.speed ?? row.machine?.speed
+                        )}
+                        placeholder={effectiveCountName || 'Select count...'}
+                        searchable
+                        cleanCell
+                        className="h-9 rounded-none text-xs"
+                      />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput
@@ -565,7 +597,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                       {formatWorkedSpindles(row.worked_spindles ?? row._totalSpindles)}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-center text-purple-600 tabular-nums whitespace-nowrap">
-                      {row.exp_gps?.toFixed(2) || '-'}
+                      {formatExpectedGps(row.exp_gps)}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
                       {row.run_time || effectiveTotalTime}

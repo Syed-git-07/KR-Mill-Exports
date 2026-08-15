@@ -5,7 +5,20 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import EnterSelect from "@/components/ui/enter-select"
+import HolidayAwareCalendar from '@/components/common/HolidayAwareCalendar'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +26,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { format } from 'date-fns'
+import { CalendarIcon, Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Label } from "@/components/ui/label"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -23,6 +37,7 @@ import {
   updateSpinningMachineSetupAction,
   batchUpdateSpinningMachineSetupsAction,
   applySpinningOptionCheckAction,
+  getSpinningOptionCheckSourceAction,
   upsertSpinningMachineSetupAction,
   getSpinningCountsAction,
   getSpinningMachinesAction,
@@ -33,6 +48,7 @@ import {
   lookupSpinningMachineByNoAction
 } from '@/app/actions/spinning-entry'
 import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
+import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
 
 /**
  * Spinning Machine Setup Tab
@@ -42,6 +58,7 @@ import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machin
  */
 
 const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
+  headerId,
   shift = 1,
   totalTime,
   entryDate,
@@ -75,6 +92,15 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   useEffect(() => {
     editedRowsRef.current = editedRows
   }, [editedRows])
+
+  // Count changes staged from Production/Stoppage must be visible here immediately.
+  useEffect(() => {
+    if (!sharedDraftEdits || Object.keys(sharedDraftEdits).length === 0) return
+    setSetupData(rows => rows.map(row => {
+      const draft = sharedDraftEdits[row.id] || sharedDraftEdits[String(row.id)]
+      return draft ? { ...row, ...draft } : row
+    }))
+  }, [sharedDraftEdits])
 
   // Ref for table container (Enter/Arrow row navigation)
   const tableRef = useRef(null)
@@ -131,11 +157,12 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         ? String(d.installed_date).split('T')[0]
         : prev.installed_date,
       // Setup fields from spinning_machine_setup (may come from inactive machine's setup as fallback)
+      ...(d.count_id != null && { count_id: d.count_id }),
       ...(d.count_name != null && { count_name: d.count_name }),
       ...(d.act_count != null && { act_count: parseFloat(d.act_count) }),
       ...(d.tpi != null && { tpi: parseFloat(d.tpi) }),
       ...(d.speed != null && { speed: parseInt(d.speed) }),
-      ...(d.tw_con != null && { tw_con: parseInt(d.tw_con) }),
+      ...(d.tw_con != null && { tw_con: parseFloat(d.tw_con) }),
       ...(d.doff_loss != null && { doff_loss: parseFloat(d.doff_loss) }),
       ...(d.c_waste_percent != null && { c_waste_percent: parseFloat(d.c_waste_percent) }),
     }))
@@ -153,15 +180,118 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   // Count change dialog
   const [countChangeDialog, setCountChangeDialog] = useState(false)
-  const [newCountName, setNewCountName] = useState('')
+  const [newCountId, setNewCountId] = useState('')
 
-  // Option check (carry-forward from immediate previous shift)
+  // Option check (carry-forward from a selected earlier entry)
   const [optionCheck, setOptionCheck] = useState({
     copySpeed: false,
     copyTpi: false,
     copyTwCon: false,
     copyCount: false
   })
+  const [optionSourceDate, setOptionSourceDate] = useState('')
+  const [optionSourceShift, setOptionSourceShift] = useState('')
+  const [availableSourceShifts, setAvailableSourceShifts] = useState([])
+  const [isLoadingOptionSource, setIsLoadingOptionSource] = useState(false)
+  const [optionSourceStatus, setOptionSourceStatus] = useState('loading')
+  const [optionCalendarOpen, setOptionCalendarOpen] = useState(false)
+  const optionSourceRequestRef = useRef(0)
+
+  const loadOptionCheckSource = useCallback(async (requestedDate = '', preferredShift = '') => {
+    const requestId = ++optionSourceRequestRef.current
+    setIsLoadingOptionSource(true)
+    setOptionSourceStatus('loading')
+
+    if (!requestedDate) {
+      setOptionSourceDate('')
+      setOptionSourceShift('')
+      setAvailableSourceShifts([])
+    }
+
+    try {
+      const result = await getSpinningOptionCheckSourceAction({
+        targetDate: entryDate,
+        targetShift: parseInt(shift),
+        sourceDate: requestedDate || null
+      })
+
+      if (requestId !== optionSourceRequestRef.current) return
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to find previous spinning entries')
+      }
+
+      const source = result.data || {}
+      const sourceDate = requestedDate || source.sourceDate || ''
+      const sourceShifts = (source.availableShifts || []).map(String)
+      const sourceShift = requestedDate
+        ? String(preferredShift || '')
+        : source.sourceShift
+          ? String(source.sourceShift)
+          : ''
+
+      setOptionSourceDate(sourceDate)
+      setAvailableSourceShifts(sourceShifts)
+      setOptionSourceShift(sourceShift)
+      setOptionSourceStatus(
+        sourceDate && sourceShift && sourceShifts.includes(sourceShift)
+          ? 'available'
+          : 'none'
+      )
+    } catch (error) {
+      if (requestId !== optionSourceRequestRef.current) return
+
+      console.error('Error loading option check source:', error)
+      setOptionSourceShift('')
+      setAvailableSourceShifts([])
+      setOptionSourceStatus('error')
+      toast.error(error.message || 'Failed to find previous spinning entries')
+    } finally {
+      if (requestId === optionSourceRequestRef.current) {
+        setIsLoadingOptionSource(false)
+      }
+    }
+  }, [entryDate, shift])
+
+  useServerDataLoader(
+    () => loadOptionCheckSource(),
+    [entryDate, shift]
+  )
+
+  const handleOptionSourceDateChange = (selectedDate) => {
+    if (!selectedDate) return
+
+    const sourceDate = format(selectedDate, 'yyyy-MM-dd')
+    setOptionSourceDate(sourceDate)
+    setAvailableSourceShifts([])
+    setOptionCalendarOpen(false)
+    loadOptionCheckSource(sourceDate, optionSourceShift)
+  }
+
+  const handleOptionSourceShiftChange = (sourceShift) => {
+    setOptionSourceShift(sourceShift)
+    setOptionSourceStatus(
+      optionSourceDate && availableSourceShifts.includes(sourceShift)
+        ? 'available'
+        : 'none'
+    )
+  }
+
+  const optionSourceDateValue = optionSourceDate
+    ? new Date(`${optionSourceDate}T00:00:00`)
+    : undefined
+  const optionCalendarMonth = optionSourceDateValue || (
+    entryDate ? new Date(`${entryDate}T00:00:00`) : undefined
+  )
+  const isOptionSourceDateDisabled = (day) => {
+    if (!entryDate) return false
+
+    const dayKey = format(day, 'yyyy-MM-dd')
+    if (dayKey > entryDate) return true
+    if (dayKey < entryDate) return false
+
+    return !optionSourceShift || parseInt(optionSourceShift) >= parseInt(shift)
+  }
 
   // Add machine dialog
   const [addMachineDialog, setAddMachineDialog] = useState(false)
@@ -173,11 +303,12 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     allocated_spindles: 1104,
     installed_date: new Date().toISOString().split('T')[0],
     // Setup fields - populated from spinning_counts master
+    count_id: countData?.id || '',
     count_name: countData?.count_name || '',
     act_count: countData?.act_count != null ? parseFloat(countData.act_count) : 0,
     session_no: 1,
     run_time: effectiveTotalTime,
-    tw_con: countData?.tw_con != null ? parseInt(countData.tw_con) : 0,
+    tw_con: countData?.tw_con != null ? parseFloat(countData.tw_con) : 0,
     doff_loss: countData?.doff_loss != null ? parseFloat(countData.doff_loss) : 0,
     c_waste_percent: countData?.waste_percent != null ? parseFloat(countData.waste_percent) : 0,
     speed: countData?.speed != null ? parseInt(countData.speed) : 0,
@@ -246,19 +377,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       processedValue = parseFloat(value) || 0
     }
     
-    // When count_name changes, auto-populate act_count, speed, tpi, tw_con, doff_loss, c_waste_percent from spinning_counts
-    if (field === 'count_name') {
-      const selectedCount = counts.find(c => c.count_name === value)
+    // Selecting a count fully replaces every count-controlled snapshot value.
+    if (field === 'count_id') {
+      const selectedCount = counts.find(c => c.id === value)
       if (selectedCount) {
-        const countFields = {
-          count_name: value,
-          ...(selectedCount.act_count != null && { act_count: parseFloat(selectedCount.act_count) }),
-          ...(selectedCount.speed != null && { speed: parseInt(selectedCount.speed) }),
-          ...(selectedCount.tpi != null && { tpi: parseFloat(selectedCount.tpi) }),
-          ...(selectedCount.tw_con != null && { tw_con: parseInt(selectedCount.tw_con) }),
-          ...(selectedCount.doff_loss != null && { doff_loss: parseFloat(selectedCount.doff_loss) }),
-          ...(selectedCount.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
-        }
+        const countFields = buildSpinningCountSnapshot(selectedCount, {
+          machineSpeed: baseRow?.machine?.speed
+        })
         
         setEditedRows(prev => ({
           ...prev,
@@ -404,59 +529,54 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSaveAll,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSaveAll, editedRows, isSaving, discardChanges])
 
   // Bulk count change
-  const handleCountChange = async () => {
-    if (!confirmDiscardLocalEdits()) return
-
+  const handleCountChange = () => {
     if (selectedRows.length === 0) {
       toast.warning('Please select machines first')
       return
     }
-    if (!newCountName) {
+    if (!newCountId) {
       toast.warning('Please select a count')
       return
     }
 
     // Find the selected count details
-    const selectedCount = counts.find(c => c.count_name === newCountName)
+    const selectedCount = counts.find(c => c.id === newCountId)
 
-    setIsSaving(true)
-    try {
-      const updates = selectedRows.map(id => ({
-        id,
-        count_name: newCountName,
-        ...(selectedCount?.act_count != null && { act_count: parseFloat(selectedCount.act_count) }),
-        ...(selectedCount?.speed != null && { speed: parseInt(selectedCount.speed) }),
-        ...(selectedCount?.tpi != null && { tpi: parseFloat(selectedCount.tpi) }),
-        ...(selectedCount?.tw_con != null && { tw_con: parseInt(selectedCount.tw_con) }),
-        ...(selectedCount?.doff_loss != null && { doff_loss: parseFloat(selectedCount.doff_loss) }),
-        ...(selectedCount?.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
-      }))
-
-      const result = await batchUpdateSpinningMachineSetupsAction(updates, shift)
-      
-      if (result.success) {
-        toast.success(`Updated count for ${selectedRows.length} machine(s)`)
-        setCountChangeDialog(false)
-        setNewCountName('')
-        setSelectedRows([])
-        setEditedRows({})
-        await loadData()
-        onRefresh?.()
-      } else {
-        throw new Error(result.error)
-      }
-    } catch (error) {
-      console.error('Error changing count:', error)
-      toast.error('Failed to change count')
-    } finally {
-      setIsSaving(false)
+    if (!selectedCount) {
+      toast.error('Selected count is no longer available')
+      return
     }
+
+    const selectedIds = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      for (const row of setupData) {
+        if (!selectedIds.has(String(row.id))) continue
+        const machineId = row.machine_id ?? row.machine?.id
+        next[row.id] = {
+          ...next[row.id],
+          ...(machineId ? { machine_id: machineId } : {}),
+          ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: row.machine?.speed })
+        }
+      }
+      return next
+    })
+    setSetupData(prev => prev.map(row => (
+      selectedIds.has(String(row.id))
+        ? { ...row, ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: row.machine?.speed }) }
+        : row
+    )))
+
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setCountChangeDialog(false)
+    setNewCountId('')
+    setSelectedRows([])
   }
 
   const hasOptionSelected = optionCheck.copySpeed || optionCheck.copyTpi || optionCheck.copyTwCon || optionCheck.copyCount
@@ -469,8 +589,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   }
 
   const handleOptionCheckApply = async () => {
-    if (!confirmDiscardLocalEdits()) return
-
     if (!entryDate) {
       toast.warning('Current entry date is not available')
       return
@@ -481,11 +599,30 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       return
     }
 
+    if (!optionSourceDate || !optionSourceShift) {
+      if (optionSourceStatus === 'none') {
+        toast.warning(
+          optionSourceDate
+            ? `No spinning entry exists for ${optionSourceDate}, Shift ${optionSourceShift || '-'}. Choose another source date or shift.`
+            : 'No previous spinning entry is available. Initialize an earlier date and shift first.'
+        )
+      } else if (optionSourceStatus === 'error') {
+        toast.error('Previous entries could not be loaded. Try selecting the source date again.')
+      } else {
+        toast.warning('Select a source date and shift')
+      }
+      return
+    }
+
+    if (!confirmDiscardLocalEdits()) return
+
     setIsSaving(true)
     try {
       const result = await applySpinningOptionCheckAction({
         targetDate: entryDate,
         targetShift: parseInt(shift),
+        sourceDate: optionSourceDate,
+        sourceShift: parseInt(optionSourceShift),
         options: optionCheck
       })
 
@@ -531,6 +668,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       // Convert empty strings to null for integer fields
       const result = await addSpinningMachineAction({
         ...newMachineData,
+        headerId,
         entryDate,
         shift: parseInt(shift),
         run_time: totalTime, // Use current shift's totalTime
@@ -549,9 +687,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       if (!result.success) throw new Error(result.error)
       
       if (result.data.reactivated) {
-        toast.success(`Machine ${newMachineData.machine_no} reactivated successfully`)
+        toast.success(`Machine ${newMachineData.machine_no} added back to this entry`)
       } else {
-        toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added successfully`)
+        toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added to this entry`)
       }
       
       setAddMachineDialog(false)
@@ -567,7 +705,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     }
   }
 
-  // Remove selected machines from setup AND deactivate the machine master
+  // Remove selected machines from this entry snapshot only.
   const handleRemoveMachines = async () => {
     if (!confirmDiscardLocalEdits()) return
 
@@ -583,9 +721,10 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
         .filter(id => id !== undefined)
 
-      // Deactivate machines in master table (like Autoconer)
-      const removePromises = machineIds.map(id => removeSpinningMachineAction(id))
-      await Promise.all(removePromises)
+      const removePromises = machineIds.map(id => removeSpinningMachineAction(id, headerId))
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setRemoveDialog(false)
@@ -672,10 +811,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <EnterSelect
-                        value={row.count_name || ''}
-                        options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
-                        onChange={(v) => handleInputChange(row.id, 'count_name', v)}
-                        onNextRow={() => focusRowByDelta(index, 1, 'act_count')}
+                        value={row.count_id || ''}
+                        options={counts.map(c => ({ value: c.id, label: c.count_name }))}
+                        onChange={(v) => handleInputChange(row.id, 'count_id', v)}
                         placeholder="Select..."
                         className="h-9 rounded-none text-xs"
                         cleanCell
@@ -708,13 +846,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput
                         type="number"
+                        step="0.001"
                         value={row.tw_con ?? ''}
                         onChange={(e) => handleInputChange(row.id, 'tw_con', e.target.value)}
                         onKeyDown={(e) => handleEnterNavigation(e, index, 'tw_con')}
                         data-row={index}
                         data-col="tw_con"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        zeroAsEmpty
                       />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
@@ -727,7 +865,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         data-row={index}
                         data-col="doff_loss"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        zeroAsEmpty
                       />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
@@ -740,7 +877,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         data-row={index}
                         data-col="c_waste_percent"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
-                        zeroAsEmpty
                       />
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
@@ -777,9 +913,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <div className="flex items-center gap-3 rounded border border-gray-300 px-2 py-1">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 items-center gap-2 rounded border border-gray-300 px-2 py-1">
             <span className="text-xs font-medium text-gray-700">Option Check</span>
             <label className="flex items-center gap-1 text-xs">
               <Checkbox
@@ -809,11 +945,89 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               />
               <span>Count</span>
             </label>
+            <span className="border-l border-gray-300 pl-2 text-[11px] font-medium text-gray-600">
+              From
+            </span>
+            <Popover open={optionCalendarOpen} onOpenChange={setOptionCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSaving || isLoadingOptionSource}
+                  aria-label="Option Check source date"
+                  aria-invalid={optionSourceStatus === 'none' || optionSourceStatus === 'error'}
+                  title={
+                    optionSourceStatus === 'none'
+                      ? optionSourceDate
+                        ? `No initialized spinning entry exists for ${optionSourceDate}, Shift ${optionSourceShift || '-'}`
+                        : 'No earlier initialized spinning entry is available'
+                      : optionSourceStatus === 'error'
+                        ? 'Previous entries could not be loaded'
+                        : 'Source date'
+                  }
+                  className="h-8 w-[126px] justify-start px-2 text-xs font-normal"
+                >
+                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
+                  {optionSourceDateValue
+                    ? format(optionSourceDateValue, 'dd-MMM-yy')
+                    : 'Select date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <HolidayAwareCalendar
+                  mode="single"
+                  selected={optionSourceDateValue}
+                  onSelect={handleOptionSourceDateChange}
+                  tableName="spinning_production_header"
+                  shift={optionSourceShift || undefined}
+                  defaultMonth={optionCalendarMonth}
+                  disabled={isOptionSourceDateDisabled}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <Select
+              value={optionSourceShift}
+              onValueChange={handleOptionSourceShiftChange}
+              disabled={isSaving || isLoadingOptionSource}
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Option Check source shift"
+                title={
+                  optionSourceStatus === 'none'
+                    ? 'No initialized previous entry is available'
+                    : optionSourceStatus === 'error'
+                      ? 'Previous entries could not be loaded'
+                      : 'Source shift'
+                }
+                className="w-[92px] text-xs"
+              >
+                <SelectValue
+                  placeholder={
+                    isLoadingOptionSource
+                      ? 'Loading...'
+                      : optionSourceStatus === 'none'
+                        ? 'No entry'
+                        : optionSourceStatus === 'error'
+                          ? 'Load failed'
+                          : 'Shift'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {['1', '2', '3'].map(sourceShift => (
+                  <SelectItem key={sourceShift} value={sourceShift}>
+                    Shift {sourceShift}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
               onClick={handleOptionCheckApply}
-              disabled={isSaving || !hasOptionSelected}
+              disabled={isSaving || isLoadingOptionSource || !hasOptionSelected}
             >
               Check
             </Button>
@@ -832,7 +1046,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             onClick={() => { resetMachineForm(); setAddMachineDialog(true); }}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add new machine
+            Add Master machine
           </Button>
           <Button 
             variant="outline" 
@@ -845,7 +1059,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             Remove machine {selectedRows.length > 0 && `(${selectedRows.length})`}
           </Button>
         </div>
-        <span className="text-sm text-gray-500">
+        <span className="ml-auto shrink-0 text-sm text-gray-500">
           {selectedRows.length > 0 && (
             <span className="text-blue-600 font-medium mr-4">
               {selectedRows.length} machine(s) selected
@@ -870,9 +1084,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               This will update the count for {selectedRows.length} selected machine(s).
             </p>
             <EnterSelect
-              value={newCountName || ''}
-              options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
-              onChange={setNewCountName}
+              value={newCountId || ''}
+              options={counts.map(c => ({ value: c.id, label: c.count_name }))}
+              onChange={setNewCountId}
               placeholder="Select new count..."
               searchable
               className="w-full mt-1"
@@ -882,7 +1096,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             <Button variant="outline" onClick={() => setCountChangeDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCountChange} disabled={isSaving || !newCountName}>
+            <Button onClick={handleCountChange} disabled={isSaving || !newCountId}>
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
               Apply
             </Button>
@@ -985,19 +1199,13 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <div>
                   <Label>Count</Label>
                   <EnterSelect
-                    value={newMachineData.count_name || ''}
-                    options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
+                    value={newMachineData.count_id || ''}
+                    options={counts.map(c => ({ value: c.id, label: c.count_name }))}
                     onChange={(val) => {
-                      const selectedCount = counts.find(c => c.count_name === val)
+                      const selectedCount = counts.find(c => c.id === val)
                       setNewMachineData(prev => ({
                         ...prev,
-                        count_name: val,
-                        ...(selectedCount?.act_count != null && { act_count: parseFloat(selectedCount.act_count) }),
-                        ...(selectedCount?.speed != null && { speed: parseInt(selectedCount.speed) }),
-                        ...(selectedCount?.tpi != null && { tpi: parseFloat(selectedCount.tpi) }),
-                        ...(selectedCount?.tw_con != null && { tw_con: parseInt(selectedCount.tw_con) }),
-                        ...(selectedCount?.doff_loss != null && { doff_loss: parseFloat(selectedCount.doff_loss) }),
-                        ...(selectedCount?.waste_percent != null && { c_waste_percent: parseFloat(selectedCount.waste_percent) }),
+                        ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: prev.speed }),
                       }))
                     }}
                     placeholder="Select count..."
@@ -1044,7 +1252,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               Are you sure you want to remove {selectedRows.length} machine(s)?
             </p>
             <p className="text-sm text-red-600">
-              This will deactivate the machines in the master table. They can be reactivated later if needed.
+              This removes the selected machines only from this date and shift. Machine Master and other entries are unchanged.
             </p>
           </div>
           <DialogFooter>

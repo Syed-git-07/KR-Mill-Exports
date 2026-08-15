@@ -23,6 +23,20 @@ const tpiEntrySchema = z.object({
 export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
   const [counts, setCounts] = useState([]);
   const [selectedCount, setSelectedCount] = useState(initialData?.spinning_count_id || '');
+  const defaultValues = initialData
+    ? {
+        ...initialData,
+        entry_date: initialData.entry_date
+          ? format(new Date(initialData.entry_date), 'yyyy-MM-dd')
+          : format(new Date(), 'yyyy-MM-dd'),
+      }
+    : {
+        entry_date: format(new Date(), 'yyyy-MM-dd'),
+        spinning_count_id: '',
+        tpi_value: 0,
+        shift: null,
+        remarks: null,
+      };
 
   const {
     register,
@@ -31,13 +45,7 @@ export default function TPIEntryForm({ initialData, onSubmit, isLoading }) {
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(tpiEntrySchema),
-    defaultValues: initialData || {
-      entry_date: format(new Date(), 'yyyy-MM-dd'),
-      spinning_count_id: '',
-      tpi_value: 0,
-      shift: null,
-      remarks: null,
-    },
+    defaultValues,
   });
 
   useEffect(() => {

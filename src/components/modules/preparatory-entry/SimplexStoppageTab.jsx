@@ -455,7 +455,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges,
     refreshData: () => loadData({ force: true })
@@ -565,7 +565,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
           {stoppageData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

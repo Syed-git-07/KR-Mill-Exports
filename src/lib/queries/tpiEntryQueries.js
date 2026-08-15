@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * TPI Entry CRUD Operations
@@ -110,63 +111,11 @@ export async function deleteTPIEntry(id) {
 // Search TPI entries by entry_id (VB6 style - search by id)
 export async function searchTPIEntries(field, condition, value) {
   try {
-    let where = {}
-
-    if (value && value.trim() !== '') {
-      const numValue = parseFloat(value)
-      const isNumber = !isNaN(numValue)
-
-      switch (condition) {
-        case 'Like':
-          if (!isNumber) {
-            // MySQL doesn't support mode: 'insensitive', string comparisons are case-insensitive by default
-            where[field] = {
-              contains: value
-            }
-          } else {
-            where[field] = numValue
-          }
-          break
-        case 'Equal':
-        case '=':
-          if (isNumber) {
-            where[field] = numValue
-          } else {
-            where[field] = value
-          }
-          break
-        case 'Not Equal':
-          if (isNumber) {
-            where[field] = {
-              not: numValue
-            }
-          } else {
-            where[field] = {
-              not: value
-            }
-          }
-          break
-        case 'Greater':
-          if (isNumber) {
-            where[field] = {
-              gt: numValue
-            }
-          }
-          break
-        case 'Less':
-          if (isNumber) {
-            where[field] = {
-              lt: numValue
-            }
-          }
-          break
-        default:
-          // MySQL doesn't support mode: 'insensitive', string comparisons are case-insensitive by default
-          where[field] = {
-            contains: value
-          }
-      }
-    }
+    const where = buildTypedSearchWhere(field, condition, value, {
+      entry_id: 'number',
+      entry_date: 'date',
+      tpi_value: 'number'
+    })
 
     const data = await prisma.tpi_entries.findMany({
       where,

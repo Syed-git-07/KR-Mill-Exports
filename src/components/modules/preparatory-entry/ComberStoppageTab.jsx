@@ -455,11 +455,12 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -468,7 +469,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
         return updateComberStoppageEntryAction(rowId, persistedChanges)
       })
@@ -476,7 +477,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
       const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Comber stoppage row')
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved successfully')
@@ -518,7 +519,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])
@@ -627,7 +628,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
           {stoppageData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

@@ -21,8 +21,6 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
 
   const tablePrefix = dept.table
 
-  console.log(`[${departmentCode}] Querying employee performance...`)
-
   // Query production headers within date range
   const headers = await prisma[`${tablePrefix}_production_header`].findMany({
     where: {
@@ -38,7 +36,6 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
   })
 
   if (headers.length === 0) {
-    console.log(`[${departmentCode}] No headers found`)
     return []
   }
 
@@ -56,15 +53,19 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
       employee_name: {
         not: null
       }
+    },
+    select: {
+      employee_name: true,
+      act_prodn: true,
+      [effiField]: true,
+      uti_percent: true,
+      waste_percent: true
     }
   })
 
   if (details.length === 0) {
-    console.log(`[${departmentCode}] No employee data found`)
     return []
   }
-
-  console.log(`[${departmentCode}] Found ${details.length} production records`)
 
   // Aggregate by employee
   const employeeMap = {}
@@ -108,8 +109,6 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
   // Sort by production descending
   employees.sort((a, b) => b.productionKgs - a.productionKgs)
 
-  console.log(`[${departmentCode}] Aggregated ${employees.length} employees`)
-  
   return employees
 }
 
@@ -117,10 +116,6 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
  * Generate Preparatory Sider Performance Report
  */
 export async function generatePreparatorySiderPerformanceReport(fromDate, toDate) {
-  console.log('Generating Preparatory Sider Performance Report...')
-  console.log('  Period From:', fromDate.toISOString())
-  console.log('  Period To:', toDate.toISOString())
-
   const reportData = {
     period: {
       from: fromDate.toISOString(),
@@ -131,11 +126,16 @@ export async function generatePreparatorySiderPerformanceReport(fromDate, toDate
 
   let totalEmployees = 0
 
-  // Process all departments
-  for (const dept of Object.values(DEPARTMENTS)) {
-    console.log(`Processing ${dept.name}...`)
+  const departments = Object.values(DEPARTMENTS)
+  const results = await Promise.all(
+    departments.map(async (dept) => ({
+      dept,
+      employees: await getDepartmentEmployeePerformance(dept.code, fromDate, toDate)
+    }))
+  )
 
-    const employees = await getDepartmentEmployeePerformance(dept.code, fromDate, toDate)
+  // Process all departments in the original display order.
+  for (const { dept, employees } of results) {
 
     if (employees.length > 0) {
       reportData.departments[dept.name] = {
@@ -145,6 +145,5 @@ export async function generatePreparatorySiderPerformanceReport(fromDate, toDate
     }
   }
 
-  console.log(`Report generation complete! Total employees: ${totalEmployees}`)
   return reportData
 }

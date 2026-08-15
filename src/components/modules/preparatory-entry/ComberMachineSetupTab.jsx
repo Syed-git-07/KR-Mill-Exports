@@ -24,7 +24,6 @@ import {
   removeComberMachineAction,
   getComberMachinesAction,
   getComberCountOptionsAction,
-  bulkUpdateComberMachineCountAction,
   getComberShiftConfigurationAction
 } from '@/app/actions/comber-entry'
 import { lookupComberMachineByNoAction } from '@/app/actions/comber-machine'
@@ -225,7 +224,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -234,7 +234,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => 
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
         updateComberMachineSetupAction(rowId, changes)
       )
 
@@ -242,7 +242,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Machine setups saved successfully')
@@ -281,7 +281,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])
@@ -340,6 +340,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     setIsSaving(true)
     try {
       const result = await addComberMachineAction({
+        headerId,
         machine_no: newMachine.machine_no,
         description: newMachine.description || newMachine.machine_no,
         make_name: newMachine.make_name,
@@ -354,7 +355,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         shift
       })
       if (!result.success) throw new Error(result.error)
-      toast.success(result.data?.reactivated ? 'Machine reactivated successfully' : 'New machine added successfully')
+      toast.success(result.data?.reactivated ? 'Machine added back to this entry' : 'Machine added to this entry')
       setShowAddDialog(false)
       setAddCountSearch('')
       setShowAddCountDrop(false)
@@ -392,7 +393,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const promises = selectedRows.map(id => removeComberMachineAction(id))
+      const promises = selectedRows.map(id => removeComberMachineAction(id, headerId))
       const results = await Promise.all(promises)
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
@@ -424,23 +425,14 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       return
     }
 
-    setIsSaving(true)
-    try {
-      const result = await bulkUpdateComberMachineCountAction(selectedRows, countToSet, headerId)
-      if (!result.success) throw new Error(result.error)
-      toast.success(`Count updated for ${selectedRows.length} machine(s)`)
-      setShowCountChangeDialog(false)
-      setNewCount('')
-      setCustomCount('')
-      setSelectedRows([])
-      await loadData()
-      onRefresh?.()
-    } catch (error) {
-      console.error('Error changing count:', error)
-      toast.error('Failed to change count')
-    } finally {
-      setIsSaving(false)
-    }
+    setupData
+      .filter(row => selectedRows.includes(row.machine_id))
+      .forEach(row => handleInputChange(row.id, 'prodn_mixing', countToSet))
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setShowCountChangeDialog(false)
+    setNewCount('')
+    setCustomCount('')
+    setSelectedRows([])
   }
 
   if (isLoading) {
@@ -460,7 +452,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
@@ -606,7 +598,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
           onClick={() => setShowAddDialog(true)}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Add new machine
+          Add Master machine
         </Button>
         <Button 
           variant="outline"
@@ -623,8 +615,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add New Machine</DialogTitle>
-            <DialogDescription>Add a new comber machine configuration</DialogDescription>
+            <DialogTitle>Add Master Machine to Entry</DialogTitle>
+            <DialogDescription>Look up an existing Comber Machine Master record for this entry.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">

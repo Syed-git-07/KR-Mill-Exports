@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageReportQueries'
@@ -19,12 +21,9 @@ function normalizeDate(dateString) {
  * @returns {Promise<Object>} Report data with stoppage details by category
  */
 export async function generateSpinningStoppageReportAction(selectedDate) {
+  await requireUser()
   try {
     const normalizedDate = normalizeDate(selectedDate)
-    
-    console.log('Spinning Stoppage Report requested:')
-    console.log('  Original date:', selectedDate)
-    console.log('  Normalized date:', normalizedDate.toISOString())
     
     const reportData = await generateSpinningStoppageReport(normalizedDate)
     

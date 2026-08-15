@@ -1,4 +1,38 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
+
+const machineCountSelect = { id: true, count_name: true };
+
+function flattenMachineCount(machine) {
+  if (!machine) return machine;
+  const { spinning_counts: selectedCount, ...data } = machine;
+  return {
+    ...data,
+    count_id: selectedCount?.id ?? data.count_id ?? null,
+    count: selectedCount?.count_name ?? data.count ?? null,
+    count_name: selectedCount?.count_name ?? data.count ?? null
+  };
+}
+
+async function resolveActiveCount(db, countId) {
+  if (!countId) return null;
+  const count = await db.spinning_counts.findUnique({
+    where: { id: countId },
+    select: { id: true, count_name: true, is_active: true, autoconer_active: true }
+  });
+  if (!count?.is_active || !count?.autoconer_active) {
+    throw new Error('Selected count is not enabled for Autoconer');
+  }
+  return count;
+}
+
+export async function getAutoconerCounts() {
+  return prisma.spinning_counts.findMany({
+    where: { is_active: true, autoconer_active: true },
+    select: { id: true, count_name: true },
+    orderBy: { count_name: 'asc' }
+  });
+}
 
 /**
  * Autoconer Machine Master CRUD Operations
@@ -6,7 +40,10 @@ import { prisma } from '../prisma';
 
 // Get all autoconer machines - sorted by group_id then machine number (active only)
 export async function getAutoconerMachines() {
-  const data = await prisma.autoconer_machines.findMany({});
+  const rows = await prisma.autoconer_machines.findMany({
+    include: { spinning_counts: { select: machineCountSelect } }
+  });
+  const data = rows.map(flattenMachineCount);
   
   // Sort: active first, then by group_id, then machine_no naturally
   if (data) {
@@ -56,89 +93,39 @@ export async function getNextMcId() {
   return data && data.mc_id ? data.mc_id + 1 : 1;
 }
 
-// Create new autoconer machine (with setup and add to existing headers)
+// Create a machine master record. Dated setup snapshots are initialized only
+// when a production entry is created or the machine is added to that entry.
 export async function createAutoconerMachine(machineData) {
+  const processedData = { ...machineData };
   // Auto-generate mc_id if not provided
-  if (!machineData.mc_id) {
-    machineData.mc_id = await getNextMcId();
+  if (!processedData.mc_id) {
+    processedData.mc_id = await getNextMcId();
   }
 
   // Convert date string to Date object if it exists
-  const processedData = { ...machineData };
   if (processedData.installed_date && typeof processedData.installed_date === 'string') {
     processedData.installed_date = new Date(processedData.installed_date);
   }
+  const selectedCount = await resolveActiveCount(prisma, processedData.count_id);
+  processedData.count = selectedCount?.count_name ?? null;
+  processedData.speed = null;
+  processedData.act_effi = null;
   // Set activated_at to today when creating a new machine
   processedData.activated_at = new Date();
 
   try {
     const newMachine = await prisma.autoconer_machines.create({
-      data: processedData
+      data: processedData,
+      include: { spinning_counts: { select: machineCountSelect } }
     });
 
-    // NOTE: Machine setup and production entries are NOT created here.
-    // They are only created when the machine is explicitly added via the
-    // Machine Setup tab in the production entry page.
+    // No dated rows are changed here. Future entries initialize this master;
+    // an explicit add in Machine Setup can attach it to the current entry.
 
-    return newMachine;
+    return flattenMachineCount(newMachine);
   } catch (error) {
     console.error('Prisma error creating autoconer machine:', error);
     throw new Error(error.message || 'Failed to create autoconer machine');
-  }
-}
-
-// Helper function to add machine to existing production headers
-async function addMachineToExistingProductionHeaders(machineId, machineData) {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  // Get existing production headers
-  const headers = await prisma.autoconer_production_header.findMany({
-    where: {
-      entry_date: { gte: sevenDaysAgo }
-    },
-    select: { id: true }
-  });
-
-  if (!headers || headers.length === 0) return;
-
-  for (const header of headers) {
-    // Check if already exists
-    const existing = await prisma.autoconer_production_detail.findFirst({
-      where: {
-        header_id: header.id,
-        machine_id: machineId
-      }
-    });
-
-    if (existing) continue;
-
-    // Create production detail
-    try {
-      const detail = await prisma.autoconer_production_detail.create({
-        data: {
-          header_id: header.id,
-          machine_id: machineId,
-          count_name: machineData?.count_name || null,
-          count_id: machineData?.count_id || null,
-          session_no: 1,
-          work_time: 510,
-          total_stoppage_mins: 0
-        }
-      });
-
-      // Create stoppage entry
-      await prisma.autoconer_stoppage_entry.create({
-        data: {
-          production_detail_id: detail.id,
-          run_time: 510,
-          total_stoppage_time: 0
-        }
-      });
-    } catch (detailError) {
-      console.error('Error creating production detail:', detailError);
-      continue;
-    }
   }
 }
 
@@ -148,6 +135,10 @@ export async function updateAutoconerMachine(id, machineData) {
   const processedData = { ...machineData };
   if (processedData.installed_date && typeof processedData.installed_date === 'string') {
     processedData.installed_date = new Date(processedData.installed_date);
+  }
+  if (Object.hasOwn(processedData, 'count_id')) {
+    const selectedCount = await resolveActiveCount(prisma, processedData.count_id);
+    processedData.count = selectedCount?.count_name ?? null;
   }
   
   const existing = await prisma.autoconer_machines.findUnique({ where: { id } });
@@ -175,15 +166,24 @@ export async function updateAutoconerMachine(id, machineData) {
       data: { is_active: false, deactivated_at: revisionTime }
     });
 
-    const { id: _id, created_at: _createdAt, updated_at: _updatedAt, ...oldValues } = existing;
+    const {
+      id: _id,
+      active_machine_no: _activeMachineNo,
+      created_at: _createdAt,
+      updated_at: _updatedAt,
+      ...oldValues
+    } = existing;
     return tx.autoconer_machines.create({
       data: {
         ...oldValues,
         ...processedData,
+        speed: null,
+        act_effi: null,
         is_active: true,
         activated_at: revisionTime,
         deactivated_at: null
-      }
+      },
+      include: { spinning_counts: { select: machineCountSelect } }
     });
   });
 }
@@ -199,69 +199,15 @@ export async function deleteAutoconerMachine(id) {
 
 // Search autoconer machines (active only)
 export async function searchAutoconerMachines(field, condition, value) {
-  // Define numeric fields for proper type conversion
-  const numericFields = ['mc_id', 'group_id', 'from_drum', 'to_drum', 'no_of_drums', 'act_effi'];
-  const decimalFields = ['speed'];
-  const booleanFields = ['is_active', 'direct_prod_entry'];
-  const dateFields = ['installed_date'];
-
-  let whereClause = {};
-
-  if (value && value.trim() !== '') {
-    switch (condition) {
-      case 'Like':
-        // MySQL doesn't support mode: 'insensitive', but string comparisons are case-insensitive by default
-        whereClause[field] = { contains: value };
-        break;
-      case 'Equal':
-        if (numericFields.includes(field)) {
-          whereClause[field] = parseInt(value);
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = parseFloat(value);
-        } else if (booleanFields.includes(field)) {
-          whereClause[field] = value.toLowerCase() === 'true' || value.toLowerCase() === 'yes';
-        } else if (dateFields.includes(field)) {
-          whereClause[field] = new Date(value);
-        } else {
-          whereClause[field] = value;
-        }
-        break;
-      case 'Not Equal':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { not: parseInt(value) };
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = { not: parseFloat(value) };
-        } else if (booleanFields.includes(field)) {
-          whereClause[field] = { not: value.toLowerCase() === 'true' || value.toLowerCase() === 'yes' };
-        } else {
-          whereClause[field] = { not: value };
-        }
-        break;
-      case 'Greater':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { gt: parseInt(value) };
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = { gt: parseFloat(value) };
-        } else if (dateFields.includes(field)) {
-          whereClause[field] = { gt: new Date(value) };
-        }
-        break;
-      case 'Less':
-        if (numericFields.includes(field)) {
-          whereClause[field] = { lt: parseInt(value) };
-        } else if (decimalFields.includes(field)) {
-          whereClause[field] = { lt: parseFloat(value) };
-        } else if (dateFields.includes(field)) {
-          whereClause[field] = { lt: new Date(value) };
-        }
-        break;
-    }
-  }
+  const whereClause = buildTypedSearchWhere(field, condition, value, {
+    machine_no: 'text', description: 'text', make_name: 'text'
+  });
 
   const data = await prisma.autoconer_machines.findMany({
     where: whereClause,
-    orderBy: { machine_no: 'asc' }
+    orderBy: { machine_no: 'asc' },
+    include: { spinning_counts: { select: machineCountSelect } }
   });
   
-  return data;
+  return data.map(flattenMachineCount);
 }

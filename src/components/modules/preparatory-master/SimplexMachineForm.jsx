@@ -6,6 +6,7 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import MachineActiveStatus from '@/components/modules/masters/MachineActiveStatus';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
 
@@ -353,9 +354,11 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
   }, [countName, resolveCountOption, setValue]);
 
   const handleFormSubmit = (data) => {
+    const { count_name, ...formValues } = data;
+
     // Clean up the data - convert empty strings to null for numeric fields
     const cleanedData = {
-      ...data,
+      ...formValues,
       speed: data.speed === '' ? null : Number(data.speed),
       prodn_effi: data.prodn_effi === '' ? null : Number(data.prodn_effi),
       tpi: data.tpi === '' ? null : Number(data.tpi),                        // NEW
@@ -363,8 +366,8 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
       installed_date: data.installed_date || null,
       make_name: data.make_name || null,
       model: data.model || null,
-      prodn_mixing: data.count_name || null,
-      count_tpi: resolveCountOption(data.count_name)?.tpi ?? null,
+      prodn_mixing: count_name || null,
+      count_tpi: resolveCountOption(count_name)?.tpi ?? null,
     };
     onSubmit(cleanedData);
   };
@@ -563,15 +566,7 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
 
       {/* Row 5: Checkboxes */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="is_active"
-            checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
-            disabled={isLoading}
-          />
-          <Label htmlFor="is_active" className="cursor-pointer">Is Active</Label>
-        </div>
+        <MachineActiveStatus isActive={isActive} />
 
         <div className="flex items-center space-x-2">
           <Checkbox

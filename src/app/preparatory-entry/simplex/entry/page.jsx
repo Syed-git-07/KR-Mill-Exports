@@ -33,6 +33,7 @@ import {
 
 import SimplexProductionTab from '@/components/modules/preparatory-entry/SimplexProductionTab'
 import SimplexStoppageTab from '@/components/modules/preparatory-entry/SimplexStoppageTab'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
 import SimplexMachineSetupTab from '@/components/modules/preparatory-entry/SimplexMachineSetupTab'
 
 function SimplexEntryContent() {
@@ -58,10 +59,12 @@ function SimplexEntryContent() {
     stoppage: {},
     setup: {}
   })
+  const sharedDraftsRef = useRef(sharedDrafts)
 
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
+  const saveInFlightRef = useRef(false)
 
   // Load supervisors
   useEffect(() => {
@@ -166,21 +169,29 @@ function SimplexEntryContent() {
     loadProductionHeader()
   }, [loadProductionHeader])
 
-  const clearSharedDrafts = useCallback(() => {
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const replaceAllDrafts = useCallback((next) => {
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
   }, [])
+
+  const clearSharedDrafts = useCallback(() => {
+    replaceAllDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+  }, [replaceAllDrafts])
 
   const setProductionDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, production: updates || {} }))
-  }, [])
+    const next = { ...sharedDraftsRef.current, production: updates || {} }
+    replaceAllDrafts(next)
+  }, [replaceAllDrafts])
 
   const setStoppageDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, stoppage: updates || {} }))
-  }, [])
+    const next = { ...sharedDraftsRef.current, stoppage: updates || {} }
+    replaceAllDrafts(next)
+  }, [replaceAllDrafts])
 
   const setSetupDraftEdits = useCallback((updates) => {
-    setSharedDrafts(prev => ({ ...prev, setup: updates || {} }))
-  }, [])
+    const next = { ...sharedDraftsRef.current, setup: updates || {} }
+    replaceAllDrafts(next)
+  }, [replaceAllDrafts])
 
   const editedCounts = {
     header: Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0,
@@ -189,13 +200,26 @@ function SimplexEntryContent() {
     setup: Object.keys(sharedDrafts.setup || {}).length
   }
   const totalEditedCount = editedCounts.header + editedCounts.production + editedCounts.stoppage + editedCounts.setup
+  const getUnsavedEditCount = useCallback(() => {
+    const drafts = sharedDraftsRef.current
+    const sharedCount =
+      (Object.keys(drafts.header || {}).length > 0 ? 1 : 0) +
+      Object.keys(drafts.production || {}).length +
+      Object.keys(drafts.stoppage || {}).length +
+      Object.keys(drafts.setup || {}).length
+    if (sharedCount > 0) return sharedCount
+    return [productionTabRef.current, stoppageTabRef.current, setupTabRef.current]
+      .reduce((sum, tab) => sum + (tab?.getEditedCount?.() || 0), 0)
+  }, [])
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
 
   const confirmUnsavedDiscard = useCallback((actionLabel) => {
-    if (totalEditedCount === 0) return true
+    const unsavedCount = getUnsavedEditCount()
+    if (unsavedCount === 0) return true
     return window.confirm(
-      `You have ${totalEditedCount} unsaved row change(s). ${actionLabel} will discard them. Continue?`
+      `You have ${unsavedCount} unsaved row change(s). ${actionLabel} will discard them. Continue?`
     )
-  }, [totalEditedCount])
+  }, [getUnsavedEditCount])
 
   const discardAllTabChanges = useCallback(async () => {
     await Promise.all([
@@ -207,25 +231,26 @@ function SimplexEntryContent() {
   }, [clearSharedDrafts])
 
   const handleBackToList = useCallback(async () => {
-    if (totalEditedCount > 0 && !confirmUnsavedDiscard('Going back to list')) return
-    if (totalEditedCount > 0) await discardAllTabChanges()
+    const unsavedCount = getUnsavedEditCount()
+    if (unsavedCount > 0 && !confirmUnsavedDiscard('Going back to list')) return
+    if (unsavedCount > 0) await discardAllTabChanges()
     router.push('/preparatory-entry/simplex')
-  }, [router, totalEditedCount, confirmUnsavedDiscard, discardAllTabChanges])
+  }, [router, getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges])
 
   const handleDateChange = useCallback(async (newDate) => {
     if (!newDate) return
     if (newDate.toDateString() === date.toDateString()) return
     if (!confirmUnsavedDiscard('Changing date')) return
-    if (totalEditedCount > 0) await discardAllTabChanges()
+    if (getUnsavedEditCount() > 0) await discardAllTabChanges()
     setDate(newDate)
-  }, [date, totalEditedCount, confirmUnsavedDiscard, discardAllTabChanges])
+  }, [date, getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges])
 
   const handleShiftChange = useCallback(async (newShift) => {
     if (newShift === shift) return
     if (!confirmUnsavedDiscard('Changing shift')) return
-    if (totalEditedCount > 0) await discardAllTabChanges()
+    if (getUnsavedEditCount() > 0) await discardAllTabChanges()
     setShift(newShift)
-  }, [shift, totalEditedCount, confirmUnsavedDiscard, discardAllTabChanges])
+  }, [shift, getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges])
 
   // Initialize new production entry
   const handleInitialize = async () => {
@@ -273,10 +298,8 @@ function SimplexEntryContent() {
   const handleSupervisorChange = (value) => {
     setSupervisorId(value)
     if (headerId) {
-      setSharedDrafts(prev => ({
-        ...prev,
-        header: { ...prev.header, supervisor_id: value || null }
-      }))
+      const current = sharedDraftsRef.current
+      replaceAllDrafts({ ...current, header: { ...current.header, supervisor_id: value || null } })
     }
   }
 
@@ -284,17 +307,15 @@ function SimplexEntryContent() {
   const handleMaisitryChange = (value) => {
     setMaisitryId(value)
     if (headerId) {
-      setSharedDrafts(prev => ({
-        ...prev,
-        header: { ...prev.header, maisitry_id: value || null }
-      }))
+      const current = sharedDraftsRef.current
+      replaceAllDrafts({ ...current, header: { ...current.header, maisitry_id: value || null } })
     }
   }
 
   // Refresh data
   const handleRefresh = useCallback(async () => {
     if (!confirmUnsavedDiscard('Refreshing')) return
-    if (totalEditedCount > 0) await discardAllTabChanges()
+    if (getUnsavedEditCount() > 0) await discardAllTabChanges()
 
     await loadProductionHeader()
     await Promise.all([
@@ -303,30 +324,40 @@ function SimplexEntryContent() {
       setupTabRef.current?.refreshData?.() || Promise.resolve()
     ])
     loadMachineSetups()
-  }, [confirmUnsavedDiscard, totalEditedCount, discardAllTabChanges, loadProductionHeader])
+  }, [confirmUnsavedDiscard, getUnsavedEditCount, discardAllTabChanges, loadProductionHeader])
 
   const handleSaveAllChanges = useCallback(async () => {
-    if (totalEditedCount === 0) {
+    if (!headerId || saveInFlightRef.current) return
+    const livePendingCount = getUnsavedEditCount()
+    if (livePendingCount === 0) {
       toast.info('No changes to save')
       return
     }
 
+    const draftsAtSaveStart = sharedDraftsRef.current
+    const liveEditedCounts = {
+      header: Object.keys(draftsAtSaveStart.header || {}).length > 0 ? 1 : 0,
+      production: Object.keys(draftsAtSaveStart.production || {}).length,
+      stoppage: Object.keys(draftsAtSaveStart.stoppage || {}).length,
+      setup: Object.keys(draftsAtSaveStart.setup || {}).length
+    }
+    saveInFlightRef.current = true
     setIsSavingAll(true)
     try {
-      if (editedCounts.header > 0) {
-        const headerResult = await updateSimplexProductionHeaderAction(headerId, sharedDrafts.header)
+      if (liveEditedCounts.header > 0) {
+        const headerResult = await updateSimplexProductionHeaderAction(headerId, draftsAtSaveStart.header)
         if (!headerResult?.success) {
           throw new Error(headerResult?.error || 'Failed to update entry header')
         }
       }
 
-      const hasDependentProductionChanges = editedCounts.setup > 0 || editedCounts.stoppage > 0
+      const hasDependentProductionChanges = liveEditedCounts.setup > 0 || liveEditedCounts.stoppage > 0
       const tabSaves = [
-        { key: 'Machine Setup', count: editedCounts.setup, ref: setupTabRef.current },
-        { key: 'Stoppage', count: editedCounts.stoppage, ref: stoppageTabRef.current },
+        { key: 'Machine Setup', count: liveEditedCounts.setup, ref: setupTabRef.current },
+        { key: 'Stoppage', count: liveEditedCounts.stoppage, ref: stoppageTabRef.current },
         {
           key: 'Production',
-          count: editedCounts.production + (hasDependentProductionChanges ? 1 : 0),
+          count: liveEditedCounts.production + (hasDependentProductionChanges ? 1 : 0),
           ref: productionTabRef.current
         }
       ].filter(tab => tab.count > 0)
@@ -339,7 +370,7 @@ function SimplexEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         })
 
         if (result?.success) {
@@ -354,27 +385,25 @@ function SimplexEntryContent() {
       }
 
       if (failures.length > 0) {
-        toast.error(`Failed to save: ${failures.join(', ')}`)
+        replaceAllDrafts(draftsAtSaveStart)
+        toast.error(`Update incomplete for ${failures.join(', ')}. Your drafts were retained; click Update to retry.`)
       } else {
+        clearSharedDrafts()
         router.push('/preparatory-entry/simplex')
         return
       }
-
-      await Promise.all([
-        productionTabRef.current?.refreshData?.() || Promise.resolve(),
-        stoppageTabRef.current?.refreshData?.() || Promise.resolve(),
-        setupTabRef.current?.refreshData?.() || Promise.resolve()
-      ])
     } catch (error) {
+      replaceAllDrafts(draftsAtSaveStart)
       console.error('Error saving all changes:', error)
-      toast.error('Failed to save all changes')
+      toast.error('Update failed. Your unsaved drafts were retained.')
     } finally {
+      saveInFlightRef.current = false
       setIsSavingAll(false)
     }
-  }, [totalEditedCount, editedCounts, router])
+  }, [getUnsavedEditCount, headerId, router, replaceAllDrafts, clearSharedDrafts])
 
   const handleCancelAllChanges = useCallback(async () => {
-    if (totalEditedCount === 0) {
+    if (getUnsavedEditCount() === 0) {
       toast.info('No unsaved changes to discard')
       return
     }
@@ -383,7 +412,7 @@ function SimplexEntryContent() {
     await discardAllTabChanges()
     await loadProductionHeader()
     toast.success('Unsaved changes discarded')
-  }, [totalEditedCount, confirmUnsavedDiscard, discardAllTabChanges])
+  }, [getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges, loadProductionHeader])
 
   return (
     <div className="container mx-auto p-6 space-y-4">
@@ -429,6 +458,7 @@ function SimplexEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="simplex_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>

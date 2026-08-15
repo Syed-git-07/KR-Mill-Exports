@@ -1,4 +1,5 @@
 import { logger } from "@/lib/security/logger";
+import { ZodError } from "zod";
 
 const SAFE_DATABASE_ERRORS = {
   P2002: "A record with this value already exists.",
@@ -14,6 +15,9 @@ export function safeActionError(error) {
 
   if (SAFE_DATABASE_ERRORS[error?.code]) {
     return SAFE_DATABASE_ERRORS[error.code];
+  }
+  if (error instanceof ZodError) {
+    return error.issues[0]?.message || "The submitted data is invalid.";
   }
   if (process.env.NODE_ENV === "development") {
     return error instanceof Error ? error.message : "The request failed.";

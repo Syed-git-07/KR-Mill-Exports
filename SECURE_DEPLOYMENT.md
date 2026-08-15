@@ -10,10 +10,16 @@ SHA-256 digests.
 - Use a currently supported Node.js LTS release.
 - Run MySQL on a private interface and use a dedicated, least-privilege database
   account. Do not use the MySQL root account.
+- If MySQL is on another computer, require TLS with certificate validation in
+  addition to private networking and firewall restrictions.
 - Put the application behind Apache, nginx, IIS, or another reverse proxy that
   terminates HTTPS. Redirect all HTTP traffic to HTTPS.
-- Copy `.env.example` to `.env` on the server and replace every placeholder.
-  Never commit or copy a development `.env` into source control.
+- After extracting the GitHub source ZIP, copy `.env.example` to `.env` on the
+  server and replace every placeholder. Create `.env.local` only when a setting
+  must intentionally override `.env`; Next.js gives `.env.local` higher
+  priority. Never add either file to the ZIP or source control.
+- Restrict `.env` and `.env.local` with operating-system permissions so only
+  administrators and the application service account can read them.
 - Set `AUTH_TRUSTED_ORIGINS` to the exact external HTTPS origin. Multiple
   origins are comma-separated.
 - Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before building. This value
@@ -29,6 +35,7 @@ SHA-256 digests.
 npm ci
 npx prisma generate
 npx prisma migrate deploy
+npm run security:check
 npm run user:create -- --username admin --name "System Administrator" --role ADMIN
 npm run build
 ```
@@ -41,12 +48,14 @@ the additive authentication SQL and record it:
 ```powershell
 npx prisma db execute --file prisma/migrations/20260730_auth_audit_logging/migration.sql --schema prisma/schema.prisma
 npx prisma migrate resolve --applied 20260730_auth_audit_logging
+npx prisma migrate deploy
 npx prisma migrate status
 ```
 
-The SQL creates only `app_users`, `auth_sessions`, `login_attempts`, and
-`audit_logs`. Do not run it if any of those tables already exist. Later releases
-use `npx prisma migrate deploy` normally.
+The manually executed SQL creates only `app_users`, `auth_sessions`,
+`login_attempts`, and `audit_logs`. Do not run it if any of those tables already
+exist. The following `migrate deploy` installs the additive performance indexes;
+later releases use `npx prisma migrate deploy` normally.
 
 The user-creation command prompts for the temporary password without placing it
 in command history. The user must change that password at first sign-in. Add
@@ -124,6 +133,7 @@ Before each update:
 ```powershell
 npm ci
 npm audit --omit=dev
+npm run security:check
 npm test
 npm run lint
 npm run build

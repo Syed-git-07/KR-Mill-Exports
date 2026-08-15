@@ -11,8 +11,6 @@ import { prisma } from '../prisma'
  * @returns {Promise<Object>} Report data grouped by shift
  */
 export async function generateAutoconerLowEfficiencyReport(selectedDate) {
-  console.log('Generating Autoconer Low Efficiency Report for:', selectedDate)
-
   // Get production headers for the selected date
   const headers = await prisma.autoconer_production_header.findMany({
     where: {
@@ -24,7 +22,6 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
   })
 
   if (headers.length === 0) {
-    console.log('No data found for the selected date')
     return {
       date: selectedDate,
       shifts: []
@@ -44,34 +41,32 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
   })
 
   if (details.length === 0) {
-    console.log('No production details found')
     return {
       date: selectedDate,
       shifts: []
     }
   }
 
-  // Get all unique count names to fetch spinning counts
-  const countNames = [...new Set(details.map(d => d.count_name).filter(c => c !== null))]
-
-  // Get spinning counts data for act_count (actual efficiency target)
-  const spinningCounts = await prisma.spinning_counts.findMany({
+  // Efficiency targets are entry snapshots. Reading the current Count Master here
+  // would retroactively change historical reports after a master edit.
+  const machineIds = [...new Set(details.map(d => d.machine_id))]
+  const setups = await prisma.autoconer_machine_setup.findMany({
     where: {
-      count_name: {
-        in: countNames
-      },
-      is_active: true
+      entry_date: selectedDate,
+      machine_id: { in: machineIds },
+      shift: { in: headers.map(header => header.shift) }
+    },
+    select: {
+      machine_id: true,
+      shift: true,
+      target_effi: true
     }
   })
 
-  // Create spinning count lookup map
-  const spinningCountMap = {}
-  spinningCounts.forEach(sc => {
-    spinningCountMap[sc.count_name] = parseFloat(sc.act_count) || 0
+  const setupTargetMap = new Map()
+  setups.forEach(setup => {
+    setupTargetMap.set(`${setup.machine_id}:${setup.shift}`, Number(setup.target_effi) || 0)
   })
-
-  // Get all machine IDs
-  const machineIds = [...new Set(details.map(d => d.machine_id))]
 
   // Get machine information (machine_no, no_of_drums for efficiency calculation)
   const machines = await prisma.autoconer_machines.findMany({
@@ -127,8 +122,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         const machine = machineMap[detail.machine_id]
         if (!machine) return null
 
-        // Get act_count from spinning_counts based on count_name
-        const actCount = spinningCountMap[detail.count_name] || 0
+        const targetEfficiency = setupTargetMap.get(`${detail.machine_id}:${header.shift}`) || 0
         
         // Calculate prodn_effi on the fly if it's 0.00 or not set (backward compatibility)
         let shiftEffi = parseFloat(detail.prodn_effi) || 0
@@ -149,16 +143,16 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
           shiftEffi = parseFloat(shiftEffi.toFixed(2))
         }
 
-        // Only include if target count is set
-        if (actCount > 0) {
+        // Only include if an entry-level target is set.
+        if (targetEfficiency > 0) {
           return {
             machine_no: machine.machine_no,
             sider_name: detail.emp_name || 'NIL',
             count: detail.count_name || '',
-            act_effi: actCount,  // Act Effi (target count from spinning_counts)
+            act_effi: targetEfficiency,
             shift_effi: shiftEffi,  // Shift Effi % (actual efficiency percentage)
             red_light: parseFloat(detail.red_light) || 0,
-            is_low_efficiency: shiftEffi < actCount  // Flag for color coding (red if below, green if above)
+            is_low_efficiency: shiftEffi < targetEfficiency
           }
         }
         return null
@@ -177,8 +171,6 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
       })
     }
   })
-
-  console.log(`Found ${shiftData.length} shifts with low efficiency machines`)
 
   return {
     date: selectedDate,

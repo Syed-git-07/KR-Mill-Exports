@@ -24,9 +24,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
+import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 import {
   getAutoconerMachineSetupsAction,
-  updateAutoconerMachineSetupAction,
+  batchUpdateAutoconerMachineSetupsAction,
   upsertAutoconerMachineSetupAction,
   getSpinningCountsAction,
   getAutoconerMachinesAction,
@@ -43,6 +44,7 @@ import {
  */
 
 const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
+  headerId,
   shift = 1,
   totalTime = 510,
   onRefresh,
@@ -140,31 +142,6 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
   // Remove machine dialog
   const [removeDialog, setRemoveDialog] = useState(false)
 
-  // Helper to calculate next machine number for a group
-  const getNextMachineNoForGroup = useCallback((groupId) => {
-    if (!groupId) return ''
-    
-    // Find all machines in this group from current machines list
-    const groupMachines = machines.filter(m => m.group_id === parseInt(groupId))
-    
-    if (groupMachines.length === 0) {
-      // First machine in this group
-      return `AC${groupId}-1`
-    }
-    
-    // Find the highest sub-number in this group
-    let maxSubNum = 0
-    groupMachines.forEach(m => {
-      const match = m.machine_no?.match(/^AC(\d+)-(\d+)$/i)
-      if (match && parseInt(match[1]) === parseInt(groupId)) {
-        const subNum = parseInt(match[2])
-        if (subNum > maxSubNum) maxSubNum = subNum
-      }
-    })
-    
-    return `AC${groupId}-${maxSubNum + 1}`
-  }, [machines])
-
   // Helper to get next mc_id
   const getNextMcId = useCallback(() => {
     if (machines.length === 0) return 1
@@ -188,8 +165,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       return
     }
     const found = result.data
-    const matchedCount = counts.find(c => c.count_name === found.count)
-    const derivedActEffi = found.act_effi ?? matchedCount?.effi_actual_prodn ?? matchedCount?.auto_effi
+    const matchedCount = counts.find(c => c.id === found.count_id)
+      || counts.find(c => c.count_name === found.count)
+    const derivedActEffi = matchedCount?.effi_actual_prodn ?? matchedCount?.auto_effi
     const dateStr = found.installed_date
       ? String(found.installed_date).split('T')[0]
       : new Date().toISOString().split('T')[0]
@@ -203,9 +181,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       from_drum: found.from_drum?.toString() || '',
       to_drum: found.to_drum?.toString() || '',
       no_of_drums: found.no_of_drums?.toString() || '',
-      speed: found.speed?.toString() || '',
+      speed: matchedCount?.speed_autoconer?.toString() || '',
       count: found.count || '',
-      count_id: matchedCount?.id || '',
+      count_id: found.count_id || matchedCount?.id || '',
       count_name: found.count || '',
       act_effi: derivedActEffi != null ? derivedActEffi.toString() : '',
       installed_date: dateStr,
@@ -246,6 +224,15 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   useServerDataLoader(loadData, [shift, entryDate])
 
+  useEffect(() => {
+    const drafts = sharedDraftEdits || {}
+    if (Object.keys(drafts).length === 0) return
+    setSetupData(rows => rows.map(row => {
+      const draft = drafts[row.id] || drafts[String(row.id)]
+      return draft ? { ...row, ...draft } : row
+    }))
+  }, [sharedDraftEdits])
+
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
     const baseRow = setupData.find(row => row.id === rowId)
@@ -266,7 +253,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     ))
   }
 
-  // Handle count change for a row - includes act_count from spinning_counts
+    // A count change fully refreshes every count-controlled snapshot field.
   const handleCountChange = (rowId, countId) => {
     const count = counts.find(c => c.id === countId)
     const baseRow = setupData.find(row => row.id === rowId)
@@ -277,14 +264,12 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       [rowId]: {
         ...prev[rowId],
         ...(machineId ? { machine_id: machineId } : {}),
-        count_id: countId,
-        count_name: count?.count_name,
-        act_count: count?.act_count || 0
+        ...buildAutoconerCountSnapshot(count)
       }
     }))
 
     setSetupData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, count_id: countId, count_name: count?.count_name, act_count: count?.act_count || 0 } : row
+      row.id === rowId ? { ...row, ...buildAutoconerCountSnapshot(count) } : row
     ))
   }
 
@@ -306,7 +291,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     }
   }
 
-  // Apply count change to selected rows - includes act_count from spinning_counts
+    // Apply the full selected Count Master snapshot to selected rows.
   const handleBulkCountChange = () => {
     if (!newCountId) {
       toast.warning('Please select a count')
@@ -315,32 +300,38 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
     const count = counts.find(c => c.id === newCountId)
     
-    selectedRows.forEach(rowId => {
-      setEditedRows(prev => ({
-        ...prev,
-        [rowId]: {
-          ...prev[rowId],
-          count_id: newCountId,
-          count_name: count?.count_name,
-          act_count: count?.act_count || 0
+    const selectedIds = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      for (const row of setupData) {
+        if (!selectedIds.has(String(row.id))) continue
+        const machineId = row.machine_id ?? row.machine?.id
+        next[row.id] = {
+          ...next[row.id],
+          ...(machineId ? { machine_id: machineId } : {}),
+          ...buildAutoconerCountSnapshot(count)
         }
-      }))
+      }
+      return next
     })
 
     setSetupData(prev => prev.map(row => 
       selectedRows.includes(row.id) 
-        ? { ...row, count_id: newCountId, count_name: count?.count_name, act_count: count?.act_count || 0 } 
+        ? { ...row, ...buildAutoconerCountSnapshot(count) }
         : row
     ))
 
     setCountChangeDialog(false)
     setNewCountId('')
-    toast.success(`Count changed for ${selectedRows.length} machines`)
+    setSelectedRows([])
+    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
   }
 
   // Save all changes
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
-    if (Object.keys(editedRows).length === 0) {
+    const currentEdits = editedRowsRef.current || editedRows || {}
+    const editedIds = Object.keys(currentEdits)
+    if (editedIds.length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -349,14 +340,10 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) =>
-        updateAutoconerMachineSetupAction(rowId, changes, shift)
-      )
-
-      const results = await Promise.all(updatePromises)
-      const failed = results.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to save an Autoconer setup row')
-      const savedCount = Object.keys(editedRows).length
+      const updates = editedIds.map(id => ({ id, ...currentEdits[id] }))
+      const result = await batchUpdateAutoconerMachineSetupsAction(updates, shift)
+      if (!result?.success) throw new Error(result?.error || 'Failed to save Autoconer setups')
+      const savedCount = updates.length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Setup data saved successfully')
@@ -398,7 +385,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])
@@ -451,14 +438,10 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     }
   }
 
-  // Add brand NEW machine (creates in master table + setup)
+  // Add an existing Machine Master record to this entry snapshot.
   const handleAddNewMachine = async () => {
     if (!confirmDiscardLocalEdits()) return
 
-    if (!newMachineData.group_id) {
-      toast.warning('Please enter Group ID')
-      return
-    }
     if (!newMachineData.machine_no) {
       toast.warning('Machine number is required')
       return
@@ -475,6 +458,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       
       const result = await addAutoconerMachineAction({
         ...newMachineData,
+        headerId,
         description: newMachineData.description || newMachineData.machine_no,
         count_name: count?.count_name || null,
         mc_id: newMachineData.mc_id ? parseInt(newMachineData.mc_id) : null,
@@ -493,9 +477,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       if (!result.success) throw new Error(result.error)
       
       if (result.data.reactivated) {
-        toast.success(`Machine ${newMachineData.machine_no} reactivated successfully`)
+        toast.success(`Machine ${newMachineData.machine_no} added back to this entry`)
       } else {
-        toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added successfully`)
+        toast.success(`Machine ${result.data.machine?.machine_no || newMachineData.machine_no} added to this entry`)
       }
       
       setAddNewMachineDialog(false)
@@ -529,7 +513,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     }
   }
 
-  // Remove selected machines from setup AND deactivate the machine master
+  // Remove selected machines from this entry snapshot only.
   const handleRemoveMachines = async () => {
     if (!confirmDiscardLocalEdits()) return
 
@@ -545,9 +529,10 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
         .filter(id => id !== undefined)
 
-      // Deactivate machines in master table (like Carding)
-      const removePromises = machineIds.map(id => removeAutoconerMachineAction(id, entryDate))
-      await Promise.all(removePromises)
+      const removePromises = machineIds.map(id => removeAutoconerMachineAction(id, headerId))
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setRemoveDialog(false)
@@ -664,10 +649,6 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
                           ...counts.map(c => ({ value: c.id, label: c.count_name }))
                         ]}
                         onChange={(val) => handleCountChange(row.id, val === 'none' ? null : val)}
-                        onNextRow={() => {
-                          const next = tableRef.current?.querySelector(`td[data-row="${index + 1}"][data-col="count_name"] button`)
-                          if (next) next.focus()
-                        }}
                         placeholder="Select count"
                         className="h-9 rounded-none"
                         cleanCell
@@ -727,7 +708,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
             onClick={() => setAddNewMachineDialog(true)}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add new machine
+            Add Master machine
           </Button>
           <Button 
             variant="outline" 
@@ -891,14 +872,14 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         </DialogContent>
       </Dialog>
 
-      {/* Add NEW Machine Dialog (Create new machine in master) */}
+      {/* Add an existing Machine Master record to this entry snapshot. */}
       <Dialog open={addNewMachineDialog} onOpenChange={setAddNewMachineDialog}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Add New Autoconer Machine</DialogTitle>
+            <DialogTitle>Add Master Machine to Entry</DialogTitle>
           </DialogHeader>
           <div className="bg-blue-50 p-2 rounded-lg mb-2">
-            <p className="text-xs text-blue-800">Machine Make Screen : To Add, Modify Machine Make Details</p>
+            <p className="text-xs text-blue-800">Select an existing Autoconer Machine Master record. This does not modify Master data.</p>
           </div>
           <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto">
             {/* Row 1: M/c No. — primary field, press Enter to auto-fill from master */}
@@ -923,25 +904,16 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
               <p className="text-xs text-blue-600 mt-1">↳ Press Enter to auto-fill details from master</p>
             </div>
 
-            {/* Row 2: Group ID & Description */}
+            {/* Machine Master details are shown after lookup and are not written back to Master. */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Group ID *</Label>
+                <Label>Group ID (from Master)</Label>
                 <NumberInput
                   type="number"
                   min="1"
                   placeholder="e.g. 5"
                   value={newMachineData.group_id}
-                  onChange={(e) => {
-                    const groupId = e.target.value
-                    const nextMachineNo = getNextMachineNoForGroup(groupId)
-                    setNewMachineData(prev => ({
-                      ...prev,
-                      group_id: groupId,
-                      machine_no: nextMachineNo,
-                      description: nextMachineNo
-                    }))
-                  }}
+                  onChange={(e) => setNewMachineData(prev => ({ ...prev, group_id: e.target.value }))}
                   onKeyDown={handleDialogNav}
                   className="mt-1"
                   zeroAsEmpty
@@ -1125,7 +1097,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
               className="bg-green-600 hover:bg-green-700"
             >
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-              Add New Machine
+              Add to Entry
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,9 +1,12 @@
 import { prisma } from '../prisma'
+import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeaderUnlocked, assertEntrySetupUnlocked, assertEntryStoppageUnlocked, removeMachineFromEntrySnapshot, updateEntryMixingSnapshot } from './entryMachineSnapshot'
 import { resolveCardingShiftFallbackTime } from '../cardingShiftFallback'
 import { calculateCardingStdProdn, resolveCardingFormulaInputs } from '../cardingFormulaFallback'
 import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
+import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 
 function isCardingMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
@@ -117,12 +120,16 @@ export async function getOrCreateProductionHeader(date, shift, supervisorId, mai
     })
     return data
   } catch (error) {
+    const racedHeader = await getCardingProductionByDateShift(date, shift)
+    if (racedHeader) return racedHeader
     throw error
   }
 }
 
 // Update production header
 export async function updateProductionHeader(id, updates) {
+  await assertEntryHeaderUnlocked('carding', id)
+  updates = sanitizeEntryHeaderUpdate(updates)
   try {
     const data = await prisma.carding_production_header.update({
       where: { id },
@@ -429,7 +436,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
 
       // Master count/mixing is part of the new-entry snapshot. Do not let a
       // prior entry delay a just-saved Carding master change by one entry.
-      const countMixing = machine.prodn_mixing ?? inherited.count_mixing ?? '64COMBED GOLD'
+      const countMixing = setup.prodn_mixing ?? machine.prodn_mixing ?? inherited.count_mixing ?? '64COMBED GOLD'
       const employeeName = null
       const sessionNo = inherited.session_no !== undefined ? inherited.session_no : 1
       const wasteVal = inherited.waste !== undefined && inherited.waste !== null ? inherited.waste : (setup.default_waste ?? null)
@@ -456,7 +463,8 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     })
 
     await prisma.carding_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the created details (only new ones)
@@ -475,7 +483,8 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     }))
 
     await prisma.carding_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     // Return all details (existing + new)
@@ -524,40 +533,9 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
       select: { id: true, machine_id: true }
     })
 
-    const existingMachineIds = existingDetails?.map(d => d.machine_id) || []
-
-    // Delete rows for machines that are no longer visible on the entry date or have no setup
-    const allExistingMachines = existingMachineIds.length > 0
-      ? await prisma.carding_machines.findMany({
-          where: { id: { in: existingMachineIds } }
-        })
-      : []
-    const existingMachineMap = {}
-    allExistingMachines.forEach(m => { existingMachineMap[m.id] = m })
-
-    const deactivatedDetailIds = existingDetails
-      .filter(d => {
-        const m = existingMachineMap[d.machine_id]
-        if (!m) return false
-        if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return true
-        if (!machineIdsWithSetup.includes(m.id)) return true  // remove rows for master-only machines (no setup)
-        return false
-      })
-      .map(d => d.id)
-
-    if (deactivatedDetailIds.length > 0) {
-      await prisma.carding_stoppage_entry.deleteMany({
-        where: { production_detail_id: { in: deactivatedDetailIds } }
-      })
-      await prisma.carding_production_detail.deleteMany({
-        where: { id: { in: deactivatedDetailIds } }
-      })
-    }
-
-    // Find only truly new machines (after cleanup)
-    const remainingMachineIds = existingDetails
-      .filter(d => !deactivatedDetailIds.includes(d.id))
-      .map(d => d.machine_id)
+    // Existing rows are entry snapshots. Master edits/deactivation are never
+    // allowed to delete them while an old entry is opened or synchronized.
+    const remainingMachineIds = existingDetails.map(d => d.machine_id)
 
     // Find machines that don't have entries
     const newMachines = machines?.filter(m => !remainingMachineIds.includes(m.id)) || []
@@ -583,7 +561,7 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
       // A newly-created entry must take its count/mixing from the current
       // machine master immediately. The previous production entry is only a
       // fallback for legacy machines whose master value is blank.
-      const countMixing = machine.prodn_mixing || inherited.count_mixing || '64COMBED GOLD'
+      const countMixing = setup.prodn_mixing || machine.prodn_mixing || inherited.count_mixing || '64COMBED GOLD'
       const employeeName = null
       const sessionNo = inherited.session_no !== undefined ? inherited.session_no : 1
       const wasteVal = inherited.waste !== undefined && inherited.waste !== null ? inherited.waste : (setup.default_waste ?? null)
@@ -610,7 +588,8 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
     })
 
     await prisma.carding_production_detail.createMany({
-      data: details
+      data: details,
+      skipDuplicates: true
     })
 
     // Get the newly created details
@@ -629,7 +608,8 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
     }))
 
     await prisma.carding_stoppage_entry.createMany({
-      data: stoppageEntries
+      data: stoppageEntries,
+      skipDuplicates: true
     })
 
     return { added: createdDetails.length, machines: newMachines.map(m => m.machine_no) }
@@ -640,11 +620,12 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
 
 // Update production detail
 export async function updateProductionDetail(id, updates) {
+  await assertEntryDetailUnlocked('carding', id)
   try {
     // Client already recalculates correctly based on full state.
     // We just take the explicitly saved cleanUpdates directly to avoid
     // overwriting accurate UI values with missing/stale server context.
-    const { speed, machine, stoppage, ...cleanUpdates } = updates
+    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
 
     const data = await prisma.carding_production_detail.update({
       where: { id },
@@ -658,10 +639,11 @@ export async function updateProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateProductionDetails(updates) {
+  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('carding', id)))
   const promises = updates.map(({ id, ...data }) =>
     prisma.carding_production_detail.update({
       where: { id },
-      data
+      data: sanitizeProductionDetailUpdate(data)
     })
   )
 
@@ -795,6 +777,8 @@ export async function getCardingStoppageEntries(headerId) {
 
 // Update stoppage entry
 export async function updateStoppageEntry(id, updates) {
+  await assertEntryStoppageUnlocked('carding', id)
+  updates = sanitizeEntryStoppageUpdate(updates)
   try {
     // First, fetch the existing record to get current stoppage values
     const existing = await prisma.carding_stoppage_entry.findUnique({
@@ -908,6 +892,7 @@ export async function updateStoppageEntry(id, updates) {
 
 // Apply full stoppage to all machines
 export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('carding', headerId)
   const parsedTime = Number.parseInt(stoppageTime, 10)
   if (!stoppageId) {
     throw new Error('Stoppage reason is required')
@@ -939,6 +924,7 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
 
 // Apply partial stoppage to machine range
 export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
+  await assertEntryHeaderUnlocked('carding', headerId)
   try {
     const parsedTime = Number.parseInt(stoppageTime, 10)
     if (!stoppageId) {
@@ -1062,8 +1048,10 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         shift: shiftNum
       }
     })
+    const hasExactSetupSnapshot = setups.length > 0
+    setups = setups.filter(setup => setup.is_included)
     
-    if (setups.length > 0) {
+    if (hasExactSetupSnapshot) {
       // Setup rows can be prepared when the entry screen is opened, before a
       // production detail is actually created. If the master is edited in
       // between, refresh that still-unused snapshot so the immediate next
@@ -1113,7 +1101,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         }))
 
         setups = await prisma.carding_machine_setup.findMany({
-          where: { entry_date: dateObj, shift: shiftNum }
+          where: { entry_date: dateObj, shift: shiftNum, is_included: true }
         })
       }
       return setups
@@ -1140,7 +1128,8 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
       const prevSetups = await prisma.carding_machine_setup.findMany({
         where: { 
           entry_date: latestPreviousSetup.entry_date,
-          shift: latestPreviousSetup.shift
+          shift: latestPreviousSetup.shift,
+          is_included: true
         }
       })
       
@@ -1152,7 +1141,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
           activated_at: { lte: dateObj },
           OR: [
             { deactivated_at: null },
-            { deactivated_at: { gte: dateObj } }
+            { deactivated_at: { gt: dateObj } }
           ]
         },
         orderBy: { is_active: 'desc' }
@@ -1181,6 +1170,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
 
         return {
           ...rest,
+          is_included: true,
           speed: defaultSpeed,
           hank_constant: hankConstant,
           std_efficiency_factor: stdEfficiencyFactor,
@@ -1204,6 +1194,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         
         return {
           machine_id: m.id,
+          is_included: true,
           entry_date: dateObj,
           shift: shiftNum,
           speed: m.speed ?? 130.00,
@@ -1228,7 +1219,8 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
       return await prisma.carding_machine_setup.findMany({
         where: { 
           entry_date: dateObj,
-          shift: shiftNum
+          shift: shiftNum,
+          is_included: true
         }
       })
     }
@@ -1239,7 +1231,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         activated_at: { lte: dateObj },
         OR: [
           { deactivated_at: null },
-          { deactivated_at: { gte: dateObj } }
+          { deactivated_at: { gt: dateObj } }
         ]
       },
       orderBy: { is_active: 'desc' }
@@ -1258,6 +1250,8 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
       
       return {
         machine_id: m.id,
+        is_included: true,
+        prodn_mixing: m.prodn_mixing ?? null,
         entry_date: dateObj,
         shift: shiftNum,
         speed: m.speed ?? 130.00,
@@ -1280,7 +1274,8 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
     return await prisma.carding_machine_setup.findMany({
       where: { 
         entry_date: dateObj,
-        shift: shiftNum
+        shift: shiftNum,
+        is_included: true
       }
     })
   } catch (error) {
@@ -1295,7 +1290,8 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
       throw new Error('entryDate is required for getCardingMachineSetups')
     }
 
-    const setups = await getOrCreateCardingMachineSetups(entryDate, shift)
+    const dateObj = new Date(entryDate)
+    const setups = await getOrCreateCardingMachineSetups(dateObj, shift)
     if (!setups || setups.length === 0) return []
 
     const machineIds = setups.map(s => s.machine_id).filter(Boolean)
@@ -1310,7 +1306,9 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
             description: true,
             make_name: true,
             prodn_mixing: true,
-            is_active: true
+            is_active: true,
+            activated_at: true,
+            deactivated_at: true
           }
         })
       : []
@@ -1321,7 +1319,9 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
     })
 
     const data = setups
-      .filter(setup => !!machineMap[setup.machine_id])
+      // Setup snapshots are retained for history, but the setup grid must use
+      // the same date-effective machine lifecycle rule as Production/Stoppage.
+      .filter(setup => isCardingMachineVisibleOnDate(machineMap[setup.machine_id], dateObj))
       .map(setup => ({
         ...setup,
         machine: machineMap[setup.machine_id]
@@ -1340,6 +1340,8 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
 
 // Update machine setup targeting the exact date & shift for scoping
 export async function updateMachineSetup(identifier, updates, entryDate = null, shift = null) {
+  if (!entryDate || !shift) await assertEntrySetupUnlocked('carding', identifier)
+  updates = sanitizeEntrySetupUpdate(updates)
   try {
     let existing = null
 
@@ -1536,6 +1538,7 @@ export async function getCardingAvailablePreviousDates(beforeDate, shift, limit 
 // Copy only machine setup speed. Formula-derived standard production is
 // recalculated from the target row's own setup values.
 export async function copyCardingFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
+  await assertEntryHeaderUnlocked('carding', targetHeaderId)
   return copyPreviousSpeeds({
     setupModel: prisma.carding_machine_setup,
     targetDate,
@@ -1839,53 +1842,33 @@ export async function addCardingMachine(machineData) {
   }
 }
 
-// Remove (deactivate) a carding machine
-export async function removeCardingMachine(machineId) {
-  try {
-    const data = await prisma.carding_machines.update({
-      where: { id: machineId },
-      data: { is_active: false }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+export async function addCardingEntryMachine(machineData) {
+  const result = await addMachineToEntrySnapshot('carding', machineData.headerId, {
+    machineId: machineData.machine_id,
+    machineNo: machineData.machine_no,
+    setupOverrides: machineData
+  })
+  await syncNewMachinesToHeader(machineData.headerId, result.header.shift)
+  return { ...result, reactivated: false, entryOnly: true }
+}
+
+// Remove a machine from this entry snapshot only.
+export async function removeCardingMachine(machineId, headerId) {
+  return removeMachineFromEntrySnapshot('carding', headerId, machineId)
 }
 
 // Update machine count (prodn_mixing)
-export async function updateMachineCount(machineId, countMixing) {
-  try {
-    const data = await prisma.carding_machines.update({
-      where: { id: machineId },
-      data: { prodn_mixing: countMixing }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+export async function updateMachineCount(machineId, countMixing, headerId) {
+  return updateEntryMixingSnapshot('carding', headerId, [machineId], countMixing)
 }
 
 // Bulk update machine count for multiple machines
-export async function bulkUpdateMachineCount(machineIds, countMixing, hank_constant) {
-  try {
-    const machineUpdateData = { prodn_mixing: countMixing }
-    if (hank_constant != null) machineUpdateData.hank_constant = hank_constant
-
-    await prisma.carding_machines.updateMany({
-      where: { id: { in: machineIds } },
-      data: machineUpdateData
-    })
-
-    // Also update the setup hank_constant when a new count changes the sliver hank
-    if (hank_constant != null) {
-      await prisma.carding_machine_setup.updateMany({
-        where: { machine_id: { in: machineIds } },
-        data: { hank_constant }
-      })
-    }
-
-    return { count: machineIds.length }
-  } catch (error) {
-    throw error
-  }
+export async function bulkUpdateMachineCount(machineIds, countMixing, hank_constant, headerId) {
+  return updateEntryMixingSnapshot(
+    'carding',
+    headerId,
+    machineIds,
+    countMixing,
+    hank_constant == null ? {} : { hank_constant }
+  )
 }

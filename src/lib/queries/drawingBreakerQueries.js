@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * Drawing Breaker Machine Master - CRUD Operations
@@ -65,33 +66,40 @@ export async function createDrawingBreakerMachine(machineData) {
   });
   if (existing) {
     if (!existing.is_active) {
-      const reactivated = await prisma.drawing_breaker_machines.update({
-        where: { id: existing.id },
-        data: {
-          description: machineData.description,
-          make_name: machineData.make_name,
-          model: machineData.model,
-          prodn_mixing: machineData.prodn_mixing,
-          speed: machineData.speed,
-          delivery: machineData.delivery ?? null,
-          sliver_hank: machineData.sliver_hank != null ? machineData.sliver_hank : null,
-          prodn_efficiency: machineData.prodn_effi,
-          installed_date: installedDate,
-          is_active: true,
-          direct_hank_entry: machineData.direct_hank_entry ?? false,
-          direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-          activated_at: installedDate || new Date(),
-          deactivated_at: null,
-        }
-      });
+      return prisma.$transaction(async (tx) => {
+        const reactivated = await tx.drawing_breaker_machines.update({
+          where: { id: existing.id },
+          data: {
+            description: machineData.description,
+            make_name: machineData.make_name,
+            model: machineData.model,
+            prodn_mixing: machineData.prodn_mixing,
+            speed: machineData.speed,
+            delivery: machineData.delivery ?? null,
+            sliver_hank: machineData.sliver_hank != null ? machineData.sliver_hank : null,
+            prodn_efficiency: machineData.prodn_effi,
+            installed_date: installedDate,
+            is_active: true,
+            direct_hank_entry: machineData.direct_hank_entry ?? false,
+            direct_kgs_entry: machineData.direct_kgs_entry ?? false,
+            activated_at: installedDate || new Date(),
+            deactivated_at: null,
+          }
+        });
 
-      // Keep master-side behavior aligned with spinning:
-      // reactivating from master must not auto-enroll in Machine Setup.
-      await prisma.breaker_drawing_machine_setup.deleteMany({
-        where: { machine_id: existing.id }
-      });
+        // Reactivation must never erase dated historical setup snapshots. Remove
+        // only the legacy template row so master-side reactivation does not
+        // automatically enroll the machine in a new setup.
+        await tx.breaker_drawing_machine_setup.deleteMany({
+          where: {
+            machine_id: existing.id,
+            entry_date: new Date('1970-01-01T00:00:00.000Z'),
+            shift: 1
+          }
+        });
 
-      return reactivated;
+        return reactivated;
+      });
     } else {
       throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
     }
@@ -101,30 +109,37 @@ export async function createDrawingBreakerMachine(machineData) {
   const maxSortResult = await prisma.drawing_breaker_machines.aggregate({ _max: { sort_order: true } });
   const nextSortOrder = (maxSortResult._max.sort_order ?? 0) + 1;
 
-  return prisma.drawing_breaker_machines.create({
-    data: {
-      machine_no: machineData.machine_no,
-      description: machineData.description,
-      make_name: machineData.make_name,
-      model: machineData.model,
-      prodn_mixing: machineData.prodn_mixing,
-      speed: machineData.speed,
-      delivery: machineData.delivery ?? null,
-      sliver_hank: machineData.sliver_hank != null ? machineData.sliver_hank : null,
-      prodn_efficiency: machineData.prodn_effi,
-      installed_date: installedDate,
-      is_active: machineData.is_active ?? true,
-      direct_hank_entry: machineData.direct_hank_entry ?? false,
-      direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-      activated_at: new Date(),
-      sort_order: nextSortOrder,
-    }
-  }).then(async (created) => {
-    // Important: master-side creation must NOT auto-enroll the machine into setup.
-    // If a DB trigger auto-creates breaker_drawing_machine_setup, remove it here.
-    await prisma.breaker_drawing_machine_setup.deleteMany({
-      where: { machine_id: created.id }
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.drawing_breaker_machines.create({
+      data: {
+        machine_no: machineData.machine_no,
+        description: machineData.description,
+        make_name: machineData.make_name,
+        model: machineData.model,
+        prodn_mixing: machineData.prodn_mixing,
+        speed: machineData.speed,
+        delivery: machineData.delivery ?? null,
+        sliver_hank: machineData.sliver_hank != null ? machineData.sliver_hank : null,
+        prodn_efficiency: machineData.prodn_effi,
+        installed_date: installedDate,
+        is_active: machineData.is_active ?? true,
+        direct_hank_entry: machineData.direct_hank_entry ?? false,
+        direct_kgs_entry: machineData.direct_kgs_entry ?? false,
+        activated_at: new Date(),
+        sort_order: nextSortOrder,
+      }
     });
+
+    // A legacy database trigger may create one baseline setup row. Delete only
+    // that row; dated setup history must never be removed from a master action.
+    await tx.breaker_drawing_machine_setup.deleteMany({
+      where: {
+        machine_id: created.id,
+        entry_date: new Date('1970-01-01T00:00:00.000Z'),
+        shift: 1
+      }
+    });
+
     return created;
   });
 }
@@ -173,24 +188,9 @@ export async function deleteDrawingBreakerMachine(id) {
 
 // Search drawing breaker machines (all, no is_active filter)
 export async function searchDrawingBreakerMachines(field, condition, value) {
-  let where = {};
-
-  switch (condition) {
-    case 'contains':
-      where[field] = { contains: value };
-      break;
-    case 'equals':
-      where[field] = value;
-      break;
-    case 'startsWith':
-      where[field] = { startsWith: value };
-      break;
-    case 'endsWith':
-      where[field] = { endsWith: value };
-      break;
-    default:
-      where[field] = { contains: value };
-  }
+  const where = buildTypedSearchWhere(field, condition, value, {
+    machine_no: 'text', description: 'text', make_name: 'text'
+  });
 
   const data = await prisma.drawing_breaker_machines.findMany({ where });
   return sortMachines(data);

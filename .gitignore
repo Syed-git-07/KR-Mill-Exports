@@ -22,7 +22,24 @@
 
 # misc
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# local editor and operating-system configuration
+/.vscode/
+/.idea/
+*.swp
+*.swo
 
 # debug
 npm-debug.log*
@@ -30,9 +47,18 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# environment files (never commit real values; keep only the template)
 .env*
 !.env.example
+
+# local credentials and package-manager authentication
+credentials.json
+*-credentials.json
+secrets.json
+*-secrets.json
+service-account*.json
+.npmrc
+.netrc
 
 # local databases, database exports, and backups
 *.db
@@ -58,6 +84,8 @@ yarn-error.log*
 # user-generated/runtime files
 /uploads/
 *.log
+*.pid
+*.pid.lock
 
 # vercel
 .vercel

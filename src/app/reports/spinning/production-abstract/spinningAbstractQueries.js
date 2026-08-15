@@ -8,8 +8,8 @@ export async function fetchSpinningAbstractSummary(reportDate) {
     SELECT 
       d.count_name,
       h.shift,
-      m.allocated_spindles,
-      sc.conv_40s_value,
+      sms.allocated_spindles,
+      sms.conv_40s_value,
       COUNT(DISTINCT d.machine_id) as machine_count,
       SUM(d.act_prodn) as production_kg,
       SUM(d.waste) as waste_kg,
@@ -20,11 +20,13 @@ export async function fetchSpinningAbstractSummary(reportDate) {
       d.run_time
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machines m ON d.machine_id = m.id
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
-    LEFT JOIN spinning_counts sc ON sc.count_name = d.count_name AND sc.is_active = 1
     WHERE h.entry_date = ${dateStr}
-    GROUP BY d.count_name, h.shift, sc.conv_40s_value, m.allocated_spindles, d.run_time
+    GROUP BY d.count_name, h.shift, sms.conv_40s_value, sms.allocated_spindles, d.run_time
     ORDER BY d.count_name, h.shift
   `
 
@@ -326,10 +328,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   const currentDaySpindlesShifts = await prisma.$queryRaw`
     SELECT 
       h.shift,
-      SUM(sm.allocated_spindles) as worked_spindles
+      SUM(sms.allocated_spindles) as worked_spindles
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machines sm ON d.machine_id = sm.id
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date = ${dateStr}
     GROUP BY h.shift
     ORDER BY h.shift
@@ -357,10 +362,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   // 2. Last Month Same Date - Worked spindles
   const lastMonthSpindlesData = await prisma.$queryRaw`
     SELECT 
-      SUM(sm.allocated_spindles) as worked_spindles
+      SUM(sms.allocated_spindles) as worked_spindles
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machines sm ON d.machine_id = sm.id
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date = ${lastMonthDateStr}
   `
 
@@ -369,10 +377,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   // 3. Current Month Upto Date - Worked spindles
   const currentMonthUptoDateSpindlesData = await prisma.$queryRaw`
     SELECT 
-      SUM(sm.allocated_spindles) as worked_spindles
+      SUM(sms.allocated_spindles) as worked_spindles
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machines sm ON d.machine_id = sm.id
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date >= ${firstDayCurrentMonth} 
       AND h.entry_date <= ${dateStr}
   `
@@ -382,10 +393,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   // 4. Last Month Upto Date - Worked spindles
   const lastMonthUptoDateSpindlesData = await prisma.$queryRaw`
     SELECT 
-      SUM(sm.allocated_spindles) as worked_spindles
+      SUM(sms.allocated_spindles) as worked_spindles
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machines sm ON d.machine_id = sm.id
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date >= ${firstDayLastMonth} 
       AND h.entry_date <= ${lastMonthDateStr}
   `
@@ -398,10 +412,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   const currentDayAvgCountShifts = await prisma.$queryRaw`
     SELECT 
       h.shift,
-      AVG(sc.act_count) as avg_count
+      AVG(sms.act_count) as avg_count
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_counts sc ON d.count_name = sc.count_name
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date = ${dateStr}
     GROUP BY h.shift
     ORDER BY h.shift
@@ -433,10 +450,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   // 2. Last Month Same Date - Average count
   const lastMonthAvgCountData = await prisma.$queryRaw`
     SELECT 
-      AVG(sc.act_count) as avg_count
+      AVG(sms.act_count) as avg_count
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_counts sc ON d.count_name = sc.count_name
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date = ${lastMonthDateStr}
   `
 
@@ -445,10 +465,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   // 3. Current Month Upto Date - Average count
   const currentMonthUptoDateAvgCountData = await prisma.$queryRaw`
     SELECT 
-      AVG(sc.act_count) as avg_count
+      AVG(sms.act_count) as avg_count
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_counts sc ON d.count_name = sc.count_name
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date >= ${firstDayCurrentMonth} 
       AND h.entry_date <= ${dateStr}
   `
@@ -458,10 +481,13 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   // 4. Last Month Upto Date - Average count
   const lastMonthUptoDateAvgCountData = await prisma.$queryRaw`
     SELECT 
-      AVG(sc.act_count) as avg_count
+      AVG(sms.act_count) as avg_count
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_counts sc ON d.count_name = sc.count_name
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date >= ${firstDayLastMonth} 
       AND h.entry_date <= ${lastMonthDateStr}
   `
@@ -831,19 +857,21 @@ export async function fetchCountwiseSummary(reportDate) {
     SELECT 
       d.count_name,
       COUNT(DISTINCT d.machine_id) as machine_count,
-      SUM(sm.allocated_spindles) as total_spindles,
+      SUM(sms.allocated_spindles) as total_spindles,
       SUM(d.act_prodn) as production_kg,
       AVG(d.exp_gps) as avg_exp_gps,
       AVG(d.gps) as avg_achieved_gps,
       SUM(d.waste) as waste_kgs,
-      sc.conv_40s_value
+      sms.conv_40s_value
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machines sm ON d.machine_id = sm.id
-    LEFT JOIN spinning_counts sc ON sc.count_name = d.count_name AND sc.is_active = 1
+    JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
     WHERE h.entry_date >= ${firstDayCurrentMonth} 
       AND h.entry_date <= ${dateStr}
-    GROUP BY d.count_name, sc.conv_40s_value
+    GROUP BY d.count_name, sms.conv_40s_value
     ORDER BY d.count_name
   `
 

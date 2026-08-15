@@ -9,8 +9,11 @@ import StoppageDetailForm from '@/components/modules/masters/StoppageDetailForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety'
+import { useAuthUser } from '@/components/auth/AuthUserContext'
 
 export default function StoppageDetailPage() {
+  const { canManageMasters } = useAuthUser()
   const [stoppageDetails, setStoppageDetails] = useState([])
   const [selectedStoppageDetail, setSelectedStoppageDetail] = useState(null)
   const [selectedRows, setSelectedRows] = useState([])
@@ -189,7 +192,7 @@ export default function StoppageDetailPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Stoppage Detail Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage detailed stoppage reasons</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -205,11 +208,11 @@ export default function StoppageDetailPage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedStoppageDetail}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -237,6 +240,7 @@ export default function StoppageDetailPage() {
         onSelectRow={handleSelectRow}
         onSelectAll={handleSelectAll}
         onContextMenu={(row, e) => {
+          if (!canManageMasters) return
           e.preventDefault()
           setSelectedStoppageDetail(row)
           setIsEditing(true)
@@ -251,8 +255,8 @@ export default function StoppageDetailPage() {
         title="Stoppage Detail Master"
         description={isEditing ? "Modify stoppage detail information" : "Add new stoppage detail"}
         onCancel={() => setIsModalOpen(false)}
-        onDelete={isEditing ? handleDelete : null}
-        showDelete={isEditing}
+        onDelete={null}
+        showDelete={false}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >

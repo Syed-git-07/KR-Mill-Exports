@@ -7,10 +7,9 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import MachineActiveStatus from './MachineActiveStatus';
 import EnterSelect from '@/components/ui/enter-select';
 import { getSpinningCountsAction } from '@/app/actions/spinning-entry';
-import { Button } from '@/components/ui/button';
-import { Copy } from 'lucide-react';
 
 const spinningMachineSchema = z.object({
   machine_no: z.string().min(1, 'Machine number is required'),
@@ -23,12 +22,7 @@ const spinningMachineSchema = z.object({
   production_kgs_manual_entry: z.boolean().default(false),
   direct_hank_entry: z.boolean().default(true),
   speed: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
-  count_name: z.string().optional().nullable(),
-  act_count: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
-  tpi: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
-  tw_con: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
-  doff_loss: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
-  c_waste_percent: z.union([z.number(), z.nan(), z.null()]).optional().transform(val => (isNaN(val) || val === null) ? null : val),
+  count_id: z.string().uuid().optional().nullable(),
 });
 
 export default function SpinningMachineForm({ initialData, onSubmit }) {
@@ -81,39 +75,17 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       production_kgs_manual_entry: false,
       direct_hank_entry: true,
       speed: null,
-      count_name: null,
-      act_count: null,
-      tpi: null,
-      tw_con: null,
-      doff_loss: null,
-      c_waste_percent: null,
+      count_id: null,
     }
   });
 
   const isActive = watch('is_active');
   const productionKgsManual = watch('production_kgs_manual_entry');
   const directHankEntry = watch('direct_hank_entry');
-  const countName = watch('count_name');
-
-  const copyCountMasterValues = (val = countName) => {
-    const selectedCount = counts.find(c => c.count_name === val);
-    if (selectedCount) {
-      // act_count is always present (NOT NULL in DB)
-      setValue('act_count', parseFloat(selectedCount.act_count));
-      // tpi and speed are VARCHAR — only set if value exists and is non-empty
-      const tpiVal = selectedCount.tpi != null && selectedCount.tpi !== '' ? parseFloat(selectedCount.tpi) : null;
-      const speedVal = selectedCount.speed != null && selectedCount.speed !== '' ? parseInt(selectedCount.speed) : null;
-      setValue('tpi', tpiVal);
-      setValue('speed', speedVal);
-      setValue('tw_con', selectedCount.tw_con != null && selectedCount.tw_con !== '' ? parseInt(selectedCount.tw_con) : null);
-      setValue('doff_loss', selectedCount.doff_loss != null ? parseFloat(selectedCount.doff_loss) : null);
-      setValue('c_waste_percent', selectedCount.waste_percent != null ? parseFloat(selectedCount.waste_percent) : null);
-    }
-  };
+  const countId = watch('count_id');
 
   const handleCountSelect = (val) => {
-    setValue('count_name', val);
-    copyCountMasterValues(val);
+    setValue('count_id', val || null, { shouldDirty: true });
   };
 
   const onFormSubmit = async (data) => {
@@ -122,12 +94,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       allocated_spindles: parseInt(data.allocated_spindles),
       model: data.model || null,
       speed: data.speed ?? null,
-      count_name: data.count_name || null,
-      act_count: data.act_count ?? null,
-      tpi: data.tpi ?? null,
-      tw_con: data.tw_con ?? null,
-      doff_loss: data.doff_loss ?? null,
-      c_waste_percent: data.c_waste_percent ?? null,
+      count_id: data.count_id || null,
     };
     
     await onSubmit(formattedData);
@@ -211,8 +178,21 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
           />
         </div>
 
+        {/* Count */}
+        <div className="space-y-2">
+          <Label>Count</Label>
+          <EnterSelect
+            value={countId || ''}
+            options={counts.map(c => ({ value: c.id, label: c.count_name }))}
+            onChange={handleCountSelect}
+            placeholder="Select count..."
+            searchable
+            className="w-full"
+          />
+        </div>
+
         {/* Installed Date */}
-        <div className="space-y-2 col-span-2">
+        <div className="space-y-2">
           <Label htmlFor="installed_date">Installed Date</Label>
           <Input
             id="installed_date"
@@ -222,17 +202,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
           />
         </div>
 
-        {/* Active Checkbox */}
-        <div className="space-y-2 flex items-center gap-2">
-          <Checkbox
-            id="is_active"
-            checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
-          />
-          <Label htmlFor="is_active" className="cursor-pointer">
-            Active
-          </Label>
-        </div>
+        <MachineActiveStatus isActive={isActive} />
 
         {/* Production Kgs Manual Entry */}
         <div className="space-y-2 flex items-center gap-2">
@@ -259,59 +229,6 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
         </div>
       </div>
 
-      {/* Setup Configuration */}
-      <div className="border-t pt-4 space-y-4">
-        <h4 className="font-semibold text-sm">Setup Configuration</h4>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>Count</Label>
-            <EnterSelect
-              value={countName || ''}
-              options={counts.map(c => ({ value: c.count_name, label: c.count_name }))}
-              onChange={handleCountSelect}
-              placeholder="Select count..."
-              searchable
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="act_count">Act. Count</Label>
-            <Input
-              id="act_count"
-              type="number"
-              step="0.1"
-              {...register('act_count', { valueAsNumber: true })}
-              onKeyDown={handleNav}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tpi">TPI</Label>
-            <Input
-              id="tpi"
-              type="number"
-              step="0.01"
-              {...register('tpi', { valueAsNumber: true })}
-              onKeyDown={handleNav}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tw_con">TW.Con</Label>
-            <Input id="tw_con" type="number" {...register('tw_con', { valueAsNumber: true })} onKeyDown={handleNav} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="doff_loss">Doff Loss</Label>
-            <Input id="doff_loss" type="number" step="0.01" {...register('doff_loss', { valueAsNumber: true })} onKeyDown={handleNav} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="c_waste_percent">C.Waste %</Label>
-            <Input id="c_waste_percent" type="number" step="0.01" {...register('c_waste_percent', { valueAsNumber: true })} onKeyDown={handleNav} />
-          </div>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => copyCountMasterValues()} disabled={!countName}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy Data from Count Master
-        </Button>
-      </div>
     </form>
   );
 }

@@ -29,7 +29,6 @@ import {
   updateLapFormerMachineSetupAction,
   addLapFormerMachineAction,
   removeLapFormerMachineAction,
-  bulkUpdateLapFormerMachineMixingAction,
   getLapFormerMixingOptionsAction,
   getSpinningCountOptionsAction,
   lookupLapFormerMachineByNoAction
@@ -378,7 +377,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges,
     refreshData: () => loadData({ force: true })
@@ -451,7 +450,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      await addLapFormerMachineAction({
+      const result = await addLapFormerMachineAction({
+        headerId,
         machine_no: newMachine.machine_no,
         description: newMachine.description,
         make_name: newMachine.make_name,
@@ -465,7 +465,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         delivery: LAP_FORMER_FORMULA_FALLBACK.delivery,
         shift_time: totalTime
       })
-      toast.success('New machine added successfully')
+      toast.success('Machine added to this entry')
       setShowAddDialog(false)
       setNewMachine({
         machine_no: '',
@@ -502,9 +502,11 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     setIsSaving(true)
     try {
       const removePromises = selectedRows.map(machineId => 
-        removeLapFormerMachineAction(machineId)
+        removeLapFormerMachineAction(machineId, headerId)
       )
-      await Promise.all(removePromises)
+      const results = await Promise.all(removePromises)
+      const failed = results.find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
@@ -534,23 +536,24 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       return
     }
 
-    setIsSaving(true)
-    try {
-      await bulkUpdateLapFormerMachineMixingAction(selectedRows, mixingValue, headerId)
-      toast.success(`Count/Mixing updated for ${selectedRows.length} machine(s)`)
-      setShowMixingChangeDialog(false)
-      setNewMixing('')
-      setCustomMixing('')
-      setSelectedRows([])
-      setEditedRows({})
-      await loadData({ force: true })
-      onRefresh?.()
-    } catch (error) {
-      console.error('Error updating mixing:', error)
-      toast.error('Failed to update mixing')
-    } finally {
-      setIsSaving(false)
-    }
+    const selectedSet = new Set(selectedRows.map(String))
+    setEditedRows(prev => {
+      const next = { ...prev }
+      setupData.forEach(row => {
+        if (!selectedSet.has(String(row.machine_id))) return
+        next[row.id] = { ...next[row.id], machine_id: row.machine_id, prodn_mixing: mixingValue }
+      })
+      if (!result?.success) throw new Error(result?.error || 'Failed to add machine')
+      return next
+    })
+    setSetupData(prev => prev.map(row => selectedSet.has(String(row.machine_id))
+      ? { ...row, mixing: mixingValue, prodn_mixing: mixingValue }
+      : row))
+    toast.success(`Count/Mixing staged for ${selectedRows.length} machine(s). Click Update to save.`)
+    setShowMixingChangeDialog(false)
+    setNewMixing('')
+    setCustomMixing('')
+    setSelectedRows([])
   }
 
   if (isLoading) {
@@ -570,7 +573,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           {setupData.length} machines configured
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>
@@ -703,7 +706,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
             onClick={() => setShowAddDialog(true)}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add new machine
+            Add Master machine
           </Button>
           <Button 
             variant="outline" 
@@ -734,8 +737,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Add New Machine</DialogTitle>
-            <DialogDescription className="text-sm">Enter details for the new Lap Former machine</DialogDescription>
+            <DialogTitle className="text-lg font-semibold">Add Master Machine to Entry</DialogTitle>
+            <DialogDescription className="text-sm">Look up an existing Lap Former Machine Master record for this entry.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

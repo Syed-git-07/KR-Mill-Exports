@@ -26,3 +26,21 @@ test('master pages contain no global form submission fallback', async () => {
     assert.doesNotMatch(source, /document\.querySelector\(["']form["']\)/, file)
   }
 })
+
+test('master forms do not render a second submit button inside the modal body', async () => {
+  const files = []
+  for (const pattern of [
+    'src/components/modules/masters/*Form.jsx',
+    'src/components/modules/preparatory-master/*Form.jsx'
+  ]) {
+    for await (const file of glob(pattern)) {
+      files.push(file)
+    }
+  }
+
+  assert.ok(files.length > 0)
+  for (const file of files) {
+    const source = await readFile(file, 'utf8')
+    assert.doesNotMatch(source, /type=["']submit["']/, file)
+  }
+})

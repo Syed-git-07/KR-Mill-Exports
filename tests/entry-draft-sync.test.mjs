@@ -46,6 +46,8 @@ const {
   cloneDateScopedSetup
 } = await importSourceModule('../src/lib/queries/dateScopedMachineSetup.js')
 const {
+  calculateSpinningExpectedGps,
+  calculateSpinningExpectedGpsEfficiency,
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
 } = await importSourceModule('../src/lib/productionFormulaMath.js')
@@ -241,6 +243,35 @@ test('stoppage time is bounded to the shift before dependent formulas run', () =
     stoppageTime: 0,
     workTime: 510
   })
+})
+
+test('spinning expected GPS derives efficiency from setup losses and retains three-decimal precision', () => {
+  const efficiency = calculateSpinningExpectedGpsEfficiency({
+    twCon: 0.001,
+    doffLoss: 0,
+    cWastePercent: 0
+  })
+  assert.ok(Math.abs(efficiency - 0.99999) < Number.EPSILON)
+
+  const first = calculateSpinningExpectedGps({
+    speed: 25519,
+    tpi: 29.7,
+    count: 62,
+    twCon: 0.001,
+    doffLoss: 0,
+    cWastePercent: 0
+  })
+  const second = calculateSpinningExpectedGps({
+    speed: 25547,
+    tpi: 32.51,
+    count: 70,
+    twCon: 0.001,
+    doffLoss: 0,
+    cWastePercent: 0
+  })
+
+  assert.equal(Math.round(first * 1000) / 1000, 99.78)
+  assert.equal(Math.round(second * 1000) / 1000, 80.826)
 })
 
 test('explicit zero master values are never replaced by formula defaults', () => {

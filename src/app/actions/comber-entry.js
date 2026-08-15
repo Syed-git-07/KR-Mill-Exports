@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
@@ -12,6 +14,7 @@ import { assertWorkingDate } from '@/lib/holidayValidation'
 // ============================================
 
 export async function getComberShiftConfigAction(shift) {
+  await requireUser()
   try {
     const data = await queries.getComberShiftConfig(shift)
     return { success: true, data: serializeData(data) }
@@ -21,6 +24,7 @@ export async function getComberShiftConfigAction(shift) {
 }
 
 export async function getComberShiftTimeAction(shift) {
+  await requireUser()
   try {
     const shiftTime = await queries.getComberShiftTime(shift)
     return { success: true, data: shiftTime }
@@ -34,6 +38,7 @@ export async function getComberShiftTimeAction(shift) {
 }
 
 export async function getComberShiftConfigurationAction(shift) {
+  await requireUser()
   try {
     const config = await queries.getComberShiftConfiguration(shift)
     return { success: true, data: config }
@@ -53,6 +58,7 @@ export async function getComberShiftConfigurationAction(shift) {
 // ============================================
 
 export async function getComberProductionByDateShiftAction(date, shift) {
+  await requireUser()
   try {
     const data = await queries.getComberProductionByDateShift(date, shift)
     return { success: true, data: serializeData(data) }
@@ -62,6 +68,7 @@ export async function getComberProductionByDateShiftAction(date, shift) {
 }
 
 export async function getOrCreateComberProductionHeaderAction(date, shift, supervisorId, maisitryId) {
+  await requireUser()
   try {
     await assertWorkingDate(date)
     const data = await queries.getOrCreateComberProductionHeader(date, shift, supervisorId, maisitryId)
@@ -72,6 +79,7 @@ export async function getOrCreateComberProductionHeaderAction(date, shift, super
 }
 
 export async function updateComberProductionHeaderAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateComberProductionHeader(id, updates)
     return { success: true, data: serializeData(data) }
@@ -85,6 +93,7 @@ export async function updateComberProductionHeaderAction(id, updates) {
 // ============================================
 
 export async function getComberProductionDetailsAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getComberProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
@@ -94,6 +103,7 @@ export async function getComberProductionDetailsAction(headerId) {
 }
 
 export async function initializeComberProductionDetailsAction(headerId, shift = 1) {
+  await requireUser()
   try {
     // Get shift configuration for totalTime
     const shiftConfig = await queries.getComberShiftConfiguration(shift)
@@ -108,6 +118,7 @@ export async function initializeComberProductionDetailsAction(headerId, shift = 
 }
 
 export async function updateComberProductionDetailAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateComberProductionDetail(id, updates)
     return { success: true, data: serializeData(data) }
@@ -117,6 +128,7 @@ export async function updateComberProductionDetailAction(id, updates) {
 }
 
 export async function bulkUpdateComberProductionDetailsAction(updates) {
+  await requireUser()
   try {
     const data = await queries.bulkUpdateComberProductionDetails(updates)
     return { success: true, data: serializeData(data) }
@@ -130,6 +142,7 @@ export async function bulkUpdateComberProductionDetailsAction(updates) {
 // ============================================
 
 export async function getComberStoppageEntriesAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getComberStoppageEntries(headerId)
     return { success: true, data: serializeData(data) }
@@ -139,6 +152,7 @@ export async function getComberStoppageEntriesAction(headerId) {
 }
 
 export async function updateComberStoppageEntryAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateComberStoppageEntry(id, updates)
     return { success: true, data: serializeData(data) }
@@ -148,6 +162,7 @@ export async function updateComberStoppageEntryAction(id, updates) {
 }
 
 export async function getComberStoppageReasonsAction() {
+  await requireUser()
   try {
     const data = await queries.getComberStoppageReasons()
     return { success: true, data: serializeData(data) }
@@ -157,6 +172,7 @@ export async function getComberStoppageReasonsAction() {
 }
 
 export async function syncNewMachinesToComberHeaderAction(headerId, shift = 1) {
+  await requireUser()
   try {
     const data = await queries.syncNewMachinesToComberHeader(headerId, shift)
     return { success: true, data: serializeData(data) }
@@ -170,6 +186,7 @@ export async function syncNewMachinesToComberHeaderAction(headerId, shift = 1) {
 // ============================================
 
 export async function getComberMachineSetupsAction(headerId = null) {
+  await requireUser()
   try {
     const data = await queries.getComberMachineSetups(headerId)
     return { success: true, data: serializeData(data) }
@@ -179,6 +196,7 @@ export async function getComberMachineSetupsAction(headerId = null) {
 }
 
 export async function updateComberMachineSetupAction(id, updates) {
+  await requireUser()
   try {
     const data = await queries.updateComberMachineSetup(id, updates)
     return { success: true, data: serializeData(data) }
@@ -188,17 +206,19 @@ export async function updateComberMachineSetupAction(id, updates) {
 }
 
 export async function addComberMachineAction(machineData) {
+  await requireUser()
   try {
-    const data = await queries.addComberMachine(machineData)
+    const data = await queries.addComberEntryMachine(machineData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function removeComberMachineAction(machineId) {
+export async function removeComberMachineAction(machineId, headerId) {
+  await requireUser()
   try {
-    const data = await queries.removeComberMachine(machineId)
+    const data = await queries.removeComberMachine(machineId, headerId)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -206,6 +226,7 @@ export async function removeComberMachineAction(machineId) {
 }
 
 export async function updateComberMachineCountAction(machineId, newCount) {
+  await requireUser()
   try {
     const data = await queries.updateComberMachineCount(machineId, newCount)
     return { success: true, data: serializeData(data) }
@@ -214,16 +235,8 @@ export async function updateComberMachineCountAction(machineId, newCount) {
   }
 }
 
-export async function bulkUpdateComberMachineCountAction(machineIds, newCount, headerId = null) {
-  try {
-    const data = await queries.bulkUpdateComberMachineCount(machineIds, newCount, headerId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 export async function getComberCountOptionsAction() {
+  await requireUser()
   try {
     const data = await queries.getComberCountOptions()
     return { success: true, data: serializeData(data) }
@@ -233,6 +246,7 @@ export async function getComberCountOptionsAction() {
 }
 
 export async function getComberMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getComberMachines()
     return { success: true, data: serializeData(data) }
@@ -242,6 +256,7 @@ export async function getComberMachinesAction() {
 }
 
 export async function getComberProductionWithSetupAction(headerId) {
+  await requireUser()
   try {
     const data = await queries.getComberProductionWithSetup(headerId)
     return { success: true, data: serializeData(data) }
@@ -251,6 +266,7 @@ export async function getComberProductionWithSetupAction(headerId) {
 }
 
 export async function applyComberFullStoppageAction(headerId, stoppageId, stoppageTime, slot = 1) {
+  await requireUser()
   try {
     const result = await queries.applyComberFullStoppage(headerId, stoppageId, stoppageTime, slot)
     return { success: result.success, data: serializeData(result.data) }
@@ -260,6 +276,7 @@ export async function applyComberFullStoppageAction(headerId, stoppageId, stoppa
 }
 
 export async function applyComberPartialStoppageAction(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
+  await requireUser()
   try {
     const result = await queries.applyComberPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime)
     return { 
@@ -281,6 +298,7 @@ export async function applyComberPartialStoppageAction(headerId, fromMachineNo, 
 // ============================================
 
 export async function getSupervisorsAction() {
+  await requireUser()
   try {
     const data = await queries.getSupervisors()
     return { success: true, data: serializeData(data) }
@@ -294,6 +312,7 @@ export async function getSupervisorsAction() {
 // ============================================
 
 export async function getComberAvailablePreviousDatesAction(beforeDate, shift, limit = 30) {
+  await requireUser()
   try {
     const data = await queries.getComberAvailableDates(beforeDate, shift, limit)
     return { success: true, data: serializeData(data) }
@@ -303,6 +322,7 @@ export async function getComberAvailablePreviousDatesAction(beforeDate, shift, l
 }
 
 export async function copyComberFromPreviousDateAction(...args) {
+  await requireUser()
   void args
   return { success: false, error: 'Comber speed is fixed and cannot be copied.' }
 }

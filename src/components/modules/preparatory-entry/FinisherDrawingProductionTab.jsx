@@ -508,7 +508,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         
         return updateFinisherDrawingDetailAction(rowId, {
           employee_name: changes.employee_name ?? row.employee_name,
-          prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
+          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
           act_prodn: roundedActProdn,
           ...otherCalculated,
@@ -588,7 +588,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
           {productionData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

@@ -25,6 +25,8 @@ import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, ArrowLeft } from 'lucid
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning'
+import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 
 import AutoconerProductionTab from '@/components/modules/post-preparatory/autoconer/AutoconerProductionTab'
 import AutoconerStoppageTab from '@/components/modules/post-preparatory/autoconer/AutoconerStoppageTab'
@@ -35,7 +37,8 @@ import {
   getOrCreateAutoconerHeaderAction,
   updateAutoconerProductionHeaderAction,
   getSupervisorsAction,
-  getAutoconerShiftConfigAction
+  getAutoconerShiftConfigAction,
+  getSpinningCountsAction
 } from '@/app/actions/autoconerEntryActions'
 
 function AutoconerEntryContent() {
@@ -47,6 +50,7 @@ function AutoconerEntryContent() {
   const [shift, setShift] = useState(paramShift || '1')
   const [supervisorId, setSupervisorId] = useState('')
   const [supervisors, setSupervisors] = useState([])
+  const [counts, setCounts] = useState([])
   const [headerId, setHeaderId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitializing, setIsInitializing] = useState(false)
@@ -56,29 +60,32 @@ function AutoconerEntryContent() {
   
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [sharedDrafts, setSharedDrafts] = useState({ header: {}, production: {}, stoppage: {}, setup: {} })
+  const sharedDraftsRef = useRef(sharedDrafts)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
   const setupTabRef = useRef(null)
+  const saveInFlightRef = useRef(false)
 
   const updateTabDrafts = useCallback((tabKey, nextDraftOrUpdater) => {
-    setSharedDrafts(prev => {
-      const currentTabDrafts = prev?.[tabKey] || {}
-      const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
-        ? nextDraftOrUpdater(currentTabDrafts)
-        : (nextDraftOrUpdater || {})
-      if (nextTabDrafts === currentTabDrafts) {
-        return prev
-      }
-      return {
-        ...prev,
-        [tabKey]: nextTabDrafts
-      }
-    })
+    const current = sharedDraftsRef.current
+    const currentTabDrafts = current?.[tabKey] || {}
+    const nextTabDrafts = typeof nextDraftOrUpdater === 'function'
+      ? nextDraftOrUpdater(currentTabDrafts)
+      : (nextDraftOrUpdater || {})
+    if (nextTabDrafts === currentTabDrafts) return
+    const next = { ...current, [tabKey]: nextTabDrafts }
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
+  }, [])
+
+  const replaceAllDrafts = useCallback((next) => {
+    sharedDraftsRef.current = next
+    setSharedDrafts(next)
   }, [])
 
   const clearAllDrafts = useCallback(() => {
-    setSharedDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
-  }, [])
+    replaceAllDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
+  }, [replaceAllDrafts])
 
   const handleProductionDraftsChange = useCallback((nextDrafts) => {
     updateTabDrafts('production', nextDrafts)
@@ -92,11 +99,26 @@ function AutoconerEntryContent() {
     updateTabDrafts('setup', nextDrafts)
   }, [updateTabDrafts])
 
+  const handleMachineCountChange = useCallback((setupId, machineId, countId) => {
+    const count = counts.find(item => String(item.id) === String(countId))
+    if (!setupId || !count) return
+
+    updateTabDrafts('setup', previous => ({
+      ...previous,
+      [setupId]: {
+        ...(previous[setupId] || {}),
+        ...(machineId ? { machine_id: machineId } : {}),
+        ...buildAutoconerCountSnapshot(count)
+      }
+    }))
+  }, [counts, updateTabDrafts])
+
   const getUnsavedEditCount = useCallback(() => {
-    const productionShared = Object.keys(sharedDrafts.production || {}).length
-    const stoppageShared = Object.keys(sharedDrafts.stoppage || {}).length
-    const setupShared = Object.keys(sharedDrafts.setup || {}).length
-    const headerShared = Object.keys(sharedDrafts.header || {}).length > 0 ? 1 : 0
+    const currentDrafts = sharedDraftsRef.current
+    const productionShared = Object.keys(currentDrafts.production || {}).length
+    const stoppageShared = Object.keys(currentDrafts.stoppage || {}).length
+    const setupShared = Object.keys(currentDrafts.setup || {}).length
+    const headerShared = Object.keys(currentDrafts.header || {}).length > 0 ? 1 : 0
 
     const productionCount = productionShared || (productionTabRef.current?.getEditedCount?.() || 0)
     const stoppageCount = stoppageShared || (stoppageTabRef.current?.getEditedCount?.() || 0)
@@ -118,6 +140,14 @@ function AutoconerEntryContent() {
       }
     }
     loadSupervisors()
+  }, [])
+
+  useEffect(() => {
+    const loadCounts = async () => {
+      const result = await getSpinningCountsAction()
+      if (result.success) setCounts(result.data || [])
+    }
+    loadCounts()
   }, [])
 
   // Load shift time when shift changes
@@ -209,6 +239,8 @@ function AutoconerEntryContent() {
     loadProductionHeader()
   }
 
+  useUnsavedChangesWarning(getUnsavedEditCount() > 0)
+
   const confirmIfUnsaved = useCallback((message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
@@ -229,7 +261,7 @@ function AutoconerEntryContent() {
   }
 
   const handleSaveAllTabs = async () => {
-    if (!headerId || isSavingAll) return
+    if (!headerId || saveInFlightRef.current) return
 
     const totalPending = getUnsavedEditCount()
 
@@ -238,6 +270,8 @@ function AutoconerEntryContent() {
       return
     }
 
+    const draftsAtSaveStart = sharedDraftsRef.current
+    saveInFlightRef.current = true
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
@@ -246,7 +280,7 @@ function AutoconerEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const stoppageResult = await (
@@ -254,7 +288,7 @@ function AutoconerEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
       const prodResult = await (
@@ -262,11 +296,11 @@ function AutoconerEntryContent() {
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
-          dependencyDrafts: sharedDrafts
+          dependencyDrafts: draftsAtSaveStart
         }) || Promise.resolve({ success: true, saved: 0 })
       )
-      const headerResult = Object.keys(sharedDrafts.header || {}).length > 0
-        ? await updateAutoconerProductionHeaderAction(headerId, sharedDrafts.header)
+      const headerResult = Object.keys(draftsAtSaveStart.header || {}).length > 0
+        ? await updateAutoconerProductionHeaderAction(headerId, draftsAtSaveStart.header)
         : { success: true, saved: 0 }
 
       const results = [prodResult, stoppageResult, setupResult, headerResult]
@@ -274,15 +308,20 @@ function AutoconerEntryContent() {
       const totalSaved = results.reduce((sum, r) => sum + (r?.saved || 0), 0)
 
       if (failures.length > 0) {
-        toast.error(`Saved ${totalSaved} change(s), but ${failures.length} tab(s) failed`)
+        replaceAllDrafts(draftsAtSaveStart)
+        toast.error(`Update incomplete: ${failures.length} section(s) failed. Your drafts were retained; click Update to retry.`)
       } else {
         toast.success(`Saved ${totalSaved} change(s) across all tabs`)
+        clearAllDrafts()
         router.push('/post-preparatory/autoconer')
         return
       }
-
-      handleRefresh()
+    } catch (error) {
+      replaceAllDrafts(draftsAtSaveStart)
+      console.error('Error saving Autoconer entry:', error)
+      toast.error('Update failed. Your unsaved drafts were retained.')
     } finally {
+      saveInFlightRef.current = false
       setIsSavingAll(false)
     }
   }
@@ -325,7 +364,7 @@ function AutoconerEntryContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push('/post-preparatory/autoconer')}
+              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/post-preparatory/autoconer')}
               className="flex items-center gap-1"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -353,6 +392,7 @@ function AutoconerEntryContent() {
                     selected={date}
                     onSelect={handleDateChange}
                     tableName="autoconer_production_header"
+                    shift={shift}
                     initialFocus
                   />
                 </PopoverContent>
@@ -453,6 +493,8 @@ function AutoconerEntryContent() {
                   onSharedDraftEditsChange={handleProductionDraftsChange}
                   stoppageDraftEdits={sharedDrafts.stoppage}
                   setupDraftEdits={sharedDrafts.setup}
+                  counts={counts}
+                  onMachineCountChange={handleMachineCountChange}
                 />
                 </DeferredMount>
               </TabsContent>
@@ -470,6 +512,8 @@ function AutoconerEntryContent() {
                   onSharedDraftEditsChange={handleStoppageDraftsChange}
                   productionDraftEdits={sharedDrafts.production}
                   setupDraftEdits={sharedDrafts.setup}
+                  counts={counts}
+                  onMachineCountChange={handleMachineCountChange}
                 />
                 </DeferredMount>
               </TabsContent>
@@ -478,6 +522,7 @@ function AutoconerEntryContent() {
                 <DeferredMount active={activeTab === 'setup'}>
                 <AutoconerMachineSetupTab 
                   ref={setupTabRef}
+                  headerId={headerId}
                   key={`setup-${refreshKey}`} 
                   shift={parseInt(shift)}
                   totalTime={totalTime}

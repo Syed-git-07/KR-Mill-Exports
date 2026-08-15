@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 /**
@@ -28,6 +30,7 @@ function normalizeDate(dateString) {
  * @returns {Promise<Object>} Report data
  */
 export async function generateAutoconerLowEfficiencyReportAction(selectedDate) {
+  await requireUser()
   try {
     const normalizedDate = normalizeDate(selectedDate)
     const reportData = await generateAutoconerLowEfficiencyReport(normalizedDate)
@@ -48,6 +51,7 @@ export async function generateAutoconerLowEfficiencyReportAction(selectedDate) {
  * @returns {Promise<Object>} { minDate, maxDate } as ISO strings
  */
 export async function getAutoconerDateRangeAction() {
+  await requireUser()
   try {
     const { minDate, maxDate } = await getAutoconerDateRange()
     return {
@@ -68,6 +72,7 @@ export async function getAutoconerDateRangeAction() {
  * @returns {Promise<Object>} Report data
  */
 export async function generateAutoconerParticularSiderReportAction(empName, fromDate, toDate) {
+  await requireUser()
   try {
     const normalizedFromDate = normalizeDate(fromDate)
     const normalizedToDate = normalizeDate(toDate)
@@ -116,6 +121,7 @@ export async function generateAutoconerParticularSiderReportAction(empName, from
  * @returns {Promise<Object>} Report data with grid structure
  */
 export async function generateAutoconerEfficiencyReportAction(selectedDate) {
+  await requireUser()
   try {
     const normalizedDate = normalizeDate(selectedDate)
     const reportData = await generateAutoconerEfficiencyReport(normalizedDate)

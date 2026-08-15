@@ -658,6 +658,7 @@ export default function DateShiftListPage({
                     selected={newEntryDate}
                     onSelect={(d) => d && setNewEntryDate(d)}
                     tableName={tableName}
+                    shift={newEntryShift}
                     initialFocus
                   />
                 </PopoverContent>

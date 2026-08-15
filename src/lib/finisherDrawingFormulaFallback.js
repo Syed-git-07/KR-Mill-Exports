@@ -27,11 +27,11 @@ export function resolveFinisherDrawingFormulaInputs(setup = {}, machineSpeed = n
       machineEffFactor = rawEff > 1 ? rawEff / 100 : rawEff
   }
 
-  const speed = toNumber(setup?.speed) || toNumber(machineSpeed) || toNumber(m.speed) || FINISHER_DRAWING_FORMULA_FALLBACK.speed
-  const hankConstant = toNumber(setup?.hank_constant) || toNumber(m.hank_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
-  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) || machineEffFactor || FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
-  const divisorConstant = toNumber(setup?.divisor_constant) || toNumber(m.divisor_constant) || FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant
-  const delivery = toNumber(setup?.delivery) || toNumber(m.delivery) || FINISHER_DRAWING_FORMULA_FALLBACK.delivery
+  const speed = toNumber(setup?.speed) ?? toNumber(machineSpeed) ?? toNumber(m.speed) ?? FINISHER_DRAWING_FORMULA_FALLBACK.speed
+  const hankConstant = toNumber(setup?.hank_constant) ?? toNumber(m.hank_constant) ?? FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant
+  const stdEfficiencyFactor = toNumber(setup?.std_efficiency_factor) ?? machineEffFactor ?? FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor
+  const divisorConstant = toNumber(setup?.divisor_constant) ?? toNumber(m.divisor_constant) ?? FINISHER_DRAWING_FORMULA_FALLBACK.divisorConstant
+  const delivery = toNumber(setup?.delivery) ?? toNumber(m.delivery) ?? FINISHER_DRAWING_FORMULA_FALLBACK.delivery
 
   return {
     speed,

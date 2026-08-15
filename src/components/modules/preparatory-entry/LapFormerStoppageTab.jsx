@@ -435,11 +435,12 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -449,7 +450,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
         return updateLapFormerStoppageEntryAction(rowId, persistedChanges)
       })
@@ -461,7 +462,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {
+      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -472,7 +473,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
         const { speed: machineSpeed } = resolveLapFormerFormulaInputs(setup, prodDetail.machine?.speed)
         
         // Calculate new total stoppage (all 4 stoppages)
-        const editedChanges = editedRows[rowId]
+        const editedChanges = currentEdits[rowId]
         const newTotalStoppage = 
           (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
           (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
@@ -506,7 +507,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       
       await Promise.all(productionUpdatePromises.filter(Boolean))
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved and production recalculated')
@@ -543,7 +544,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges,
     refreshData: () => loadData({ force: true })
@@ -653,7 +654,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
           {stoppageData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

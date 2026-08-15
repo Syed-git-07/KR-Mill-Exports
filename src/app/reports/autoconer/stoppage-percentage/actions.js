@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 const { getAutoconerStoppagePercentageReport } = require('./autoconerStoppagePercentageQueries')
@@ -10,6 +12,7 @@ const { getAutoconerStoppagePercentageReport } = require('./autoconerStoppagePer
  * @param {string} toDate    YYYY-MM-DD (optional, defaults to fromDate)
  */
 export async function fetchAutoconerStoppagePercentageReport(fromDate, toDate = null) {
+  await requireUser()
   try {
     const data = await getAutoconerStoppagePercentageReport(fromDate, toDate)
     return data

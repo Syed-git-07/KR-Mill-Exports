@@ -1,12 +1,18 @@
 'use server'
 
+import { requireRole, requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
+import { disabledMasterDeleteResult } from '@/lib/masterSafety'
+import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
+import { drawingFinisherCreateSchema, drawingFinisherUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/drawingFinisherQueries'
 import { getSpinningCountOptions } from '@/lib/queries/finisherDrawingEntryQueries'
 
 export async function getDrawingFinisherMachinesAction() {
+  await requireUser()
   try {
     const data = await queries.getDrawingFinisherMachines()
     return { success: true, data: serializeData(data) }
@@ -16,6 +22,7 @@ export async function getDrawingFinisherMachinesAction() {
 }
 
 export async function getDrawingFinisherPageDataAction() {
+  await requireUser()
   try {
     const [machinesResult, countOptionsResult] = await Promise.allSettled([
       queries.getDrawingFinisherMachines(),
@@ -37,8 +44,12 @@ export async function getDrawingFinisherPageDataAction() {
 }
 
 export async function createDrawingFinisherMachineAction(machineData) {
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.createDrawingFinisherMachine(machineData)
+    const validated = drawingFinisherCreateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'CREATE', resource: 'master.drawing-finisher-machine', changes: validated
+    }, () => queries.createDrawingFinisherMachine(validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -46,24 +57,26 @@ export async function createDrawingFinisherMachineAction(machineData) {
 }
 
 export async function updateDrawingFinisherMachineAction(id, machineData) {
+  const user = await requireRole('ADMIN')
   try {
-    const data = await queries.updateDrawingFinisherMachine(id, machineData)
+    const validatedId = masterUuidSchema.parse(id)
+    const validated = drawingFinisherUpdateSchema.parse(machineData)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.drawing-finisher-machine', targetId: validatedId, changes: validated
+    }, () => queries.updateDrawingFinisherMachine(validatedId, validated))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }
 
-export async function deleteDrawingFinisherMachineAction(id) {
-  try {
-    const data = await queries.deleteDrawingFinisherMachine(id)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+export async function deleteDrawingFinisherMachineAction() {
+  await requireRole('ADMIN')
+  return disabledMasterDeleteResult()
 }
 
 export async function searchDrawingFinisherMachinesAction(field, condition, value) {
+  await requireUser()
   try {
     const data = await queries.searchDrawingFinisherMachines(field, condition, value)
     return { success: true, data: serializeData(data) }

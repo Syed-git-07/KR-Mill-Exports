@@ -317,13 +317,6 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       const machineList = machineListRes?.data || []
       const setups = setupsRes?.data || []
       
-      console.log('Loaded stoppage data:', {
-        stoppagesCount: stoppages.length,
-        reasonsCount: reasons.length,
-        machinesCount: machineList.length,
-        setupsCount: setups.length
-      })
-      
       // Sort by natural machine number order (BD1, BD2, BD3, BD4)
       const sortedStoppages = stoppages?.sort((a, b) => {
         const aNum = parseInt(a.production_detail?.machine?.machine_no?.replace(/\D/g, '') || '0')
@@ -508,11 +501,12 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
 
   // Commit this tab's draft during the final Update
   const handleSave = async ({ suppressNoChangesToast = false, suppressSuccessToast = false, skipParentRefresh = false } = {}) => {
+    const currentEdits = editedRowsRef.current || editedRows || {}
     if (hasExceededError) {
       toast.error(`Stoppage minutes cannot exceed the ${shiftTimeVal}-minute shift.`)
       return { success: false, error: 'cannot exceed shift time' }
     }
-    if (Object.keys(editedRows).length === 0) {
+    if (Object.keys(currentEdits).length === 0) {
       if (!suppressNoChangesToast) {
         toast.info('No changes to save')
       }
@@ -522,7 +516,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(editedRows).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
         return updateStoppageEntryAction(rowId, persistedChanges)
       })
@@ -534,7 +528,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(editedRows).map(async (rowId) => {
+      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -546,7 +540,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
         const machineSpeed = setup?.speed ?? mergedProduction.machine?.speed ?? BREAKER_DRAWING_FORMULA_FALLBACK.speed
         
         // Calculate new total stoppage
-        const editedChanges = editedRows[rowId]
+        const editedChanges = currentEdits[rowId]
         const newTotalStoppage = 
           (editedChanges.stoppage1_time ?? stoppageRow.stoppage1_time ?? 0) +
           (editedChanges.stoppage2_time ?? stoppageRow.stoppage2_time ?? 0) +
@@ -578,7 +572,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       
       await Promise.all(productionUpdatePromises.filter(Boolean))
       
-      const savedCount = Object.keys(editedRows).length
+      const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!suppressSuccessToast) {
         toast.success('Stoppage data saved and production recalculated')
@@ -620,7 +614,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, editedRows, isSaving, discardChanges])
@@ -729,7 +723,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
           {stoppageData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

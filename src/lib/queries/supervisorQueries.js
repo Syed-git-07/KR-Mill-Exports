@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * Supervisor Master CRUD Operations
@@ -68,59 +69,22 @@ export async function deleteSupervisor(id) {
 
 // Search supervisors
 export async function searchSupervisors(field, condition, value) {
-  let whereClause = {};
+  let whereClause;
 
-  if (value && value.trim() !== '') {
-    // Handle department_name search separately (need to search departments first)
-    if (field === 'department_name') {
-      // Find matching departments first
-      const matchingDepts = await prisma.departments.findMany({
-        where: { dept_name: { contains: value } },
-        select: { id: true }
-      });
-      
-      if (matchingDepts.length > 0) {
-        whereClause.department_id = { in: matchingDepts.map(d => d.id) };
-      } else {
-        // No matching departments, return empty array
-        return [];
-      }
-    } else {
-      switch (condition) {
-        case 'Like':
-          // For numeric code field, use equality instead of contains
-          if (field === 'code') {
-            const numValue = parseInt(value);
-            if (!isNaN(numValue)) {
-              whereClause[field] = numValue;
-            }
-          } else {
-            // MySQL doesn't support mode: 'insensitive', string comparisons are case-insensitive by default
-            whereClause[field] = { contains: value };
-          }
-          break;
-        case 'Equal':
-          if (field === 'code') {
-            whereClause[field] = parseInt(value);
-          } else {
-            whereClause[field] = value;
-          }
-          break;
-        case 'Not Equal':
-          whereClause[field] = { not: value };
-          break;
-        case 'Greater':
-          if (field === 'code') {
-            whereClause[field] = { gt: parseInt(value) };
-          }
-          break;
-        case 'Less':
-          if (field === 'code') {
-            whereClause[field] = { lt: parseInt(value) };
-          }
-          break;
-      }
-    }
+  if (field === 'department_name') {
+    const relatedCondition = condition === 'Not Equal' ? 'Equal' : condition;
+    const matchingDepts = await prisma.departments.findMany({
+      where: buildTypedSearchWhere('dept_name', relatedCondition, value, { dept_name: 'text' }),
+      select: { id: true }
+    });
+    if (matchingDepts.length === 0 && condition !== 'Not Equal') return [];
+    whereClause = condition === 'Not Equal'
+      ? { department_id: { notIn: matchingDepts.map(department => department.id) } }
+      : { department_id: { in: matchingDepts.map(department => department.id) } };
+  } else {
+    whereClause = buildTypedSearchWhere(field, condition, value, {
+      code: 'number', supervisor_name: 'text'
+    });
   }
 
   const data = await prisma.supervisors.findMany({
@@ -157,6 +121,5 @@ export async function getDepartmentsForDropdown() {
     orderBy: { dept_name: 'asc' }
   });
 
-  console.log('Departments query result:', data);
   return data;
 }

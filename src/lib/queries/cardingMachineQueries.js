@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * Carding Machine Master - CRUD Operations
@@ -104,9 +105,6 @@ export async function updateCardingMachine(id, machineData) {
     installedDate = new Date(installedDate);
   }
 
-  // Ensure mc_id is a valid number
-  const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
-
   const currentMachine = await prisma.carding_machines.findUnique({
     where: { id },
     select: { is_active: true }
@@ -116,31 +114,6 @@ export async function updateCardingMachine(id, machineData) {
     && currentMachine?.is_active !== true;
   const isDeactivating = (machineData.is_active === false || machineData.is_active === 0)
     && currentMachine?.is_active !== false;
-
-  const data = await prisma.carding_machines.update({
-    where: { id },
-    data: {
-      machine_no: machineData.machine_no,
-      mc_id: mcId,
-      description: machineData.description,
-      make_name: machineData.make_name,
-      model: machineData.model,
-      prodn_mixing: machineData.prodn_mixing,
-      speed: machineData.speed,
-      prodn_efficiency: machineData.prodn_effi,
-      hank_constant: machineData.hank_constant != null ? machineData.hank_constant : undefined,
-      installed_date: installedDate,
-      // Only update is_active / mc_id if explicitly provided (undefined = preserve existing)
-      ...(machineData.is_active !== undefined && { is_active: machineData.is_active }),
-      ...(machineData.mc_id !== undefined && machineData.mc_id !== null && { mc_id: parseInt(machineData.mc_id, 10) }),
-      direct_hank_entry: machineData.direct_hank_entry,
-      direct_kgs_entry: machineData.direct_kgs_entry,
-      updated_at: new Date(),
-      // Handle is_active as boolean OR numeric (0/1) from any code path
-      ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
-      ...(isDeactivating && { deactivated_at: new Date() }),
-    }
-  });
 
   // Keep only the undated master setup template in sync. Dated setup rows are
   // entry snapshots and must never be rewritten by a later master change.
@@ -153,18 +126,42 @@ export async function updateCardingMachine(id, machineData) {
       templateUpdates.std_efficiency_factor = efficiency > 1 ? efficiency / 100 : efficiency;
     }
   }
-  if (Object.keys(templateUpdates).length > 0) {
-    await prisma.carding_machine_setup.updateMany({
-      where: {
-        machine_id: id,
-        entry_date: new Date('1970-01-01T00:00:00.000Z'),
-        shift: 1
-      },
-      data: templateUpdates
+  return prisma.$transaction(async (tx) => {
+    const data = await tx.carding_machines.update({
+      where: { id },
+      data: {
+        machine_no: machineData.machine_no,
+        description: machineData.description,
+        make_name: machineData.make_name,
+        model: machineData.model,
+        prodn_mixing: machineData.prodn_mixing,
+        speed: machineData.speed,
+        prodn_efficiency: machineData.prodn_effi,
+        hank_constant: machineData.hank_constant != null ? machineData.hank_constant : undefined,
+        installed_date: installedDate,
+        ...(machineData.is_active !== undefined && { is_active: machineData.is_active }),
+        ...(machineData.mc_id !== undefined && machineData.mc_id !== null && { mc_id: parseInt(machineData.mc_id, 10) }),
+        direct_hank_entry: machineData.direct_hank_entry,
+        direct_kgs_entry: machineData.direct_kgs_entry,
+        updated_at: new Date(),
+        ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
+        ...(isDeactivating && { deactivated_at: new Date() }),
+      }
     });
-  }
-  
-  return data;
+
+    if (Object.keys(templateUpdates).length > 0) {
+      await tx.carding_machine_setup.updateMany({
+        where: {
+          machine_id: id,
+          entry_date: new Date('1970-01-01T00:00:00.000Z'),
+          shift: 1
+        },
+        data: templateUpdates
+      });
+    }
+
+    return data;
+  });
 }
 
 // Get count options from spinning_counts for the machine master form
@@ -192,26 +189,9 @@ export async function deleteCardingMachine(id) {
 
 // Search carding machines
 export async function searchCardingMachines(field, condition, value) {
-  let whereClause = {};
-
-  // Apply search condition based on field and condition type
-  // MySQL is case-insensitive by default, no need for mode option
-  switch (condition) {
-    case 'contains':
-      whereClause[field] = { contains: value };
-      break;
-    case 'equals':
-      whereClause[field] = value;
-      break;
-    case 'startsWith':
-      whereClause[field] = { startsWith: value };
-      break;
-    case 'endsWith':
-      whereClause[field] = { endsWith: value };
-      break;
-    default:
-      whereClause[field] = { contains: value };
-  }
+  const whereClause = buildTypedSearchWhere(field, condition, value, {
+    machine_no: 'text', description: 'text', model: 'text'
+  });
 
   const data = await prisma.carding_machines.findMany({
     where: whereClause,

@@ -9,7 +9,7 @@ export default function PreparatoryMasterPage() {
   const preparatoryModules = [
     {
       title: "Carding Machine",
-      description: "Manage carding machine details (CA1-CA22)",
+      description: "Manage carding machines and production defaults",
       href: "/preparatory-master/carding-machine",
       icon: Cog,
       status: "Ready",
@@ -17,7 +17,7 @@ export default function PreparatoryMasterPage() {
     },
     {
       title: "Breaker Drawing Machine",
-      description: "Breaker drawing machine configuration (BD1-BD11)",
+      description: "Manage breaker drawing machines and production defaults",
       href: "/preparatory-master/drawing-breaker",
       icon: Layers,
       status: "Ready",
@@ -25,7 +25,7 @@ export default function PreparatoryMasterPage() {
     },
     {
       title: "Comber Machine",
-      description: "Comber machine master data (CO1-CO13)",
+      description: "Manage comber machines and production defaults",
       href: "/preparatory-master/comber",
       icon: Settings,
       status: "Ready",
@@ -33,7 +33,7 @@ export default function PreparatoryMasterPage() {
     },
     {
       title: "Finisher Drawing Machine",
-      description: "Finisher drawing machine details (FD1-FD5)",
+      description: "Manage finisher drawing machines and production defaults",
       href: "/preparatory-master/drawing-finisher",
       icon: Layers,
       status: "Ready",
@@ -49,7 +49,7 @@ export default function PreparatoryMasterPage() {
     },
     {
       title: "Lap Former Machine",
-      description: "Lap former machine details (LF1-LF3)",
+      description: "Manage lap former machines and production defaults",
       href: "/preparatory-master/lap-former",
       icon: Factory,
       status: "Ready",
@@ -57,7 +57,7 @@ export default function PreparatoryMasterPage() {
     },
     {
       title: "Simplex Machine",
-      description: "Simplex/Speed frame machine (1-10) with TPI & Spindles",
+      description: "Manage simplex machines, TPI, and spindle defaults",
       href: "/preparatory-master/simplex",
       icon: Wind,
       status: "Ready",

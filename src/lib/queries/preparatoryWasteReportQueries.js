@@ -102,13 +102,8 @@ function getUpToDateRange(selectedDate) {
  * Generate Preparatory Waste Abstract Report
  */
 export async function generatePreparatoryWasteReport(fromDate, toDate) {
-  console.log('Generating Preparatory Waste Report...')
-  console.log('  Period From:', fromDate.toISOString())
-  console.log('  Period To:', toDate.toISOString())
-
   // Calculate "Up to" date range (from start of month to day before fromDate)
   const upToRange = getUpToDateRange(fromDate)
-  console.log('  Up To Range:', upToRange.from.toISOString(), 'to', upToRange.to.toISOString())
 
   const reportData = {
     period: {
@@ -144,15 +139,19 @@ export async function generatePreparatoryWasteReport(fromDate, toDate) {
   let grandTotalWaste = 0
   let grandTotalProd = 0
 
-  // Process all departments
-  for (const dept of Object.values(DEPARTMENTS)) {
-    console.log(`Processing ${dept.name}...`)
+  const departments = Object.values(DEPARTMENTS)
+  const departmentResults = await Promise.all(
+    departments.map(async (dept) => {
+      const [uptoData, periodData] = await Promise.all([
+        getDepartmentWasteData(dept.code, upToRange.from, upToRange.to),
+        getDepartmentWasteData(dept.code, fromDate, toDate)
+      ])
+      return { dept, uptoData, periodData }
+    })
+  )
 
-    // Get "Up to" data
-    const uptoData = await getDepartmentWasteData(dept.code, upToRange.from, upToRange.to)
-    
-    // Get period data
-    const periodData = await getDepartmentWasteData(dept.code, fromDate, toDate)
+  // Aggregate in the original department order so report output is unchanged.
+  for (const { dept, uptoData, periodData } of departmentResults) {
 
     const deptResult = {
       department: dept.name,
@@ -196,6 +195,5 @@ export async function generatePreparatoryWasteReport(fromDate, toDate) {
     wastePercent: grandTotalProd > 0 ? parseFloat(((grandTotalWaste / grandTotalProd) * 100).toFixed(2)) : 0
   }
 
-  console.log('Report generation complete!')
   return reportData
 }

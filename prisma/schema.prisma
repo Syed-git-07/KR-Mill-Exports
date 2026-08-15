@@ -23,949 +23,1248 @@ model shift_config {
 }
 
 model autoconer_machine_setup {
-  id         String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id String    @db.Char(36)
-  entry_date DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift      Int       @default(1)
-  speed      Int?      @default(1200)
-  count_name String?   @db.VarChar(100)
-  count_id   String?   @db.Char(36)
-  act_count  Decimal?  @default(69.50) @db.Decimal(10, 2)
-  session_no Int?      @default(1)
-  run_time   Int?      @default(510)
-  created_at DateTime? @default(now()) @db.DateTime(0)
-  updated_at DateTime? @default(now()) @db.DateTime(0)
+  id                 String             @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id         String             @db.Char(36)
+  count_name         String?            @db.VarChar(100)
+  count_id           String?            @db.Char(36)
+  act_count          Decimal?           @default(69.50) @db.Decimal(10, 2)
+  session_no         Int?               @default(1)
+  run_time           Int?               @default(510)
+  created_at         DateTime?          @default(now()) @db.DateTime(0)
+  updated_at         DateTime?          @default(now()) @db.DateTime(0)
+  entry_date         DateTime           @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift              Int                @default(1)
+  speed              Int?               @default(1200)
+  target_effi        Decimal?           @db.Decimal(5, 2)
+  is_included        Boolean            @default(true)
+  spinning_counts    spinning_counts?   @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_ac_setup_count")
+  autoconer_machines autoconer_machines @relation(fields: [machine_id], references: [id], map: "fk_ac_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_autoconer_machine_setup_date")
   @@index([entry_date, shift], map: "idx_autoconer_setup_date_shift")
+  @@index([count_id], map: "fk_ac_setup_count")
 }
 
 model autoconer_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String    @db.Text
-  make_name         String    @default("MURT") @db.VarChar(255)
-  act_effi          Int?      @default(0)
-  is_active         Boolean?  @default(true)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  mc_id             Int?
-  group_id          Int?      @default(1)
-  model             String?   @db.Text
-  from_drum         Int?
-  to_drum           Int?
-  no_of_drums       Int?      @default(0)
-  speed             Int?
-  count             String?   @db.Text
-  installed_date    DateTime? @db.Date
-  direct_prod_entry Boolean?  @default(false)
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                  String                        @db.Text
+  description                 String                        @db.Text
+  make_name                   String                        @default("MURT") @db.VarChar(255)
+  act_effi                    Int?                          @default(0)
+  is_active                   Boolean?                      @default(true)
+  created_at                  DateTime?                     @default(now()) @db.DateTime(0)
+  updated_at                  DateTime?                     @default(now()) @db.DateTime(0)
+  mc_id                       Int?
+  group_id                    Int?                          @default(1)
+  model                       String?                       @db.Text
+  from_drum                   Int?
+  to_drum                     Int?
+  no_of_drums                 Int?                          @default(0)
+  speed                       Int?
+  count                       String?                       @db.Text
+  count_id                    String?                       @db.Char(36)
+  installed_date              DateTime?                     @db.Date
+  direct_prod_entry           Boolean?                      @default(false)
+  activated_at                DateTime?                     @db.Date
+  deactivated_at              DateTime?                     @db.Date
+  active_machine_no           String?                       @unique(map: "uq_autoconer_active_machine_no") @db.VarChar(255)
+  spinning_counts             spinning_counts?              @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_autoconer_machine_count")
+  autoconer_machine_setup     autoconer_machine_setup[]
+  autoconer_production_detail autoconer_production_detail[]
+
+  @@index([count_id], map: "fk_autoconer_machine_count")
 }
 
 model autoconer_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  emp_name            String?   @db.VarChar(100)
-  count_name          String?   @db.VarChar(100)
-  count_id            String?   @db.Char(36)
-  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  prodn_effi          Decimal?  @default(0.00) @db.Decimal(5, 2)
-  red_light           Decimal?  @default(0.00) @db.Decimal(5, 2)
-  idle_drum           Int?      @default(0)
-  idle_reason         String?   @db.Text
-  waste_kg            Decimal?  @db.Decimal(10, 4)
-  waste_percent       Decimal?  @db.Decimal(5, 2)
-  total_stoppage_mins Int?      @default(0)
-  work_time           Int?      @default(510)
-  run_time            Int?      @default(510)
-  session_no          Int?      @default(1)
-  is_verified         Boolean?  @default(false)
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  id                          String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                   String                      @db.Char(36)
+  machine_id                  String                      @db.Char(36)
+  emp_name                    String?                     @db.VarChar(100)
+  count_name                  String?                     @db.VarChar(100)
+  count_id                    String?                     @db.Char(36)
+  act_prodn                   Decimal?                    @default(0.00) @db.Decimal(10, 2)
+  prodn_effi                  Decimal?                    @default(0.00) @db.Decimal(5, 2)
+  red_light                   Decimal?                    @default(0.00) @db.Decimal(5, 2)
+  idle_drum                   Int?                        @default(0)
+  idle_reason                 String?                     @db.Text
+  waste_kg                    Decimal?                    @db.Decimal(10, 4)
+  waste_percent               Decimal?                    @db.Decimal(5, 2)
+  total_stoppage_mins         Int?                        @default(0)
+  work_time                   Int?                        @default(510)
+  run_time                    Int?                        @default(510)
+  session_no                  Int?                        @default(1)
+  is_verified                 Boolean?                    @default(false)
+  created_at                  DateTime?                   @default(now()) @db.DateTime(0)
+  updated_at                  DateTime?                   @default(now()) @db.DateTime(0)
+  spinning_counts             spinning_counts?            @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_ac_detail_count")
+  autoconer_production_header autoconer_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_ac_detail_header")
+  autoconer_machines          autoconer_machines          @relation(fields: [machine_id], references: [id], map: "fk_ac_detail_machine")
+  autoconer_stoppage_entry    autoconer_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_autoconer_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_autoconer_detail_header_machine")
+  @@index([count_id], map: "fk_ac_detail_count")
+  @@index([machine_id], map: "fk_ac_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model autoconer_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                    Int                           @unique(map: "entry_id") @default(autoincrement())
+  entry_date                  DateTime                      @db.Date
+  shift                       Int
+  supervisor_id               String?                       @db.Char(36)
+  total_time                  Int?                          @default(510)
+  remarks                     String?                       @db.Text
+  is_locked                   Boolean?                      @default(false)
+  created_at                  DateTime?                     @default(now()) @db.DateTime(0)
+  updated_at                  DateTime?                     @default(now()) @db.DateTime(0)
+  autoconer_production_detail autoconer_production_detail[]
+  supervisors                 supervisors?                  @relation(fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_ac_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_autoconer_header_date_shift")
   @@index([entry_date, shift], map: "idx_autoconer_header_date_shift")
+  @@index([supervisor_id], map: "fk_ac_header_supervisor")
 }
 
 model autoconer_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  run_time             Int?      @default(510)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  is_full_stoppage     Boolean?  @default(false)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                       String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                     String                      @db.Char(36)
+  run_time                                                                 Int?                        @default(510)
+  stoppage1_id                                                             String?                     @db.Char(36)
+  stoppage1_time                                                           Int?                        @default(0)
+  stoppage2_id                                                             String?                     @db.Char(36)
+  stoppage2_time                                                           Int?                        @default(0)
+  stoppage3_id                                                             String?                     @db.Char(36)
+  stoppage3_time                                                           Int?                        @default(0)
+  stoppage4_id                                                             String?                     @db.Char(36)
+  stoppage4_time                                                           Int?                        @default(0)
+  total_stoppage_time                                                      Int?                        @default(0)
+  is_full_stoppage                                                         Boolean?                    @default(false)
+  created_at                                                               DateTime?                   @default(now()) @db.DateTime(0)
+  updated_at                                                               DateTime?                   @default(now()) @db.DateTime(0)
+  stoppage_details_autoconer_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?           @relation("autoconer_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_ac_stop_code1")
+  stoppage_details_autoconer_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?           @relation("autoconer_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_ac_stop_code2")
+  stoppage_details_autoconer_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?           @relation("autoconer_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_ac_stop_code3")
+  stoppage_details_autoconer_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?           @relation("autoconer_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_ac_stop_code4")
+  autoconer_production_detail                                              autoconer_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_ac_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_autoconer_stop_detail")
   @@index([production_detail_id], map: "idx_autoconer_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_ac_stop_code1")
+  @@index([stoppage2_id], map: "fk_ac_stop_code2")
+  @@index([stoppage3_id], map: "fk_ac_stop_code3")
+  @@index([stoppage4_id], map: "fk_ac_stop_code4")
 }
 
 model breaker_drawing_machine_setup {
-  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id            String    @db.Char(36)
-  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift                 Int       @default(1)
-  speed                 Int?      @default(750)
-  hank_constant         Decimal?  @default(0.1400) @db.Decimal(10, 4)
-  std_efficiency_factor Decimal?  @default(0.8500) @db.Decimal(5, 4)
-  default_waste         Decimal?  @default(0.8500) @db.Decimal(10, 4)
-  std_prodn             Decimal?  @default(1371.72) @db.Decimal(10, 2)
-  shift_time            Int?      @default(510)
-  default_stoppage      Int?      @default(0)
-  divisor_constant      Int?      @default(1693)
-  delivery              Int?      @default(1)
-  created_at            DateTime? @default(now()) @db.DateTime(0)
-  updated_at            DateTime? @default(now()) @db.DateTime(0)
+  id                       String                   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id               String                   @db.Char(36)
+  speed                    Int?                     @default(750)
+  hank_constant            Decimal?                 @default(0.1400) @db.Decimal(10, 4)
+  std_efficiency_factor    Decimal?                 @default(0.8500) @db.Decimal(5, 4)
+  default_waste            Decimal?                 @default(0.8500) @db.Decimal(10, 4)
+  std_prodn                Decimal?                 @default(1371.72) @db.Decimal(10, 2)
+  shift_time               Int?                     @default(510)
+  default_stoppage         Int?                     @default(0)
+  divisor_constant         Int?                     @default(1693)
+  delivery                 Int?                     @default(1)
+  created_at               DateTime?                @default(now()) @db.DateTime(0)
+  updated_at               DateTime?                @default(now()) @db.DateTime(0)
+  entry_date               DateTime                 @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                    Int                      @default(1)
+  is_included              Boolean                  @default(true)
+  prodn_mixing             String?                  @db.VarChar(100)
+  drawing_breaker_machines drawing_breaker_machines @relation(fields: [machine_id], references: [id], map: "fk_breaker_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_breaker_setup_date")
   @@index([entry_date, shift], map: "idx_breaker_setup_date_shift")
 }
 
 model breaker_drawing_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  employee_name       String?   @db.VarChar(100)
-  prodn_mixing        String?   @db.VarChar(100)
-  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
-  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  std_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
-  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
-  waste               Decimal?  @default(0.8500) @db.Decimal(10, 4)
-  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
-  run_time            Int?      @default(510)
-  work_time           Int?      @default(510)
-  session_no          Int?      @default(1)
-  is_verified         Boolean?  @default(false)
-  verified_at         DateTime? @db.DateTime(0)
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
-  total_stoppage_mins Int?      @default(0)
+  id                                String                            @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                         String                            @db.Char(36)
+  machine_id                        String                            @db.Char(36)
+  employee_name                     String?                           @db.VarChar(100)
+  prodn_mixing                      String?                           @db.VarChar(100)
+  act_hank                          Decimal?                          @default(0.00) @db.Decimal(10, 2)
+  act_prodn                         Decimal?                          @default(0.00) @db.Decimal(10, 2)
+  std_prodn                         Decimal?                          @default(0.00) @db.Decimal(10, 2)
+  exp_prodn                         Decimal?                          @default(0.00) @db.Decimal(10, 2)
+  effi_percent                      Decimal?                          @default(0.00) @db.Decimal(10, 2)
+  uti_percent                       Decimal?                          @default(0.00) @db.Decimal(10, 2)
+  waste                             Decimal?                          @default(0.8500) @db.Decimal(10, 4)
+  waste_percent                     Decimal?                          @default(0.0000) @db.Decimal(10, 4)
+  run_time                          Int?                              @default(510)
+  work_time                         Int?                              @default(510)
+  session_no                        Int?                              @default(1)
+  is_verified                       Boolean?                          @default(false)
+  verified_at                       DateTime?                         @db.DateTime(0)
+  created_at                        DateTime?                         @default(now()) @db.DateTime(0)
+  updated_at                        DateTime?                         @default(now()) @db.DateTime(0)
+  total_stoppage_mins               Int?                              @default(0)
+  breaker_drawing_production_header breaker_drawing_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_breaker_detail_header")
+  drawing_breaker_machines          drawing_breaker_machines          @relation(fields: [machine_id], references: [id], map: "fk_breaker_detail_machine")
+  breaker_drawing_stoppage_entry    breaker_drawing_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_breaker_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_breaker_detail_header_machine")
+  @@index([machine_id], map: "fk_breaker_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model breaker_drawing_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                                       String                              @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                                 Int                                 @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                               DateTime                            @db.Date
+  shift                                                                    Int
+  supervisor_id                                                            String?                             @db.Char(36)
+  maisitry_id                                                              String?                             @db.Char(36)
+  total_time                                                               Int?                                @default(510)
+  remarks                                                                  String?                             @db.Text
+  is_locked                                                                Boolean?                            @default(false)
+  created_at                                                               DateTime?                           @default(now()) @db.DateTime(0)
+  updated_at                                                               DateTime?                           @default(now()) @db.DateTime(0)
+  breaker_drawing_production_detail                                        breaker_drawing_production_detail[]
+  supervisors_breaker_drawing_production_header_maisitry_idTosupervisors   supervisors?                        @relation("breaker_drawing_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_breaker_header_maisitry")
+  supervisors_breaker_drawing_production_header_supervisor_idTosupervisors supervisors?                        @relation("breaker_drawing_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_breaker_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_breaker_header_date_shift")
   @@index([entry_date, shift], map: "idx_breaker_header_date_shift")
+  @@index([maisitry_id], map: "fk_breaker_header_maisitry")
+  @@index([supervisor_id], map: "fk_breaker_header_supervisor")
 }
 
 model breaker_drawing_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  is_full_stoppage     Boolean?  @default(false)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                             String                            @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                           String                            @db.Char(36)
+  stoppage1_id                                                                   String?                           @db.Char(36)
+  stoppage1_time                                                                 Int?                              @default(0)
+  stoppage2_id                                                                   String?                           @db.Char(36)
+  stoppage2_time                                                                 Int?                              @default(0)
+  stoppage3_id                                                                   String?                           @db.Char(36)
+  stoppage3_time                                                                 Int?                              @default(0)
+  stoppage4_id                                                                   String?                           @db.Char(36)
+  stoppage4_time                                                                 Int?                              @default(0)
+  total_stoppage_time                                                            Int?                              @default(0)
+  is_full_stoppage                                                               Boolean?                          @default(false)
+  created_at                                                                     DateTime?                         @default(now()) @db.DateTime(0)
+  updated_at                                                                     DateTime?                         @default(now()) @db.DateTime(0)
+  stoppage_details_breaker_drawing_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?                 @relation("breaker_drawing_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_breaker_stop_code1")
+  stoppage_details_breaker_drawing_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?                 @relation("breaker_drawing_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_breaker_stop_code2")
+  stoppage_details_breaker_drawing_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?                 @relation("breaker_drawing_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_breaker_stop_code3")
+  stoppage_details_breaker_drawing_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?                 @relation("breaker_drawing_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_breaker_stop_code4")
+  breaker_drawing_production_detail                                              breaker_drawing_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_breaker_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_breaker_stop_detail")
   @@index([production_detail_id], map: "idx_breaker_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_breaker_stop_code1")
+  @@index([stoppage2_id], map: "fk_breaker_stop_code2")
+  @@index([stoppage3_id], map: "fk_breaker_stop_code3")
+  @@index([stoppage4_id], map: "fk_breaker_stop_code4")
 }
 
 model carding_machine_setup {
-  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id            String    @db.Char(36)
-  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift                 Int       @default(1)
-  speed                 Decimal?  @default(130.00) @db.Decimal(10, 2)
-  hank_constant         Decimal?  @default(0.1300) @db.Decimal(10, 4)
-  std_efficiency_factor Decimal?  @default(0.9800) @db.Decimal(5, 4)
-  default_waste         Decimal?  @default(0.3400) @db.Decimal(10, 4)
-  std_prodn             Decimal?  @default(295.22) @db.Decimal(10, 2)
-  shift_time            Int?      @default(510)
-  default_stoppage      Int?      @default(135)
-  divisor_constant      Int?      @default(1693)
-  created_at            DateTime? @default(now()) @db.DateTime(0)
-  updated_at            DateTime? @default(now()) @db.DateTime(0)
+  id                    String           @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id            String           @db.Char(36)
+  speed                 Decimal?         @default(130.00) @db.Decimal(10, 2)
+  hank_constant         Decimal?         @default(0.1300) @db.Decimal(10, 4)
+  std_efficiency_factor Decimal?         @default(0.9800) @db.Decimal(5, 4)
+  default_waste         Decimal?         @default(0.3400) @db.Decimal(10, 4)
+  std_prodn             Decimal?         @default(295.22) @db.Decimal(10, 2)
+  shift_time            Int?             @default(510)
+  default_stoppage      Int?             @default(135)
+  divisor_constant      Int?             @default(1693)
+  created_at            DateTime?        @default(now()) @db.DateTime(0)
+  updated_at            DateTime?        @default(now()) @db.DateTime(0)
+  entry_date            DateTime         @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                 Int              @default(1)
+  is_included           Boolean          @default(true)
+  prodn_mixing          String?          @db.VarChar(100)
+  carding_machines      carding_machines @relation(fields: [machine_id], references: [id], map: "fk_card_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_carding_machine_setup_date")
   @@index([entry_date, shift], map: "idx_carding_setup_date_shift")
 }
 
 model carding_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String?   @db.Text
-  make_name         String?   @db.Text
-  mc_id             Int?
-  model             String?   @db.Text
-  prodn_mixing      String?   @db.Text
-  speed             Int?
-  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  is_active         Boolean?  @default(true)
-  direct_hank_entry Boolean?  @default(false)
-  direct_kgs_entry  Boolean?  @default(false)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
-  hank_constant     Decimal?  @db.Decimal(10, 4)
-  sort_order        Int       @default(0)
+  id                        String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                String                      @db.Text
+  description               String?                     @db.Text
+  make_name                 String?                     @db.Text
+  mc_id                     Int?
+  model                     String?                     @db.Text
+  prodn_mixing              String?                     @db.Text
+  speed                     Int?
+  prodn_efficiency          Decimal?                    @default(0.00) @db.Decimal(5, 2)
+  installed_date            DateTime?                   @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active                 Boolean?                    @default(true)
+  direct_hank_entry         Boolean?                    @default(false)
+  direct_kgs_entry          Boolean?                    @default(false)
+  created_at                DateTime?                   @default(now()) @db.DateTime(0)
+  updated_at                DateTime?                   @default(now()) @db.DateTime(0)
+  activated_at              DateTime?                   @db.Date
+  deactivated_at            DateTime?                   @db.Date
+  hank_constant             Decimal?                    @db.Decimal(10, 4)
+  sort_order                Int                         @default(0)
+  active_machine_no         String?                     @unique(map: "uq_carding_active_machine_no") @db.VarChar(255)
+  carding_machine_setup     carding_machine_setup[]
+  carding_production_detail carding_production_detail[]
 }
 
 model carding_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  employee_name       String?   @db.VarChar(100)
-  count_mixing        String?   @db.VarChar(100)
-  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
-  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  std_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
-  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
-  waste               Decimal?  @default(0.3400) @db.Decimal(10, 4)
-  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
-  run_time            Int?      @default(375)
-  work_time           Int?      @default(375)
-  session_no          Int?      @default(1)
-  is_verified         Boolean?  @default(false)
-  verified_at         DateTime? @db.DateTime(0)
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
-  total_stoppage_mins Int?      @default(135)
+  id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                 String                    @db.Char(36)
+  machine_id                String                    @db.Char(36)
+  employee_name             String?                   @db.VarChar(100)
+  count_mixing              String?                   @db.VarChar(100)
+  act_hank                  Decimal?                  @default(0.00) @db.Decimal(10, 2)
+  act_prodn                 Decimal?                  @default(0.00) @db.Decimal(10, 2)
+  std_prodn                 Decimal?                  @default(0.00) @db.Decimal(10, 2)
+  exp_prodn                 Decimal?                  @default(0.00) @db.Decimal(10, 2)
+  effi_percent              Decimal?                  @default(0.00) @db.Decimal(10, 2)
+  uti_percent               Decimal?                  @default(0.00) @db.Decimal(10, 2)
+  waste                     Decimal?                  @default(0.3400) @db.Decimal(10, 4)
+  waste_percent             Decimal?                  @default(0.0000) @db.Decimal(10, 4)
+  run_time                  Int?                      @default(375)
+  work_time                 Int?                      @default(375)
+  session_no                Int?                      @default(1)
+  is_verified               Boolean?                  @default(false)
+  verified_at               DateTime?                 @db.DateTime(0)
+  created_at                DateTime?                 @default(now()) @db.DateTime(0)
+  updated_at                DateTime?                 @default(now()) @db.DateTime(0)
+  total_stoppage_mins       Int?                      @default(135)
+  carding_production_header carding_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_card_detail_header")
+  carding_machines          carding_machines          @relation(fields: [machine_id], references: [id], map: "fk_card_detail_machine")
+  carding_stoppage_entry    carding_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_carding_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_carding_detail_header_machine")
+  @@index([machine_id], map: "fk_card_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model carding_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                               String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                         Int                         @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                       DateTime                    @db.Date
+  shift                                                            Int
+  supervisor_id                                                    String?                     @db.Char(36)
+  maisitry_id                                                      String?                     @db.Char(36)
+  total_time                                                       Int?                        @default(510)
+  remarks                                                          String?                     @db.Text
+  is_locked                                                        Boolean?                    @default(false)
+  created_at                                                       DateTime?                   @default(now()) @db.DateTime(0)
+  updated_at                                                       DateTime?                   @default(now()) @db.DateTime(0)
+  carding_production_detail                                        carding_production_detail[]
+  supervisors_carding_production_header_maisitry_idTosupervisors   supervisors?                @relation("carding_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_card_header_maisitry")
+  supervisors_carding_production_header_supervisor_idTosupervisors supervisors?                @relation("carding_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_card_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_carding_header_date_shift")
   @@index([entry_date, shift], map: "idx_carding_header_date_shift")
+  @@index([maisitry_id], map: "fk_card_header_maisitry")
+  @@index([supervisor_id], map: "fk_card_header_supervisor")
 }
 
 model carding_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  is_full_stoppage     Boolean?  @default(false)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                     String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                   String                    @db.Char(36)
+  stoppage1_id                                                           String?                   @db.Char(36)
+  stoppage1_time                                                         Int?                      @default(0)
+  stoppage2_id                                                           String?                   @db.Char(36)
+  stoppage2_time                                                         Int?                      @default(0)
+  stoppage3_id                                                           String?                   @db.Char(36)
+  stoppage3_time                                                         Int?                      @default(0)
+  stoppage4_id                                                           String?                   @db.Char(36)
+  stoppage4_time                                                         Int?                      @default(0)
+  total_stoppage_time                                                    Int?                      @default(0)
+  is_full_stoppage                                                       Boolean?                  @default(false)
+  created_at                                                             DateTime?                 @default(now()) @db.DateTime(0)
+  updated_at                                                             DateTime?                 @default(now()) @db.DateTime(0)
+  stoppage_details_carding_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?         @relation("carding_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_card_stop_code1")
+  stoppage_details_carding_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?         @relation("carding_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_card_stop_code2")
+  stoppage_details_carding_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?         @relation("carding_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_card_stop_code3")
+  stoppage_details_carding_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?         @relation("carding_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_card_stop_code4")
+  carding_production_detail                                              carding_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_card_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_carding_stop_detail")
   @@index([production_detail_id], map: "idx_carding_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_card_stop_code1")
+  @@index([stoppage2_id], map: "fk_card_stop_code2")
+  @@index([stoppage3_id], map: "fk_card_stop_code3")
+  @@index([stoppage4_id], map: "fk_card_stop_code4")
 }
 
 model comber_machine_setup {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id    String    @db.Char(36)
-  entry_date    DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift         Int       @default(1)
-  speed         Int?      @default(350)
-  prodn_mixing  String?   @db.VarChar(100)
-  session_no    Int?      @default(1)
-  cc_time       Int?      @default(0)
-  sl_hank       Decimal?  @default(0.1400) @db.Decimal(10, 4)
-  mc_effi       Decimal?  @default(93.00) @db.Decimal(5, 2)
-  shift_time    Int?      @default(510)
-  default_waste Decimal?  @default(0.9600) @db.Decimal(10, 4)
-  constant      Decimal?  @default(3.2400) @db.Decimal(10, 4)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
-  description   String?   @db.Text
+  id              String          @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id      String          @db.Char(36)
+  prodn_mixing    String?         @db.VarChar(100)
+  session_no      Int?            @default(1)
+  cc_time         Int?            @default(0)
+  sl_hank         Decimal?        @default(0.1400) @db.Decimal(10, 4)
+  mc_effi         Decimal?        @default(93.00) @db.Decimal(5, 2)
+  shift_time      Int?            @default(510)
+  default_waste   Decimal?        @default(0.9600) @db.Decimal(10, 4)
+  constant        Decimal?        @default(3.2400) @db.Decimal(10, 4)
+  created_at      DateTime?       @default(now()) @db.DateTime(0)
+  updated_at      DateTime?       @default(now()) @db.DateTime(0)
+  description     String?         @db.Text
+  entry_date      DateTime        @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift           Int             @default(1)
+  speed           Int?            @default(350)
+  is_included     Boolean         @default(true)
+  comber_machines comber_machines @relation(fields: [machine_id], references: [id], map: "fk_comber_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_comber_setup_date")
   @@index([entry_date, shift], map: "idx_comber_setup_date_shift")
 }
 
 model comber_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String?   @db.Text
-  make_name         String?   @db.Text
-  mc_id             Int?
-  model             String?   @db.Text
-  prodn_mixing      String?   @db.Text
-  speed             Int?
-  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  mc_effi           Decimal?  @default(0.00) @db.Decimal(5, 2)
-  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  is_active         Boolean?  @default(true)
-  direct_hank_entry Boolean?  @default(false)
-  direct_kgs_entry  Boolean?  @default(false)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
-  sort_order        Int       @default(0)
-  sliver_hank       Decimal?  @db.Decimal(10, 4)
+  id                       String                     @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no               String                     @db.Text
+  description              String?                    @db.Text
+  make_name                String?                    @db.Text
+  mc_id                    Int?
+  model                    String?                    @db.Text
+  prodn_mixing             String?                    @db.Text
+  speed                    Int?
+  prodn_efficiency         Decimal?                   @default(0.00) @db.Decimal(5, 2)
+  mc_effi                  Decimal?                   @default(0.00) @db.Decimal(5, 2)
+  installed_date           DateTime?                  @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active                Boolean?                   @default(true)
+  direct_hank_entry        Boolean?                   @default(false)
+  direct_kgs_entry         Boolean?                   @default(false)
+  created_at               DateTime?                  @default(now()) @db.DateTime(0)
+  updated_at               DateTime?                  @default(now()) @db.DateTime(0)
+  activated_at             DateTime?                  @db.Date
+  deactivated_at           DateTime?                  @db.Date
+  sort_order               Int                        @default(0)
+  sliver_hank              Decimal?                   @db.Decimal(10, 4)
+  active_machine_no        String?                    @unique(map: "uq_comber_active_machine_no") @db.VarChar(255)
+  comber_machine_setup     comber_machine_setup[]
+  comber_production_detail comber_production_detail[]
 }
 
 model comber_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  employee_name       String?   @db.VarChar(100)
-  prodn_mixing        String?   @db.VarChar(100)
-  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
-  run_hrs             Decimal?  @default(0.00) @db.Decimal(5, 2)
-  run_min             Int?      @default(0)
-  waste               Decimal?  @default(0.9600) @db.Decimal(10, 4)
-  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
-  act_effi_percent    Decimal?  @default(0.00) @db.Decimal(10, 2)
-  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
-  std_hrs             Decimal?  @default(0.00) @db.Decimal(10, 2)
-  work_time           Int?      @default(510)
-  session_no          Int?      @default(1)
-  is_verified         Boolean?  @default(false)
-  verified_at         DateTime? @db.DateTime(0)
-  is_locked           Boolean?  @default(false)
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
-  total_stoppage_mins Int?      @default(0)
+  id                       String                   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                String                   @db.Char(36)
+  machine_id               String                   @db.Char(36)
+  employee_name            String?                  @db.VarChar(100)
+  prodn_mixing             String?                  @db.VarChar(100)
+  act_hank                 Decimal?                 @default(0.00) @db.Decimal(10, 2)
+  run_hrs                  Decimal?                 @default(0.00) @db.Decimal(5, 2)
+  run_min                  Int?                     @default(0)
+  waste                    Decimal?                 @default(0.9600) @db.Decimal(10, 4)
+  act_prodn                Decimal?                 @default(0.00) @db.Decimal(10, 2)
+  waste_percent            Decimal?                 @default(0.0000) @db.Decimal(10, 4)
+  act_effi_percent         Decimal?                 @default(0.00) @db.Decimal(10, 2)
+  uti_percent              Decimal?                 @default(0.00) @db.Decimal(10, 2)
+  std_hrs                  Decimal?                 @default(0.00) @db.Decimal(10, 2)
+  work_time                Int?                     @default(510)
+  session_no               Int?                     @default(1)
+  is_verified              Boolean?                 @default(false)
+  verified_at              DateTime?                @db.DateTime(0)
+  is_locked                Boolean?                 @default(false)
+  created_at               DateTime?                @default(now()) @db.DateTime(0)
+  updated_at               DateTime?                @default(now()) @db.DateTime(0)
+  total_stoppage_mins      Int?                     @default(0)
+  comber_production_header comber_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_comber_detail_header")
+  comber_machines          comber_machines          @relation(fields: [machine_id], references: [id], map: "fk_comber_detail_machine")
+  comber_stoppage_entry    comber_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_comber_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_comber_detail_header_machine")
+  @@index([machine_id], map: "fk_comber_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model comber_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                              String                     @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                        Int                        @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                      DateTime                   @db.Date
+  shift                                                           Int
+  supervisor_id                                                   String?                    @db.Char(36)
+  maisitry_id                                                     String?                    @db.Char(36)
+  total_time                                                      Int?                       @default(510)
+  remarks                                                         String?                    @db.Text
+  is_locked                                                       Boolean?                   @default(false)
+  created_at                                                      DateTime?                  @default(now()) @db.DateTime(0)
+  updated_at                                                      DateTime?                  @default(now()) @db.DateTime(0)
+  comber_production_detail                                        comber_production_detail[]
+  supervisors_comber_production_header_maisitry_idTosupervisors   supervisors?               @relation("comber_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_comber_header_maisitry")
+  supervisors_comber_production_header_supervisor_idTosupervisors supervisors?               @relation("comber_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_comber_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_comber_header_date_shift")
   @@index([entry_date, shift], map: "idx_comber_header_date_shift")
+  @@index([maisitry_id], map: "fk_comber_header_maisitry")
+  @@index([supervisor_id], map: "fk_comber_header_supervisor")
 }
 
 model comber_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  is_full_stoppage     Boolean?  @default(false)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                    String                   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                  String                   @db.Char(36)
+  stoppage1_id                                                          String?                  @db.Char(36)
+  stoppage1_time                                                        Int?                     @default(0)
+  stoppage2_id                                                          String?                  @db.Char(36)
+  stoppage2_time                                                        Int?                     @default(0)
+  stoppage3_id                                                          String?                  @db.Char(36)
+  stoppage3_time                                                        Int?                     @default(0)
+  stoppage4_id                                                          String?                  @db.Char(36)
+  stoppage4_time                                                        Int?                     @default(0)
+  total_stoppage_time                                                   Int?                     @default(0)
+  is_full_stoppage                                                      Boolean?                 @default(false)
+  created_at                                                            DateTime?                @default(now()) @db.DateTime(0)
+  updated_at                                                            DateTime?                @default(now()) @db.DateTime(0)
+  stoppage_details_comber_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?        @relation("comber_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_comber_stop_code1")
+  stoppage_details_comber_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?        @relation("comber_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_comber_stop_code2")
+  stoppage_details_comber_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?        @relation("comber_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_comber_stop_code3")
+  stoppage_details_comber_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?        @relation("comber_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_comber_stop_code4")
+  comber_production_detail                                              comber_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_comber_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_comber_stop_detail")
   @@index([production_detail_id], map: "idx_comber_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_comber_stop_code1")
+  @@index([stoppage2_id], map: "fk_comber_stop_code2")
+  @@index([stoppage3_id], map: "fk_comber_stop_code3")
+  @@index([stoppage4_id], map: "fk_comber_stop_code4")
 }
 
 model departments {
-  id         String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  dept_name  String    @db.Text
-  sl_no      Int
-  hok        Decimal   @default(0.00) @db.Decimal(10, 2)
-  is_active  Boolean?  @default(true)
-  created_at DateTime? @default(now()) @db.DateTime(0)
-  updated_at DateTime? @default(now()) @db.DateTime(0)
-  code       Int?
+  id                  String                @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  dept_name           String                @db.Text
+  sl_no               Int
+  hok                 Decimal               @default(0.00) @db.Decimal(10, 2)
+  is_active           Boolean?              @default(true)
+  created_at          DateTime?             @default(now()) @db.DateTime(0)
+  updated_at          DateTime?             @default(now()) @db.DateTime(0)
+  code                Int?
+  hok_strength_detail hok_strength_detail[]
+  stoppage_details    stoppage_details[]
+  supervisors         supervisors[]
 }
 
 model drawing_breaker_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String?   @db.Text
-  make_name         String?   @db.Text
-  mc_id             Int?
-  model             String?   @db.Text
-  prodn_mixing      String?   @db.Text
-  speed             Int?
-  delivery          Int?
-  sliver_hank       Decimal?  @db.Decimal(10, 4)
-  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  is_active         Boolean?  @default(true)
-  direct_hank_entry Boolean?  @default(false)
-  direct_kgs_entry  Boolean?  @default(false)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
-  sort_order        Int       @default(0)
+  id                                String                              @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                        String                              @db.Text
+  description                       String?                             @db.Text
+  make_name                         String?                             @db.Text
+  mc_id                             Int?
+  model                             String?                             @db.Text
+  prodn_mixing                      String?                             @db.Text
+  speed                             Int?
+  delivery                          Int?
+  sliver_hank                       Decimal?                            @db.Decimal(10, 4)
+  prodn_efficiency                  Decimal?                            @default(0.00) @db.Decimal(5, 2)
+  installed_date                    DateTime?                           @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active                         Boolean?                            @default(true)
+  direct_hank_entry                 Boolean?                            @default(false)
+  direct_kgs_entry                  Boolean?                            @default(false)
+  created_at                        DateTime?                           @default(now()) @db.DateTime(0)
+  updated_at                        DateTime?                           @default(now()) @db.DateTime(0)
+  activated_at                      DateTime?                           @db.Date
+  deactivated_at                    DateTime?                           @db.Date
+  sort_order                        Int                                 @default(0)
+  active_machine_no                 String?                             @unique(map: "uq_breaker_active_machine_no") @db.VarChar(255)
+  breaker_drawing_machine_setup     breaker_drawing_machine_setup[]
+  breaker_drawing_production_detail breaker_drawing_production_detail[]
 }
 
 model drawing_finisher_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String?   @db.Text
-  make_name         String?   @db.Text
-  mc_id             Int?
-  model             String?   @db.Text
-  prodn_mixing      String?   @db.Text
-  speed             Int?
-  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  is_active         Boolean?  @default(true)
-  direct_hank_entry Boolean?  @default(false)
-  direct_kgs_entry  Boolean?  @default(false)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
-  sort_order        Int       @default(0)
+  id                                 String                               @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                         String                               @db.Text
+  description                        String?                              @db.Text
+  make_name                          String?                              @db.Text
+  mc_id                              Int?
+  model                              String?                              @db.Text
+  prodn_mixing                       String?                              @db.Text
+  speed                              Int?
+  prodn_efficiency                   Decimal?                             @default(0.00) @db.Decimal(5, 2)
+  installed_date                     DateTime?                            @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active                          Boolean?                             @default(true)
+  direct_hank_entry                  Boolean?                             @default(false)
+  direct_kgs_entry                   Boolean?                             @default(false)
+  created_at                         DateTime?                            @default(now()) @db.DateTime(0)
+  updated_at                         DateTime?                            @default(now()) @db.DateTime(0)
+  activated_at                       DateTime?                            @db.Date
+  deactivated_at                     DateTime?                            @db.Date
+  sort_order                         Int                                  @default(0)
+  active_machine_no                  String?                              @unique(map: "uq_finisher_active_machine_no") @db.VarChar(255)
+  finisher_drawing_machine_setup     finisher_drawing_machine_setup[]
+  finisher_drawing_production_detail finisher_drawing_production_detail[]
 }
 
 model finisher_drawing_machine_setup {
-  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id            String    @db.Char(36)
-  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift                 Int       @default(1)
-  speed                 Int?      @default(350)
-  hank_constant         Decimal?  @default(0.1400) @db.Decimal(10, 4)
-  std_efficiency_factor Decimal?  @default(0.9000) @db.Decimal(5, 4)
-  default_waste         Decimal?  @db.Decimal(10, 4)
-  std_prodn             Decimal?  @default(677.79) @db.Decimal(10, 2)
-  shift_time            Int?      @default(510)
-  default_stoppage      Int?      @default(0)
-  divisor_constant      Int?      @default(1693)
-  delivery              Int?      @default(1)
-  make_name             String?   @db.VarChar(50)
-  machine_type          String?   @default("FINISHER") @db.VarChar(20)
-  created_at            DateTime? @default(now()) @db.DateTime(0)
-  updated_at            DateTime? @default(now()) @db.DateTime(0)
-  prodn_mixing          String?   @db.VarChar(100)
+  id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id                String                    @db.Char(36)
+  speed                     Int?                      @default(350)
+  hank_constant             Decimal?                  @default(0.1400) @db.Decimal(10, 4)
+  std_efficiency_factor     Decimal?                  @default(0.9000) @db.Decimal(5, 4)
+  default_waste             Decimal?                  @db.Decimal(10, 4)
+  std_prodn                 Decimal?                  @default(677.79) @db.Decimal(10, 2)
+  shift_time                Int?                      @default(510)
+  default_stoppage          Int?                      @default(0)
+  divisor_constant          Int?                      @default(1693)
+  delivery                  Int?                      @default(1)
+  make_name                 String?                   @db.VarChar(50)
+  machine_type              String?                   @default("FINISHER") @db.VarChar(20)
+  created_at                DateTime?                 @default(now()) @db.DateTime(0)
+  updated_at                DateTime?                 @default(now()) @db.DateTime(0)
+  prodn_mixing              String?                   @db.VarChar(100)
+  entry_date                DateTime                  @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                     Int                       @default(1)
+  is_included               Boolean                   @default(true)
+  drawing_finisher_machines drawing_finisher_machines @relation(fields: [machine_id], references: [id], map: "fk_finisher_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_finisher_setup_date")
   @@index([entry_date, shift], map: "idx_finisher_setup_date_shift")
 }
 
 model finisher_drawing_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  employee_name       String?   @db.VarChar(100)
-  prodn_mixing        String?   @db.VarChar(100)
-  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
-  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  std_prodn           Decimal?  @default(677.79) @db.Decimal(10, 2)
-  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
-  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
-  waste               Decimal?  @db.Decimal(10, 4)
-  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
-  run_time            Int?      @default(510)
-  work_time           Int?      @default(510)
-  session_no          Int?      @default(1)
-  is_locked           Boolean?  @default(false)
-  remarks             String?   @db.Text
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
-  total_stoppage_mins Int?      @default(0)
+  id                                 String                             @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                          String                             @db.Char(36)
+  machine_id                         String                             @db.Char(36)
+  employee_name                      String?                            @db.VarChar(100)
+  prodn_mixing                       String?                            @db.VarChar(100)
+  act_hank                           Decimal?                           @default(0.00) @db.Decimal(10, 2)
+  act_prodn                          Decimal?                           @default(0.00) @db.Decimal(10, 2)
+  std_prodn                          Decimal?                           @default(677.79) @db.Decimal(10, 2)
+  exp_prodn                          Decimal?                           @default(0.00) @db.Decimal(10, 2)
+  effi_percent                       Decimal?                           @default(0.00) @db.Decimal(10, 2)
+  uti_percent                        Decimal?                           @default(0.00) @db.Decimal(10, 2)
+  waste                              Decimal?                           @db.Decimal(10, 4)
+  waste_percent                      Decimal?                           @default(0.0000) @db.Decimal(10, 4)
+  run_time                           Int?                               @default(510)
+  work_time                          Int?                               @default(510)
+  session_no                         Int?                               @default(1)
+  is_locked                          Boolean?                           @default(false)
+  remarks                            String?                            @db.Text
+  created_at                         DateTime?                          @default(now()) @db.DateTime(0)
+  updated_at                         DateTime?                          @default(now()) @db.DateTime(0)
+  total_stoppage_mins                Int?                               @default(0)
+  finisher_drawing_production_header finisher_drawing_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_finisher_detail_header")
+  drawing_finisher_machines          drawing_finisher_machines          @relation(fields: [machine_id], references: [id], map: "fk_finisher_detail_machine")
+  finisher_drawing_stoppage_entry    finisher_drawing_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_finisher_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_finisher_detail_header_machine")
+  @@index([machine_id], map: "fk_finisher_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model finisher_drawing_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                                        String                               @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                                  Int                                  @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                                DateTime                             @db.Date
+  shift                                                                     Int
+  supervisor_id                                                             String?                              @db.Char(36)
+  maisitry_id                                                               String?                              @db.Char(36)
+  total_time                                                                Int?                                 @default(510)
+  remarks                                                                   String?                              @db.Text
+  is_locked                                                                 Boolean?                             @default(false)
+  created_at                                                                DateTime?                            @default(now()) @db.DateTime(0)
+  updated_at                                                                DateTime?                            @default(now()) @db.DateTime(0)
+  finisher_drawing_production_detail                                        finisher_drawing_production_detail[]
+  supervisors_finisher_drawing_production_header_maisitry_idTosupervisors   supervisors?                         @relation("finisher_drawing_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_finisher_header_maisitry")
+  supervisors_finisher_drawing_production_header_supervisor_idTosupervisors supervisors?                         @relation("finisher_drawing_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_finisher_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_finisher_header_date_shift")
   @@index([entry_date, shift], map: "idx_finisher_header_date_shift")
+  @@index([maisitry_id], map: "fk_finisher_header_maisitry")
+  @@index([supervisor_id], map: "fk_finisher_header_supervisor")
 }
 
 model finisher_drawing_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
-  is_full_stoppage     Boolean?  @default(false)
+  id                                                                              String                             @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                            String                             @db.Char(36)
+  stoppage1_id                                                                    String?                            @db.Char(36)
+  stoppage1_time                                                                  Int?                               @default(0)
+  stoppage2_id                                                                    String?                            @db.Char(36)
+  stoppage2_time                                                                  Int?                               @default(0)
+  stoppage3_id                                                                    String?                            @db.Char(36)
+  stoppage3_time                                                                  Int?                               @default(0)
+  stoppage4_id                                                                    String?                            @db.Char(36)
+  stoppage4_time                                                                  Int?                               @default(0)
+  total_stoppage_time                                                             Int?                               @default(0)
+  created_at                                                                      DateTime?                          @default(now()) @db.DateTime(0)
+  updated_at                                                                      DateTime?                          @default(now()) @db.DateTime(0)
+  is_full_stoppage                                                                Boolean?                           @default(false)
+  stoppage_details_finisher_drawing_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?                  @relation("finisher_drawing_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_finisher_stop_code1")
+  stoppage_details_finisher_drawing_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?                  @relation("finisher_drawing_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_finisher_stop_code2")
+  stoppage_details_finisher_drawing_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?                  @relation("finisher_drawing_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_finisher_stop_code3")
+  stoppage_details_finisher_drawing_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?                  @relation("finisher_drawing_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_finisher_stop_code4")
+  finisher_drawing_production_detail                                              finisher_drawing_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_finisher_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_finisher_stop_detail")
   @@index([production_detail_id], map: "idx_finisher_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_finisher_stop_code1")
+  @@index([stoppage2_id], map: "fk_finisher_stop_code2")
+  @@index([stoppage3_id], map: "fk_finisher_stop_code3")
+  @@index([stoppage4_id], map: "fk_finisher_stop_code4")
 }
 
 model hok_strength_detail {
-  id            Int       @id
-  hok_id        Int
-  department_id String    @db.Char(36)
-  shift1        Decimal?  @default(0.0) @db.Decimal(10, 1)
-  shift2        Decimal?  @default(0.0) @db.Decimal(10, 1)
-  shift3        Decimal?  @default(0.0) @db.Decimal(10, 1)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                Int               @id
+  hok_id            Int
+  department_id     String            @db.Char(36)
+  shift1            Decimal?          @default(0.0) @db.Decimal(10, 1)
+  shift2            Decimal?          @default(0.0) @db.Decimal(10, 1)
+  shift3            Decimal?          @default(0.0) @db.Decimal(10, 1)
+  created_at        DateTime?         @default(now()) @db.DateTime(0)
+  updated_at        DateTime?         @default(now()) @db.DateTime(0)
+  departments       departments       @relation(fields: [department_id], references: [id], map: "fk_hok_detail_department")
+  hok_strength_head hok_strength_head @relation(fields: [hok_id], references: [hok_id], onDelete: Cascade, map: "fk_hok_detail_head")
+
+  @@index([department_id], map: "fk_hok_detail_department")
+  @@index([hok_id], map: "fk_hok_detail_head")
 }
 
 model hok_strength_head {
-  hok_id       Int       @id @default(autoincrement())
-  date         DateTime? @db.Date
-  total_shift1 Decimal?  @default(0.00) @db.Decimal(10, 2)
-  total_shift2 Decimal?  @default(0.00) @db.Decimal(10, 2)
-  total_shift3 Decimal?  @default(0.00) @db.Decimal(10, 2)
-  created_at   DateTime? @default(now()) @db.DateTime(0)
-  updated_at   DateTime? @default(now()) @db.DateTime(0)
+  hok_id              Int                   @id @default(autoincrement())
+  date                DateTime?             @db.Date
+  total_shift1        Decimal?              @default(0.00) @db.Decimal(10, 2)
+  total_shift2        Decimal?              @default(0.00) @db.Decimal(10, 2)
+  total_shift3        Decimal?              @default(0.00) @db.Decimal(10, 2)
+  created_at          DateTime?             @default(now()) @db.DateTime(0)
+  updated_at          DateTime?             @default(now()) @db.DateTime(0)
+  hok_strength_detail hok_strength_detail[]
 }
 
 model lap_former_machine_setup {
-  id                    String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id            String    @db.Char(36)
-  entry_date            DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift                 Int       @default(1)
-  speed                 Int?      @default(90)
-  hank_constant         Decimal?  @default(0.0082) @db.Decimal(10, 4)
-  std_efficiency_factor Decimal?  @default(0.8500) @db.Decimal(5, 4)
-  default_waste         Decimal?  @default(0.8500) @db.Decimal(10, 4)
-  std_prodn             Decimal?  @default(2810.35) @db.Decimal(10, 2)
-  shift_time            Int?      @default(510)
-  default_stoppage      Int?      @default(0)
-  divisor_constant      Int?      @default(1693)
-  delivery              Int?      @default(1)
-  created_at            DateTime? @default(now()) @db.DateTime(0)
-  updated_at            DateTime? @default(now()) @db.DateTime(0)
+  id                    String              @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id            String              @db.Char(36)
+  speed                 Int?                @default(90)
+  hank_constant         Decimal?            @default(0.0082) @db.Decimal(10, 4)
+  std_efficiency_factor Decimal?            @default(0.8500) @db.Decimal(5, 4)
+  default_waste         Decimal?            @default(0.8500) @db.Decimal(10, 4)
+  std_prodn             Decimal?            @default(2810.35) @db.Decimal(10, 2)
+  shift_time            Int?                @default(510)
+  default_stoppage      Int?                @default(0)
+  divisor_constant      Int?                @default(1693)
+  delivery              Int?                @default(1)
+  created_at            DateTime?           @default(now()) @db.DateTime(0)
+  updated_at            DateTime?           @default(now()) @db.DateTime(0)
+  entry_date            DateTime            @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift                 Int                 @default(1)
+  is_included           Boolean             @default(true)
+  prodn_mixing          String?             @db.VarChar(100)
+  lap_former_machines   lap_former_machines @relation(fields: [machine_id], references: [id], map: "fk_lap_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_lap_former_setup_date")
   @@index([entry_date, shift], map: "idx_lap_former_setup_date_shift")
 }
 
 model lap_former_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String?   @db.Text
-  make_name         String?   @db.Text
-  mc_id             Int?
-  model             String?   @db.Text
-  prodn_mixing      String?   @db.Text
-  speed             Int?
-  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  is_active         Boolean?  @default(true)
-  direct_hank_entry Boolean?  @default(false)
-  direct_kgs_entry  Boolean?  @default(false)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
-  sort_order        Int?      @default(0)
+  id                           String                         @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                   String                         @db.Text
+  description                  String?                        @db.Text
+  make_name                    String?                        @db.Text
+  mc_id                        Int?
+  model                        String?                        @db.Text
+  prodn_mixing                 String?                        @db.Text
+  speed                        Int?
+  prodn_efficiency             Decimal?                       @default(0.00) @db.Decimal(5, 2)
+  installed_date               DateTime?                      @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active                    Boolean?                       @default(true)
+  direct_hank_entry            Boolean?                       @default(false)
+  direct_kgs_entry             Boolean?                       @default(false)
+  created_at                   DateTime?                      @default(now()) @db.DateTime(0)
+  updated_at                   DateTime?                      @default(now()) @db.DateTime(0)
+  activated_at                 DateTime?                      @db.Date
+  deactivated_at               DateTime?                      @db.Date
+  sort_order                   Int?                           @default(0)
+  active_machine_no            String?                        @unique(map: "uq_lap_former_active_machine_no") @db.VarChar(255)
+  lap_former_machine_setup     lap_former_machine_setup[]
+  lap_former_production_detail lap_former_production_detail[]
 }
 
 model lap_former_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  employee_name       String?   @db.VarChar(100)
-  prodn_mixing        String?   @db.VarChar(100)
-  act_hank            Decimal?  @default(0.00) @db.Decimal(10, 2)
-  act_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  std_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  exp_prodn           Decimal?  @default(0.00) @db.Decimal(10, 2)
-  effi_percent        Decimal?  @default(0.00) @db.Decimal(10, 2)
-  uti_percent         Decimal?  @default(0.00) @db.Decimal(10, 2)
-  waste               Decimal?  @default(0.8500) @db.Decimal(10, 4)
-  waste_percent       Decimal?  @default(0.0000) @db.Decimal(10, 4)
-  run_time            Int?      @default(510)
-  work_time           Int?      @default(510)
-  session_no          Int?      @default(1)
-  is_verified         Boolean?  @default(false)
-  verified_at         DateTime? @db.DateTime(0)
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
-  total_stoppage_mins Int?      @default(0)
+  id                           String                       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                    String                       @db.Char(36)
+  machine_id                   String                       @db.Char(36)
+  employee_name                String?                      @db.VarChar(100)
+  prodn_mixing                 String?                      @db.VarChar(100)
+  act_hank                     Decimal?                     @default(0.00) @db.Decimal(10, 2)
+  act_prodn                    Decimal?                     @default(0.00) @db.Decimal(10, 2)
+  std_prodn                    Decimal?                     @default(0.00) @db.Decimal(10, 2)
+  exp_prodn                    Decimal?                     @default(0.00) @db.Decimal(10, 2)
+  effi_percent                 Decimal?                     @default(0.00) @db.Decimal(10, 2)
+  uti_percent                  Decimal?                     @default(0.00) @db.Decimal(10, 2)
+  waste                        Decimal?                     @default(0.8500) @db.Decimal(10, 4)
+  waste_percent                Decimal?                     @default(0.0000) @db.Decimal(10, 4)
+  run_time                     Int?                         @default(510)
+  work_time                    Int?                         @default(510)
+  session_no                   Int?                         @default(1)
+  is_verified                  Boolean?                     @default(false)
+  verified_at                  DateTime?                    @db.DateTime(0)
+  created_at                   DateTime?                    @default(now()) @db.DateTime(0)
+  updated_at                   DateTime?                    @default(now()) @db.DateTime(0)
+  total_stoppage_mins          Int?                         @default(0)
+  lap_former_production_header lap_former_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_lap_detail_header")
+  lap_former_machines          lap_former_machines          @relation(fields: [machine_id], references: [id], map: "fk_lap_detail_machine")
+  lap_former_stoppage_entry    lap_former_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_lap_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_lap_former_detail_header_machine")
+  @@index([machine_id], map: "fk_lap_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model lap_former_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                                  String                         @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                            Int                            @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                          DateTime                       @db.Date
+  shift                                                               Int
+  supervisor_id                                                       String?                        @db.Char(36)
+  maisitry_id                                                         String?                        @db.Char(36)
+  total_time                                                          Int?                           @default(510)
+  remarks                                                             String?                        @db.Text
+  is_locked                                                           Boolean?                       @default(false)
+  created_at                                                          DateTime?                      @default(now()) @db.DateTime(0)
+  updated_at                                                          DateTime?                      @default(now()) @db.DateTime(0)
+  lap_former_production_detail                                        lap_former_production_detail[]
+  supervisors_lap_former_production_header_maisitry_idTosupervisors   supervisors?                   @relation("lap_former_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_lap_header_maisitry")
+  supervisors_lap_former_production_header_supervisor_idTosupervisors supervisors?                   @relation("lap_former_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_lap_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_lap_header_date_shift")
   @@index([entry_date, shift], map: "idx_lap_former_header_date_shift")
+  @@index([maisitry_id], map: "fk_lap_header_maisitry")
+  @@index([supervisor_id], map: "fk_lap_header_supervisor")
 }
 
 model lap_former_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  is_full_stoppage     Boolean?  @default(false)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                        String                       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                      String                       @db.Char(36)
+  stoppage1_id                                                              String?                      @db.Char(36)
+  stoppage1_time                                                            Int?                         @default(0)
+  stoppage2_id                                                              String?                      @db.Char(36)
+  stoppage2_time                                                            Int?                         @default(0)
+  stoppage3_id                                                              String?                      @db.Char(36)
+  stoppage3_time                                                            Int?                         @default(0)
+  stoppage4_id                                                              String?                      @db.Char(36)
+  stoppage4_time                                                            Int?                         @default(0)
+  total_stoppage_time                                                       Int?                         @default(0)
+  is_full_stoppage                                                          Boolean?                     @default(false)
+  created_at                                                                DateTime?                    @default(now()) @db.DateTime(0)
+  updated_at                                                                DateTime?                    @default(now()) @db.DateTime(0)
+  stoppage_details_lap_former_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?            @relation("lap_former_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_lap_stop_code1")
+  stoppage_details_lap_former_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?            @relation("lap_former_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_lap_stop_code2")
+  stoppage_details_lap_former_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?            @relation("lap_former_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_lap_stop_code3")
+  stoppage_details_lap_former_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?            @relation("lap_former_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_lap_stop_code4")
+  lap_former_production_detail                                              lap_former_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_lap_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_lap_stop_detail")
   @@index([production_detail_id], map: "idx_lap_former_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_lap_stop_code1")
+  @@index([stoppage2_id], map: "fk_lap_stop_code2")
+  @@index([stoppage3_id], map: "fk_lap_stop_code3")
+  @@index([stoppage4_id], map: "fk_lap_stop_code4")
 }
 
 model simplex_machine_setup {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id    String    @db.Char(36)
-  entry_date    DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift         Int       @default(1)
-  speed         Int?      @default(960)
-  prodn_mixing  String?   @db.VarChar(50)
-  session_no    Int?      @default(1)
-  cc_time       Int?      @default(0)
-  sl_hank       Decimal?  @default(1.4000) @db.Decimal(10, 4)
-  mc_effi       Decimal?  @default(92.00) @db.Decimal(5, 2)
-  tpi           Decimal?  @default(1.73) @db.Decimal(5, 2)
-  spindles      Int?      @default(140)
-  shift_time    Int?      @default(510)
-  default_waste Decimal?  @default(0.9000) @db.Decimal(10, 4)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id               String           @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id       String           @db.Char(36)
+  prodn_mixing     String?          @db.VarChar(50)
+  session_no       Int?             @default(1)
+  cc_time          Int?             @default(0)
+  sl_hank          Decimal?         @default(1.4000) @db.Decimal(10, 4)
+  mc_effi          Decimal?         @default(92.00) @db.Decimal(5, 2)
+  tpi              Decimal?         @default(1.73) @db.Decimal(5, 2)
+  spindles         Int?             @default(140)
+  shift_time       Int?             @default(510)
+  default_waste    Decimal?         @default(0.9000) @db.Decimal(10, 4)
+  created_at       DateTime?        @default(now()) @db.DateTime(0)
+  updated_at       DateTime?        @default(now()) @db.DateTime(0)
+  entry_date       DateTime         @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift            Int              @default(1)
+  speed            Int?             @default(960)
+  is_included      Boolean          @default(true)
+  simplex_machines simplex_machines @relation(fields: [machine_id], references: [id], map: "fk_simplex_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_simplex_setup_date")
   @@index([entry_date, shift], map: "idx_simplex_setup_date_shift")
 }
 
 model simplex_machines {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no        String    @db.Text
-  description       String?   @db.Text
-  make_name         String?   @db.Text
-  mc_id             Int?
-  model             String?   @db.Text
-  prodn_mixing      String?   @db.Text
-  speed             Int?
-  prodn_efficiency  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  mc_effi           Decimal?  @default(0.00) @db.Decimal(5, 2)
-  tpi               Decimal?  @default(0.00) @db.Decimal(5, 2)
-  no_of_spindles    Int?      @default(0)
-  installed_date    DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  activated_at      DateTime? @db.Date
-  deactivated_at    DateTime? @db.Date
-  sort_order        Int?      @default(0)
-  is_active         Boolean?  @default(true)
-  direct_hank_entry Boolean?  @default(false)
-  direct_kgs_entry  Boolean?  @default(false)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  id                        String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                String                      @db.Text
+  description               String?                     @db.Text
+  make_name                 String?                     @db.Text
+  mc_id                     Int?
+  model                     String?                     @db.Text
+  prodn_mixing              String?                     @db.Text
+  speed                     Int?
+  prodn_efficiency          Decimal?                    @default(0.00) @db.Decimal(5, 2)
+  mc_effi                   Decimal?                    @default(0.00) @db.Decimal(5, 2)
+  tpi                       Decimal?                    @default(0.00) @db.Decimal(5, 2)
+  no_of_spindles            Int?                        @default(0)
+  installed_date            DateTime?                   @default(dbgenerated("'2015-04-01'")) @db.Date
+  is_active                 Boolean?                    @default(true)
+  direct_hank_entry         Boolean?                    @default(false)
+  direct_kgs_entry          Boolean?                    @default(false)
+  created_at                DateTime?                   @default(now()) @db.DateTime(0)
+  updated_at                DateTime?                   @default(now()) @db.DateTime(0)
+  activated_at              DateTime?                   @db.Date
+  deactivated_at            DateTime?                   @db.Date
+  sort_order                Int?                        @default(0)
+  active_machine_no         String?                     @unique(map: "uq_simplex_active_machine_no") @db.VarChar(255)
+  simplex_machine_setup     simplex_machine_setup[]
+  simplex_production_detail simplex_production_detail[]
 }
 
 model simplex_production_detail {
-  id               String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id        String    @db.Char(36)
-  machine_id       String    @db.Char(36)
-  employee_name    String?   @db.VarChar(100)
-  prodn_mixing     String?   @db.VarChar(50)
-  run_hrs          Decimal?  @db.Decimal(5, 2)
-  run_min          Int?
-  idle_spindles    Int?      @default(0)
-  waste            Decimal?  @default(0.9000) @db.Decimal(10, 4)
-  act_prodn        Decimal?  @db.Decimal(10, 2)
-  waste_percent    Decimal?  @db.Decimal(5, 2)
-  act_effi_percent Decimal?  @db.Decimal(5, 2)
-  uti_percent      Decimal?  @db.Decimal(5, 2)
-  std_hrs          Decimal?  @db.Decimal(10, 2)
-  work_time        Int?      @default(510)
-  run_time         Int?      @default(510)
-  session_no       Int?      @default(1)
-  is_locked        Boolean?  @default(false)
-  remarks          String?   @db.Text
-  created_at       DateTime? @default(now()) @db.DateTime(0)
-  updated_at       DateTime? @default(now()) @db.DateTime(0)
+  id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                 String                    @db.Char(36)
+  machine_id                String                    @db.Char(36)
+  employee_name             String?                   @db.VarChar(100)
+  prodn_mixing              String?                   @db.VarChar(50)
+  run_hrs                   Decimal?                  @db.Decimal(5, 2)
+  run_min                   Int?
+  idle_spindles             Int?                      @default(0)
+  waste                     Decimal?                  @default(0.9000) @db.Decimal(10, 4)
+  act_prodn                 Decimal?                  @db.Decimal(10, 2)
+  waste_percent             Decimal?                  @db.Decimal(5, 2)
+  act_effi_percent          Decimal?                  @db.Decimal(5, 2)
+  uti_percent               Decimal?                  @db.Decimal(5, 2)
+  std_hrs                   Decimal?                  @db.Decimal(10, 2)
+  work_time                 Int?                      @default(510)
+  run_time                  Int?                      @default(510)
+  session_no                Int?                      @default(1)
+  is_locked                 Boolean?                  @default(false)
+  remarks                   String?                   @db.Text
+  created_at                DateTime?                 @default(now()) @db.DateTime(0)
+  updated_at                DateTime?                 @default(now()) @db.DateTime(0)
+  simplex_production_header simplex_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_simplex_detail_header")
+  simplex_machines          simplex_machines          @relation(fields: [machine_id], references: [id], map: "fk_simplex_detail_machine")
+  simplex_stoppage_entry    simplex_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_simplex_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_simplex_detail_header_machine")
+  @@index([machine_id], map: "fk_simplex_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model simplex_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                               String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                         Int                         @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                       DateTime                    @db.Date
+  shift                                                            Int
+  supervisor_id                                                    String?                     @db.Char(36)
+  maisitry_id                                                      String?                     @db.Char(36)
+  total_time                                                       Int?                        @default(510)
+  remarks                                                          String?                     @db.Text
+  is_locked                                                        Boolean?                    @default(false)
+  created_at                                                       DateTime?                   @default(now()) @db.DateTime(0)
+  updated_at                                                       DateTime?                   @default(now()) @db.DateTime(0)
+  simplex_production_detail                                        simplex_production_detail[]
+  supervisors_simplex_production_header_maisitry_idTosupervisors   supervisors?                @relation("simplex_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_simplex_header_maisitry")
+  supervisors_simplex_production_header_supervisor_idTosupervisors supervisors?                @relation("simplex_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_simplex_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_simplex_header_date_shift")
   @@index([entry_date, shift], map: "idx_simplex_header_date_shift")
+  @@index([maisitry_id], map: "fk_simplex_header_maisitry")
+  @@index([supervisor_id], map: "fk_simplex_header_supervisor")
 }
 
 model simplex_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                     String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                   String                    @db.Char(36)
+  stoppage1_id                                                           String?                   @db.Char(36)
+  stoppage1_time                                                         Int?                      @default(0)
+  stoppage2_id                                                           String?                   @db.Char(36)
+  stoppage2_time                                                         Int?                      @default(0)
+  stoppage3_id                                                           String?                   @db.Char(36)
+  stoppage3_time                                                         Int?                      @default(0)
+  stoppage4_id                                                           String?                   @db.Char(36)
+  stoppage4_time                                                         Int?                      @default(0)
+  total_stoppage_time                                                    Int?                      @default(0)
+  created_at                                                             DateTime?                 @default(now()) @db.DateTime(0)
+  updated_at                                                             DateTime?                 @default(now()) @db.DateTime(0)
+  stoppage_details_simplex_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?         @relation("simplex_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_simplex_stop_code1")
+  stoppage_details_simplex_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?         @relation("simplex_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_simplex_stop_code2")
+  stoppage_details_simplex_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?         @relation("simplex_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_simplex_stop_code3")
+  stoppage_details_simplex_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?         @relation("simplex_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_simplex_stop_code4")
+  simplex_production_detail                                              simplex_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_simplex_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_simplex_stop_detail")
   @@index([production_detail_id], map: "idx_simplex_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_simplex_stop_code1")
+  @@index([stoppage2_id], map: "fk_simplex_stop_code2")
+  @@index([stoppage3_id], map: "fk_simplex_stop_code3")
+  @@index([stoppage4_id], map: "fk_simplex_stop_code4")
 }
 
 model spinning_counts {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  count_name        String    @db.VarChar(100)
-  short_desc        String?   @db.VarChar(50)
-  act_count         Decimal   @db.Decimal(6, 2)
-  mixing_name       String?   @db.VarChar(100)
-  fibre             String?   @db.VarChar(50)
-  conv_40s_value    Decimal?  @db.Decimal(10, 2)
-  ukg               Decimal?  @db.Decimal(10, 2)
-  effi_exp_hank     Decimal?  @db.Decimal(5, 2)
-  effi_exp_prodn    Decimal?  @db.Decimal(5, 2)
-  is_running_now    Boolean?  @default(false)
-  autoconer_active  Boolean?  @default(false)
-  sitra_conv_value  Decimal?  @db.Decimal(10, 2)
-  cone_weight       Decimal?  @db.Decimal(10, 3)
-  effi_actual_prodn Decimal?  @db.Decimal(5, 2)
-  tpi               String?   @db.VarChar(50)
-  speed             String?   @db.VarChar(50)
-  speed_autoconer   Decimal?  @db.Decimal(10, 2)
-  tw_con            String?   @db.VarChar(50)
-  waste_percent     Decimal?  @db.Decimal(5, 2)
-  doff_loss         Decimal?  @db.Decimal(5, 2)
-  auto_effi         Decimal?  @db.Decimal(5, 2)
-  hok_cons          Decimal?  @db.Decimal(10, 2)
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  is_active         Boolean?  @default(true)
-  sliver_hank       Decimal?  @db.Decimal(10, 4)
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  count_name                  String                        @db.VarChar(100)
+  short_desc                  String?                       @db.VarChar(50)
+  act_count                   Decimal                       @db.Decimal(6, 2)
+  mixing_name                 String?                       @db.VarChar(100)
+  fibre                       String?                       @db.VarChar(50)
+  conv_40s_value              Decimal?                      @db.Decimal(10, 2)
+  ukg                         Decimal?                      @db.Decimal(10, 2)
+  effi_exp_hank               Decimal?                      @db.Decimal(5, 2)
+  effi_exp_prodn              Decimal?                      @db.Decimal(5, 2)
+  is_running_now              Boolean?                      @default(false)
+  autoconer_active            Boolean?                      @default(false)
+  sitra_conv_value            Decimal?                      @db.Decimal(10, 2)
+  cone_weight                 Decimal?                      @db.Decimal(10, 3)
+  effi_actual_prodn           Decimal?                      @db.Decimal(5, 2)
+  tpi                         String?                       @db.VarChar(50)
+  speed                       String?                       @db.VarChar(50)
+  speed_autoconer             Decimal?                      @db.Decimal(10, 2)
+  tw_con                      String?                       @db.VarChar(50)
+  waste_percent               Decimal?                      @db.Decimal(5, 2)
+  doff_loss                   Decimal?                      @db.Decimal(5, 2)
+  auto_effi                   Decimal?                      @db.Decimal(5, 2)
+  hok_cons                    Decimal?                      @db.Decimal(10, 2)
+  created_at                  DateTime?                     @default(now()) @db.DateTime(0)
+  updated_at                  DateTime?                     @default(now()) @db.DateTime(0)
+  is_active                   Boolean?                      @default(true)
+  sliver_hank                 Decimal?                      @db.Decimal(10, 4)
+  autoconer_machine_setup     autoconer_machine_setup[]
+  autoconer_machines          autoconer_machines[]
+  autoconer_production_detail autoconer_production_detail[]
+  spinning_machine_setup      spinning_machine_setup[]
+  spinning_machines           spinning_machines[]
+  tpi_entries                 tpi_entries[]
+  twc_entries                 twc_entries[]
 }
 
 model spinning_machine_setup {
-  id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_id         String    @db.Char(36)
-  entry_date         DateTime  @default(dbgenerated("'1970-01-01'")) @db.Date
-  shift              Int       @default(1)
-  count_name         String?   @db.VarChar(100)
-  act_count          Decimal?  @default(69.50) @db.Decimal(10, 2)
-  tpi                Decimal?  @default(13.00) @db.Decimal(5, 2)
-  allocated_spindles Int?      @default(1104)
-  tw_con             Int?      @default(4)
-  doff_loss          Decimal?  @default(0.70) @db.Decimal(5, 2)
-  c_waste_percent    Decimal?  @default(0.90) @db.Decimal(5, 2)
+  id                 String            @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_id         String            @db.Char(36)
+  count_name         String?           @db.VarChar(100)
+  count_id           String?           @db.Char(36)
+  act_count          Decimal?          @default(69.50) @db.Decimal(10, 2)
+  tpi                Decimal?          @default(13.00) @db.Decimal(5, 2)
+  allocated_spindles Int?              @default(1104)
+  tw_con             Decimal?          @default(4.000) @db.Decimal(10, 3)
+  doff_loss          Decimal?          @default(0.70) @db.Decimal(5, 2)
+  c_waste_percent    Decimal?          @default(0.90) @db.Decimal(5, 2)
+  conv_40s_value     Decimal?          @db.Decimal(10, 2)
   speed              Int?
-  session_no         Int?      @default(1)
-  run_time           Int?      @default(510)
-  efficiency         Decimal?  @default(0.985) @db.Decimal(5, 3)
-  conversion_factor  Decimal?  @default(2.20456) @db.Decimal(10, 5)
-  created_at         DateTime? @default(now()) @db.DateTime(0)
-  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  session_no         Int?              @default(1)
+  run_time           Int?              @default(510)
+  efficiency         Decimal?          @default(0.985) @db.Decimal(5, 3)
+  conversion_factor  Decimal?          @default(2.20456) @db.Decimal(10, 5)
+  created_at         DateTime?         @default(now()) @db.DateTime(0)
+  updated_at         DateTime?         @default(now()) @db.DateTime(0)
+  entry_date         DateTime          @default(dbgenerated("'1970-01-01'")) @db.Date
+  shift              Int               @default(1)
+  is_included        Boolean           @default(true)
+  spinning_counts    spinning_counts?  @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_spinning_setup_count")
+  spinning_machines  spinning_machines @relation(fields: [machine_id], references: [id], map: "fk_spinning_setup_machine")
 
   @@unique([machine_id, entry_date, shift], name: "idx_spinning_machine_setup_date")
   @@index([entry_date, shift], map: "idx_spinning_setup_date_shift")
+  @@index([count_id], map: "fk_spinning_setup_count")
 }
 
 model spinning_machines {
-  id                          String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  machine_no                  String    @db.Text
-  sort_order                  Int?      @default(0)
-  description                 String    @db.Text
-  make_name                   String    @default("LMW") @db.VarChar(255)
-  allocated_spindles          Int       @default(1104)
-  is_active                   Boolean?  @default(true)
-  remarks                     String?   @db.Text
-  created_at                  DateTime? @default(now()) @db.DateTime(0)
-  updated_at                  DateTime? @default(now()) @db.DateTime(0)
+  id                          String                       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  machine_no                  String                       @db.Text
+  sort_order                  Int?                         @default(0)
+  description                 String                       @db.Text
+  make_name                   String                       @default("LMW") @db.VarChar(255)
+  allocated_spindles          Int                          @default(1104)
+  speed                       Int?
+  count_id                    String?                      @db.Char(36)
+  is_active                   Boolean?                     @default(true)
+  remarks                     String?                      @db.Text
+  created_at                  DateTime?                    @default(now()) @db.DateTime(0)
+  updated_at                  DateTime?                    @default(now()) @db.DateTime(0)
   frame_no                    Int?
-  mc_id                       String?   @default("225") @db.VarChar(255)
-  model                       String?   @db.Text
-  group_no                    Int?      @default(0)
-  installed_date              DateTime? @default(dbgenerated("'2015-04-01'")) @db.Date
-  production_kgs_manual_entry Boolean?  @default(false)
-  direct_hank_entry           Boolean?  @default(true)
-  activated_at                DateTime? @db.Date
-  deactivated_at              DateTime? @db.Date
+  mc_id                       String?                      @default("225") @db.VarChar(255)
+  model                       String?                      @db.Text
+  group_no                    Int?                         @default(0)
+  installed_date              DateTime?                    @default(dbgenerated("'2015-04-01'")) @db.Date
+  production_kgs_manual_entry Boolean?                     @default(false)
+  direct_hank_entry           Boolean?                     @default(true)
+  activated_at                DateTime?                    @db.Date
+  deactivated_at              DateTime?                    @db.Date
+  active_machine_no           String?                      @unique(map: "uq_spinning_active_machine_no") @db.VarChar(255)
+  spinning_counts             spinning_counts?             @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_spinning_machine_count")
+  spinning_machine_setup      spinning_machine_setup[]
+  spinning_production_detail  spinning_production_detail[]
+
+  @@index([count_id], map: "fk_spinning_machine_count")
 }
 
 model spinning_production_detail {
-  id                  String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  header_id           String    @db.Char(36)
-  machine_id          String    @db.Char(36)
-  count_name          String?   @db.VarChar(100)
-  act_hank            Decimal?  @db.Decimal(10, 2)
-  act_prodn           Decimal?  @db.Decimal(10, 2)
-  waste               Decimal?  @db.Decimal(10, 4)
-  waste_percent       Decimal?  @db.Decimal(5, 2)
-  gps                 Decimal?  @db.Decimal(10, 2)
-  worked_spindles     Decimal?  @db.Decimal(10, 2)
-  stopped_spindles    Decimal?  @db.Decimal(10, 2)
-  exp_gps             Decimal?  @db.Decimal(10, 2)
-  total_stoppage_mins Int?      @default(0)
-  session_no          Int?      @default(1)
-  is_verified         Boolean?  @default(false)
-  verified_at         DateTime? @db.DateTime(0)
-  is_locked           Boolean?  @default(false)
-  remarks             String?   @db.Text
-  created_at          DateTime? @default(now()) @db.DateTime(0)
-  updated_at          DateTime? @default(now()) @db.DateTime(0)
-  sider1_name         String?   @db.VarChar(100)
-  sider2_name         String?   @db.VarChar(100)
-  work_time           Int?      @default(500)
-  run_time            Int?      @default(510)
+  id                         String                     @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  header_id                  String                     @db.Char(36)
+  machine_id                 String                     @db.Char(36)
+  count_name                 String?                    @db.VarChar(100)
+  act_hank                   Decimal?                   @db.Decimal(10, 2)
+  act_prodn                  Decimal?                   @db.Decimal(10, 2)
+  waste                      Decimal?                   @db.Decimal(10, 4)
+  waste_percent              Decimal?                   @db.Decimal(5, 2)
+  gps                        Decimal?                   @db.Decimal(10, 2)
+  worked_spindles            Decimal?                   @db.Decimal(10, 2)
+  stopped_spindles           Decimal?                   @db.Decimal(10, 2)
+  exp_gps                    Decimal?                   @db.Decimal(10, 2)
+  total_stoppage_mins        Int?                       @default(0)
+  session_no                 Int?                       @default(1)
+  is_verified                Boolean?                   @default(false)
+  verified_at                DateTime?                  @db.DateTime(0)
+  is_locked                  Boolean?                   @default(false)
+  remarks                    String?                    @db.Text
+  created_at                 DateTime?                  @default(now()) @db.DateTime(0)
+  updated_at                 DateTime?                  @default(now()) @db.DateTime(0)
+  sider1_name                String?                    @db.VarChar(100)
+  sider2_name                String?                    @db.VarChar(100)
+  work_time                  Int?                       @default(500)
+  run_time                   Int?                       @default(510)
+  spinning_production_header spinning_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_spinning_detail_header")
+  spinning_machines          spinning_machines          @relation(fields: [machine_id], references: [id], map: "fk_spinning_detail_machine")
+  spinning_stoppage_entry    spinning_stoppage_entry[]
 
+  @@unique([header_id, machine_id], name: "uq_spinning_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_spinning_detail_header_machine")
+  @@index([machine_id], map: "fk_spinning_detail_machine")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model spinning_production_header {
-  id            String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_id      Int       @unique(map: "entry_id") @default(autoincrement())
-  entry_date    DateTime  @db.Date
-  shift         Int
-  supervisor_id String?   @db.Char(36)
-  maisitry_id   String?   @db.Char(36)
-  total_time    Int?      @default(510)
-  remarks       String?   @db.Text
-  is_locked     Boolean?  @default(false)
-  created_at    DateTime? @default(now()) @db.DateTime(0)
-  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  id                                                                String                       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_id                                                          Int                          @unique(map: "entry_id") @default(autoincrement())
+  entry_date                                                        DateTime                     @db.Date
+  shift                                                             Int
+  supervisor_id                                                     String?                      @db.Char(36)
+  maisitry_id                                                       String?                      @db.Char(36)
+  total_time                                                        Int?                         @default(510)
+  remarks                                                           String?                      @db.Text
+  is_locked                                                         Boolean?                     @default(false)
+  created_at                                                        DateTime?                    @default(now()) @db.DateTime(0)
+  updated_at                                                        DateTime?                    @default(now()) @db.DateTime(0)
+  spinning_production_detail                                        spinning_production_detail[]
+  supervisors_spinning_production_header_maisitry_idTosupervisors   supervisors?                 @relation("spinning_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_spinning_header_maisitry")
+  supervisors_spinning_production_header_supervisor_idTosupervisors supervisors?                 @relation("spinning_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_spinning_header_supervisor")
 
+  @@unique([entry_date, shift], name: "uq_spinning_header_date_shift")
   @@index([entry_date, shift], map: "idx_spinning_header_date_shift")
+  @@index([maisitry_id], map: "fk_spinning_header_maisitry")
+  @@index([supervisor_id], map: "fk_spinning_header_supervisor")
 }
 
 model spinning_stoppage_entry {
-  id                   String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  production_detail_id String    @db.Char(36)
-  run_time             Int?      @default(510)
-  stoppage1_id         String?   @db.Char(36)
-  stoppage1_time       Int?      @default(0)
-  stoppage2_id         String?   @db.Char(36)
-  stoppage2_time       Int?      @default(0)
-  stoppage3_id         String?   @db.Char(36)
-  stoppage3_time       Int?      @default(0)
-  stoppage4_id         String?   @db.Char(36)
-  stoppage4_time       Int?      @default(0)
-  total_stoppage_time  Int?      @default(0)
-  is_full_stoppage     Boolean?  @default(false)
-  created_at           DateTime? @default(now()) @db.DateTime(0)
-  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  id                                                                      String                     @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  production_detail_id                                                    String                     @db.Char(36)
+  run_time                                                                Int?                       @default(510)
+  stoppage1_id                                                            String?                    @db.Char(36)
+  stoppage1_time                                                          Int?                       @default(0)
+  stoppage2_id                                                            String?                    @db.Char(36)
+  stoppage2_time                                                          Int?                       @default(0)
+  stoppage3_id                                                            String?                    @db.Char(36)
+  stoppage3_time                                                          Int?                       @default(0)
+  stoppage4_id                                                            String?                    @db.Char(36)
+  stoppage4_time                                                          Int?                       @default(0)
+  total_stoppage_time                                                     Int?                       @default(0)
+  is_full_stoppage                                                        Boolean?                   @default(false)
+  created_at                                                              DateTime?                  @default(now()) @db.DateTime(0)
+  updated_at                                                              DateTime?                  @default(now()) @db.DateTime(0)
+  stoppage_details_spinning_stoppage_entry_stoppage1_idTostoppage_details stoppage_details?          @relation("spinning_stoppage_entry_stoppage1_idTostoppage_details", fields: [stoppage1_id], references: [id], onDelete: Restrict, map: "fk_spinning_stop_code1")
+  stoppage_details_spinning_stoppage_entry_stoppage2_idTostoppage_details stoppage_details?          @relation("spinning_stoppage_entry_stoppage2_idTostoppage_details", fields: [stoppage2_id], references: [id], onDelete: Restrict, map: "fk_spinning_stop_code2")
+  stoppage_details_spinning_stoppage_entry_stoppage3_idTostoppage_details stoppage_details?          @relation("spinning_stoppage_entry_stoppage3_idTostoppage_details", fields: [stoppage3_id], references: [id], onDelete: Restrict, map: "fk_spinning_stop_code3")
+  stoppage_details_spinning_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?          @relation("spinning_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_spinning_stop_code4")
+  spinning_production_detail                                              spinning_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_spinning_stop_detail")
 
+  @@unique([production_detail_id], name: "uq_spinning_stop_detail")
   @@index([production_detail_id], map: "idx_spinning_stoppage_detail")
+  @@index([stoppage1_id], map: "fk_spinning_stop_code1")
+  @@index([stoppage2_id], map: "fk_spinning_stop_code2")
+  @@index([stoppage3_id], map: "fk_spinning_stop_code3")
+  @@index([stoppage4_id], map: "fk_spinning_stop_code4")
 }
 
 model stoppage_details {
-  id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  stoppage_head_id   String?   @db.Char(36)
-  code               Int
-  description        String    @db.Text
-  is_active          Boolean?  @default(true)
-  created_at         DateTime? @default(now()) @db.DateTime(0)
-  updated_at         DateTime? @default(now()) @db.DateTime(0)
-  stoppage_name      String    @default("") @db.VarChar(255)
-  short_code         String?   @db.VarChar(10)
-  full_stoppage_name String?   @db.Text
-  department_id      String?   @db.Char(36)
+  id                                                                                             String                            @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  stoppage_head_id                                                                               String?                           @db.Char(36)
+  code                                                                                           Int
+  description                                                                                    String                            @db.Text
+  is_active                                                                                      Boolean?                          @default(true)
+  created_at                                                                                     DateTime?                         @default(now()) @db.DateTime(0)
+  updated_at                                                                                     DateTime?                         @default(now()) @db.DateTime(0)
+  stoppage_name                                                                                  String                            @default("") @db.VarChar(255)
+  short_code                                                                                     String?                           @db.VarChar(10)
+  full_stoppage_name                                                                             String?                           @db.Text
+  department_id                                                                                  String?                           @db.Char(36)
+  autoconer_stoppage_entry_autoconer_stoppage_entry_stoppage1_idTostoppage_details               autoconer_stoppage_entry[]        @relation("autoconer_stoppage_entry_stoppage1_idTostoppage_details")
+  autoconer_stoppage_entry_autoconer_stoppage_entry_stoppage2_idTostoppage_details               autoconer_stoppage_entry[]        @relation("autoconer_stoppage_entry_stoppage2_idTostoppage_details")
+  autoconer_stoppage_entry_autoconer_stoppage_entry_stoppage3_idTostoppage_details               autoconer_stoppage_entry[]        @relation("autoconer_stoppage_entry_stoppage3_idTostoppage_details")
+  autoconer_stoppage_entry_autoconer_stoppage_entry_stoppage4_idTostoppage_details               autoconer_stoppage_entry[]        @relation("autoconer_stoppage_entry_stoppage4_idTostoppage_details")
+  breaker_drawing_stoppage_entry_breaker_drawing_stoppage_entry_stoppage1_idTostoppage_details   breaker_drawing_stoppage_entry[]  @relation("breaker_drawing_stoppage_entry_stoppage1_idTostoppage_details")
+  breaker_drawing_stoppage_entry_breaker_drawing_stoppage_entry_stoppage2_idTostoppage_details   breaker_drawing_stoppage_entry[]  @relation("breaker_drawing_stoppage_entry_stoppage2_idTostoppage_details")
+  breaker_drawing_stoppage_entry_breaker_drawing_stoppage_entry_stoppage3_idTostoppage_details   breaker_drawing_stoppage_entry[]  @relation("breaker_drawing_stoppage_entry_stoppage3_idTostoppage_details")
+  breaker_drawing_stoppage_entry_breaker_drawing_stoppage_entry_stoppage4_idTostoppage_details   breaker_drawing_stoppage_entry[]  @relation("breaker_drawing_stoppage_entry_stoppage4_idTostoppage_details")
+  carding_stoppage_entry_carding_stoppage_entry_stoppage1_idTostoppage_details                   carding_stoppage_entry[]          @relation("carding_stoppage_entry_stoppage1_idTostoppage_details")
+  carding_stoppage_entry_carding_stoppage_entry_stoppage2_idTostoppage_details                   carding_stoppage_entry[]          @relation("carding_stoppage_entry_stoppage2_idTostoppage_details")
+  carding_stoppage_entry_carding_stoppage_entry_stoppage3_idTostoppage_details                   carding_stoppage_entry[]          @relation("carding_stoppage_entry_stoppage3_idTostoppage_details")
+  carding_stoppage_entry_carding_stoppage_entry_stoppage4_idTostoppage_details                   carding_stoppage_entry[]          @relation("carding_stoppage_entry_stoppage4_idTostoppage_details")
+  comber_stoppage_entry_comber_stoppage_entry_stoppage1_idTostoppage_details                     comber_stoppage_entry[]           @relation("comber_stoppage_entry_stoppage1_idTostoppage_details")
+  comber_stoppage_entry_comber_stoppage_entry_stoppage2_idTostoppage_details                     comber_stoppage_entry[]           @relation("comber_stoppage_entry_stoppage2_idTostoppage_details")
+  comber_stoppage_entry_comber_stoppage_entry_stoppage3_idTostoppage_details                     comber_stoppage_entry[]           @relation("comber_stoppage_entry_stoppage3_idTostoppage_details")
+  comber_stoppage_entry_comber_stoppage_entry_stoppage4_idTostoppage_details                     comber_stoppage_entry[]           @relation("comber_stoppage_entry_stoppage4_idTostoppage_details")
+  finisher_drawing_stoppage_entry_finisher_drawing_stoppage_entry_stoppage1_idTostoppage_details finisher_drawing_stoppage_entry[] @relation("finisher_drawing_stoppage_entry_stoppage1_idTostoppage_details")
+  finisher_drawing_stoppage_entry_finisher_drawing_stoppage_entry_stoppage2_idTostoppage_details finisher_drawing_stoppage_entry[] @relation("finisher_drawing_stoppage_entry_stoppage2_idTostoppage_details")
+  finisher_drawing_stoppage_entry_finisher_drawing_stoppage_entry_stoppage3_idTostoppage_details finisher_drawing_stoppage_entry[] @relation("finisher_drawing_stoppage_entry_stoppage3_idTostoppage_details")
+  finisher_drawing_stoppage_entry_finisher_drawing_stoppage_entry_stoppage4_idTostoppage_details finisher_drawing_stoppage_entry[] @relation("finisher_drawing_stoppage_entry_stoppage4_idTostoppage_details")
+  lap_former_stoppage_entry_lap_former_stoppage_entry_stoppage1_idTostoppage_details             lap_former_stoppage_entry[]       @relation("lap_former_stoppage_entry_stoppage1_idTostoppage_details")
+  lap_former_stoppage_entry_lap_former_stoppage_entry_stoppage2_idTostoppage_details             lap_former_stoppage_entry[]       @relation("lap_former_stoppage_entry_stoppage2_idTostoppage_details")
+  lap_former_stoppage_entry_lap_former_stoppage_entry_stoppage3_idTostoppage_details             lap_former_stoppage_entry[]       @relation("lap_former_stoppage_entry_stoppage3_idTostoppage_details")
+  lap_former_stoppage_entry_lap_former_stoppage_entry_stoppage4_idTostoppage_details             lap_former_stoppage_entry[]       @relation("lap_former_stoppage_entry_stoppage4_idTostoppage_details")
+  simplex_stoppage_entry_simplex_stoppage_entry_stoppage1_idTostoppage_details                   simplex_stoppage_entry[]          @relation("simplex_stoppage_entry_stoppage1_idTostoppage_details")
+  simplex_stoppage_entry_simplex_stoppage_entry_stoppage2_idTostoppage_details                   simplex_stoppage_entry[]          @relation("simplex_stoppage_entry_stoppage2_idTostoppage_details")
+  simplex_stoppage_entry_simplex_stoppage_entry_stoppage3_idTostoppage_details                   simplex_stoppage_entry[]          @relation("simplex_stoppage_entry_stoppage3_idTostoppage_details")
+  simplex_stoppage_entry_simplex_stoppage_entry_stoppage4_idTostoppage_details                   simplex_stoppage_entry[]          @relation("simplex_stoppage_entry_stoppage4_idTostoppage_details")
+  spinning_stoppage_entry_spinning_stoppage_entry_stoppage1_idTostoppage_details                 spinning_stoppage_entry[]         @relation("spinning_stoppage_entry_stoppage1_idTostoppage_details")
+  spinning_stoppage_entry_spinning_stoppage_entry_stoppage2_idTostoppage_details                 spinning_stoppage_entry[]         @relation("spinning_stoppage_entry_stoppage2_idTostoppage_details")
+  spinning_stoppage_entry_spinning_stoppage_entry_stoppage3_idTostoppage_details                 spinning_stoppage_entry[]         @relation("spinning_stoppage_entry_stoppage3_idTostoppage_details")
+  spinning_stoppage_entry_spinning_stoppage_entry_stoppage4_idTostoppage_details                 spinning_stoppage_entry[]         @relation("spinning_stoppage_entry_stoppage4_idTostoppage_details")
+  departments                                                                                    departments?                      @relation(fields: [department_id], references: [id], onDelete: Restrict, map: "fk_stoppage_detail_department")
+  stoppage_heads                                                                                 stoppage_heads?                   @relation(fields: [stoppage_head_id], references: [id], onDelete: Restrict, map: "fk_stoppage_detail_head")
+
+  @@index([department_id], map: "fk_stoppage_detail_department")
+  @@index([stoppage_head_id], map: "fk_stoppage_detail_head")
 }
 
 model stoppage_heads {
-  id                 String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  stoppage_head_name String    @db.Text
-  is_active          Boolean?  @default(true)
-  created_at         DateTime? @default(now()) @db.DateTime(0)
-  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  id                 String             @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  stoppage_head_name String             @db.Text
+  is_active          Boolean?           @default(true)
+  created_at         DateTime?          @default(now()) @db.DateTime(0)
+  updated_at         DateTime?          @default(now()) @db.DateTime(0)
   code               Int?
-  description        String?   @db.Text
+  description        String?            @db.Text
+  stoppage_details   stoppage_details[]
 }
 
 model supervisors {
-  id              String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  supervisor_name String    @db.Text
-  department_id   String?   @db.Char(36)
-  is_active       Boolean?  @default(true)
-  created_at      DateTime? @default(now()) @db.DateTime(0)
-  updated_at      DateTime? @default(now()) @db.DateTime(0)
-  code            Int       @default(1)
+  id                                                                                               String                               @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  supervisor_name                                                                                  String                               @db.Text
+  department_id                                                                                    String?                              @db.Char(36)
+  is_active                                                                                        Boolean?                             @default(true)
+  created_at                                                                                       DateTime?                            @default(now()) @db.DateTime(0)
+  updated_at                                                                                       DateTime?                            @default(now()) @db.DateTime(0)
+  code                                                                                             Int                                  @default(1)
+  autoconer_production_header                                                                      autoconer_production_header[]
+  breaker_drawing_production_header_breaker_drawing_production_header_maisitry_idTosupervisors     breaker_drawing_production_header[]  @relation("breaker_drawing_production_header_maisitry_idTosupervisors")
+  breaker_drawing_production_header_breaker_drawing_production_header_supervisor_idTosupervisors   breaker_drawing_production_header[]  @relation("breaker_drawing_production_header_supervisor_idTosupervisors")
+  carding_production_header_carding_production_header_maisitry_idTosupervisors                     carding_production_header[]          @relation("carding_production_header_maisitry_idTosupervisors")
+  carding_production_header_carding_production_header_supervisor_idTosupervisors                   carding_production_header[]          @relation("carding_production_header_supervisor_idTosupervisors")
+  comber_production_header_comber_production_header_maisitry_idTosupervisors                       comber_production_header[]           @relation("comber_production_header_maisitry_idTosupervisors")
+  comber_production_header_comber_production_header_supervisor_idTosupervisors                     comber_production_header[]           @relation("comber_production_header_supervisor_idTosupervisors")
+  finisher_drawing_production_header_finisher_drawing_production_header_maisitry_idTosupervisors   finisher_drawing_production_header[] @relation("finisher_drawing_production_header_maisitry_idTosupervisors")
+  finisher_drawing_production_header_finisher_drawing_production_header_supervisor_idTosupervisors finisher_drawing_production_header[] @relation("finisher_drawing_production_header_supervisor_idTosupervisors")
+  lap_former_production_header_lap_former_production_header_maisitry_idTosupervisors               lap_former_production_header[]       @relation("lap_former_production_header_maisitry_idTosupervisors")
+  lap_former_production_header_lap_former_production_header_supervisor_idTosupervisors             lap_former_production_header[]       @relation("lap_former_production_header_supervisor_idTosupervisors")
+  simplex_production_header_simplex_production_header_maisitry_idTosupervisors                     simplex_production_header[]          @relation("simplex_production_header_maisitry_idTosupervisors")
+  simplex_production_header_simplex_production_header_supervisor_idTosupervisors                   simplex_production_header[]          @relation("simplex_production_header_supervisor_idTosupervisors")
+  spinning_production_header_spinning_production_header_maisitry_idTosupervisors                   spinning_production_header[]         @relation("spinning_production_header_maisitry_idTosupervisors")
+  spinning_production_header_spinning_production_header_supervisor_idTosupervisors                 spinning_production_header[]         @relation("spinning_production_header_supervisor_idTosupervisors")
+  departments                                                                                      departments?                         @relation(fields: [department_id], references: [id], onDelete: Restrict, map: "fk_supervisor_department")
+
+  @@index([department_id], map: "fk_supervisor_department")
 }
 
 model employee_master {
@@ -986,30 +1285,36 @@ model employee_master {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model tpi_entries {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_date        DateTime  @db.Date
-  spinning_count_id String?   @db.Char(36)
-  tpi_value         Decimal   @db.Decimal(10, 2)
-  machine_id        String?   @db.Char(36)
-  shift             String?   @db.Text
-  remarks           String?   @db.Text
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  entry_id          Int       @default(1)
+  id                String           @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_date        DateTime         @db.Date
+  spinning_count_id String?          @db.Char(36)
+  tpi_value         Decimal          @db.Decimal(10, 2)
+  machine_id        String?          @db.Char(36)
+  shift             String?          @db.Text
+  remarks           String?          @db.Text
+  created_at        DateTime?        @default(now()) @db.DateTime(0)
+  updated_at        DateTime?        @default(now()) @db.DateTime(0)
+  entry_id          Int              @default(1)
+  spinning_counts   spinning_counts? @relation(fields: [spinning_count_id], references: [id], onDelete: Restrict, map: "fk_tpi_count")
+
+  @@index([spinning_count_id], map: "fk_tpi_count")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model twc_entries {
-  id                String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  entry_date        DateTime  @db.Date
-  spinning_count_id String?   @db.Char(36)
-  twc_value         Decimal   @db.Decimal(10, 2)
-  machine_id        String?   @db.Char(36)
-  shift             String?   @db.Text
-  remarks           String?   @db.Text
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @db.DateTime(0)
-  entry_id          Int       @default(1)
+  id                String           @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  entry_date        DateTime         @db.Date
+  spinning_count_id String?          @db.Char(36)
+  twc_value         Decimal          @db.Decimal(10, 2)
+  machine_id        String?          @db.Char(36)
+  shift             String?          @db.Text
+  remarks           String?          @db.Text
+  created_at        DateTime?        @default(now()) @db.DateTime(0)
+  updated_at        DateTime?        @default(now()) @db.DateTime(0)
+  entry_id          Int              @default(1)
+  spinning_counts   spinning_counts? @relation(fields: [spinning_count_id], references: [id], onDelete: Restrict, map: "fk_twc_count")
+
+  @@index([spinning_count_id], map: "fk_twc_count")
 }
 
 /// Application identities are intentionally separate from production employees.
@@ -1023,13 +1328,13 @@ model app_users {
   is_active            Boolean         @default(true)
   must_change_password Boolean         @default(true)
   failed_login_count   Int             @default(0)
-  locked_until         DateTime?       @db.DateTime(3)
-  password_changed_at  DateTime?       @db.DateTime(3)
-  last_login_at        DateTime?       @db.DateTime(3)
-  created_at           DateTime        @default(now()) @db.DateTime(3)
-  updated_at           DateTime        @default(now()) @updatedAt @db.DateTime(3)
-  sessions             auth_sessions[]
+  locked_until         DateTime?
+  password_changed_at  DateTime?
+  last_login_at        DateTime?
+  created_at           DateTime        @default(now())
+  updated_at           DateTime        @default(now()) @updatedAt
   audit_logs           audit_logs[]
+  sessions             auth_sessions[]
 
   @@index([is_active], map: "idx_app_users_active")
 }
@@ -1041,10 +1346,10 @@ model auth_sessions {
   token_hash   String    @unique(map: "uq_auth_sessions_token_hash") @db.Char(64)
   ip_address   String?   @db.VarChar(64)
   user_agent   String?   @db.VarChar(512)
-  expires_at   DateTime  @db.DateTime(3)
-  last_seen_at DateTime  @default(now()) @db.DateTime(3)
-  revoked_at   DateTime? @db.DateTime(3)
-  created_at   DateTime  @default(now()) @db.DateTime(3)
+  expires_at   DateTime
+  last_seen_at DateTime  @default(now())
+  revoked_at   DateTime?
+  created_at   DateTime  @default(now())
   user         app_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, revoked_at, expires_at], map: "idx_auth_sessions_user_status")
@@ -1054,7 +1359,7 @@ model auth_sessions {
 /// Security and administrative events. Sensitive values must never be written here.
 model audit_logs {
   id          BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
-  occurred_at DateTime   @default(now()) @db.DateTime(3)
+  occurred_at DateTime   @default(now())
   user_id     String?    @db.Char(36)
   username    String?    @db.VarChar(64)
   event_type  String     @db.VarChar(64)
@@ -1065,7 +1370,7 @@ model audit_logs {
   ip_address  String?    @db.VarChar(64)
   user_agent  String?    @db.VarChar(512)
   details     Json?
-  user        app_users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  user        app_users? @relation(fields: [user_id], references: [id])
 
   @@index([occurred_at], map: "idx_audit_logs_occurred")
   @@index([user_id, occurred_at], map: "idx_audit_logs_user_occurred")
@@ -1079,7 +1384,7 @@ model login_attempts {
   username       String   @db.VarChar(64)
   ip_address     String   @db.VarChar(64)
   was_successful Boolean  @default(false)
-  attempted_at   DateTime @default(now()) @db.DateTime(3)
+  attempted_at   DateTime @default(now())
 
   @@index([username, attempted_at], map: "idx_login_attempts_username_time")
   @@index([ip_address, attempted_at], map: "idx_login_attempts_ip_time")

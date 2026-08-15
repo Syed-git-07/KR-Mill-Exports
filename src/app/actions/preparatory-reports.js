@@ -1,5 +1,7 @@
 'use server'
 
+import { requireUser } from '@/lib/security/auth'
+
 import { safeActionError } from '@/lib/security/errors'
 
 import { generatePreparatoryStoppageReport, getPreparatoryDateRange } from '@/lib/queries/preparatoryStoppageReportQueries'
@@ -13,6 +15,7 @@ import { generatePreparatorySiderPerformanceReport } from '@/lib/queries/prepara
  * @returns {Promise<Object>} { success, data, error }
  */
 export async function generatePreparatoryStoppageReportAction(fromDate, toDate) {
+  await requireUser()
   try {
     // Convert strings to Date objects if needed
     let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
@@ -31,12 +34,6 @@ export async function generatePreparatoryStoppageReportAction(fromDate, toDate) 
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
     const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
 
     const report = await generatePreparatoryStoppageReport(normalizedFrom, normalizedTo)
     
@@ -58,6 +55,7 @@ export async function generatePreparatoryStoppageReportAction(fromDate, toDate) 
  * @returns {Promise<Object>} { success, data: { minDate, maxDate }, error }
  */
 export async function getPreparatoryDateRangeAction() {
+  await requireUser()
   try {
     const dateRange = await getPreparatoryDateRange()
     
@@ -81,6 +79,7 @@ export async function getPreparatoryDateRangeAction() {
  * @returns {Promise<Object>} { success, data, error }
  */
 export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
+  await requireUser()
   try {
     // Convert strings to Date objects if needed
     let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
@@ -99,12 +98,6 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
     const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Waste Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
 
     const report = await generatePreparatoryWasteReport(normalizedFrom, normalizedTo)
     
@@ -128,6 +121,7 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
  * @returns {Promise<Object>} { success, data, error }
  */
 export async function generatePreparatorySiderPerformanceReportAction(fromDate, toDate) {
+  await requireUser()
   try {
     // Convert strings to Date objects if needed
     let from = typeof fromDate === 'string' ? new Date(fromDate) : fromDate
@@ -146,12 +140,6 @@ export async function generatePreparatorySiderPerformanceReportAction(fromDate, 
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
     const normalizedTo = new Date(Date.UTC(toYear, toMonth, toDay, 23, 59, 59))
-
-    console.log('Sider Performance Report generation requested:')
-    console.log('  Original From:', from.toISOString())
-    console.log('  Original To:', to.toISOString())
-    console.log('  Normalized From:', normalizedFrom.toISOString(), `(${fromYear}-${String(fromMonth+1).padStart(2,'0')}-${String(fromDay).padStart(2,'0')})`)
-    console.log('  Normalized To:', normalizedTo.toISOString(), `(${toYear}-${String(toMonth+1).padStart(2,'0')}-${String(toDay).padStart(2,'0')})`)
 
     const report = await generatePreparatorySiderPerformanceReport(normalizedFrom, normalizedTo)
     

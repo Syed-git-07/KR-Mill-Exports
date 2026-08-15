@@ -191,14 +191,16 @@ GPS = (ACL_Prod / Worked_Spl) × 1000
 ## 🔹 I. EXPECTED GPS
 
 ```
-Exp_GPS = 7.2 × Speed / TPI / Count × Effi
+Exp_GPS = 7.2 × Speed / TPI / Count × Loss_Effi
+
+Loss_Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
 ```
 
 **Where:**
 - **Speed** = Machine speed in RPM (from machine setup)
 - **TPI** = Twists per inch (from machine setup)
 - **Count** = Act Count from machine setup (e.g., 69.5)
-- **Effi** = Efficiency (95% = 0.95)
+- **Loss_Effi** = Efficiency derived only from TW.Con, Doff Loss, and C.Waste %
 
 **Example:**
 - Speed = 15000 RPM
@@ -207,10 +209,10 @@ Exp_GPS = 7.2 × Speed / TPI / Count × Effi
 - Effi = 0.95
 
 ```
-Exp_GPS = 7.2 × 15000 / 33.13 / 69.5 × 0.95
-        = 108000 / 33.13 / 69.5 × 0.95
-        = 46.89 × 0.95
-        = 44.55
+Loss_Effi = (100 - (0.001 + 0 + 0)) / 100 = 0.99999
+
+Exp_GPS = 7.2 × 15000 / 33.13 / 69.5 × 0.99999
+        ≈ 46.9044
 ```
 
 ✔ Used in Production Entry and Stoppage Entry tabs
@@ -295,9 +297,8 @@ GPS = 74.65 / 1173 × 1000
 ### 🔹 Step 6: Expected GPS
 
 ```
-Exp GPS = 7.2 × Speed / TPI / Count × Effi
-        = 7.2 × 15000 / 33.13 / 69.5 × 0.95
-        ≈ 44.55
+Loss Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
+Exp GPS = 7.2 × Speed / TPI / Count × Loss Effi
 ```
 
 ✅ **Expected GPS calculated based on machine parameters**

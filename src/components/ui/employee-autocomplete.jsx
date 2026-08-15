@@ -5,12 +5,7 @@ import { Input } from "@/components/ui/input"
 import { searchEmployeesAction } from '@/app/actions/employee'
 import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 
 /**
  * Employee Autocomplete Component
@@ -36,7 +31,6 @@ export default function EmployeeAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const debounceTimer = useRef(null)
   const requestSeqRef = useRef(0)
-  const searchInputRef = useRef(null)
   const highlightedRef = useRef(null)
 
   // Update searchTerm when value prop changes (external sync)
@@ -77,21 +71,14 @@ export default function EmployeeAutocomplete({
   // Debounced search — fires whenever searchTerm or popup open changes
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
-    if (open) {
+    if (open && searchTerm.trim().length > 0) {
       debounceTimer.current = setTimeout(() => loadEmployees(searchTerm), 200)
+    } else if (!searchTerm.trim()) {
+      setEmployees([])
+      setIsLoading(false)
     }
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }
   }, [searchTerm, open])
-
-  // Focus search input when popup opens
-  useEffect(() => {
-    if (!open) return
-    const timer = setTimeout(() => {
-      searchInputRef.current?.focus()
-      searchInputRef.current?.select()
-    }, 30)
-    return () => clearTimeout(timer)
-  }, [open])
 
   const applySelection = (employeeName) => {
     const finalName = employeeName ?? searchTerm ?? ''
@@ -135,58 +122,41 @@ export default function EmployeeAutocomplete({
 
   return (
     <div className="relative h-full" data-row={dataRow} data-col={dataCol} data-autocomplete="employee">
-      <div className="relative">
-        <Input
-          value={value || ''}
-          readOnly
-          onClick={() => {
-            if (disabled) return
-            setSearchTerm(value || '')
-            setHighlightedIndex(-1)
-            setOpen(true)
-          }}
-          onKeyDown={(e) => {
-            if (disabled) return
-            if (/^[a-zA-Z]$/.test(e.key)) {
-              e.preventDefault()
-              setSearchTerm(e.key)
-              setHighlightedIndex(-1)
-              setOpen(true)
-            }
-          }}
-          placeholder={placeholder}
-          disabled={disabled}
-          className={cn(
-            "h-full",
-            cleanCell && "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
-            editingHighlight && "focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100",
-            className
-          )}
-          autoComplete="off"
-        />
-
-      </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl w-[95vw] p-0 overflow-hidden">
-          <DialogHeader className="px-4 pt-4 pb-2 border-b">
-            <DialogTitle>Select Employee</DialogTitle>
-          </DialogHeader>
-
-          <div className="p-4 border-b">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverAnchor asChild>
+          <div className="relative">
             <Input
-              ref={searchInputRef}
               value={searchTerm}
               onChange={(e) => {
-                setSearchTerm(e.target.value)
+                const nextValue = e.target.value
+                setSearchTerm(nextValue)
+                onChange(nextValue)
                 setHighlightedIndex(-1)
+                setOpen(nextValue.trim().length > 0)
               }}
               onKeyDown={handleModalKeyDown}
-              placeholder="Search employee name..."
+              onClick={() => {
+                if (!disabled && searchTerm.trim()) setOpen(true)
+              }}
+              placeholder={placeholder}
+              disabled={disabled}
+              className={cn(
+                "h-full",
+                cleanCell && "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+                editingHighlight && "focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100",
+                className
+              )}
               autoComplete="off"
             />
           </div>
+        </PopoverAnchor>
 
+        <PopoverContent
+          align="start"
+          sideOffset={2}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          className="w-[max(var(--radix-popover-trigger-width),20rem)] max-w-[95vw] p-0 overflow-hidden"
+        >
           <div className="max-h-80 overflow-y-auto">
           {isLoading && employees.length > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500 border-b bg-gray-50">
@@ -215,8 +185,8 @@ export default function EmployeeAutocomplete({
                 <div
                   key={emp.id}
                   ref={highlightedIndex === index ? highlightedRef : null}
-                  onClick={() => setHighlightedIndex(index)}
-                  onDoubleClick={() => applySelection(emp.emp_name)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => applySelection(emp.emp_name)}
                   className={cn(
                     "px-3 py-2 cursor-pointer flex items-start select-none",
                     highlightedIndex === index
@@ -251,11 +221,11 @@ export default function EmployeeAutocomplete({
           )}
 
             <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-              Press Enter to apply the selected name and close this dialog.
+              Keep typing to filter, then click a name or press Enter to select it.
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
@@ -17,6 +19,7 @@ import {
 import { Plus, Trash2 } from 'lucide-react';
 
 export default function SupervisorMaster() {
+  const { canManageMasters } = useAuthUser();
   const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -206,7 +209,7 @@ export default function SupervisorMaster() {
           <h1 className="text-xl sm:text-2xl font-bold">Supervisor Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage supervisor information</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">New</span>
@@ -222,11 +225,11 @@ export default function SupervisorMaster() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedSupervisor}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Delete</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -262,6 +265,7 @@ export default function SupervisorMaster() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             setSelectedSupervisor(row);
             setEditingSupervisor(row);
@@ -287,8 +291,8 @@ export default function SupervisorMaster() {
           setIsEditing(false);
           setEditingSupervisor(null);
         }}
-        onDelete={isEditing ? handleDelete : null}
-        showDelete={isEditing}
+        onDelete={null}
+        showDelete={false}
         isLoading={loading}
         saveLabel={isEditing ? 'Update' : 'Save'}
       >

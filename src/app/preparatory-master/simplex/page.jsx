@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { runBulkActions } from '@/lib/actionResults';
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
@@ -17,6 +20,7 @@ import {
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
 export default function SimplexMachinePage() {
+  const { canManageMasters } = useAuthUser();
   const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMachine, setSelectedMachine] = useState(null);
@@ -185,11 +189,15 @@ export default function SimplexMachinePage() {
       if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
 
       try {
-        await Promise.all(activeRows.map(row => updateSimplexMachineAction(row.id, { is_active: false })));
-        toast.success(`${activeRows.length} machine(s) deactivated`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadMachines();
+        const { succeeded, failed } = await runBulkActions(
+          activeRows,
+          row => updateSimplexMachineAction(row.id, { is_active: false })
+        );
+        if (succeeded.length) toast.success(`${succeeded.length} machine(s) deactivated`);
+        if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
+        setSelectedRows(failed.map(outcome => outcome.item));
+        setIsSelectMode(failed.length > 0);
+        if (succeeded.length) loadMachines();
       } catch (error) {
         toast.error('Failed to deactivate: ' + error.message);
       }
@@ -219,6 +227,15 @@ export default function SimplexMachinePage() {
         toast.error('Failed to deactivate: ' + error.message);
       }
     }
+  };
+
+  const handleActivate = async () => {
+    if (!isEditing || !selectedMachine || selectedMachine.is_active) return;
+    if (!confirm(`Activate machine "${selectedMachine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
+    const result = await updateSimplexMachineAction(selectedMachine.id, { is_active: true });
+    if (!result.success) return toast.error('Failed to activate: ' + result.error);
+    toast.success('Machine activated');
+    setIsModalOpen(false); setSelectedMachine(null); setIsEditing(false); loadMachines();
   };
 
   const handleSelectRow = (row) => {
@@ -280,7 +297,7 @@ export default function SimplexMachinePage() {
           <h1 className="text-xl sm:text-2xl font-bold">Simplex Machine Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage simplex/speed frame machine details</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Add New</span>
@@ -309,11 +326,11 @@ export default function SimplexMachinePage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedMachine}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Remove Permanently</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -350,11 +367,13 @@ export default function SimplexMachinePage() {
               : '!bg-white hover:!bg-yellow-100'
           }
           onRowDoubleClick={(row) => {
+            if (!canManageMasters) return;
             setSelectedMachine(row);
             setIsEditing(true);
             setIsModalOpen(true);
           }}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             setSelectedMachine(row);
             setIsEditing(true);
@@ -385,12 +404,12 @@ export default function SimplexMachinePage() {
           setIsModalOpen(false);
           setSelectedMachine(null);
         }}
-        onDelete={isEditing ? handleDelete : null}
-        showDelete={isEditing}
+        onDelete={null}
+        showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={isEditing && selectedMachine?.is_active ? handleDeactivate : null}
-        secondaryActionLabel="Deactivate"
+        onSecondaryAction={isEditing && selectedMachine ? (selectedMachine.is_active ? handleDeactivate : handleActivate) : null}
+        secondaryActionLabel={selectedMachine?.is_active ? "Deactivate" : "Activate"}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >

@@ -32,8 +32,8 @@ export function resolveComberFormulaInputs(setup = {}, machine = null) {
   const m = machine || setup?.machine || {}
   
   const slHank =
-    toNumber(setup?.sl_hank) ||
-    toNumber(m?.sliver_hank) ||
+    toNumber(setup?.sl_hank) ??
+    toNumber(m?.sliver_hank) ??
     COMBER_FORMULA_FALLBACK.slHank
 
   let machineEffFactor = null
@@ -43,7 +43,7 @@ export function resolveComberFormulaInputs(setup = {}, machine = null) {
   }
 
   const mcEffiFactor = resolveComberMcEffiFactor(
-    toNumber(setup?.mc_effi) || machineEffFactor || COMBER_FORMULA_FALLBACK.mcEffiFactor
+    toNumber(setup?.mc_effi) ?? machineEffFactor ?? COMBER_FORMULA_FALLBACK.mcEffiFactor
   )
   const mcEffiPercent = mcEffiFactor * 100
 

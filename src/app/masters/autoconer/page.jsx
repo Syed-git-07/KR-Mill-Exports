@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { runBulkActions } from '@/lib/actionResults';
+import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
@@ -17,6 +20,7 @@ import {
 import { Plus, Trash2, PowerOff } from 'lucide-react';
 
 export default function AutoconerMaster() {
+  const { canManageMasters } = useAuthUser();
   const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -29,12 +33,12 @@ export default function AutoconerMaster() {
   const searchFields = ['machine_no', 'description', 'make_name'];
   const searchConditions = ['Like', 'Equal', 'Not Equal', 'Greater', 'Less'];
 
-  // Grid columns matching VB6 app: M/c No., Description, Make Name, ActEffi
+  // Count is selected here; its properties remain owned by Spinning Count Master.
   const columns = [
     { key: 'machine_no', label: 'M/c No.' },
     { key: 'description', label: 'Description' },
     { key: 'make_name', label: 'Make Name' },
-    { key: 'act_effi', label: 'ActEffi' }
+    { key: 'count_name', label: 'Count' }
   ];
 
   useEffect(() => {
@@ -47,12 +51,7 @@ export default function AutoconerMaster() {
       const result = await getAutoconerMachinesAction();
       
       if (result.success) {
-        const formattedData = result.data.map(machine => ({
-          ...machine,
-          act_effi: machine.act_effi || 0
-        }));
-        
-        setMachines(formattedData);
+        setMachines(result.data);
         setError(null);
       } else {
         setError('Failed to load machines: ' + result.error);
@@ -73,12 +72,7 @@ export default function AutoconerMaster() {
       const result = await searchAutoconerMachinesAction(field, condition, value);
       
       if (result.success) {
-        const formattedData = result.data.map(machine => ({
-          ...machine,
-          act_effi: machine.act_effi || 0
-        }));
-        
-        setMachines(formattedData);
+        setMachines(result.data);
         toast.success(`Found ${result.data.length} machine(s)`);
       } else {
         toast.error('Search failed: ' + result.error);
@@ -142,7 +136,6 @@ export default function AutoconerMaster() {
         from_drum: machineToEdit.from_drum || null,
         to_drum: machineToEdit.to_drum || null,
         no_of_drums: machineToEdit.no_of_drums || 0,
-        speed: machineToEdit.speed ?? null,
         count: machineToEdit.count || '',
         installed_date: machineToEdit.installed_date || null,
         direct_prod_entry: machineToEdit.direct_prod_entry || false
@@ -161,11 +154,15 @@ export default function AutoconerMaster() {
       }
       if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
       try {
-        await Promise.all(activeRows.map(row => updateAutoconerMachineAction(row.id, { is_active: false })));
-        toast.success(`${activeRows.length} machine(s) deactivated`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadMachines();
+        const { succeeded, failed } = await runBulkActions(
+          activeRows,
+          row => updateAutoconerMachineAction(row.id, { is_active: false })
+        );
+        if (succeeded.length) toast.success(`${succeeded.length} machine(s) deactivated`);
+        if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
+        setSelectedRows(failed.map(outcome => outcome.item));
+        setIsSelectMode(failed.length > 0);
+        if (succeeded.length) loadMachines();
       } catch (error) {
         toast.error('Failed to deactivate: ' + error.message);
       }
@@ -197,6 +194,16 @@ export default function AutoconerMaster() {
         toast.error('Failed to deactivate: ' + error.message);
       }
     }
+  };
+
+  const handleActivate = async () => {
+    const machine = editingMachine;
+    if (!machine || machine.is_active) return;
+    if (!confirm(`Activate machine "${machine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
+    const result = await updateAutoconerMachineAction(machine.id, { is_active: true });
+    if (!result.success) return toast.error('Failed to activate: ' + result.error);
+    toast.success('Machine activated');
+    setIsModalOpen(false); setEditingMachine(null); setSelectedRowId(null); loadMachines();
   };
 
   const handleDelete = async () => {
@@ -304,7 +311,7 @@ export default function AutoconerMaster() {
           <h1 className="text-xl sm:text-2xl font-bold">Autoconer Machine Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage autoconer machine information</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleNew} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">New</span>
@@ -332,11 +339,11 @@ export default function AutoconerMaster() {
           <Button 
             onClick={handleDelete} 
             className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none"
-            disabled={isSelectMode ? selectedRows.length === 0 : !selectedRowId}
+            disabled
+            title={MASTER_DELETE_DISABLED_MESSAGE}
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Remove Permanently</span>
-            <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.length > 0 && ` (${selectedRows.length})`}</span>
+            <span className="text-xs sm:text-sm">Deletion Disabled</span>
           </Button>
         </div>
       </div>
@@ -372,8 +379,9 @@ export default function AutoconerMaster() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           getRowClassName={(row) => !row.is_active ? '!bg-red-100 hover:!bg-red-200 text-red-700' : '!bg-white hover:!bg-yellow-100'}
-          onRowDoubleClick={handleRowDoubleClick}
+          onRowDoubleClick={canManageMasters ? handleRowDoubleClick : undefined}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             handleRowDoubleClick(row);
           }}
@@ -400,13 +408,13 @@ export default function AutoconerMaster() {
           setIsModalOpen(false);
           setEditingMachine(null);
         }}
-        onDelete={editingMachine ? handleDelete : null}
-        showDelete={!!editingMachine}
+        onDelete={null}
+        showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={editingMachine?.is_active ? handleDeactivate : null}
-        secondaryActionLabel="Deactivate"
-        saveLabel={editingMachine ? 'Save' : 'Create'}
+        onSecondaryAction={editingMachine ? (editingMachine.is_active ? handleDeactivate : handleActivate) : null}
+        secondaryActionLabel={editingMachine?.is_active ? "Deactivate" : "Activate"}
+        saveLabel={editingMachine ? 'Update' : 'Create'}
       >
         <AutoconerForm
           initialData={editingMachine}

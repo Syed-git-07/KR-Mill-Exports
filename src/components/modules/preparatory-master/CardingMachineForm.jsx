@@ -6,6 +6,7 @@ import * as z from 'zod';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import MachineActiveStatus from '@/components/modules/masters/MachineActiveStatus';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
 
@@ -397,15 +398,7 @@ export default function CardingMachineForm({ initialData, onSubmit, isLoading, c
 
       {/* Row 5: Checkboxes */}
       <div className="grid grid-cols-3 gap-4 pt-2">
-        <div className="flex items-center space-x-2 p-3 border rounded-lg">
-          <Checkbox
-            id="is_active"
-            checked={isActive}
-            onCheckedChange={(checked) => setValue('is_active', checked)}
-            disabled={isLoading}
-          />
-          <Label htmlFor="is_active" className="cursor-pointer">Active</Label>
-        </div>
+        <MachineActiveStatus isActive={isActive} />
 
         <div className="flex items-center space-x-2 p-3 border rounded-lg">
           <Checkbox

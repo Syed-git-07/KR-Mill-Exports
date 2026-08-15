@@ -488,7 +488,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
         return updateLapFormerDetailAction(row.id, {
           ...calculated,
           employee_name: changes.employee_name ?? row.employee_name,
-          prodn_mixing: changes.prodn_mixing ?? row.prodn_mixing,
+          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
           act_prodn: actProdn,
           waste,
@@ -539,7 +539,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
   useImperativeHandle(ref, () => ({
     saveChanges: handleSave,
-    getEditedCount: () => Object.keys(editedRows).length,
+    getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
     isSaving: () => isSaving,
     discardChanges,
     refreshData: () => loadData({ force: true })
@@ -562,7 +562,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           {productionData.length} machines | Shift Time: {totalTime} mins
           {Object.keys(editedRows).length > 0 && (
             <span className="ml-4 text-orange-600 font-medium">
-              Auto-saved draft: {Object.keys(editedRows).length}
+              Unsaved draft: {Object.keys(editedRows).length}
             </span>
           )}
         </div>

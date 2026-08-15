@@ -3,7 +3,6 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -46,7 +45,7 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitting }
+    formState: { errors }
   } = useForm({
     resolver: zodResolver(spinningCountSchema),
     defaultValues: initialData ? {
@@ -83,8 +82,6 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
   const autoconerActive = watch('autoconer_active')
 
   const handleFormSubmit = (data) => {
-    console.log('Form submitted with raw data:', data)
-    
     // Transform data to ensure correct types
     const transformedData = {
       count_name: data.count_name,
@@ -112,7 +109,6 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
       sliver_hank: optionalNumber(data.sliver_hank)
     }
     
-    console.log('Transformed data:', transformedData)
     onSubmit(transformedData)
   }
 
@@ -242,12 +238,6 @@ export default function SpinningCountForm({ initialData, onSubmit }) {
             <p className="text-xs text-blue-600 mt-1">Used as default Sliver Hank in Carding Machine &amp; Setup</p>
           </div>
         </div>
-      </div>
-
-      <div className="flex justify-end gap-2 pt-4">
-        <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white">
-          {isSubmitting ? 'Saving...' : 'Save'}
-        </Button>
       </div>
     </form>
   )

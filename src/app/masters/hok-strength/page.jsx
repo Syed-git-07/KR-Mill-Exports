@@ -9,6 +9,7 @@ import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import HOKStrengthForm from '@/components/modules/masters/HOKStrengthForm';
+import { useAuthUser } from '@/components/auth/AuthUserContext';
 import {
   getHOKEntriesAction,
   createBulkHOKEntriesAction,
@@ -18,6 +19,7 @@ import {
 } from '@/app/actions/hok-strength';
 
 export default function HOKStrengthPage() {
+  const { canManageMasters } = useAuthUser();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -204,7 +206,7 @@ export default function HOKStrengthPage() {
           <h1 className="text-xl sm:text-2xl font-bold">HOK Strength Master</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Manage HOK values by department and shift</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">New Entry</span>
@@ -250,6 +252,7 @@ export default function HOKStrengthPage() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           onContextMenu={(row, e) => {
+            if (!canManageMasters) return;
             e.preventDefault();
             setSelectedEntry(row);
             setEditingEntry(row);

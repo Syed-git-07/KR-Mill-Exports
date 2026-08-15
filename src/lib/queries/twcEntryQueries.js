@@ -1,4 +1,5 @@
 import { prisma } from '../prisma';
+import { buildTypedSearchWhere } from '../masterSearch';
 
 /**
  * TWC Entry CRUD Operations
@@ -122,61 +123,11 @@ export async function deleteTWCEntry(id) {
 // Search TWC entries
 export async function searchTWCEntries(field, condition, value) {
   try {
-    let where = {}
-
-    if (value && value.trim() !== '') {
-      const numValue = parseFloat(value)
-      const isNumber = !isNaN(numValue)
-
-      switch (condition) {
-        case 'Like':
-          if (!isNumber) {
-            where[field] = {
-              contains: value
-            }
-          } else {
-            where[field] = numValue
-          }
-          break
-        case 'Equal':
-        case '=':
-          if (isNumber) {
-            where[field] = numValue
-          } else {
-            where[field] = value
-          }
-          break
-        case 'Not Equal':
-          if (isNumber) {
-            where[field] = {
-              not: numValue
-            }
-          } else {
-            where[field] = {
-              not: value
-            }
-          }
-          break
-        case 'Greater':
-          if (isNumber) {
-            where[field] = {
-              gt: numValue
-            }
-          }
-          break
-        case 'Less':
-          if (isNumber) {
-            where[field] = {
-              lt: numValue
-            }
-          }
-          break
-        default:
-          where[field] = {
-            contains: value
-          }
-      }
-    }
+    const where = buildTypedSearchWhere(field, condition, value, {
+      entry_id: 'number',
+      entry_date: 'date',
+      twc_value: 'number'
+    })
 
     const data = await prisma.twc_entries.findMany({
       where,
