@@ -140,7 +140,7 @@ export default function ComberMachinePage() {
       try {
         const { succeeded, failed } = await runBulkActions(
           activeRows,
-          row => updateComberMachineAction(row.id, { ...row, is_active: false })
+          row => updateComberMachineAction(row.id, { is_active: false })
         );
         if (succeeded.length) toast.success(`${succeeded.length} machine(s) deactivated`);
         if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
@@ -164,7 +164,7 @@ export default function ComberMachinePage() {
       const machineName = machine?.machine_no || 'this machine';
       if (!confirm(`Deactivate machine "${machineName}"?\n\nIt will be hidden from new production entries.`)) return;
       try {
-        const result = await updateComberMachineAction(targetId, { ...machine, is_active: false });
+        const result = await updateComberMachineAction(targetId, { is_active: false });
         if (result.success) {
           toast.success('Machine deactivated');
           setIsModalOpen(false);
@@ -184,7 +184,7 @@ export default function ComberMachinePage() {
     const machine = editingMachine;
     if (!machine || machine.is_active) return;
     if (!confirm(`Activate machine "${machine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
-    const result = await updateComberMachineAction(machine.id, { ...machine, is_active: true });
+    const result = await updateComberMachineAction(machine.id, { is_active: true });
     if (!result.success) return toast.error('Failed to activate: ' + result.error);
     toast.success('Machine activated');
     setIsModalOpen(false); setEditingMachine(null); setSelectedRowId(null); loadMachines();

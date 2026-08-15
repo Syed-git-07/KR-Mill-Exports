@@ -66,6 +66,8 @@ export async function createComberMachine(machineData) {
 
 // Update an existing comber machine
 export async function updateComberMachine(id, machineData) {
+  const hasField = (field) => Object.hasOwn(machineData, field);
+
   // Convert date string to Date object if needed
   let installedDate = machineData.installed_date;
   if (installedDate && typeof installedDate === 'string') {
@@ -147,21 +149,21 @@ export async function updateComberMachine(id, machineData) {
     const data = await tx.comber_machines.update({
       where: { id },
       data: {
-        machine_no: machineData.machine_no,
-        ...(machineData.mc_id !== undefined && machineData.mc_id !== null && {
-          mc_id: parseInt(machineData.mc_id, 10)
+        ...(hasField('machine_no') && { machine_no: machineData.machine_no }),
+        ...(hasField('mc_id') && {
+          mc_id: machineData.mc_id === null ? null : parseInt(machineData.mc_id, 10)
         }),
-        description: machineData.description,
-        make_name: machineData.make_name,
-        model: machineData.model,
-        prodn_mixing: machineData.prodn_mixing,
-        speed: machineData.speed,
-        sliver_hank: machineData.sliver_hank ?? null,
-        mc_effi: machineData.mc_effi,
-        installed_date: installedDate,
-        is_active: machineData.is_active,
-        direct_hank_entry: machineData.direct_hank_entry,
-        direct_kgs_entry: machineData.direct_kgs_entry,
+        ...(hasField('description') && { description: machineData.description }),
+        ...(hasField('make_name') && { make_name: machineData.make_name }),
+        ...(hasField('model') && { model: machineData.model }),
+        ...(hasField('prodn_mixing') && { prodn_mixing: machineData.prodn_mixing }),
+        ...(hasField('speed') && { speed: machineData.speed }),
+        ...(hasField('sliver_hank') && { sliver_hank: machineData.sliver_hank }),
+        ...(hasField('mc_effi') && { mc_effi: machineData.mc_effi }),
+        ...(hasField('installed_date') && { installed_date: installedDate }),
+        ...(hasField('is_active') && { is_active: machineData.is_active }),
+        ...(hasField('direct_hank_entry') && { direct_hank_entry: machineData.direct_hank_entry }),
+        ...(hasField('direct_kgs_entry') && { direct_kgs_entry: machineData.direct_kgs_entry }),
         ...timestampData,
         updated_at: new Date(),
       }

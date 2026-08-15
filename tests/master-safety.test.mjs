@@ -11,6 +11,7 @@ import { buildTypedSearchWhere } from '../src/lib/masterSearch.js'
 import {
   autoconerMachineCreateSchema,
   cardingMachineUpdateSchema,
+  comberMachineUpdateSchema,
   departmentCreateSchema,
   hokEntrySchema,
   tpiEntryCreateSchema
@@ -208,6 +209,7 @@ test('all Master write actions validate payloads before database queries', async
 
 test('Master schemas allow lifecycle-only updates and reject unsafe input', () => {
   assert.deepEqual(cardingMachineUpdateSchema.parse({ is_active: false }), { is_active: false })
+  assert.deepEqual(comberMachineUpdateSchema.parse({ is_active: false }), { is_active: false })
   assert.throws(() => departmentCreateSchema.parse({
     code: 1, dept_name: 'A', sl_no: 1, hok: 0.2
   }))
@@ -223,6 +225,18 @@ test('Master schemas allow lifecycle-only updates and reject unsafe input', () =
     spinning_count_id: '11111111-1111-4111-8111-111111111111',
     tpi_value: 10
   }))
+})
+
+test('Comber lifecycle actions send status-only payloads and preserve unrelated fields', async () => {
+  const [pageSource, querySource] = await Promise.all([
+    readFile(new URL('../src/app/preparatory-master/comber/page.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/lib/queries/comberMachineQueries.js', import.meta.url), 'utf8')
+  ])
+
+  assert.doesNotMatch(pageSource, /updateComberMachineAction\([^,]+,\s*\{\s*\.\.\./)
+  assert.match(pageSource, /updateComberMachineAction\(targetId, \{ is_active: false \}\)/)
+  assert.match(pageSource, /updateComberMachineAction\(machine\.id, \{ is_active: true \}\)/)
+  assert.match(querySource, /hasField\('sliver_hank'\) && \{ sliver_hank: machineData\.sliver_hank \}/)
 })
 
 test('machine lifecycle boundaries consistently exclude the deactivation date', async () => {
