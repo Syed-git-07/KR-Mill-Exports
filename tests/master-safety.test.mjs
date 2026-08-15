@@ -239,6 +239,19 @@ test('Comber lifecycle actions send status-only payloads and preserve unrelated 
   assert.match(querySource, /hasField\('sliver_hank'\) && \{ sliver_hank: machineData\.sliver_hank \}/)
 })
 
+test('Simplex form maps count name without leaking UI fields into strict Master validation', async () => {
+  const [formSource, querySource] = await Promise.all([
+    readFile(new URL('../src/components/modules/preparatory-master/SimplexMachineForm.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/lib/queries/simplexMachineQueries.js', import.meta.url), 'utf8')
+  ])
+
+  assert.match(formSource, /const \{ count_name, \.\.\.formValues \} = data/)
+  assert.match(formSource, /prodn_mixing: count_name \|\| null/)
+  assert.doesNotMatch(formSource, /const cleanedData = \{\s*\.\.\.data,/)
+  assert.match(querySource, /const shouldUpdateTpi = hasField\('tpi'\) \|\| hasField\('count_tpi'\)/)
+  assert.match(querySource, /shouldUpdateTpi && \{ tpi: effectiveTpi \}/)
+})
+
 test('machine lifecycle boundaries consistently exclude the deactivation date', async () => {
   const queryFiles = [
     'autoconerEntryQueries.js', 'breakerDrawingQueries.js', 'cardingEntryQueries.js',

@@ -354,9 +354,11 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
   }, [countName, resolveCountOption, setValue]);
 
   const handleFormSubmit = (data) => {
+    const { count_name, ...formValues } = data;
+
     // Clean up the data - convert empty strings to null for numeric fields
     const cleanedData = {
-      ...data,
+      ...formValues,
       speed: data.speed === '' ? null : Number(data.speed),
       prodn_effi: data.prodn_effi === '' ? null : Number(data.prodn_effi),
       tpi: data.tpi === '' ? null : Number(data.tpi),                        // NEW
@@ -364,8 +366,8 @@ export default function SimplexMachineForm({ initialData, onSubmit, isLoading, c
       installed_date: data.installed_date || null,
       make_name: data.make_name || null,
       model: data.model || null,
-      prodn_mixing: data.count_name || null,
-      count_tpi: resolveCountOption(data.count_name)?.tpi ?? null,
+      prodn_mixing: count_name || null,
+      count_tpi: resolveCountOption(count_name)?.tpi ?? null,
     };
     onSubmit(cleanedData);
   };

@@ -116,6 +116,8 @@ export async function createSimplexMachine(machineData) {
 
 // Update an existing simplex machine
 export async function updateSimplexMachine(id, machineData) {
+  const hasField = (field) => Object.hasOwn(machineData, field);
+
   // Convert date string to Date object if needed
   let installedDate = machineData.installed_date;
   if (installedDate && typeof installedDate === 'string') {
@@ -126,6 +128,7 @@ export async function updateSimplexMachine(id, machineData) {
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
   const parsedCountTpi = parseCountTpi(machineData.count_tpi);
   const effectiveTpi = machineData.tpi ?? parsedCountTpi;
+  const shouldUpdateTpi = hasField('tpi') || hasField('count_tpi');
 
   const currentMachine = await prisma.simplex_machines.findUnique({ where: { id }, select: { is_active: true } });
   const isActivating = machineData.is_active === true && currentMachine?.is_active !== true;
@@ -134,23 +137,23 @@ export async function updateSimplexMachine(id, machineData) {
   const data = await prisma.simplex_machines.update({
     where: { id },
     data: {
-      machine_no: machineData.machine_no,
-      ...(machineData.mc_id !== undefined && { mc_id: mcId }),
-      description: machineData.description,
-      make_name: machineData.make_name,
-      model: machineData.model,
-      prodn_mixing: machineData.prodn_mixing,
-      speed: machineData.speed,
-      prodn_efficiency: machineData.prodn_effi,
-      ...(machineData.mc_effi !== undefined && { mc_effi: machineData.mc_effi }),
-      tpi: effectiveTpi,
-      no_of_spindles: machineData.no_of_spindles, // Number of Spindles (NEW)
-      installed_date: installedDate,
-      is_active: machineData.is_active,
+      ...(hasField('machine_no') && { machine_no: machineData.machine_no }),
+      ...(hasField('mc_id') && { mc_id: mcId }),
+      ...(hasField('description') && { description: machineData.description }),
+      ...(hasField('make_name') && { make_name: machineData.make_name }),
+      ...(hasField('model') && { model: machineData.model }),
+      ...(hasField('prodn_mixing') && { prodn_mixing: machineData.prodn_mixing }),
+      ...(hasField('speed') && { speed: machineData.speed }),
+      ...(hasField('prodn_effi') && { prodn_efficiency: machineData.prodn_effi }),
+      ...(hasField('mc_effi') && { mc_effi: machineData.mc_effi }),
+      ...(shouldUpdateTpi && { tpi: effectiveTpi }),
+      ...(hasField('no_of_spindles') && { no_of_spindles: machineData.no_of_spindles }),
+      ...(hasField('installed_date') && { installed_date: installedDate }),
+      ...(hasField('is_active') && { is_active: machineData.is_active }),
       ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
       ...(isDeactivating && { deactivated_at: new Date() }),
-      direct_hank_entry: machineData.direct_hank_entry,
-      direct_kgs_entry: machineData.direct_kgs_entry,
+      ...(hasField('direct_hank_entry') && { direct_hank_entry: machineData.direct_hank_entry }),
+      ...(hasField('direct_kgs_entry') && { direct_kgs_entry: machineData.direct_kgs_entry }),
       updated_at: new Date(),
     }
   });
