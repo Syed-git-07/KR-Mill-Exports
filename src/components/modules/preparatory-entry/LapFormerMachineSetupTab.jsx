@@ -212,7 +212,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           machine_id: setup.machine_id,
           machine_no: setup.machine?.machine_no,
           make_name: setup.machine?.make_name || '',
-          mixing: setup.machine?.prodn_mixing || '',
+          mixing: setup.prodn_mixing || setup.machine?.prodn_mixing || '',
           speed: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).speed,
           std_prodn: setup.std_prodn || 0,
           std_efficiency_factor: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).stdEfficiencyFactor,
@@ -619,7 +619,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine_no}
+                    <div>{row.machine_no}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
                     {row.make_name || ''}
@@ -919,13 +919,11 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
             <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s)? 
-              This will deactivate them from the system.
+              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
             </DialogDescription>
           </DialogHeader>
           <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            <strong>Warning:</strong> Removing machines will affect any future production entries.
-            Existing production data will be preserved.
+            This affects only this date and shift. Machine Master and all other entries remain unchanged.
           </div>
           <DialogFooter className="gap-3">
             <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>

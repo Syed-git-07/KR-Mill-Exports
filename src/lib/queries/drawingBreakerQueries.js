@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { machineRemovalDate } from '../machineLifecycle';
 
 /**
  * Drawing Breaker Machine Master - CRUD Operations
@@ -37,19 +38,15 @@ export async function lookupDrawingBreakerMachineByNo(machineNo) {
   });
   if (!machine) return null;
 
-  // Check if already in setup
-  const setup = await prisma.breaker_drawing_machine_setup.findFirst({
-    where: { machine_id: machine.id }
-  });
-
   return {
     ...machine,
     delivery: machine.delivery ?? null,
     sliver_hank: machine.sliver_hank != null ? parseFloat(machine.sliver_hank) : null,
-    std_efficiency_factor: setup?.std_efficiency_factor != null ? parseFloat(setup.std_efficiency_factor) : null,
-    // Also return setup's hank_constant so form can pre-fill for deactivated machines
-    setup_hank_constant: setup?.hank_constant != null ? parseFloat(setup.hank_constant) : null,
-    has_setup: !!setup,
+    std_efficiency_factor: machine.prodn_efficiency != null
+      ? (Number(machine.prodn_efficiency) > 1 ? Number(machine.prodn_efficiency) / 100 : Number(machine.prodn_efficiency))
+      : null,
+    setup_hank_constant: machine.sliver_hank != null ? parseFloat(machine.sliver_hank) : null,
+    has_setup: false,
   };
 }
 
@@ -60,9 +57,9 @@ export async function createDrawingBreakerMachine(machineData) {
     installedDate = new Date(installedDate);
   }
 
-  // Reactivate if inactive machine with same machine_no exists
+  // Removed rows are immutable history. A reused number creates a new record.
   const existing = await prisma.drawing_breaker_machines.findFirst({
-    where: { machine_no: machineData.machine_no }
+    where: { machine_no: machineData.machine_no, is_active: true }
   });
   if (existing) {
     if (!existing.is_active) {
@@ -152,6 +149,7 @@ export async function updateDrawingBreakerMachine(id, machineData) {
   }
 
   const currentMachine = await prisma.drawing_breaker_machines.findUnique({ where: { id }, select: { is_active: true } });
+  if (currentMachine?.is_active === false) throw new Error('Removed machines cannot be changed or restored');
   const wantsActive = machineData.is_active === true || machineData.is_active === 1;
   const wantsInactive = machineData.is_active === false || machineData.is_active === 0;
   const isActivating = wantsActive && currentMachine?.is_active !== true;
@@ -175,7 +173,7 @@ export async function updateDrawingBreakerMachine(id, machineData) {
       direct_kgs_entry: machineData.direct_kgs_entry,
       updated_at: new Date(),
       ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
-      ...(isDeactivating && { deactivated_at: new Date() }),
+      ...(isDeactivating && { deactivated_at: machineRemovalDate() }),
     }
   });
 }

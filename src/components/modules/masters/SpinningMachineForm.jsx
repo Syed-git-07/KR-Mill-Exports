@@ -70,7 +70,7 @@ export default function SpinningMachineForm({ initialData, onSubmit }) {
       make_name: 'LMW',
       model: '',
       allocated_spindles: 1104,
-      installed_date: '2015-04-01',
+      installed_date: '',
       is_active: true,
       production_kgs_manual_entry: false,
       direct_hank_entry: true,

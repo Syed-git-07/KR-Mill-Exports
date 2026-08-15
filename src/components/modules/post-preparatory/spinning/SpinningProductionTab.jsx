@@ -47,7 +47,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   onSharedDraftEditsChange,
   stoppageDraftEdits,
   counts = [],
-  onMachineCountChange
+  onMachineCountChange,
+  onMachineSetupFieldChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [productionData, setProductionData] = useState([])
@@ -206,7 +207,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         const calculated = calculateValues(normalizedRow, {}, effectiveSetup)
         return {
           ...normalizedRow,
-          run_time: effectiveTotalTime,
+          run_time: normalizedRow.run_time ?? effectiveSetup?.run_time ?? effectiveTotalTime,
           ...calculated
         }
       })
@@ -505,6 +506,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                 const bgClass = isEdited ? 'bg-yellow-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')
                 const effectiveSetup = getEffectiveSetup(row)
                 const effectiveCountName = effectiveSetup?.count_name || row.count_name || row.setup?.count_name || ''
+                const hasMultipleRuns = productionData.filter(item => String(item.machine_id) === String(row.machine_id)).length > 1
+                const effectiveRunTime = effectiveSetup?.run_time ?? row.run_time ?? effectiveTotalTime
                 
                 return (
                   <tr key={row.id} className={`${bgClass} hover:bg-blue-50`}>
@@ -599,8 +602,21 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     <td className="border border-gray-300 px-3 py-1 text-center text-purple-600 tabular-nums whitespace-nowrap">
                       {formatExpectedGps(row.exp_gps)}
                     </td>
-                    <td className="border border-gray-300 px-3 py-1 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
-                      {row.run_time || effectiveTotalTime}
+                    <td className="border border-gray-300 px-0 py-0 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                      {hasMultipleRuns ? (
+                        <NumberInput
+                          type="number"
+                          min="0"
+                          value={effectiveRunTime}
+                          onChange={(e) => onMachineSetupFieldChange?.(
+                            row.setup?.id,
+                            row.machine_id,
+                            'run_time',
+                            parseFloat(e.target.value) || 0
+                          )}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-sm tabular-nums shadow-none focus-visible:ring-0"
+                        />
+                      ) : effectiveRunTime}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-center font-medium text-orange-600 tabular-nums whitespace-nowrap">
                       {row.stoppage?.[0]?.total_stoppage_time ?? 0}

@@ -2,8 +2,8 @@
 -- Backfill from the production detail where possible; only baseline rows without
 -- an entry detail fall back to the machine master value.
 
-ALTER TABLE `carding_machine_setup`
-  ADD COLUMN `prodn_mixing` VARCHAR(100) NULL;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'carding_machine_setup' AND column_name = 'prodn_mixing') = 0, 'ALTER TABLE `carding_machine_setup` ADD COLUMN `prodn_mixing` VARCHAR(100) NULL', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 UPDATE `carding_machine_setup` setup_row
 JOIN `carding_production_header` header_row
@@ -19,8 +19,8 @@ JOIN `carding_machines` machine_row ON machine_row.`id` = setup_row.`machine_id`
 SET setup_row.`prodn_mixing` = machine_row.`prodn_mixing`
 WHERE setup_row.`prodn_mixing` IS NULL;
 
-ALTER TABLE `breaker_drawing_machine_setup`
-  ADD COLUMN `prodn_mixing` VARCHAR(100) NULL;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'breaker_drawing_machine_setup' AND column_name = 'prodn_mixing') = 0, 'ALTER TABLE `breaker_drawing_machine_setup` ADD COLUMN `prodn_mixing` VARCHAR(100) NULL', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 UPDATE `breaker_drawing_machine_setup` setup_row
 JOIN `breaker_drawing_production_header` header_row
@@ -36,8 +36,8 @@ JOIN `drawing_breaker_machines` machine_row ON machine_row.`id` = setup_row.`mac
 SET setup_row.`prodn_mixing` = machine_row.`prodn_mixing`
 WHERE setup_row.`prodn_mixing` IS NULL;
 
-ALTER TABLE `lap_former_machine_setup`
-  ADD COLUMN `prodn_mixing` VARCHAR(100) NULL;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'lap_former_machine_setup' AND column_name = 'prodn_mixing') = 0, 'ALTER TABLE `lap_former_machine_setup` ADD COLUMN `prodn_mixing` VARCHAR(100) NULL', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 UPDATE `lap_former_machine_setup` setup_row
 JOIN `lap_former_production_header` header_row

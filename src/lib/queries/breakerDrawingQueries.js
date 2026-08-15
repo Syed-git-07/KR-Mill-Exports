@@ -234,7 +234,7 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
   // Only include machines that have a setup entry — master-only machines (no setup) are excluded
   const machines = await prisma.drawing_breaker_machines.findMany({
     where: {
-      activated_at: { lte: entryDate },
+      installed_date: { lte: entryDate },
       OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
     },
     select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
@@ -327,7 +327,7 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
   // Only include machines with a setup entry — master-only machines (no setup) are excluded
   const allMachines = await prisma.drawing_breaker_machines.findMany({
     where: {
-      activated_at: { lte: entryDate },
+      installed_date: { lte: entryDate },
       OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
     },
     select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
@@ -833,7 +833,7 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
   const machines = await prisma.drawing_breaker_machines.findMany({
     where: header?.entry_date
       ? {
-          activated_at: { lte: header.entry_date },
+          installed_date: { lte: header.entry_date },
           OR: [
             { deactivated_at: null },
             { deactivated_at: { gt: header.entry_date } }
@@ -845,6 +845,7 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
   });
   const machineSpeedMap = {};
   const machineSetupOverridesMap = {};
+  const newMachineSetupDefaultsMap = {};
   machines.forEach(m => {
     machineSpeedMap[m.id] = m.speed;
     const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
@@ -857,6 +858,11 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
         std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
       })
     };
+    newMachineSetupDefaultsMap[m.id] = {
+      speed: 750, hank_constant: 0.14, std_efficiency_factor: 0.85,
+      default_waste: 0.85, std_prodn: 1371.72, shift_time: 510,
+      default_stoppage: 0, divisor_constant: 1693, delivery: 1
+    };
   });
   const setups = await getOrCreateDateScopedSetups({
     setupModel: prisma.breaker_drawing_machine_setup,
@@ -864,7 +870,8 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     headerId: validHeaderId,
     machineIds: machines.map(machine => machine.id),
     machineSpeedMap,
-    machineSetupOverridesMap
+    machineSetupOverridesMap,
+    newMachineSetupDefaultsMap
   });
   const headerDetails = validHeaderId
     ? await prisma.breaker_drawing_production_detail.findMany({

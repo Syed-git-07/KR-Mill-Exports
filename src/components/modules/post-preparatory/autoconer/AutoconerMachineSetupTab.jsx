@@ -181,11 +181,11 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       from_drum: found.from_drum?.toString() || '',
       to_drum: found.to_drum?.toString() || '',
       no_of_drums: found.no_of_drums?.toString() || '',
-      speed: matchedCount?.speed_autoconer?.toString() || '',
+      speed: found.speed?.toString() || matchedCount?.speed_autoconer?.toString() || '',
       count: found.count || '',
       count_id: found.count_id || matchedCount?.id || '',
       count_name: found.count || '',
-      act_effi: derivedActEffi != null ? derivedActEffi.toString() : '',
+      act_effi: found.act_effi != null ? found.act_effi.toString() : (derivedActEffi != null ? derivedActEffi.toString() : ''),
       installed_date: dateStr,
     }))
     toast.success(`Machine ${found.machine_no} found — all fields auto-filled from master`, { id: 'machine-lookup' })
@@ -634,7 +634,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
                     </td>
                     {/* Machine No */}
                     <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                      {machine?.machine_no}
+                      <div>{machine?.machine_no}</div>
                     </td>
                     {/* Make Name */}
                     <td className="border border-gray-300 px-2 py-1 text-xs text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">
@@ -852,8 +852,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
           </DialogHeader>
           <div className="py-4">
             <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-              <strong>Warning:</strong> Are you sure you want to remove {selectedRows.length} selected machine(s) from setup? 
-              This will not affect existing production data.
+              Remove {selectedRows.length} selected machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
             </div>
           </div>
           <DialogFooter>
@@ -890,6 +889,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
                 placeholder="Type machine no. e.g. AC5-2 and press Enter to auto-fill from master"
                 value={newMachineData.machine_no}
                 onChange={(e) => setNewMachineData(prev => ({ ...prev, machine_no: e.target.value }))}
+                onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()

@@ -498,7 +498,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine?.machine_no || row.machine_id}
+                    <div>{row.machine?.machine_no || row.machine_id}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-left whitespace-nowrap">
                     {row.machine?.description || '-'}
@@ -816,7 +816,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
           <DialogHeader>
             <DialogTitle className="text-red-600">Remove Machine(s)</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {selectedRows.length} machine(s)? This action cannot be undone.
+              Remove {selectedRows.length} machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

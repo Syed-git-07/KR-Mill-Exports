@@ -495,7 +495,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine?.machine_no}
+                    <div>{row.machine?.machine_no}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">
                     {row.machine?.make_name || ''}
@@ -791,13 +791,11 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
             <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s)? 
-              This will deactivate them from the system.
+              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
             </DialogDescription>
           </DialogHeader>
           <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            <strong>Warning:</strong> Removing machines will affect any future production entries.
-            Existing production data will be preserved.
+            This affects only this date and shift. Machine Master and all other entries remain unchanged.
           </div>
           <DialogFooter className="gap-3">
             <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>

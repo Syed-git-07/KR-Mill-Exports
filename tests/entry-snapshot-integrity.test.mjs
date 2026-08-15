@@ -27,12 +27,51 @@ test('all eight entry add actions use entry snapshots rather than mutating Machi
   assert.match(helper, /Adds an existing Machine Master record to one entry snapshot/)
   assert.match(helper, /data: \{ is_included: false \}/)
   assert.doesNotMatch(helper, /tx\[models\.machine\]\.(create|update|delete)/)
+  assert.match(helper, /buildSetupFromMachineMaster\(moduleName, machine, header\)/)
+  assert.doesNotMatch(helper, /const inherited = source/)
 })
 
-test('entry snapshot schema enforces one header, detail and stoppage row per context', () => {
+test('all Add Master Machine dialogs look up Master values before entry creation', () => {
+  const dialogs = [
+    'src/components/modules/preparatory-entry/CardingMachineSetupTab.jsx',
+    'src/components/modules/preparatory-entry/BreakerDrawingMachineSetupTab.jsx',
+    'src/components/modules/preparatory-entry/ComberMachineSetupTab.jsx',
+    'src/components/modules/preparatory-entry/FinisherDrawingMachineSetupTab.jsx',
+    'src/components/modules/preparatory-entry/LapFormerMachineSetupTab.jsx',
+    'src/components/modules/preparatory-entry/SimplexMachineSetupTab.jsx',
+    'src/components/modules/post-preparatory/spinning/SpinningMachineSetupTab.jsx',
+    'src/components/modules/post-preparatory/autoconer/AutoconerMachineSetupTab.jsx'
+  ]
+
+  for (const file of dialogs) {
+    const source = read(file)
+    assert.match(source, /handleMachineNoLookup/)
+    assert.match(source, /onBlur=\{\(e\) => handleMachineNoLookup/)
+  }
+})
+
+test('Carding and Autoconer do not auto-enroll newly created Master machines', () => {
+  const carding = read('src/lib/queries/cardingEntryQueries.js')
+  const autoconer = read('src/lib/queries/autoconerEntryQueries.js')
+
+  assert.doesNotMatch(carding, /missingSetups\s*=\s*missingMachines\.map/)
+  assert.doesNotMatch(carding, /allDataToInsert\s*=\s*\[\.\.\.cloneData,\s*\.\.\.missingSetups\]/)
+  assert.doesNotMatch(autoconer, /activeMachines\.forEach\(machine\s*=>\s*\{[\s\S]*?cloneDataMap\.set/)
+  assert.match(carding, /data:\s*cloneData/)
+  assert.match(autoconer, /const cloneData = Array\.from\(cloneDataMap\.values\(\)\)/)
+})
+
+test('new Spinning Master machines start with an empty installed date', () => {
+  const source = read('src/components/modules/masters/SpinningMachineForm.jsx')
+  assert.match(source, /installed_date:\s*'',/)
+  assert.doesNotMatch(source, /installed_date:\s*'2015-04-01'/)
+})
+
+test('run storage remains migration-compatible while Count Change is restricted in application code', () => {
   const schema = read('prisma/schema.prisma')
   assert.equal((schema.match(/@@unique\(\[entry_date, shift\], name: "uq_/g) || []).length, 8)
-  assert.equal((schema.match(/@@unique\(\[header_id, machine_id\], name: "uq_/g) || []).length, 8)
+  assert.equal((schema.match(/@@unique\(\[header_id, machine_id, run_sequence\], name: "uq_/g) || []).length, 8)
+  assert.equal((schema.match(/@@unique\(\[machine_id, entry_date, shift, run_sequence\], name: "idx_/g) || []).length, 8)
   assert.equal((schema.match(/@@unique\(\[production_detail_id\], name: "uq_/g) || []).length, 8)
   assert.equal((schema.match(/is_included\s+Boolean\s+@default\(true\)/g) || []).length, 8)
 
@@ -40,6 +79,67 @@ test('entry snapshot schema enforces one header, detail and stoppage row per con
     const block = schema.match(new RegExp(`model ${model} \\{([\\s\\S]*?)\\n\\}`))?.[1] || ''
     assert.match(block, /prodn_mixing\s+String\?/)
   }
+})
+
+test('split Count Change is exposed only by the selected-row Spinning workflow', () => {
+  const spinning = read('src/components/modules/post-preparatory/spinning/SpinningMachineSetupTab.jsx')
+  assert.match(spinning, /changeEntryMachineCountRunAction\('spinning'/)
+  assert.match(spinning, /selectedRows\.length !== 1/)
+  assert.match(spinning, /has_multiple_runs/)
+
+  for (const [folder, file] of [
+    ['preparatory-entry', 'CardingMachineSetupTab.jsx'],
+    ['preparatory-entry', 'BreakerDrawingMachineSetupTab.jsx'],
+    ['preparatory-entry', 'ComberMachineSetupTab.jsx'],
+    ['preparatory-entry', 'FinisherDrawingMachineSetupTab.jsx'],
+    ['preparatory-entry', 'LapFormerMachineSetupTab.jsx'],
+    ['preparatory-entry', 'SimplexMachineSetupTab.jsx'],
+    ['post-preparatory/autoconer', 'AutoconerMachineSetupTab.jsx'],
+  ]) assert.doesNotMatch(read(`src/components/modules/${folder}/${file}`), /ChangeCountRunButton/)
+
+  const helper = read('src/lib/queries/entryMachineSnapshot.js')
+  assert.match(helper, /Only the latest count run can be changed/)
+  assert.match(helper, /run_sequence: nextSequence/)
+  assert.match(helper, /buildSpinningCountSnapshot/)
+  assert.match(helper, /Count Change is supported only for Spinning entries/)
+})
+
+test('Spinning carries only the latest count into the next entry and refreshes machine defaults', () => {
+  const source = read('src/lib/queries/spinningEntryQueries.js')
+  assert.match(source, /run_sequence: 'desc'/)
+  assert.match(source, /if \(!latestByMachine\.has\(row\.machine_id\)\)/)
+  assert.match(source, /buildSpinningCountSnapshot\(count, \{ machineSpeed: machine\.speed \}\)/)
+  assert.match(source, /run_sequence: 1/)
+  assert.match(source, /run_time: targetShiftTime/)
+})
+
+test('Spinning count-run time and count stay distinct across all three tabs', () => {
+  const actions = read('src/app/actions/spinning-entry.js')
+  const queries = read('src/lib/queries/spinningEntryQueries.js')
+  const production = read('src/components/modules/post-preparatory/spinning/SpinningProductionTab.jsx')
+  const stoppage = read('src/components/modules/post-preparatory/spinning/SpinningStoppageTab.jsx')
+
+  assert.doesNotMatch(actions, /run_time:\s*shiftTime/)
+  assert.match(queries, /setupMap\[`\$\{s\.machine_id\}:\$\{runSequence\}`\] = s/)
+  assert.match(production, /normalizedRow\.run_time \?\? effectiveSetup\?\.run_time/)
+  assert.match(production, /onMachineSetupFieldChange/)
+  assert.match(stoppage, /mergedRow\.run_time \?\? effectiveTotalTime/)
+  assert.match(stoppage, /findSetupDraftForMachine\(row\.machine_id, row\.setup_id\)/)
+  assert.match(stoppage, /onMachineSetupFieldChange/)
+})
+
+test('adding a Spinning Master machine normalizes an empty count foreign key to null', () => {
+  const source = read('src/lib/queries/spinningEntryQueries.js')
+  assert.match(source, /count_id: selectedCount\?\.id \?\? null/)
+  assert.match(source, /count_name: selectedCount\?\.count_name \?\? null/)
+})
+
+test('forward repair preserves legacy rows after the rejected destructive collapse', () => {
+  const migration = read('prisma/migrations/20260820_spinning_only_count_runs/migration.sql')
+  assert.doesNotMatch(migration, /DROP COLUMN `run_sequence`/)
+  assert.match(migration, /autoconer_machine_setup.*ADD COLUMN `run_sequence`/)
+  assert.match(migration, /breaker_drawing_machine_setup.*ADD COLUMN `run_sequence`/)
+  assert.doesNotMatch(migration, /ALTER TABLE `spinning_/)
 })
 
 test('bulk Count and Mixing controls remain browser drafts until final Update', () => {
@@ -58,11 +158,6 @@ test('bulk Count and Mixing controls remain browser drafts until final Update', 
     assert.doesNotMatch(source, /await bulkUpdate(?:MachineCount|BreakerDrawingMachineMixing|ComberMachineCount|FinisherDrawingMachineMixing|LapFormerMachineMixing|SimplexMachineCount)Action/)
   }
 
-
-  const spinning = read('src/components/modules/post-preparatory/spinning/SpinningMachineSetupTab.jsx')
-  const spinningBulkHandler = spinning.match(/const handleCountChange = \(\) => \{([\s\S]*?)\r?\n  \}\r?\n\r?\n  const hasOptionSelected/)?.[1] || ''
-  assert.match(spinningBulkHandler, /Click Update to save\./)
-  assert.doesNotMatch(spinningBulkHandler, /batchUpdateSpinningMachineSetupsAction/)
 
   const autoconer = read('src/components/modules/post-preparatory/autoconer/AutoconerMachineSetupTab.jsx')
   const autoconerBulkHandler = autoconer.match(/const handleBulkCountChange = \(\) => \{([\s\S]*?)\r?\n  \}\r?\n\r?\n  \/\/ Save all changes/)?.[1] || ''

@@ -26,7 +26,7 @@ function firstFiniteNumber(values, fallback) {
 
 function isSimplexMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
-  if (machine.activated_at && new Date(machine.activated_at) > entryDate) return false
+  if (machine.installed_date && new Date(machine.installed_date) > entryDate) return false
   if (machine.deactivated_at && new Date(machine.deactivated_at) <= entryDate) return false
   return true
 }
@@ -186,7 +186,7 @@ export async function getSimplexProductionDetails(headerId) {
         tpi: true,
         no_of_spindles: true,
         is_active: true,
-        activated_at: true,
+        installed_date: true,
         deactivated_at: true,
         sort_order: true
       }
@@ -244,7 +244,7 @@ export async function getSimplexProductionWithSetup(headerId) {
           tpi: true,
           no_of_spindles: true,
           is_active: true,
-          activated_at: true,
+          installed_date: true,
           deactivated_at: true,
           sort_order: true
         }
@@ -291,7 +291,7 @@ export async function initializeSimplexProductionDetails(headerId) {
     const machines = await prisma.simplex_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       orderBy: { sort_order: 'asc' }
@@ -377,7 +377,7 @@ export async function addMissingSimplexProductionDetails(headerId) {
     const machines = await prisma.simplex_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       orderBy: { sort_order: 'asc' }
@@ -562,7 +562,7 @@ export async function getSimplexStoppageEntries(headerId) {
           mc_effi: true,
           no_of_spindles: true,
           is_active: true,
-          activated_at: true,
+          installed_date: true,
           deactivated_at: true,
           sort_order: true
         }
@@ -969,7 +969,7 @@ export async function getSimplexMachineSetups(headerId = null) {
     const machines = await prisma.simplex_machines.findMany({
       where: header?.entry_date
         ? {
-            activated_at: { lte: header.entry_date },
+            installed_date: { lte: header.entry_date },
             OR: [
               { deactivated_at: null },
               { deactivated_at: { gt: header.entry_date } }
@@ -981,6 +981,7 @@ export async function getSimplexMachineSetups(headerId = null) {
     })
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
+    const newMachineSetupDefaultsMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
       machineSetupOverridesMap[m.id] = {
@@ -990,6 +991,12 @@ export async function getSimplexMachineSetups(headerId = null) {
         ...(m.mc_effi != null && { mc_effi: m.mc_effi }),
         ...(m.no_of_spindles != null && { spindles: m.no_of_spindles })
       };
+      newMachineSetupDefaultsMap[m.id] = {
+        prodn_mixing: m.prodn_mixing, session_no: 1, cc_time: 0,
+        sl_hank: 1.4, mc_effi: m.mc_effi ?? 92, tpi: m.tpi ?? 1.73,
+        spindles: m.no_of_spindles ?? 140, shift_time: 510,
+        default_waste: 0.9, speed: m.speed ?? 960
+      };
     });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.simplex_machine_setup,
@@ -997,7 +1004,8 @@ export async function getSimplexMachineSetups(headerId = null) {
       headerId: validHeaderId,
       machineIds: machines.map(machine => machine.id),
       machineSpeedMap,
-      machineSetupOverridesMap
+      machineSetupOverridesMap,
+      newMachineSetupDefaultsMap
     })
     const headerDetails = validHeaderId
       ? await prisma.simplex_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
@@ -1385,6 +1393,9 @@ export async function addSimplexMachine(machineData) {
       const existingMachine = await prisma.simplex_machines.findFirst({
         where: { machine_no: machineData.machine_no }
       })
+      if (existingMachine?.is_active === false) {
+        throw new Error('Removed machines cannot be restored. Add a new machine with a different machine number.')
+      }
 
       if (existingMachine) {
         const existingSetup = await prisma.simplex_machine_setup.findFirst({

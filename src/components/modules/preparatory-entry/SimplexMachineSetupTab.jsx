@@ -415,7 +415,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     }
   }
 
-  // Handle remove selected machines (soft delete - deactivates machine)
+  // Remove selected machines from this date-and-shift entry snapshot only.
   const handleRemoveMachines = async () => {
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
@@ -525,7 +525,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
                     {/* Machine No */}
                     <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                      {machine.machine_no || '-'}
+                      <div>{machine.machine_no || '-'}</div>
                     </td>
                     
                     {/* Make */}
@@ -906,8 +906,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           <DialogHeader>
             <DialogTitle>Remove Machines</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {selectedRows.length} selected machine(s) from setup?
-              This action cannot be undone.
+              Remove {selectedRows.length} selected machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">

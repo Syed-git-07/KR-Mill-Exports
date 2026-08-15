@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { machineRemovalDate } from '../machineLifecycle';
 
 /**
  * Comber Machine Master - CRUD Operations
@@ -94,6 +95,7 @@ export async function updateComberMachine(id, machineData) {
       select: { id: true, entry_date: true, shift: true }
     })
   ]);
+  if (currentMachine?.is_active === false) throw new Error('Removed machines cannot be changed or restored');
 
   let missingSnapshots = [];
   if (templateSetup && existingDetails.length > 0) {
@@ -128,7 +130,7 @@ export async function updateComberMachine(id, machineData) {
     timestampData.activated_at = new Date();
     timestampData.deactivated_at = null;
   } else if (machineData.is_active === false && currentMachine?.is_active !== false) {
-    timestampData.deactivated_at = new Date();
+    timestampData.deactivated_at = machineRemovalDate();
   }
 
   // Update only the undated master setup template. Dated rows belong to
@@ -224,8 +226,8 @@ export async function lookupComberMachineByNo(machineNo) {
 
   return {
     ...machine,
-    sl_hank: setup?.sl_hank ?? machine.sliver_hank ?? null,
-    mc_effi: machine.mc_effi ?? setup?.mc_effi ?? null,
+    sl_hank: machine.sliver_hank ?? setup?.sl_hank ?? null,
+    mc_effi: machine.mc_effi ?? machine.prodn_efficiency ?? setup?.mc_effi ?? null,
     prodn_mixing: machine.prodn_mixing ?? setup?.prodn_mixing ?? null,
     has_setup: !!setup,
   };

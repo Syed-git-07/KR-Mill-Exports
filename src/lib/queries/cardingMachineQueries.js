@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { machineRemovalDate } from '../machineLifecycle';
 
 /**
  * Carding Machine Master - CRUD Operations
@@ -40,34 +41,12 @@ export async function createCardingMachine(machineData) {
   // Ensure mc_id is a valid number
   const mcId = machineData.mc_id ? parseInt(machineData.mc_id, 10) : null;
 
-  // If a machine with the same machine_no exists (inactive), reactivate it
+  // Removed rows are immutable history. A reused number creates a new record.
   const existing = await prisma.carding_machines.findFirst({
-    where: { machine_no: machineData.machine_no }
+    where: { machine_no: machineData.machine_no, is_active: true }
   });
   if (existing) {
-    if (!existing.is_active) {
-      return await prisma.carding_machines.update({
-        where: { id: existing.id },
-        data: {
-          machine_no: machineData.machine_no,
-          mc_id: mcId,
-          description: machineData.description,
-          make_name: machineData.make_name,
-          model: machineData.model,
-          prodn_mixing: machineData.prodn_mixing,
-          speed: machineData.speed,
-          prodn_efficiency: machineData.prodn_effi,
-          installed_date: installedDate,
-          is_active: true,
-          direct_hank_entry: machineData.direct_hank_entry ?? false,
-          direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-          activated_at: new Date(),
-          deactivated_at: null,
-        }
-      });
-    } else {
-      throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
-    }
+    throw new Error(`Machine ${machineData.machine_no} already exists and is available`);
   }
 
   // Fetch max sort_order so new machine goes to the end
@@ -109,6 +88,7 @@ export async function updateCardingMachine(id, machineData) {
     where: { id },
     select: { is_active: true }
   });
+  if (currentMachine?.is_active === false) throw new Error('Removed machines cannot be changed or restored');
 
   const isActivating = (machineData.is_active === true || machineData.is_active === 1)
     && currentMachine?.is_active !== true;
@@ -145,7 +125,7 @@ export async function updateCardingMachine(id, machineData) {
         direct_kgs_entry: machineData.direct_kgs_entry,
         updated_at: new Date(),
         ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
-        ...(isDeactivating && { deactivated_at: new Date() }),
+        ...(isDeactivating && { deactivated_at: machineRemovalDate() }),
       }
     });
 

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { changeEntryMachineCountRunAction } from '@/app/actions/entry-count-run'
 import {
   Popover,
   PopoverContent,
@@ -181,6 +182,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   // Count change dialog
   const [countChangeDialog, setCountChangeDialog] = useState(false)
   const [newCountId, setNewCountId] = useState('')
+  const [countRunMinutes, setCountRunMinutes] = useState('')
 
   // Option check (carry-forward from a selected earlier entry)
   const [optionCheck, setOptionCheck] = useState({
@@ -534,10 +536,10 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     discardChanges
   }), [handleSaveAll, editedRows, isSaving, discardChanges])
 
-  // Bulk count change
-  const handleCountChange = () => {
-    if (selectedRows.length === 0) {
-      toast.warning('Please select machines first')
+  // Split the latest run of one physical machine into a new count run.
+  const handleCountChange = async () => {
+    if (selectedRows.length !== 1) {
+      toast.warning('Select exactly one machine count row')
       return
     }
     if (!newCountId) {
@@ -553,30 +555,30 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       return
     }
 
-    const selectedIds = new Set(selectedRows.map(String))
-    setEditedRows(prev => {
-      const next = { ...prev }
-      for (const row of setupData) {
-        if (!selectedIds.has(String(row.id))) continue
-        const machineId = row.machine_id ?? row.machine?.id
-        next[row.id] = {
-          ...next[row.id],
-          ...(machineId ? { machine_id: machineId } : {}),
-          ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: row.machine?.speed })
-        }
-      }
-      return next
-    })
-    setSetupData(prev => prev.map(row => (
-      selectedIds.has(String(row.id))
-        ? { ...row, ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: row.machine?.speed }) }
-        : row
-    )))
-
-    toast.success(`Count staged for ${selectedRows.length} machine(s). Click Update to save.`)
-    setCountChangeDialog(false)
-    setNewCountId('')
-    setSelectedRows([])
+    const selected = setupData.find(row => String(row.id) === String(selectedRows[0]))
+    if (!selected?.is_latest_run) {
+      toast.warning('Only the latest count row can be changed')
+      return
+    }
+    setIsSaving(true)
+    try {
+      const result = await changeEntryMachineCountRunAction('spinning', headerId, selected.id, {
+        countName: selectedCount.count_name,
+        changeAfter: countRunMinutes
+      })
+      if (!result?.success) throw new Error(result?.error || 'Unable to change count')
+      toast.success('New count run added')
+      setCountChangeDialog(false)
+      setNewCountId('')
+      setCountRunMinutes('')
+      setSelectedRows([])
+      await loadData()
+      onRefresh?.()
+    } catch (error) {
+      toast.error(error.message || 'Unable to change count')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const hasOptionSelected = optionCheck.copySpeed || optionCheck.copyTpi || optionCheck.copyTwCon || optionCheck.copyCount
@@ -804,7 +806,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                       />
                     </td>
                     <td className="border border-gray-300 px-2 py-1 font-medium whitespace-nowrap">
-                      {row.machine?.machine_no || '-'}
+                      <div>{row.machine?.machine_no || '-'}</div>
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-sm whitespace-nowrap overflow-hidden text-ellipsis">
                       {row.machine?.description || '-'}
@@ -834,8 +836,16 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         zeroAsEmpty
                       />
                     </td>
-                    <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
-                      {totalTime}
+                    <td className="border border-gray-300 px-0 py-0 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                      {row.has_multiple_runs ? (
+                        <NumberInput
+                          type="number"
+                          min="0"
+                          value={row.run_time ?? ''}
+                          onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0"
+                        />
+                      ) : (row.run_time ?? effectiveTotalTime)}
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
                       {row.allocated_spindles ?? row.machine?.allocated_spindles ?? 1104}
@@ -1035,10 +1045,15 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setCountChangeDialog(true)}
-            disabled={selectedRows.length === 0}
+            onClick={() => {
+              const selected = setupData.find(row => String(row.id) === String(selectedRows[0]))
+              setNewCountId('')
+              setCountRunMinutes(String(selected?.run_time ?? ''))
+              setCountChangeDialog(true)
+            }}
+            disabled={selectedRows.length !== 1 || !setupData.find(row => String(row.id) === String(selectedRows[0]))?.is_latest_run}
           >
-            Count Change {selectedRows.length > 0 && `(${selectedRows.length})`}
+            Count Change
           </Button>
           <Button 
             variant="outline" 
@@ -1077,11 +1092,11 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       <Dialog open={countChangeDialog} onOpenChange={setCountChangeDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change Count for Selected Machines</DialogTitle>
+            <DialogTitle>Change Count</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-gray-600 mb-4">
-              This will update the count for {selectedRows.length} selected machine(s).
+              Current count: {setupData.find(row => String(row.id) === String(selectedRows[0]))?.count_name || '-'}
             </p>
             <EnterSelect
               value={newCountId || ''}
@@ -1091,12 +1106,22 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               searchable
               className="w-full mt-1"
             />
+            <div className="mt-4">
+              <Label>Current count run time (minutes)</Label>
+              <NumberInput
+                type="number"
+                min="0"
+                value={countRunMinutes}
+                onChange={(event) => setCountRunMinutes(event.target.value)}
+                className="mt-1 w-full"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCountChangeDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCountChange} disabled={isSaving || !newCountId}>
+            <Button onClick={handleCountChange} disabled={isSaving || !newCountId || countRunMinutes === ''}>
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
               Apply
             </Button>
@@ -1117,6 +1142,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <Input 
                   value={newMachineData.machine_no} 
                   onChange={(e) => setNewMachineData(prev => ({ ...prev, machine_no: e.target.value }))}
+                  onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
@@ -1252,7 +1278,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               Are you sure you want to remove {selectedRows.length} machine(s)?
             </p>
             <p className="text-sm text-red-600">
-              This removes the selected machines only from this date and shift. Machine Master and other entries are unchanged.
+              This removes the selected machines from this entry and subsequently initialized entries. Machine Master remains unchanged.
             </p>
           </div>
           <DialogFooter>

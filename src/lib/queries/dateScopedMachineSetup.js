@@ -24,9 +24,10 @@ export function cloneDateScopedSetup(row, entryDate, shift, setupOverrides = {})
   ])
 
   Object.assign(cloned, setupOverrides)
-  // Inclusion is entry-local. A machine excluded from one entry is eligible
-  // again when a future entry is initialized from Machine Master.
-  cloned.is_included = true
+  // Participation is carried forward independently from the live Machine
+  // Master. Entry-side removal therefore remains effective until the machine
+  // is explicitly added again from an entry.
+  cloned.is_included = row.is_included !== false
 
   // Recalculate derived standard production from the complete effective
   // snapshot. Explicit zero master values must remain zero rather than being
@@ -59,7 +60,8 @@ export async function getOrCreateDateScopedSetups({
   headerId,
   machineIds = null,
   machineSpeedMap = null,
-  machineSetupOverridesMap = null
+  machineSetupOverridesMap = null,
+  newMachineSetupDefaultsMap = null
 }) {
   if (!headerId) {
     // Legacy callers (master lookup/add-machine flows) use the baseline rows.
@@ -87,13 +89,14 @@ export async function getOrCreateDateScopedSetups({
     orderBy: { machine_id: 'asc' }
   })
 
+  const isNewEntrySnapshot = targetRows.length === 0
   const existingIds = new Set(targetRows.map(row => row.machine_id))
   const missingIds = machineIds?.filter(id => !existingIds.has(id)) || []
   if (targetRows.length && !missingIds.length) return targetRows
 
   const idsToMaterialize = targetRows.length ? missingIds : machineIds
-  const sourceRows = (await Promise.all((idsToMaterialize || []).map(machineId =>
-    setupModel.findFirst({
+  const sourceRows = await Promise.all((idsToMaterialize || []).map(async machineId => {
+    const previousSetup = await setupModel.findFirst({
       where: {
         machine_id: machineId,
         OR: [
@@ -103,11 +106,19 @@ export async function getOrCreateDateScopedSetups({
       },
       orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }]
     })
-  ))).filter(Boolean)
 
-  if (sourceRows.length) {
+    // A machine created in Master has no earlier setup to clone. Only while a
+    // brand-new entry snapshot is being initialized, seed its first setup from
+    // that module's established defaults plus the current master values.
+    // A Machine Master record is only a searchable catalogue item. It must be
+    // explicitly enrolled through Add New Machine before an entry setup exists.
+    return previousSetup
+  }))
+  const materializableRows = sourceRows.filter(Boolean)
+
+  if (materializableRows.length) {
     await setupModel.createMany({
-      data: sourceRows.map(row => {
+      data: materializableRows.map(row => {
         const overrides = {}
         if ('shift_time' in row && header.total_time !== null && header.total_time !== undefined) {
           overrides.shift_time = header.total_time

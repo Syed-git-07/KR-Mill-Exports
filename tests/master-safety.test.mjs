@@ -227,7 +227,7 @@ test('Master schemas allow lifecycle-only updates and reject unsafe input', () =
   }))
 })
 
-test('Comber lifecycle actions send status-only payloads and preserve unrelated fields', async () => {
+test('Comber permanent removal sends a status-only payload and preserves unrelated fields', async () => {
   const [pageSource, querySource] = await Promise.all([
     readFile(new URL('../src/app/preparatory-master/comber/page.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/lib/queries/comberMachineQueries.js', import.meta.url), 'utf8')
@@ -235,7 +235,8 @@ test('Comber lifecycle actions send status-only payloads and preserve unrelated 
 
   assert.doesNotMatch(pageSource, /updateComberMachineAction\([^,]+,\s*\{\s*\.\.\./)
   assert.match(pageSource, /updateComberMachineAction\(targetId, \{ is_active: false \}\)/)
-  assert.match(pageSource, /updateComberMachineAction\(machine\.id, \{ is_active: true \}\)/)
+  assert.doesNotMatch(pageSource, /is_active: true/)
+  assert.doesNotMatch(pageSource, /handleActivate/)
   assert.match(querySource, /hasField\('sliver_hank'\) && \{ sliver_hank: machineData\.sliver_hank \}/)
 })
 
@@ -261,6 +262,26 @@ test('machine lifecycle boundaries consistently exclude the deactivation date', 
   for (const fileName of queryFiles) {
     const source = await readFile(new URL(`../src/lib/queries/${fileName}`, import.meta.url), 'utf8')
     assert.doesNotMatch(source, /deactivated_at:\s*\{\s*gte:/, fileName)
+    assert.doesNotMatch(source, /activated_at:\s*\{\s*lte:/, fileName)
+  }
+})
+
+test('machine masters expose neither entry removal nor a restore action', async () => {
+  const pageFiles = [
+    '../src/app/masters/autoconer/page.jsx',
+    '../src/app/masters/spinning-machine/page.jsx',
+    '../src/app/preparatory-master/carding-machine/page.jsx',
+    '../src/app/preparatory-master/comber/page.jsx',
+    '../src/app/preparatory-master/drawing-breaker/page.jsx',
+    '../src/app/preparatory-master/drawing-finisher/page.jsx',
+    '../src/app/preparatory-master/lap-former/page.jsx',
+    '../src/app/preparatory-master/simplex/page.jsx'
+  ]
+  for (const pageFile of pageFiles) {
+    const source = await readFile(new URL(pageFile, import.meta.url), 'utf8')
+    assert.match(source, /onSecondaryAction=\{null\}/, pageFile)
+    assert.match(source, /style=\{\{ display: 'none' \}\}/, pageFile)
+    assert.doesNotMatch(source, /handleActivate|secondaryActionLabel=.*Activate/, pageFile)
   }
 })
 

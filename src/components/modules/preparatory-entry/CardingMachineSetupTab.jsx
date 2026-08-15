@@ -140,10 +140,6 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       toast.error(`Machine ${val} not found in master`, { id: toastId })
       return
     }
-    if (result.data.has_setup) {
-      toast.error(`Machine ${val} already exists in setup`, { id: toastId })
-      return
-    }
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
@@ -572,7 +568,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine?.machine_no}
+                    <div>{row.machine?.machine_no}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">
                     {row.machine?.make_name || ''}
@@ -698,6 +694,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
                 <Input
                   value={newMachine.machine_no}
                   onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
+                  onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
@@ -863,13 +860,11 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
             <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s)? 
-              This will deactivate them from the system.
+              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
             </DialogDescription>
           </DialogHeader>
           <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            <strong>Warning:</strong> Removing machines will affect any future production entries.
-            Existing production data will be preserved.
+            This affects only this date and shift. Machine Master and all other entries remain unchanged.
           </div>
           <DialogFooter className="gap-3">
             <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>

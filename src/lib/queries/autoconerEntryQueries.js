@@ -17,6 +17,7 @@ import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildAutoconerCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
+import { machineAvailableOnDateWhere } from '../machineLifecycle'
 
 // ============================================
 // SHIFT CONFIGURATION QUERIES
@@ -181,8 +182,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     const machines = await prisma.autoconer_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
+        ...machineAvailableOnDateWhere(entryDate)
       },
       orderBy: [
         { group_id: 'asc' },
@@ -207,6 +207,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     // Create a map of machine_id to setup
     const setupMap = {}
     setups?.forEach(s => {
+      setupMap[s.machine_id] = s
       setupMap[s.machine_id] = s
     })
 
@@ -286,11 +287,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
     const machines = await prisma.autoconer_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
-        OR: [
-          { deactivated_at: null },
-          { deactivated_at: { gt: entryDate } }
-        ]
+        ...machineAvailableOnDateWhere(entryDate)
       },
       orderBy: [{ group_id: 'asc' }, { machine_no: 'asc' }]
     })
@@ -857,11 +854,7 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
       })
       const activeMachines = await prisma.autoconer_machines.findMany({
         where: {
-          activated_at: { lte: dateObj },
-          OR: [
-            { deactivated_at: null },
-            { deactivated_at: { gt: dateObj } }
-          ]
+          ...machineAvailableOnDateWhere(dateObj)
         },
         select: { id: true, mc_id: true, machine_no: true, count_id: true }
       })
@@ -902,6 +895,9 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
           })
         }
       })
+
+      // Entry membership comes only from the previous entry snapshot. Creating
+      // a Master machine does not enroll it; "Add Master Machine" does that.
       
       const cloneData = Array.from(cloneDataMap.values())
 
@@ -924,11 +920,7 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
     // 3. Fallback: Initialize default setups for all active machines on the entry date
     const activeMachines = await prisma.autoconer_machines.findMany({
       where: {
-        activated_at: { lte: dateObj },
-        OR: [
-          { deactivated_at: null },
-          { deactivated_at: { gt: dateObj } }
-        ]
+        ...machineAvailableOnDateWhere(dateObj)
       },
       orderBy: { is_active: 'desc' }
     })
@@ -1601,16 +1593,25 @@ export async function addAutoconerMachine(machineData) {
 // deactivated_at is set to entryDate so the machine is hidden from that date onwards
 // but remains visible on all prior dates.
 export async function addAutoconerEntryMachine(machineData) {
-  const selectedCount = machineData.count_id || machineData.count_name
+  const masterMachine = await prisma.autoconer_machines.findFirst({
+    where: machineData.machine_id
+      ? { id: machineData.machine_id }
+      : { machine_no: String(machineData.machine_no || '').trim() },
+    orderBy: { is_active: 'desc' },
+    select: { count_id: true, count: true }
+  })
+  const requestedCountId = machineData.count_id || masterMachine?.count_id
+  const requestedCountName = machineData.count_name || masterMachine?.count
+  const selectedCount = requestedCountId || requestedCountName
     ? await prisma.spinning_counts.findFirst({
         where: {
           is_active: true,
           autoconer_active: true,
-          ...(machineData.count_id ? { id: machineData.count_id } : { count_name: machineData.count_name })
+          ...(requestedCountId ? { id: requestedCountId } : { count_name: requestedCountName })
         }
       })
     : null
-  if ((machineData.count_id || machineData.count_name) && !selectedCount) {
+  if ((requestedCountId || requestedCountName) && !selectedCount) {
     throw new Error('Selected Autoconer count is not active')
   }
   const result = await addMachineToEntrySnapshot('autoconer', machineData.headerId, {

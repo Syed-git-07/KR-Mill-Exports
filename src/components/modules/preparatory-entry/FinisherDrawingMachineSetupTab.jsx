@@ -192,7 +192,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           machine_no: setup.machine?.machine_no,
           description: setup.machine?.description || `Finisher Drawing Machine ${setup.machine?.machine_no}`,
           make_name: setup.machine?.make_name || '',
-          mixing: setup.machine?.prodn_mixing || setup.prodn_mixing || '',
+          mixing: setup.prodn_mixing || setup.machine?.prodn_mixing || '',
           speed,
           std_prodn: stdProdn,
           std_efficiency_factor: stdEffi,
@@ -565,7 +565,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine_no}
+                    <div>{row.machine_no}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-left whitespace-nowrap overflow-hidden text-ellipsis" title={row.description || `Finisher Drawing Machine ${row.machine_no}`}>
                     {row.description || `Finisher Drawing Machine ${row.machine_no}`}
@@ -831,7 +831,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           <DialogHeader>
             <DialogTitle className="text-red-600">Remove Machine(s)</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {selectedRows.length} machine(s)? This action will deactivate the machines.
+              Remove {selectedRows.length} machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

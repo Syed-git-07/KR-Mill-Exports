@@ -341,7 +341,7 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
     const [allVisibleMachines, setups] = await Promise.all([
       prisma.comber_machines.findMany({
         where: {
-          activated_at: { lte: entryDate },
+          installed_date: { lte: entryDate },
           OR: [
             { deactivated_at: null },
             { deactivated_at: { gt: entryDate } }
@@ -839,7 +839,7 @@ export async function getComberMachineSetups(headerId = null) {
       // machine's current master status. This keeps historical entries stable.
       where: header?.entry_date
         ? {
-            activated_at: { lte: header.entry_date },
+            installed_date: { lte: header.entry_date },
             OR: [
               { deactivated_at: null },
               { deactivated_at: { gt: header.entry_date } }
@@ -850,6 +850,7 @@ export async function getComberMachineSetups(headerId = null) {
     })
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
+    const newMachineSetupDefaultsMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
       machineSetupOverridesMap[m.id] = {
@@ -858,6 +859,13 @@ export async function getComberMachineSetups(headerId = null) {
         ...(m.sliver_hank != null && { sl_hank: m.sliver_hank }),
         ...(m.mc_effi != null && { mc_effi: m.mc_effi })
       };
+      const slHank = m.sliver_hank != null ? Number(m.sliver_hank) : COMBER_FORMULA_FALLBACK.slHank;
+      newMachineSetupDefaultsMap[m.id] = {
+        prodn_mixing: m.prodn_mixing, session_no: 1, cc_time: 0,
+        sl_hank: slHank, mc_effi: m.mc_effi ?? COMBER_FORMULA_FALLBACK.mcEffiFactor,
+        shift_time: 510, default_waste: 0.96,
+        constant: calculateComberConstantFromSlHank(slHank), speed: m.speed ?? 350
+      };
     });
     const setups = await getOrCreateDateScopedSetups({
       setupModel: prisma.comber_machine_setup,
@@ -865,7 +873,8 @@ export async function getComberMachineSetups(headerId = null) {
       headerId: validHeaderId,
       machineIds: machines.map(machine => machine.id),
       machineSpeedMap,
-      machineSetupOverridesMap
+      machineSetupOverridesMap,
+      newMachineSetupDefaultsMap
     })
     const headerDetails = validHeaderId
       ? await prisma.comber_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
@@ -968,6 +977,9 @@ export async function addComberMachine(machineData) {
       const existingMachine = await prisma.comber_machines.findFirst({
         where: { machine_no: machineData.machine_no }
       })
+      if (existingMachine?.is_active === false) {
+        throw new Error('Removed machines cannot be restored. Add a new machine with a different machine number.')
+      }
 
       if (existingMachine && !existingMachine.is_active) {
         // Reactivate the existing machine
@@ -1205,7 +1217,7 @@ export async function syncNewMachinesToComberHeader(headerId, shift = null) {
     const [allVisibleMachines, setups] = await Promise.all([
       prisma.comber_machines.findMany({
         where: {
-          activated_at: { lte: entryDate },
+          installed_date: { lte: entryDate },
           OR: [
             { deactivated_at: null },
             { deactivated_at: { gt: entryDate } }

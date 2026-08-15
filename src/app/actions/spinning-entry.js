@@ -202,16 +202,9 @@ export async function getSpinningMachineSetupsAction(shift = 1, entryDate) {
   await requireUser()
   try {
     const data = await queries.getSpinningMachineSetups(entryDate, shift)
-    // Get shift-based time values
-    const shiftTime = await queries.getSpinningShiftTime(shift)
-    
-    // Override run_time in each setup with the dynamic shift-based value
-    const modifiedData = data.map(setup => ({
-      ...setup,
-      run_time: shiftTime
-    }))
-    
-    return { success: true, data: serializeData(modifiedData) }
+    // Each count run owns its saved portion of the shift. Unsplit rows are
+    // initialized with the full shift time by the query layer.
+    return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }

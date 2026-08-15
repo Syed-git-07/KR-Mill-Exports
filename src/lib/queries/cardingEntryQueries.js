@@ -10,7 +10,7 @@ import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStopp
 
 function isCardingMachineVisibleOnDate(machine, entryDate) {
   if (!machine) return false
-  if (machine.activated_at && new Date(machine.activated_at) > entryDate) return false
+  if (machine.installed_date && new Date(machine.installed_date) > entryDate) return false
   if (machine.deactivated_at && new Date(machine.deactivated_at) <= entryDate) return false
   return true
 }
@@ -164,7 +164,7 @@ export async function getCardingProductionDetails(headerId) {
             description: true,
             prodn_mixing: true,
             is_active: true,
-            activated_at: true,
+            installed_date: true,
             deactivated_at: true,
             sort_order: true
           }
@@ -219,7 +219,7 @@ export async function getCardingProductionWithSetup(headerId) {
               prodn_mixing: true,
               mc_id: true,
               is_active: true,
-              activated_at: true,
+              installed_date: true,
               deactivated_at: true,
               sort_order: true
             }
@@ -362,7 +362,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
     const machines = await prisma.carding_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       orderBy: { mc_id: 'asc' }
@@ -521,7 +521,7 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
     const machines = await prisma.carding_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       orderBy: { mc_id: 'asc' }
@@ -712,7 +712,7 @@ export async function getCardingStoppageEntries(headerId) {
             id: true,
             machine_no: true,
             is_active: true,
-            activated_at: true,
+            installed_date: true,
             deactivated_at: true,
             sort_order: true
           }
@@ -1133,12 +1133,10 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         }
       })
       
-      const prevMachineIds = prevSetups.map(s => s.machine_id)
-
-      // Find active machines that are missing setups in the prior record set
+      // Load current Master values for machines carried by the prior entry.
       const activeMachines = await prisma.carding_machines.findMany({
         where: {
-          activated_at: { lte: dateObj },
+          installed_date: { lte: dateObj },
           OR: [
             { deactivated_at: null },
             { deactivated_at: { gt: dateObj } }
@@ -1146,9 +1144,9 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         },
         orderBy: { is_active: 'desc' }
       })
-      const missingMachines = activeMachines.filter(m => !prevMachineIds.includes(m.id))
-
-        const cloneData = prevSetups.map(s => {
+      // Entry membership is inherited only from the previous entry snapshot.
+      // Creating a Master machine does not enroll it into an entry.
+      const cloneData = prevSetups.map(s => {
           const { id, created_at, updated_at, ...rest } = s
           const machine = activeMachines.find(m => m.id === s.machine_id)
           // A new entry must use the current Carding master values. The
@@ -1181,38 +1179,9 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         }
       })
 
-      const missingSetups = missingMachines.map(m => {
-        const rawEffi = Number(m.prodn_efficiency ?? 0.9800)
-        const stdEffi = rawEffi > 1 ? rawEffi / 100 : rawEffi
-
-        const fallbackStdProdn = calculateCardingStdProdn({
-          speed: m.speed ?? 130,
-          divisor_constant: 1693,
-          hank_constant: m.hank_constant ?? 0.1300,
-          std_efficiency_factor: stdEffi
-        }, targetShiftTime)
-        
-        return {
-          machine_id: m.id,
-          is_included: true,
-          entry_date: dateObj,
-          shift: shiftNum,
-          speed: m.speed ?? 130.00,
-          hank_constant: m.hank_constant ?? 0.1300,
-          std_efficiency_factor: stdEffi,
-          default_waste: 0.3400,
-          std_prodn: Math.round(fallbackStdProdn * 100) / 100,
-          shift_time: targetShiftTime,
-          default_stoppage: 0,
-          divisor_constant: 1693
-        }
-      })
-
-      const allDataToInsert = [...cloneData, ...missingSetups]
-      
-      if (allDataToInsert.length > 0) {
+      if (cloneData.length > 0) {
         await prisma.carding_machine_setup.createMany({
-          data: allDataToInsert
+          data: cloneData
         })
       }
       
@@ -1228,7 +1197,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
     // 3. Fallback: Initialize default setups for all active machines on the entry date
     const activeMachines = await prisma.carding_machines.findMany({
       where: {
-        activated_at: { lte: dateObj },
+        installed_date: { lte: dateObj },
         OR: [
           { deactivated_at: null },
           { deactivated_at: { gt: dateObj } }
@@ -1307,7 +1276,7 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
             make_name: true,
             prodn_mixing: true,
             is_active: true,
-            activated_at: true,
+            installed_date: true,
             deactivated_at: true
           }
         })
@@ -1653,20 +1622,14 @@ export async function lookupCardingMachineByNo(machineNo) {
   })
   if (!machine) return null
 
-  // Try setup for this machine
-  const setup = await prisma.carding_machine_setup.findFirst({
-    where: { machine_id: machine.id }
-  })
-
   return {
     ...machine,
-    // Setup fields (if setup exists)
-    speed_setup: setup?.speed != null ? parseFloat(setup.speed) : null,
-    hank_constant: machine.hank_constant != null
-      ? parseFloat(machine.hank_constant)
-      : (setup?.hank_constant != null ? parseFloat(setup.hank_constant) : null),
-    std_efficiency_factor: setup?.std_efficiency_factor != null ? parseFloat(setup.std_efficiency_factor) : null,
-    has_setup: !!setup,
+    speed_setup: machine.speed != null ? Number(machine.speed) : null,
+    hank_constant: machine.hank_constant != null ? Number(machine.hank_constant) : null,
+    std_efficiency_factor: machine.prodn_efficiency != null
+      ? (Number(machine.prodn_efficiency) > 1 ? Number(machine.prodn_efficiency) / 100 : Number(machine.prodn_efficiency))
+      : null,
+    has_setup: false,
   }
 }
 
@@ -1690,6 +1653,9 @@ export async function addCardingMachine(machineData) {
       const existingMachine = await prisma.carding_machines.findFirst({
         where: { machine_no: machineData.machine_no }
       })
+      if (existingMachine?.is_active === false) {
+        throw new Error('Removed machines cannot be restored. Add a new machine with a different machine number.')
+      }
 
       if (existingMachine) {
         if (!existingMachine.is_active) {
