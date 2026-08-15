@@ -146,6 +146,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
       return {
         ...mergedRow,
         ...calculated,
+        count_mixing: setup?.prodn_mixing ?? mergedRow.count_mixing,
         act_hank: actHank,
         act_prodn: actProdn,
         exp_prodn: Math.round(finalExpProdn * 100) / 100,
@@ -240,6 +241,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
       return {
         ...row,
         ...calculated,
+        count_mixing: setup?.prodn_mixing ?? row.count_mixing,
         act_hank: actHank,
         act_prodn: actProdn,
         exp_prodn: Math.round(finalExpProdn * 100) / 100,

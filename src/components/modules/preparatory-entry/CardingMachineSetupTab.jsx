@@ -264,6 +264,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
         if (row.id === rowId) {
           const updatedRow = {
             ...row,
+            prodn_mixing: value,
             ...(sliverHank != null && { hank_constant: sliverHank }),
             machine: {
               ...row.machine,
@@ -329,9 +330,10 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     try {
       const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
       const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
-        const row = setupData.find(r => String(r.id) === String(rowId))
-        const machineId = row?.machine_id
-        return updateMachineSetupAction(machineId || rowId, changes, formattedDate, shift)
+        // Drafts are keyed by the exact dated setup UUID. Save that row
+        // directly instead of converting it to a machine ID and rediscovering
+        // the setup by date/shift on the server.
+        return updateMachineSetupAction(rowId, changes, formattedDate, shift)
       })
 
       const results = await Promise.all(updatePromises)
@@ -350,7 +352,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       return { success: true, saved: savedCount }
     } catch (error) {
       console.error('Error saving machine setups:', error)
-      toast.error('Failed to save machine setups')
+      toast.error(error?.message || 'Failed to save machine setups')
       return { success: false, saved: 0, error: error.message }
     } finally {
       setIsSaving(false)

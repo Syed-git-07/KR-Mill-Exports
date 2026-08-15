@@ -69,6 +69,22 @@ test('bulk Count and Mixing controls remain browser drafts until final Update', 
   assert.match(autoconerBulkHandler, /Click Update to save\./)
 })
 
+test('Carding count selection updates the controlled setup value and saves the exact setup row', () => {
+  const source = read('src/components/modules/preparatory-entry/CardingMachineSetupTab.jsx')
+
+  assert.match(source, /const updatedRow = \{\s*\.\.\.row,\s*prodn_mixing: value,/)
+  assert.match(source, /updateMachineSetupAction\(rowId, changes, formattedDate, shift\)/)
+  assert.doesNotMatch(source, /updateMachineSetupAction\(machineId \|\| rowId/)
+  assert.match(source, /toast\.error\(error\?\.message \|\| 'Failed to save machine setups'\)/)
+})
+
+test('Carding Production reflects the effective Machine Setup count before and after tab switches', () => {
+  const source = read('src/components/modules/preparatory-entry/CardingProductionTab.jsx')
+
+  assert.match(source, /count_mixing: setup\?\.prodn_mixing \?\? mergedRow\.count_mixing/)
+  assert.match(source, /count_mixing: setup\?\.prodn_mixing \?\? row\.count_mixing/)
+})
+
 test('failed multi-tab Updates retain the complete draft snapshot for a safe retry', () => {
   const pages = [
     'src/app/preparatory-entry/carding/entry/page.jsx',
