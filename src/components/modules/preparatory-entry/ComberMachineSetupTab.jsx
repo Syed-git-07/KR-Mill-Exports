@@ -451,7 +451,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-112.5 overflow-y-auto">
-          <table className="w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-10">

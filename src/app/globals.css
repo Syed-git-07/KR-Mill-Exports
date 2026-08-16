@@ -178,6 +178,126 @@ div[class*="overflow-x-auto"][class*="overflow-y-auto"]
   box-shadow: 0 1px 0 #1d4ed8;
 }
 
+/*
+ * Entry tables only: tint previously white/gray cells while leaving every
+ * existing semantic red, green, blue, orange, yellow, and purple cell intact.
+ */
+.entry-color-grid {
+  border-collapse: collapse;
+}
+
+.entry-color-grid th,
+.entry-color-grid td {
+  border: 1px solid #aeb8c4 !important;
+  background-clip: padding-box;
+}
+
+.entry-color-grid tbody td {
+  vertical-align: middle;
+}
+
+.entry-color-grid thead th.text-right,
+.entry-color-grid tbody td.text-right,
+.entry-color-grid tbody td.tabular-nums,
+.entry-color-grid tbody input[type="number"] {
+  text-align: center !important;
+}
+
+.entry-color-grid tbody input,
+.entry-color-grid tbody textarea,
+.entry-color-grid tbody button {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.entry-color-grid tbody > tr > td:not(:is(
+  [class*="bg-red-"], [class*="bg-green-"], [class*="bg-blue-"],
+  [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-amber-"],
+  [class*="bg-purple-"], [class*="bg-indigo-"], [class*="bg-pink-"],
+  [class*="bg-rose-"], [class*="bg-violet-"], [class*="bg-cyan-"],
+  [class*="bg-teal-"]
+)) {
+  background-color: #fff1f2;
+}
+
+.entry-color-grid tbody > tr:nth-child(even) > td:not(:is(
+  [class*="bg-red-"], [class*="bg-green-"], [class*="bg-blue-"],
+  [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-amber-"],
+  [class*="bg-purple-"], [class*="bg-indigo-"], [class*="bg-pink-"],
+  [class*="bg-rose-"], [class*="bg-violet-"], [class*="bg-cyan-"],
+  [class*="bg-teal-"]
+)) {
+  background-color: #fff7f8;
+}
+
+/* Read-only numeric and calculated output cells use a warm yellow tint. */
+.entry-color-grid tbody > tr > td.tabular-nums:not(:is(
+  [class*="bg-red-"], [class*="bg-green-"], [class*="bg-blue-"],
+  [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-amber-"],
+  [class*="bg-purple-"], [class*="bg-indigo-"], [class*="bg-pink-"],
+  [class*="bg-rose-"], [class*="bg-violet-"], [class*="bg-cyan-"],
+  [class*="bg-teal-"]
+)) {
+  background-color: #fffbeb;
+}
+
+.entry-color-grid tbody > tr:nth-child(even) > td.tabular-nums:not(:is(
+  [class*="bg-red-"], [class*="bg-green-"], [class*="bg-blue-"],
+  [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-amber-"],
+  [class*="bg-purple-"], [class*="bg-indigo-"], [class*="bg-pink-"],
+  [class*="bg-rose-"], [class*="bg-violet-"], [class*="bg-cyan-"],
+  [class*="bg-teal-"]
+)) {
+  background-color: #fffdf5;
+}
+
+/* Editable controls are light blue; text and existing focus colours remain. */
+.entry-color-grid tbody td input:not([type="checkbox"]):not([readonly]):not([disabled]),
+.entry-color-grid tbody td textarea:not([readonly]):not([disabled]),
+.entry-color-grid tbody td [data-enter-select] > button:not([disabled]),
+.entry-color-grid tbody td button[role="combobox"]:not([disabled]) {
+  background-color: #eff6ff;
+}
+
+.entry-color-grid tbody tr:nth-child(even) td input:not([type="checkbox"]):not([readonly]):not([disabled]),
+.entry-color-grid tbody tr:nth-child(even) td textarea:not([readonly]):not([disabled]),
+.entry-color-grid tbody tr:nth-child(even) td [data-enter-select] > button:not([disabled]),
+.entry-color-grid tbody tr:nth-child(even) td button[role="combobox"]:not([disabled]) {
+  background-color: #f5f9ff;
+}
+
+.entry-color-grid tbody > tr:not([class~="bg-yellow-50"]):not([class~="bg-blue-100"]):hover > td:not(:is(
+  [class*="bg-red-"], [class*="bg-green-"], [class*="bg-blue-"],
+  [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-amber-"],
+  [class*="bg-purple-"], [class*="bg-indigo-"], [class*="bg-pink-"],
+  [class*="bg-rose-"], [class*="bg-violet-"], [class*="bg-cyan-"],
+  [class*="bg-teal-"]
+)) {
+  background-color: #eff6ff;
+}
+
+.entry-color-grid tbody td input[readonly],
+.entry-color-grid tbody td textarea[readonly] {
+  background-color: transparent !important;
+}
+
+/* Preserve the existing unsaved and selected row states above cell tints. */
+.entry-color-grid tbody tr[class~="bg-yellow-50"] > td,
+.entry-color-grid tbody tr[class~="bg-yellow-50"] > td :is(input, textarea, button) {
+  background-color: #fefce8 !important;
+}
+
+.entry-color-grid tbody tr[class~="bg-blue-100"] > td,
+.entry-color-grid tbody tr[class~="bg-blue-100"] > td :is(input, textarea, button) {
+  background-color: #dbeafe !important;
+}
+
+/* Keep the entry controls' current orange editing focus exactly as before. */
+.entry-color-grid tbody td [class*="focus:bg-orange-500"]:focus {
+  background-color: #f97316 !important;
+  color: #fff !important;
+}
+
 /* Print Styles */
 @media print {
   body {

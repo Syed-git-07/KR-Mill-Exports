@@ -5,7 +5,9 @@ import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import {
   calculateSpinningAclConstant,
+  calculateSpinningEntryMetrics,
   calculateSpinningExpectedGps,
+  calculateSpinningNoOfSpindles,
   DEFAULT_SPINNING_EFFICIENCY_FACTOR,
   normalizeSpinningEfficiencyFactor,
   resolveProductionTime
@@ -138,9 +140,7 @@ export async function getSpinningShiftConfiguration(shift) {
  *   Shift 3:     (Allocated Spindles / 8) × 7
  */
 export function calculateNoOfSpindles(allocatedSpindles, shift) {
-  if (!allocatedSpindles) return 0
-  const multiplier = parseInt(shift) === 3 ? 7 : 8.5
-  return Math.round((allocatedSpindles / 8) * multiplier)
+  return calculateSpinningNoOfSpindles(allocatedSpindles, shift)
 }
 
 /**
@@ -250,34 +250,23 @@ export function calculateSpinningProduction(params) {
     conversionFactor = 2.20456
   } = params
 
-  // Calculate No of Spindles based on shift
-  const totalSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
-
-  const constant = calculateConstant(
+  return calculateSpinningEntryMetrics({
+    actHank,
+    waste,
     actCount,
-    totalSpindles,
+    expectedCount: count,
+    allocatedSpindles,
+    shift,
+    stoppageMins,
+    runTime,
+    speed,
+    tpi,
     twCon,
-    cWastePercent,
     doffLoss,
-    conversionFactor
-  )
-  const actProdn = calculateActProdn(actHank, constant)
-  const wastePercent = calculateWastePercent(waste, actProdn)
-  const stoppedSpindles = calculateStoppedSpindles(stoppageMins, runTime, totalSpindles)
-  const workedSpindles = calculateWorkedSpindles(totalSpindles, stoppedSpindles)
-  const gps = calculateGps(actProdn, workedSpindles)
-  const expGps = calculateExpGps(speed, tpi, count, efficiency)
-
-  return {
-    totalSpindles: totalSpindles,
-    constant: Math.round(constant * 1000) / 1000,
-    actProdn: Math.round(actProdn * 100) / 100,
-    wastePercent: Math.round(wastePercent * 100) / 100,
-    stoppedSpindles: Math.round(stoppedSpindles * 100) / 100,
-    workedSpindles: workedSpindles,
-    gps: Math.round(gps * 100) / 100,
-    expGps: Math.round(expGps * 1000) / 1000
-  }
+    cWastePercent,
+    efficiency,
+    conversionFactor,
+  })
 }
 
 // ============================================
