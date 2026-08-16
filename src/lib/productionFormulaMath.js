@@ -23,7 +23,19 @@ export function resolveProductionTime(totalTime, stoppageTime) {
   }
 }
 
-export function calculateSpinningExpectedGpsEfficiency({
+export const DEFAULT_SPINNING_EFFICIENCY_FACTOR = 0.95
+
+export function normalizeSpinningEfficiencyFactor(
+  value,
+  fallback = DEFAULT_SPINNING_EFFICIENCY_FACTOR
+) {
+  if (value === null || value === undefined || value === '') return fallback
+  const numeric = Number(value?.toString?.() ?? value)
+  if (!Number.isFinite(numeric)) return fallback
+  return numeric > 1 ? numeric / 100 : numeric
+}
+
+export function calculateSpinningLossEfficiency({
   twCon,
   doffLoss,
   cWastePercent,
@@ -36,26 +48,42 @@ export function calculateSpinningExpectedGpsEfficiency({
   return (100 - totalLossPercent) / 100
 }
 
+export function calculateSpinningAclConstant({
+  aclCount,
+  totalSpindles,
+  twCon,
+  doffLoss,
+  cWastePercent,
+  conversionFactor = 2.20456,
+}) {
+  const safeCount = toFiniteNumber(aclCount)
+  const safeSpindles = toFiniteNumber(totalSpindles)
+  const safeConversionFactor = toFiniteNumber(conversionFactor)
+  if (!safeCount || !safeSpindles || !safeConversionFactor) return 0
+
+  const lossEfficiency = calculateSpinningLossEfficiency({
+    twCon,
+    doffLoss,
+    cWastePercent,
+  })
+
+  return (1 / safeConversionFactor / safeCount) * safeSpindles * lossEfficiency
+}
+
 export function calculateSpinningExpectedGps({
   speed,
   tpi,
   count,
-  twCon,
-  doffLoss,
-  cWastePercent,
+  efficiency = DEFAULT_SPINNING_EFFICIENCY_FACTOR,
 }) {
   const safeSpeed = toFiniteNumber(speed)
   const safeTpi = toFiniteNumber(tpi)
   const safeCount = toFiniteNumber(count)
   if (!safeSpeed || !safeTpi || !safeCount) return 0
 
-  const efficiency = calculateSpinningExpectedGpsEfficiency({
-    twCon,
-    doffLoss,
-    cWastePercent,
-  })
+  const efficiencyFactor = normalizeSpinningEfficiencyFactor(efficiency)
 
-  return (7.2 * safeSpeed / safeTpi / safeCount) * efficiency
+  return (7.2 * safeSpeed / safeTpi / safeCount) * efficiencyFactor
 }
 
 /**

@@ -46,12 +46,16 @@ import {
 } from '@/app/actions/spinning-entry'
 import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
 import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
+import {
+  DEFAULT_SPINNING_EFFICIENCY_FACTOR,
+  normalizeSpinningEfficiencyFactor
+} from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Machine Setup Tab
  * 
- * Fields: McNo, MakeName, CountName, Act.Count, Session, 
- *         Allocated Spls, TW.Con, DoffLoss, C.Waste%, Speed, TPI
+ * Fields: McNo, MakeName, CountName, Act.Count, Session,
+ *         Allocated Spls, TW.Con, DoffLoss, C.Waste%, Speed, TPI, Efficiency
  */
 
 const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
@@ -313,6 +317,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     c_waste_percent: countData?.waste_percent != null ? parseFloat(countData.waste_percent) : 0,
     speed: countData?.speed != null ? parseInt(countData.speed) : 0,
     tpi: countData?.tpi != null ? parseFloat(countData.tpi) : 0,
+    efficiency: DEFAULT_SPINNING_EFFICIENCY_FACTOR,
   })
   const [newMachineData, setNewMachineData] = useState(getDefaultMachineData())
 
@@ -527,12 +532,45 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
   }
 
+  const applyEfficiencyPercent = useCallback((percent) => {
+    const numericPercent = Number(percent)
+    if (!Number.isFinite(numericPercent) || numericPercent < 0 || numericPercent > 100) {
+      return { success: false, count: 0 }
+    }
+
+    const efficiency = numericPercent / 100
+    const nextDrafts = { ...(editedRowsRef.current || {}) }
+    for (const row of setupData) {
+      const machineId = row.machine_id ?? row.machine?.id
+      nextDrafts[row.id] = {
+        ...nextDrafts[row.id],
+        setup_id: row.id,
+        ...(machineId ? { machine_id: machineId } : {}),
+        efficiency
+      }
+    }
+
+    setEditedRows(nextDrafts)
+    setSetupData(rows => rows.map(row => ({ ...row, efficiency })))
+    return { success: true, count: setupData.length }
+  }, [setEditedRows, setupData])
+
+  const getCommonEfficiencyPercent = useCallback(() => {
+    if (setupData.length === 0) return DEFAULT_SPINNING_EFFICIENCY_FACTOR * 100
+    const first = normalizeSpinningEfficiencyFactor(setupData[0].efficiency) * 100
+    return setupData.every(row => (
+      normalizeSpinningEfficiencyFactor(row.efficiency) * 100 === first
+    )) ? first : DEFAULT_SPINNING_EFFICIENCY_FACTOR * 100
+  }, [setupData])
+
   useImperativeHandle(ref, () => ({
     saveChanges: handleSaveAll,
     getEditedCount: () => Object.keys(editedRowsRef.current || editedRows || {}).length,
+    applyEfficiencyPercent,
+    getCommonEfficiencyPercent,
     isSaving: () => isSaving,
     discardChanges
-  }), [handleSaveAll, editedRows, isSaving, discardChanges])
+  }), [handleSaveAll, editedRows, applyEfficiencyPercent, getCommonEfficiencyPercent, isSaving, discardChanges])
 
   // Split the latest run of one physical machine into a new count run.
   const handleCountChange = async () => {
@@ -792,6 +830,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">C.Waste%</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Speed</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">TPI</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Effi. %</th>
               </tr>
             </thead>
             <tbody>
@@ -919,6 +958,24 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         data-col="tpi"
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
                         zeroAsEmpty
+                      />
+                    </td>
+                    <td className="border border-gray-300 px-0 py-0">
+                      <NumberInput
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={normalizeSpinningEfficiencyFactor(row.efficiency) * 100}
+                        onChange={(e) => handleInputChange(
+                          row.id,
+                          'efficiency',
+                          (Number(e.target.value) || 0) / 100
+                        )}
+                        onKeyDown={(e) => handleEnterNavigation(e, index, 'efficiency')}
+                        data-row={index}
+                        data-col="efficiency"
+                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
                       />
                     </td>
                   </tr>
@@ -1313,6 +1370,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
           <div><strong>C.Waste%:</strong> Configured waste % (default 0.9)</div>
           <div><strong>Speed:</strong> Machine speed</div>
           <div><strong>TPI:</strong> Twists per inch (default 13)</div>
+          <div><strong>Effi. %:</strong> Entry-specific Exp. GPS efficiency (default 95)</div>
         </div>
       </div>
     </div>

@@ -46,8 +46,10 @@ const {
   cloneDateScopedSetup
 } = await importSourceModule('../src/lib/queries/dateScopedMachineSetup.js')
 const {
+  calculateSpinningAclConstant,
   calculateSpinningExpectedGps,
-  calculateSpinningExpectedGpsEfficiency,
+  calculateSpinningLossEfficiency,
+  normalizeSpinningEfficiencyFactor,
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
 } = await importSourceModule('../src/lib/productionFormulaMath.js')
@@ -251,33 +253,39 @@ test('stoppage time is bounded to the shift before dependent formulas run', () =
   })
 })
 
-test('spinning expected GPS derives efficiency from setup losses and retains three-decimal precision', () => {
-  const efficiency = calculateSpinningExpectedGpsEfficiency({
-    twCon: 0.001,
-    doffLoss: 0,
-    cWastePercent: 0
+test('spinning ACL loss efficiency and entry expected-GPS efficiency remain independent', () => {
+  const lossEfficiency = calculateSpinningLossEfficiency({
+    twCon: 4,
+    doffLoss: 0.7,
+    cWastePercent: 0.9
   })
-  assert.ok(Math.abs(efficiency - 0.99999) < Number.EPSILON)
+  assert.equal(Math.round(lossEfficiency * 1000) / 1000, 0.944)
+
+  const constant = calculateSpinningAclConstant({
+    aclCount: 68,
+    totalSpindles: 1173,
+    twCon: 4,
+    doffLoss: 0.7,
+    cWastePercent: 0.9
+  })
+  assert.equal(Math.round(constant * 1000) / 1000, 7.387)
 
   const first = calculateSpinningExpectedGps({
     speed: 25519,
     tpi: 29.7,
     count: 62,
-    twCon: 0.001,
-    doffLoss: 0,
-    cWastePercent: 0
+    efficiency: 0.95
   })
   const second = calculateSpinningExpectedGps({
-    speed: 25547,
-    tpi: 32.51,
-    count: 70,
-    twCon: 0.001,
-    doffLoss: 0,
-    cWastePercent: 0
+    speed: 25519,
+    tpi: 29.7,
+    count: 62,
+    efficiency: 93
   })
 
-  assert.equal(Math.round(first * 1000) / 1000, 99.78)
-  assert.equal(Math.round(second * 1000) / 1000, 80.826)
+  assert.equal(Math.round(first * 1000) / 1000, 94.792)
+  assert.equal(Math.round(second * 1000) / 1000, 92.796)
+  assert.equal(normalizeSpinningEfficiencyFactor(95), 0.95)
 })
 
 test('explicit zero master values are never replaced by formula defaults', () => {

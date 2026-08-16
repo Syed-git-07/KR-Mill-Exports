@@ -56,6 +56,7 @@
 | **Allocated Spindles** | ✍️ Manual  | Operator (e.g., 1104)                                      |
 | **TW.Con**             | 🔹 Stored  | Fetch                                                      |
 | **C.Waste %**          | 🔹 Stored  | Fetch                                                      |
+| **Efficiency %**       | ✍️ Entry   | Default **95%**; editable per dated shift/setup row         |
 
 ---
 
@@ -102,18 +103,21 @@ Run Time =
 
 ---
 
-## 🔹 C. CONSTANT (ACL)
+## 🔹 C. LOSS EFFICIENCY AND CONSTANT (ACL)
 
 ```
+Loss_Effi =
+(100 - (TW.Con + C.Waste % + Doff Loss)) / 100
+
 Constant =
-1 / 2.20456 / ACL_Count × Total_Spl × Effi
+1 / 2.20456 / ACL_Count × Total_Spl × Loss_Effi
 ```
 
 Where:
 
 * ACL Count = Count (e.g., 68)
-* Effi = **98.5% → 0.985**
 * Total_Spl = **No of Spindles** (from Formula A)
+* TW.Con, C.Waste %, and Doff Loss come from this entry's machine setup snapshot
 
 ---
 
@@ -191,16 +195,15 @@ GPS = (ACL_Prod / Worked_Spl) × 1000
 ## 🔹 I. EXPECTED GPS
 
 ```
-Exp_GPS = 7.2 × Speed / TPI / Count × Loss_Effi
-
-Loss_Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
+Exp_GPS = 7.2 × Speed / TPI / Count × Entry_Effi
 ```
 
 **Where:**
 - **Speed** = Machine speed in RPM (from machine setup)
 - **TPI** = Twists per inch (from machine setup)
 - **Count** = Act Count from machine setup (e.g., 69.5)
-- **Loss_Effi** = Efficiency derived only from TW.Con, Doff Loss, and C.Waste %
+- **Entry_Effi** = Dated machine-setup efficiency; default 95% (0.95)
+- Changing one date/shift entry does not change any other entry
 
 **Example:**
 - Speed = 15000 RPM
@@ -209,10 +212,8 @@ Loss_Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
 - Effi = 0.95
 
 ```
-Loss_Effi = (100 - (0.001 + 0 + 0)) / 100 = 0.99999
-
-Exp_GPS = 7.2 × 15000 / 33.13 / 69.5 × 0.99999
-        ≈ 46.9044
+Exp_GPS = 7.2 × 15000 / 33.13 / 69.5 × 0.95
+        ≈ 44.5596
 ```
 
 ✔ Used in Production Entry and Stoppage Entry tabs
@@ -229,7 +230,10 @@ Exp_GPS = 7.2 × 15000 / 33.13 / 69.5 × 0.99999
 | Waste              | 0.22  |
 | Allocated Spindles | 1104  |
 | Stoppage           | 0 min |
-| Effi               | 98.5% |
+| TW.Con             | 4.0%  |
+| C.Waste            | 0.9%  |
+| Doff Loss          | 0.7%  |
+| Entry Efficiency   | 95%   |
 | ACL Count          | 68    |
 | Shift              | 1     |
 
@@ -246,8 +250,9 @@ No of Spindles = (1104 / 8) × 8.5 = 138 × 8.5 = 1173
 ### 🔹 Step 1: Constant
 
 ```
-Constant = 1 / 2.20456 / 68 × 1173 × 0.985
-≈ 7.326
+Loss Effi = (100 - (4.0 + 0.9 + 0.7)) / 100 = 0.944
+Constant = 1 / 2.20456 / 68 × 1173 × 0.944
+≈ 7.387
 ```
 
 ---
@@ -255,8 +260,8 @@ Constant = 1 / 2.20456 / 68 × 1173 × 0.985
 ### 🔹 Step 2: Actual Production
 
 ```
-ACL_PROD = 10.19 × 7.326
-≈ 74.65 kg
+ACL_PROD = 10.19 × 7.387
+≈ 75.27 kg
 ```
 
 ✅ **Based on correct No of Spindles: 1173**
@@ -266,7 +271,7 @@ ACL_PROD = 10.19 × 7.326
 ### 🔹 Step 3: Waste %
 
 ```
-Waste % = 0.22 / 74.65 × 100
+Waste % = 0.22 / 75.27 × 100
 ≈ 0.29 %
 ```
 
@@ -286,8 +291,8 @@ Worked Spl = 1173 − 0 = 1173
 ### 🔹 Step 5: GPS
 
 ```
-GPS = 74.65 / 1173 × 1000
-≈ 63.65
+GPS = 75.27 / 1173 × 1000
+≈ 64.17
 ```
 
 ✅ **Based on correct No of Spindles**
@@ -297,8 +302,7 @@ GPS = 74.65 / 1173 × 1000
 ### 🔹 Step 6: Expected GPS
 
 ```
-Loss Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
-Exp GPS = 7.2 × Speed / TPI / Count × Loss Effi
+Exp GPS = 7.2 × Speed / TPI / Count × Entry Efficiency
 ```
 
 ✅ **Expected GPS calculated based on machine parameters**

@@ -1059,7 +1059,7 @@ model spinning_machine_setup {
   speed              Int?
   session_no         Int?              @default(1)
   run_time           Int?              @default(510)
-  efficiency         Decimal?          @default(0.985) @db.Decimal(5, 3)
+  efficiency         Decimal?          @default(0.950) @db.Decimal(5, 3)
   conversion_factor  Decimal?          @default(2.20456) @db.Decimal(10, 5)
   created_at         DateTime?         @default(now()) @db.DateTime(0)
   updated_at         DateTime?         @default(now()) @db.DateTime(0)
