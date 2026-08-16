@@ -34,16 +34,14 @@ import { Label } from "@/components/ui/label"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getSpinningMachineSetupsAction,
+  getSpinningEntryTabDataAction,
+  runSpinningEntryBatchAction,
   updateSpinningMachineSetupAction,
   batchUpdateSpinningMachineSetupsAction,
   applySpinningOptionCheckAction,
   getSpinningOptionCheckSourceAction,
-  getSpinningCountsAction,
   getSpinningMachinesAction,
-  getAllSpinningMachinesAction,
   addSpinningMachineAction,
-  removeSpinningMachineAction,
   lookupSpinningMachineByNoAction
 } from '@/app/actions/spinning-entry'
 import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
@@ -348,11 +346,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [setupsResult, countsResult, machinesResult] = await Promise.all([
-        getSpinningMachineSetupsAction(shift, entryDate),
-        getSpinningCountsAction(),
-        getAllSpinningMachinesAction()  // include inactive so re-added machines autofill correctly
-      ])
+      const tabResult = await getSpinningEntryTabDataAction('setup', { shift, entryDate })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { setupsResult, countsResult, machinesResult } = tabResult.data
       
       const setups = setupsResult.success ? setupsResult.data || [] : []
       setSetupData(mergeServerRowsWithDrafts(setups))
@@ -495,8 +491,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         }
         setEditedRows({})
         if (!skipParentRefresh) {
-          await loadData()
-          onRefresh?.()
+          if (onRefresh) await onRefresh()
+          else await loadData()
         }
         return { success: true, saved: updates.length }
       } else {
@@ -581,8 +577,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       setNewCountId('')
       setCountRunMinutes('')
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) await onRefresh()
+      else await loadData()
     } catch (error) {
       toast.error(error.message || 'Unable to change count')
     } finally {
@@ -650,8 +646,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       }
 
       setEditedRows({})
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) await onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error applying option check:', error)
       toast.error(error.message || 'Failed to apply option check')
@@ -706,8 +702,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       setAddMachineDialog(false)
       resetMachineForm()
       
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) await onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -732,16 +728,18 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
         .filter(id => id !== undefined))]
 
-      const removePromises = machineIds.map(id => removeSpinningMachineAction(id, headerId))
-      const results = await Promise.all(removePromises)
+      const removals = machineIds.map(id => ({ id }))
+      const batchResult = await runSpinningEntryBatchAction('machine-remove', removals, { headerId })
+      if (!batchResult.success) throw new Error(batchResult.error)
+      const results = batchResult.data
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${machineIds.length} machine(s) removed successfully`)
       setRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) await onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')

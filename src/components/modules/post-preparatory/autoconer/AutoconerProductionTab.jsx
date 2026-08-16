@@ -17,10 +17,8 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getAutoconerProductionDetailsAction,
+  getAutoconerEntryTabDataAction,
   batchUpdateAutoconerProductionDetailsAction,
-  getIdleReasonsAction,
-  syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
 import { calculateAutoconerProductionValues } from '@/lib/queries/autoconerEntryQueries'
 import {
@@ -104,17 +102,6 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     hasShownInitToast.current = false
   }, [headerId])
 
-  // Load idle reasons on mount
-  useEffect(() => {
-    const loadIdleReasons = async () => {
-      const result = await getIdleReasonsAction()
-      if (result.success) {
-        setIdleReasons(result.data)
-      }
-    }
-    loadIdleReasons()
-  }, [])
-
   const findSetupDraft = useCallback((row, drafts = setupDraftEdits) => {
     const machineId = row?.machine_id ?? row?.machine?.id
     if (!machineId) return null
@@ -175,16 +162,21 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      // This also initializes production details if header exists but has no details
-      const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
+      const tabResult = await getAutoconerEntryTabDataAction('production', {
+        headerId,
+        shift: shiftNo
+      })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { syncResult, detailsResult, idleReasonsResult } = tabResult.data
+
       if (syncResult.success && syncResult.data && syncResult.data.length > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.length} machine(s) for this shift`)
         hasShownInitToast.current = true
       }
 
-      const result = await getAutoconerProductionDetailsAction(headerId)
+      const result = detailsResult
       if (!result.success) throw new Error(result.error)
+      if (idleReasonsResult.success) setIdleReasons(idleReasonsResult.data)
       
       const details = result.data || []
       setProductionData(mergeServerRowsWithDrafts(details))
@@ -367,8 +359,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {

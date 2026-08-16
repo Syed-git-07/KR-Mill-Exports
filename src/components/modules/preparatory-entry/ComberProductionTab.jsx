@@ -9,10 +9,8 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import {
-  getComberProductionWithSetupAction,
-  updateComberProductionDetailAction,
-  getComberMachineSetupsAction,
-  syncNewMachinesToComberHeaderAction
+  getComberEntryTabDataAction,
+  runComberEntryBatchAction
 } from '@/app/actions/comber-entry'
 import {
   calculateComberProductionValues
@@ -197,13 +195,9 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
     
     setIsLoading(true)
     try {
-      // Sync new/removed machines before loading
-      await syncNewMachinesToComberHeaderAction(headerId)
-
-      const [detailsResult, setupsResult] = await Promise.all([
-        getComberProductionWithSetupAction(headerId),
-        getComberMachineSetupsAction(headerId)
-      ])
+      const tabResult = await getComberEntryTabDataAction('production', { headerId })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { detailsResult, setupsResult } = tabResult.data
       
       if (!detailsResult.success || !setupsResult.success) {
         throw new Error(detailsResult.error || setupsResult.error)
@@ -352,7 +346,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -374,17 +368,22 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
           setup
         )
 
-        return updateComberProductionDetailAction(row.id, {
-          ...changes,
-          ...calculated,
-          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-          act_hank: actHank,
-          run_hrs: runHrs,
-          waste: waste
-        })
+        return {
+          id: row.id,
+          updates: {
+            ...changes,
+            ...calculated,
+            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+            act_hank: actHank,
+            run_hrs: runHrs,
+            waste: waste
+          }
+        }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runComberEntryBatchAction('production-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error)
+      const results = batchResult.data
       
       // Check if any failed
       const failed = results.filter(r => !r.success)
@@ -399,8 +398,8 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {

@@ -20,10 +20,8 @@ import EnterSelect from '@/components/ui/enter-select'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getSpinningStoppageEntriesAction,
-  updateSpinningStoppageEntryAction,
-  getSpinningStoppageReasonsAction,
-  getSpinningMachinesAction
+  getSpinningEntryTabDataAction,
+  runSpinningEntryBatchAction,
 } from '@/app/actions/spinning-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
 import { calculateSpinningExpectedGps } from '@/lib/productionFormulaMath'
@@ -218,11 +216,9 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     
     setIsLoading(true)
     try {
-      const [stoppageResult, reasonsResult, machinesResult] = await Promise.all([
-        getSpinningStoppageEntriesAction(headerId),
-        getSpinningStoppageReasonsAction(),
-        getSpinningMachinesAction()
-      ])
+      const tabResult = await getSpinningEntryTabDataAction('stoppage', { headerId })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { stoppageResult, reasonsResult, machinesResult } = tabResult.data
 
       if (stoppageResult.success) {
         const data = stoppageResult.data || []
@@ -390,18 +386,22 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     setIsSaving(true)
     try {
       // Map editedRows (keyed by production_detail id) to use the correct stoppage_entry_id
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const invalidResults = []
+      const updates = Object.entries(currentEdits).flatMap(([rowId, changes]) => {
         const row = stoppageData.find(r => r.id === rowId)
         const stoppageEntryId = row?.stoppage_entry_id
         if (!stoppageEntryId) {
           console.error('No stoppage_entry_id found for row:', rowId)
-          return Promise.resolve({ success: false, error: 'No stoppage entry ID' })
+          invalidResults.push({ success: false, error: 'No stoppage entry ID' })
+          return []
         }
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateSpinningStoppageEntryAction(stoppageEntryId, persistedChanges)
+        return [{ id: stoppageEntryId, updates: persistedChanges }]
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runSpinningEntryBatchAction('stoppage-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error)
+      const results = [...batchResult.data, ...invalidResults]
       const failures = results.filter(r => !r.success)
       
       if (failures.length > 0) {
@@ -417,8 +417,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {

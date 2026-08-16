@@ -330,3 +330,59 @@ export async function calculateLapFormerValuesAction(actHank, actProdn, totalTim
     return { success: false, error: safeActionError(error) }
   }
 }
+
+export async function getLapFormerEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, mixingsResult, countsResult] = await Promise.all([
+        getLapFormerMachineSetupsAction(headerId),
+        getLapFormerMixingOptionsAction(),
+        getSpinningCountOptionsAction()
+      ])
+      return { success: true, data: { setupsResult, mixingsResult, countsResult } }
+    }
+
+    if (tab === 'production') {
+      const [detailsResult, setupsResult] = await Promise.all([
+        getLapFormerProductionWithSetupAction(headerId),
+        getLapFormerMachineSetupsAction(headerId)
+      ])
+      return { success: true, data: { detailsResult, setupsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const [stoppagesResult, reasonsResult, machinesResult, setupsResult] = await Promise.all([
+        getLapFormerStoppageEntriesAction(headerId),
+        getLapFormerStoppageReasonsAction(),
+        getLapFormerMachinesAction(),
+        getLapFormerMachineSetupsAction(headerId)
+      ])
+      return { success: true, data: { stoppagesResult, reasonsResult, machinesResult, setupsResult } }
+    }
+
+    throw new Error('Invalid Lap Former entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runLapFormerEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'setup-update': item => updateLapFormerMachineSetupAction(item.id, item.updates),
+      'production-update': item => updateLapFormerDetailAction(item.id, item.updates),
+      'stoppage-update': item => updateLapFormerStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeLapFormerMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Lap Former batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
