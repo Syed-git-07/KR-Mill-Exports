@@ -6,6 +6,7 @@ import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
+import { machineLookupWhere } from '../machineLifecycle'
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null
@@ -986,7 +987,6 @@ export async function getSimplexMachineSetups(headerId = null) {
       machineSpeedMap[m.id] = m.speed;
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
-        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(m.tpi != null && { tpi: m.tpi }),
         ...(m.mc_effi != null && { mc_effi: m.mc_effi }),
         ...(m.no_of_spindles != null && { spindles: m.no_of_spindles })
@@ -1331,7 +1331,7 @@ export async function getSimplexCountOptions() {
 }
 
 // Lookup simplex machine by machine number for setup autofill
-export async function lookupSimplexMachineByNo(machineNo) {
+export async function lookupSimplexMachineByNo(machineNo, entryDate = null) {
   const raw = String(machineNo || '').trim().toUpperCase()
   if (!raw) return null
 
@@ -1344,15 +1344,15 @@ export async function lookupSimplexMachineByNo(machineNo) {
     digits ? `${digits}` : null,
   ].filter(Boolean)))
 
-  const orClauses = variants.map(v => ({ machine_no: { equals: v } }))
+  const identifierWhere = machineLookupWhere(raw, entryDate, variants)
 
   const activeMachine = await prisma.simplex_machines.findFirst({
-    where: { OR: orClauses, is_active: true }
+    where: { ...identifierWhere, is_active: true }
   })
 
   const machine = activeMachine || await prisma.simplex_machines.findFirst({
-    where: { OR: orClauses },
-    orderBy: { is_active: 'desc' }
+    where: identifierWhere,
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }]
   })
 
   if (!machine) return null
@@ -1363,12 +1363,17 @@ export async function lookupSimplexMachineByNo(machineNo) {
 
   if (!setup) {
     const allIds = (await prisma.simplex_machines.findMany({
-      where: { OR: orClauses },
+      where: identifierWhere,
       select: { id: true }
     })).map(m => m.id)
 
     setup = await prisma.simplex_machine_setup.findFirst({
-      where: { machine_id: { in: allIds } }
+      where: {
+        machine_id: { in: allIds },
+        is_included: true,
+        ...(entryDate ? { entry_date: { lte: new Date(entryDate) } } : {})
+      },
+      orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }, { run_sequence: 'desc' }]
     })
   }
 

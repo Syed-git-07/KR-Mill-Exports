@@ -31,6 +31,35 @@ export function machineAvailableOnDateWhere(entryDate) {
   }
 }
 
+/**
+ * Match the identifiers operators use in entry screens. Machine Master often
+ * stores a short number in `machine_no` and a floor name such as FT1/RF1 in
+ * `description`, so either exact value identifies the same Master row.
+ */
+export function machineIdentifierWhere(identifier, variants = []) {
+  const values = [...new Set(
+    [identifier, ...(variants || [])]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  )]
+  if (values.length === 0) throw new Error('Machine number or name is required')
+
+  return {
+    OR: values.flatMap(value => [
+      { machine_no: { equals: value } },
+      { description: { equals: value } },
+      { active_machine_no: { equals: value } }
+    ])
+  }
+}
+
+export function machineLookupWhere(identifier, entryDate = null, variants = []) {
+  return {
+    ...machineIdentifierWhere(identifier, variants),
+    ...(entryDate ? machineAvailableOnDateWhere(entryDate) : {})
+  }
+}
+
 export function assertMachineCannotBeRestored(existing, changes) {
   if (existing?.is_active === false && changes?.is_active === true) {
     throw new Error('A removed machine cannot be restored. Add a new machine record instead.')

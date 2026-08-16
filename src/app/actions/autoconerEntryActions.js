@@ -203,16 +203,6 @@ export async function updateAutoconerMachineSetupAction(id, updates, shift = nul
   }
 }
 
-export async function upsertAutoconerMachineSetupAction(machineId, entryDate, shift, updates) {
-  await requireUser()
-  try {
-    const data = await queries.upsertAutoconerMachineSetup(machineId, entryDate, shift, updates)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 export async function batchUpdateAutoconerMachineSetupsAction(updates, shift = null) {
   await requireUser()
   try {
@@ -247,10 +237,10 @@ export async function getAutoconerMachinesAction() {
   }
 }
 
-export async function lookupAutoconerMachineByNoAction(machineNo) {
+export async function lookupAutoconerMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupAutoconerMachineByNo(machineNo)
+    const data = await queries.lookupAutoconerMachineByNo(machineNo, entryDate)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -291,16 +281,6 @@ export async function removeAutoconerMachineAction(id, headerId) {
   await requireUser()
   try {
     const data = await queries.removeAutoconerMachine(id, headerId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function removeAutoconerMachineSetupsAction(setupIds) {
-  await requireUser()
-  try {
-    const data = await queries.removeAutoconerMachineSetups(setupIds)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

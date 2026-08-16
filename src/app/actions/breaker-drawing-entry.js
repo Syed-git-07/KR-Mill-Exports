@@ -6,6 +6,7 @@ import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/breakerDrawingQueries'
+import { lookupDrawingBreakerMachineByNo } from '@/lib/queries/drawingBreakerQueries'
 import { assertWorkingDate } from '@/lib/holidayValidation'
 
 // ============================================
@@ -282,6 +283,16 @@ export async function getBreakerDrawingMachinesAction() {
   await requireUser()
   try {
     const data = await queries.getBreakerDrawingMachines()
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function lookupDrawingBreakerMachineByNoAction(machineNo, entryDate = null) {
+  await requireUser()
+  try {
+    const data = await lookupDrawingBreakerMachineByNo(machineNo, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

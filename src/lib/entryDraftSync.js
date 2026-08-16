@@ -21,9 +21,15 @@ export function findSetupDraft(drafts, setupId, machineId) {
   const direct = findDraftByKeys(drafts, setupId, machineId)
   if (direct) return direct
 
-  return Object.values(drafts || {}).find((draft) =>
-    idsEqual(draft?.machine_id, machineId) ||
-    idsEqual(draft?.setup_id, setupId)
+  const values = Object.values(drafts || {})
+  const exactSetup = values.find((draft) => idsEqual(draft?.setup_id, setupId))
+  if (exactSetup) return exactSetup
+
+  // A physical Spinning machine can have several count-run setup rows. Once
+  // an exact setup ID is known, never borrow a draft from another run merely
+  // because both rows share machine_id.
+  return values.find((draft) =>
+    !hasValue(draft?.setup_id) && idsEqual(draft?.machine_id, machineId)
   ) || null
 }
 

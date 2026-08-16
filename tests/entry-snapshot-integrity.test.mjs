@@ -102,15 +102,75 @@ test('split Count Change is exposed only by the selected-row Spinning workflow',
   assert.match(helper, /run_sequence: nextSequence/)
   assert.match(helper, /buildSpinningCountSnapshot/)
   assert.match(helper, /Count Change is supported only for Spinning entries/)
+  assert.match(spinning, /countId: selectedCount\.id/)
+  assert.match(helper, /where: \{ id: countId, is_active: true \}/)
+  assert.match(helper, /work_time: elapsed - currentStoppageTime/)
+  assert.match(helper, /const remaining = currentRuntime - elapsed/)
 })
 
 test('Spinning carries only the latest count into the next entry and refreshes machine defaults', () => {
   const source = read('src/lib/queries/spinningEntryQueries.js')
   assert.match(source, /run_sequence: 'desc'/)
   assert.match(source, /if \(!latestByMachine\.has\(row\.machine_id\)\)/)
-  assert.match(source, /buildSpinningCountSnapshot\(count, \{ machineSpeed: machine\.speed \}\)/)
+  assert.match(source, /buildSpinningCountSnapshot\(count, \{ machineSpeed: machine\?\.speed \}\)/)
   assert.match(source, /run_sequence: 1/)
   assert.match(source, /run_time: targetShiftTime/)
+})
+
+test('all initialization families copy one exact prior entry and preserve its count selection', () => {
+  const shared = read('src/lib/queries/dateScopedMachineSetup.js')
+  const carding = read('src/lib/queries/cardingEntryQueries.js')
+  const spinning = read('src/lib/queries/spinningEntryQueries.js')
+  const autoconer = read('src/lib/queries/autoconerEntryQueries.js')
+
+  assert.match(shared, /findPreviousEntrySetupSnapshot/)
+  assert.doesNotMatch(shared, /Promise\.all\(\(idsToMaterialize/)
+  for (const source of [carding, spinning, autoconer]) {
+    assert.match(source, /findPreviousEntrySetupSnapshot/)
+  }
+
+  for (const file of [
+    'breakerDrawingQueries.js',
+    'comberEntryQueries.js',
+    'finisherDrawingEntryQueries.js',
+    'lapFormerQueries.js',
+    'simplexEntryQueries.js'
+  ]) {
+    const source = read(`src/lib/queries/${file}`)
+    const overrideBlocks = [...source.matchAll(/machineSetupOverridesMap\[m\.id\]\s*=\s*\{([\s\S]*?)\n\s*\}/g)]
+    assert.ok(overrideBlocks.length > 0, file)
+    for (const block of overrideBlocks) {
+      assert.doesNotMatch(block[1], /prodn_mixing/, file)
+    }
+  }
+
+  assert.match(spinning, /countById\.get\(source\.count_id\) \|\| countByName\.get\(source\.count_name\)/)
+  assert.match(autoconer, /countById\.get\(s\.count_id\) \|\| countByName\.get\(s\.count_name\)/)
+})
+
+test('new entries reset operational values and historical Finisher setup visibility is date-scoped', () => {
+  const carding = read('src/lib/queries/cardingEntryQueries.js')
+  const finisher = read('src/lib/queries/finisherDrawingEntryQueries.js')
+
+  assert.doesNotMatch(carding, /getCardingInheritedMachineSetups/)
+  assert.match(carding, /const sessionNo = 1/)
+  assert.match(carding, /const wasteVal = setup\.default_waste \?\? null/)
+  assert.match(finisher, /Historical entry grids use lifecycle state on the entry date/)
+  assert.match(finisher, /deactivated_at: \{ gt: header\.entry_date \}/)
+})
+
+test('every separately initialized preparatory page rejects a failed detail initialization', () => {
+  for (const file of [
+    'src/app/preparatory-entry/carding/entry/page.jsx',
+    'src/app/preparatory-entry/breaker-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/comber/entry/page.jsx',
+    'src/app/preparatory-entry/finisher-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/lap-former/entry/page.jsx',
+    'src/app/preparatory-entry/simplex/entry/page.jsx'
+  ]) {
+    const source = read(file)
+    assert.match(source, /if \(!init(?:ialization)?Result\.success\)/, file)
+  }
 })
 
 test('Spinning count-run time and count stay distinct across all three tabs', () => {
@@ -122,10 +182,50 @@ test('Spinning count-run time and count stay distinct across all three tabs', ()
   assert.doesNotMatch(actions, /run_time:\s*shiftTime/)
   assert.match(queries, /setupMap\[`\$\{s\.machine_id\}:\$\{runSequence\}`\] = s/)
   assert.match(production, /normalizedRow\.run_time \?\? effectiveSetup\?\.run_time/)
+  assert.match(production, /resolveProductionTime\(rowRunTime, requestedStoppageMins\)/)
   assert.match(production, /onMachineSetupFieldChange/)
   assert.match(stoppage, /mergedRow\.run_time \?\? effectiveTotalTime/)
   assert.match(stoppage, /findSetupDraftForMachine\(row\.machine_id, row\.setup_id\)/)
   assert.match(stoppage, /onMachineSetupFieldChange/)
+})
+
+test('re-adding an excluded machine normalizes its local run structure before detail sync', () => {
+  const helper = read('src/lib/queries/entryMachineSnapshot.js')
+  assert.match(helper, /const setupRows = await tx\[models\.setup\]\.findMany/)
+  assert.match(helper, /const redundantIds = setupRows\.filter/)
+  assert.match(helper, /data: \{ \.\.\.safeOverrides, run_sequence: 1, is_included: true \}/)
+  assert.match(helper, /staleDetails = await tx\[models\.detail\]\.findMany/)
+})
+
+test('all Autoconer add paths use the entry snapshot and direct setup deletion is unavailable', () => {
+  const component = read('src/components/modules/post-preparatory/autoconer/AutoconerMachineSetupTab.jsx')
+  const actions = read('src/app/actions/autoconerEntryActions.js')
+  const queries = read('src/lib/queries/autoconerEntryQueries.js')
+
+  assert.doesNotMatch(component, /upsertAutoconerMachineSetupAction/)
+  assert.ok((component.match(/addAutoconerMachineAction\(/g) || []).length >= 2)
+  assert.doesNotMatch(actions, /removeAutoconerMachineSetupsAction/)
+  assert.doesNotMatch(queries, /export async function removeAutoconerMachineSetups/)
+})
+
+test('Spinning bulk stoppage is atomic and targets only the current count run', () => {
+  const queries = read('src/lib/queries/spinningEntryQueries.js')
+  assert.match(queries, /export async function applyFullStoppage[\s\S]*?return prisma\.\$transaction\(async tx =>/)
+  assert.match(queries, /export async function applyPartialStoppage[\s\S]*?return prisma\.\$transaction\(async tx =>/)
+  assert.match(queries, /const latestByMachine = new Map\(\)/)
+  assert.doesNotMatch(queries, /export async function removeSpinningMachineSetups/)
+})
+
+test('all eight machine lookups are entry-date scoped and accept floor names', () => {
+  const lifecycle = read('src/lib/machineLifecycle.js')
+  assert.match(lifecycle, /description: \{ equals: value \}/)
+  assert.match(lifecycle, /machineAvailableOnDateWhere\(entryDate\)/)
+
+  for (const [, actionFile] of modules) {
+    const action = read(`src/app/actions/${actionFile}`)
+    assert.match(action, /MachineByNoAction\(machineNo, entryDate = null\)/)
+    assert.match(action, /MachineByNo\(machineNo, entryDate\)/)
+  }
 })
 
 test('adding a Spinning Master machine normalizes an empty count foreign key to null', () => {

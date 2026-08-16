@@ -6,6 +6,7 @@ import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/comberEntryQueries'
+import { lookupComberMachineByNo } from '@/lib/queries/comberMachineQueries'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
 
@@ -249,6 +250,16 @@ export async function getComberMachinesAction() {
   await requireUser()
   try {
     const data = await queries.getComberMachines()
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function lookupComberMachineByNoAction(machineNo, entryDate = null) {
+  await requireUser()
+  try {
+    const data = await lookupComberMachineByNo(machineNo, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

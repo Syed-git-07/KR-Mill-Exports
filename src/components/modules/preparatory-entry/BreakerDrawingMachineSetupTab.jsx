@@ -29,9 +29,9 @@ import {
   updateMachineSetupAction,
   addBreakerDrawingMachineAction,
   removeBreakerDrawingMachineAction,
-  getMixingOptionsAction
+  getMixingOptionsAction,
+  lookupDrawingBreakerMachineByNoAction
 } from '@/app/actions/breaker-drawing-entry'
-import { lookupDrawingBreakerMachineByNoAction } from '@/app/actions/drawing-breaker'
 import { NumberInput } from '@/components/ui/number-input'
 import { BREAKER_DRAWING_FORMULA_FALLBACK, resolveBreakerDrawingFormulaInputs } from '@/lib/breakerDrawingFormulaFallback'
 
@@ -53,6 +53,7 @@ const formatNumber = (value, decimals = 2) => {
 
 const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineSetupTab({
   headerId = null,
+  entryDate = null,
   shift = 1,
   totalTime = 0,
   onRefresh,
@@ -109,7 +110,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     const val = String(machineNo || '').trim()
     if (!val) return
     const toastId = toast.loading(`Looking up machine ${val}…`)
-    const result = await lookupDrawingBreakerMachineByNoAction(val)
+    const result = await lookupDrawingBreakerMachineByNoAction(val, entryDate)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -121,6 +122,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
@@ -150,6 +152,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
   // New machine form - Breaker Drawing specific defaults
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -343,6 +346,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       toast.success(result.reactivated ? 'Machine added back to this entry' : 'Machine added to this entry')
       setShowAddDialog(false)
       setNewMachine({
+        machine_id: '',
         machine_no: '',
         description: '',
         make_name: '',
@@ -616,7 +620,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       {/* Add Machine Dialog */}
       <Dialog open={showAddDialog} onOpenChange={(open) => {
         setShowAddDialog(open)
-        if (!open) setNewMachine({ machine_no: '', description: '', make_name: '', prodn_mixing: '', speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed, shift_time: totalTime, hank_constant: BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor, delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery })
+        if (!open) setNewMachine({ machine_id: '', machine_no: '', description: '', make_name: '', prodn_mixing: '', speed: BREAKER_DRAWING_FORMULA_FALLBACK.speed, shift_time: totalTime, hank_constant: BREAKER_DRAWING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor, delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery })
       }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -626,10 +630,10 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
           <div className="space-y-5 py-2">
             <div className="grid grid-cols-2 gap-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No *</Label>
+                <Label className="text-sm font-medium mb-2 block">Machine No / Name *</Label>
                 <Input
                   value={newMachine.machine_no}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_id: '', machine_no: e.target.value }))}
                   onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {

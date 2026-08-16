@@ -342,10 +342,10 @@ export async function addSimplexMachineAction(machineData) {
   }
 }
 
-export async function lookupSimplexMachineByNoAction(machineNo) {
+export async function lookupSimplexMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupSimplexMachineByNo(machineNo)
+    const data = await queries.lookupSimplexMachineByNo(machineNo, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
+import { machineAvailableOnDateWhere, machineIdentifierWhere } from '@/lib/machineLifecycle'
 
 const ENTRY_MODELS = {
   carding: {
@@ -83,6 +84,7 @@ const ENTRY_MODELS = {
 }
 
 const RUN_SYSTEM_FIELDS = new Set(['id', 'created_at', 'updated_at', 'entry_date', 'shift', 'run_sequence'])
+const ENTRY_STRUCTURE_FIELDS = new Set(['prodn_mixing', 'count_id', 'count_name'])
 
 const present = (value) => value !== null && value !== undefined && value !== ''
 const efficiencyFactor = (value) => {
@@ -141,16 +143,16 @@ function buildSetupFromMachineMaster(moduleName, machine, header) {
 }
 
 export async function changeEntryMachineCountRun(moduleName, headerId, setupId, {
+  countId,
   countName,
   changeAfter,
   setupOverrides = {}
 } = {}) {
   if (moduleName !== 'spinning') throw new Error('Count Change is supported only for Spinning entries')
   const models = ENTRY_MODELS.spinning
-  const mixing = String(countName || '').trim()
   const elapsed = Number(changeAfter)
-  if (!headerId || !setupId || !mixing) throw new Error('Entry, machine run, and new count are required')
-  if (!Number.isFinite(elapsed) || elapsed < 0) throw new Error('Change time must be zero or greater')
+  if (!headerId || !setupId || !countId) throw new Error('Entry, machine run, and new count are required')
+  if (!Number.isFinite(elapsed) || elapsed <= 0) throw new Error('Current count run time must be greater than zero')
 
   return prisma.$transaction(async (tx) => {
     const header = await tx[models.header].findUnique({
@@ -161,7 +163,7 @@ export async function changeEntryMachineCountRun(moduleName, headerId, setupId, 
     if (header.is_locked) throw new Error('This production entry is locked')
 
     const current = await tx[models.setup].findUnique({ where: { id: setupId } })
-    if (!current || current.entry_date.getTime() !== header.entry_date.getTime() || Number(current.shift) !== Number(header.shift)) {
+    if (!current || current.is_included !== true || current.entry_date.getTime() !== header.entry_date.getTime() || Number(current.shift) !== Number(header.shift)) {
       throw new Error('Machine run is not part of this entry')
     }
     const latest = await tx[models.setup].findFirst({
@@ -169,52 +171,88 @@ export async function changeEntryMachineCountRun(moduleName, headerId, setupId, 
       ...(models.supportsRuns ? { orderBy: { run_sequence: 'desc' } } : {})
     })
     if (latest?.id !== current.id) throw new Error('Only the latest count run can be changed')
-    const currentMixing = String(current.count_name ?? current.prodn_mixing ?? '').trim()
-    if (currentMixing === mixing) throw new Error('Select a different count')
-
-    const totalTime = Number(header.total_time)
-    if (!Number.isFinite(totalTime) || totalTime <= 0) throw new Error('Shift time is not configured for this entry')
-    const precedingRuns = await tx.spinning_machine_setup.findMany({
+    const currentRuntime = Number(current.run_time)
+    if (!Number.isFinite(currentRuntime) || currentRuntime <= 0) {
+      throw new Error('Current count run time is not configured')
+    }
+    const allRuns = await tx.spinning_machine_setup.findMany({
       where: {
         machine_id: current.machine_id,
         entry_date: header.entry_date,
         shift: Number(header.shift),
-        is_included: true,
-        run_sequence: { lt: Number(current.run_sequence || 1) }
+        is_included: true
       },
       select: { run_time: true }
     })
-    const precedingTime = precedingRuns.reduce((sum, row) => sum + Number(row.run_time || 0), 0)
-    if (precedingTime + elapsed > totalTime) {
-      throw new Error(`Combined count-run time cannot exceed the ${totalTime}-minute shift`)
+    const allocatedRuntime = allRuns.reduce((sum, run) => sum + Number(run.run_time || 0), 0)
+    const totalTime = Number(header.total_time)
+    if (!Number.isFinite(totalTime) || totalTime <= 0) {
+      throw new Error('Shift time is not configured for this entry')
     }
-    const remaining = totalTime - precedingTime - elapsed
+    if (allocatedRuntime !== totalTime) {
+      throw new Error(`Count-run minutes total ${allocatedRuntime}; update them to the ${totalTime}-minute shift before splitting again`)
+    }
+    if (elapsed >= currentRuntime) {
+      throw new Error(`Current count run time must be less than ${currentRuntime} minutes so the new count has time to run`)
+    }
+    const remaining = currentRuntime - elapsed
     const nextSequence = Number(current.run_sequence || 1) + 1
-    const count = await tx.spinning_counts.findFirst({ where: { count_name: mixing, is_active: true } })
+    const count = await tx.spinning_counts.findFirst({ where: { id: countId, is_active: true } })
     if (!count) throw new Error('Selected spinning count is not active')
+    if (
+      String(current.count_id || '') === String(count.id) ||
+      String(current.count_name || '').trim() === String(count.count_name || '').trim()
+    ) {
+      throw new Error('Select a different count')
+    }
+    if (countName && String(countName).trim() !== String(count.count_name).trim()) {
+      throw new Error('Selected count no longer matches Count Master; refresh and try again')
+    }
     const resolvedCountOverrides = buildSpinningCountSnapshot(count)
-    const safeOverrides = selectSetupOverrides(models, { ...resolvedCountOverrides, ...setupOverrides })
+    const safeOverrides = selectSetupOverrides(models, {
+      ...resolvedCountOverrides,
+      ...setupOverrides,
+      count_id: count.id,
+      count_name: count.count_name
+    })
     const setupData = Object.fromEntries(Object.entries(current).filter(([field]) => !RUN_SYSTEM_FIELDS.has(field)))
 
-    await tx[models.setup].update({
-      where: { id: current.id }, data: { [models.setupRuntimeField]: elapsed }
-    })
-    await tx[models.detail].updateMany({
-      where: { header_id: header.id, machine_id: current.machine_id, run_sequence: Number(current.run_sequence || 1) },
-      data: { [models.detailRuntimeField]: elapsed }
-    })
-    const currentDetails = await tx.spinning_production_detail.findMany({
+    const currentDetail = await tx.spinning_production_detail.findFirst({
       where: {
         header_id: header.id,
         machine_id: current.machine_id,
         run_sequence: Number(current.run_sequence || 1)
-      },
-      select: { id: true }
+      }
     })
-    await tx.spinning_stoppage_entry.updateMany({
-      where: { production_detail_id: { in: currentDetails.map(detail => detail.id) } },
-      data: { run_time: elapsed }
+    if (!currentDetail) throw new Error('Production row for this machine run is missing; refresh the entry before changing count')
+    const currentStoppage = await tx.spinning_stoppage_entry.findUnique({
+      where: { production_detail_id: currentDetail.id }
     })
+    const currentStoppageTime = Number(currentStoppage?.total_stoppage_time || 0)
+    if (currentStoppageTime > elapsed) {
+      throw new Error(`Current run already has ${currentStoppageTime} stoppage minutes; its run time cannot be reduced to ${elapsed}`)
+    }
+
+    await tx[models.setup].update({
+      where: { id: current.id }, data: { [models.setupRuntimeField]: elapsed }
+    })
+    await tx[models.detail].update({
+      where: { id: currentDetail.id },
+      data: {
+        [models.detailRuntimeField]: elapsed,
+        work_time: elapsed - currentStoppageTime
+      }
+    })
+    if (currentStoppage) {
+      await tx.spinning_stoppage_entry.update({
+        where: { id: currentStoppage.id },
+        data: { run_time: elapsed }
+      })
+    } else {
+      await tx.spinning_stoppage_entry.create({
+        data: { production_detail_id: currentDetail.id, run_time: elapsed }
+      })
+    }
     const newSetup = await tx[models.setup].create({
       data: {
         ...setupData, ...safeOverrides,
@@ -225,14 +263,27 @@ export async function changeEntryMachineCountRun(moduleName, headerId, setupId, 
     })
     const newDetail = await tx[models.detail].create({
       data: {
-        header_id: header.id, machine_id: current.machine_id,
-        run_sequence: nextSequence, [models.detailMixingField]: mixing,
+        header_id: header.id,
+        machine_id: current.machine_id,
+        run_sequence: nextSequence,
+        [models.detailMixingField]: count.count_name,
         [models.detailRuntimeField]: remaining,
-        ...(models.detailRuntimeField !== 'work_time' && { work_time: remaining })
+        work_time: remaining,
+        session_no: currentDetail.session_no ?? current.session_no ?? 1,
+        total_stoppage_mins: 0,
+        stopped_spindles: 0
       }
     })
     await tx.spinning_stoppage_entry.create({
-      data: { production_detail_id: newDetail.id, run_time: remaining }
+      data: {
+        production_detail_id: newDetail.id,
+        run_time: remaining,
+        stoppage1_time: 0,
+        stoppage2_time: 0,
+        stoppage3_time: 0,
+        stoppage4_time: 0,
+        total_stoppage_time: 0
+      }
     })
     return { previousSetupId: current.id, setup: newSetup, detail: newDetail }
   })
@@ -317,35 +368,72 @@ export async function addMachineToEntrySnapshot(moduleName, headerId, {
 
     const machine = await tx[models.machine].findFirst({
       where: {
-        ...(machineId ? { id: machineId } : { machine_no: String(machineNo).trim() })
+        ...(machineId ? { id: machineId } : machineIdentifierWhere(machineNo)),
+        ...machineAvailableOnDateWhere(header.entry_date)
       },
-      orderBy: { is_active: 'desc' }
+      orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }],
+      ...(['spinning', 'autoconer'].includes(moduleName)
+        ? { include: { spinning_counts: true } }
+        : {})
     })
     if (!machine) {
       throw new Error('Machine does not exist in Machine Master for this entry date')
     }
 
+    const requestedOverrides = selectSetupOverrides(models, setupOverrides)
     const masterDefaults = selectSetupOverrides(models, buildSetupFromMachineMaster(moduleName, machine, header))
+    const requestedStructure = Object.fromEntries(
+      Object.entries(requestedOverrides).filter(
+        ([field, value]) => ENTRY_STRUCTURE_FIELDS.has(field) && present(value)
+      )
+    )
     const safeOverrides = {
-      ...selectSetupOverrides(models, setupOverrides),
+      ...requestedOverrides,
       // The selected Machine Master is authoritative for every value stored
-      // there. Dialog fallbacks must never replace newly-created Master data.
-      ...masterDefaults
+      // there. Entry-owned count/mixing remains the user's explicit structural
+      // choice and is allowed to override the Master's default selection.
+      ...masterDefaults,
+      ...requestedStructure
     }
-    let setup = await tx[models.setup].findFirst({
+    const setupRows = await tx[models.setup].findMany({
       where: {
         machine_id: machine.id,
         entry_date: header.entry_date,
         shift: Number(header.shift)
       },
-      orderBy: { run_sequence: 'desc' }
+      orderBy: { run_sequence: 'asc' }
     })
 
-    if (setup) {
-      if (setup.is_included) throw new Error('Machine is already part of this entry')
+    if (setupRows.some(row => row.is_included)) {
+      throw new Error('Machine is already part of this entry')
+    }
+
+    let setup
+    if (setupRows.length > 0) {
+      // Remove leaves every count run as an exclusion marker. Re-adding the
+      // physical machine must start a clean single-run snapshot at sequence 1;
+      // otherwise setup/detail sequence keys no longer line up.
+      const retained = setupRows.find(row => Number(row.run_sequence || 1) === 1) || setupRows[0]
+      const redundantIds = setupRows.filter(row => row.id !== retained.id).map(row => row.id)
+      if (redundantIds.length > 0) {
+        await tx[models.setup].deleteMany({ where: { id: { in: redundantIds } } })
+      }
+
+      const staleDetails = await tx[models.detail].findMany({
+        where: { header_id: header.id, machine_id: machine.id },
+        select: { id: true }
+      })
+      const staleDetailIds = staleDetails.map(row => row.id)
+      if (staleDetailIds.length > 0) {
+        await tx[models.stoppage].deleteMany({
+          where: { production_detail_id: { in: staleDetailIds } }
+        })
+        await tx[models.detail].deleteMany({ where: { id: { in: staleDetailIds } } })
+      }
+
       setup = await tx[models.setup].update({
-        where: { id: setup.id },
-        data: { ...safeOverrides, is_included: true }
+        where: { id: retained.id },
+        data: { ...safeOverrides, run_sequence: 1, is_included: true }
       })
     } else {
       setup = await tx[models.setup].create({

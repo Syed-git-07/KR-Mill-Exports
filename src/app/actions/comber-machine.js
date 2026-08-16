@@ -84,10 +84,10 @@ export async function searchComberMachinesAction(field, condition, value) {
   }
 }
 
-export async function lookupComberMachineByNoAction(machineNo) {
+export async function lookupComberMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupComberMachineByNo(machineNo)
+    const data = await queries.lookupComberMachineByNo(machineNo, entryDate)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

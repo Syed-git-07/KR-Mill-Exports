@@ -308,10 +308,10 @@ export async function addCardingMachineAction(machineData) {
   }
 }
 
-export async function lookupCardingMachineByNoAction(machineNo) {
+export async function lookupCardingMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupCardingMachineByNo(machineNo)
+    const data = await queries.lookupCardingMachineByNo(machineNo, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

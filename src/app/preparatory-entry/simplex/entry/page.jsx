@@ -278,7 +278,10 @@ function SimplexEntryContent() {
       const header = headerResult.data
       
       // Initialize details for all machines
-      await initializeSimplexProductionDetailsAction(header.id)
+      const initializationResult = await initializeSimplexProductionDetailsAction(header.id)
+      if (!initializationResult.success) {
+        throw new Error(initializationResult.error || 'Failed to initialize production details')
+      }
       
       setHeaderId(header.id)
       toast.success('Production entry initialized successfully')
@@ -583,6 +586,7 @@ function SimplexEntryContent() {
                 <SimplexProductionTab 
                   ref={productionTabRef}
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
                   totalTime={totalTime}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.production}

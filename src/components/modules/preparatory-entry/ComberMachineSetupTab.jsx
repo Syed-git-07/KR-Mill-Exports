@@ -24,15 +24,16 @@ import {
   removeComberMachineAction,
   getComberMachinesAction,
   getComberCountOptionsAction,
-  getComberShiftConfigurationAction
+  getComberShiftConfigurationAction,
+  lookupComberMachineByNoAction
 } from '@/app/actions/comber-entry'
-import { lookupComberMachineByNoAction } from '@/app/actions/comber-machine'
 import { NumberInput } from '@/components/ui/number-input'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { COMBER_FORMULA_FALLBACK } from '@/lib/comberFormulaFallback'
 
 const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   headerId = null,
+  entryDate = null,
   shift = 1,
   onRefresh,
   sharedDraftEdits,
@@ -88,6 +89,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   // New machine form
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -309,12 +311,13 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     const val = String(machineNo || '').trim().toUpperCase()
     if (!val) return
     const toastId = toast.loading(`Looking up machine #${val}…`)
-    const result = await lookupComberMachineByNoAction(val)
+    const result = await lookupComberMachineByNoAction(val, entryDate)
     if (!result.success) { toast.error(result.error || 'Lookup failed', { id: toastId }); return }
     if (!result.data) { toast.error(`Machine #${val} not found in master`, { id: toastId }); return }
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
@@ -341,6 +344,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     try {
       const result = await addComberMachineAction({
         headerId,
+        machine_id: newMachine.machine_id || null,
         machine_no: newMachine.machine_no,
         description: newMachine.description || newMachine.machine_no,
         make_name: newMachine.make_name,
@@ -360,6 +364,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       setAddCountSearch('')
       setShowAddCountDrop(false)
       setNewMachine({
+        machine_id: '',
         machine_no: '',
         description: '',
         make_name: '',
@@ -620,12 +625,12 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Machine No.</Label>
+              <Label className="text-right">Machine No. / Name</Label>
               <Input
                 className="col-span-3"
                 placeholder="e.g., CO14"
                 value={newMachine.machine_no}
-                onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value.toUpperCase() }))}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, machine_id: '', machine_no: e.target.value.toUpperCase() }))}
                 onBlur={(e) => handleMachineNoLookup(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleMachineNoLookup(e.target.value) } }}
               />

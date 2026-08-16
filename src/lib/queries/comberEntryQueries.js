@@ -855,7 +855,6 @@ export async function getComberMachineSetups(headerId = null) {
       machineSpeedMap[m.id] = m.speed;
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
-        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(m.sliver_hank != null && { sl_hank: m.sliver_hank }),
         ...(m.mc_effi != null && { mc_effi: m.mc_effi })
       };
@@ -1130,18 +1129,6 @@ export async function addComberEntryMachine(machineData) {
 
 export async function removeComberMachine(machineId, headerId) {
   return removeMachineFromEntrySnapshot('comber', headerId, machineId)
-}
-
-// Delete machine setup
-export async function deleteComberMachineSetup(machineId) {
-  try {
-    await prisma.comber_machine_setup.deleteMany({
-      where: { machine_id: machineId }
-    })
-    return true
-  } catch (error) {
-    throw error
-  }
 }
 
 // Get all comber machines

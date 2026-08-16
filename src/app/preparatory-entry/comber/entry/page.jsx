@@ -197,7 +197,10 @@ function ComberEntryContent() {
       }
       
       // Initialize details for all machines
-      await initializeComberProductionDetailsAction(headerResult.data.id, parseInt(shift))
+      const initializationResult = await initializeComberProductionDetailsAction(headerResult.data.id, parseInt(shift))
+      if (!initializationResult.success) {
+        throw new Error(initializationResult.error || 'Failed to initialize production details')
+      }
       
       setHeaderId(headerResult.data.id)
       toast.success('Production entry initialized successfully')
@@ -538,6 +541,7 @@ function ComberEntryContent() {
                 <ComberMachineSetupTab
                   ref={setupTabRef}
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
                   shift={parseInt(shift)}
                   onRefresh={handleRefresh}
                   sharedDraftEdits={sharedDrafts.setup}
