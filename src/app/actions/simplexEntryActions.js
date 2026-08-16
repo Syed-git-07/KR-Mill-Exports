@@ -391,3 +391,65 @@ export async function copySimplexFromYesterdayAction(targetDate, targetShift, ta
     return { success: false, error: safeActionError(error) }
   }
 }
+
+export async function getSimplexEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, countsResult] = await Promise.all([
+        getSimplexMachineSetupsAction(headerId),
+        getSimplexCountOptionsAction()
+      ])
+      return { success: true, data: { setupsResult, countsResult } }
+    }
+
+    if (tab === 'production') {
+      const [detailsResult, setupsResult] = await Promise.all([
+        getSimplexProductionWithSetupAction(headerId),
+        getSimplexMachineSetupsAction(headerId)
+      ])
+      return { success: true, data: { detailsResult, setupsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const [stoppagesResult, reasonsResult, machineListResult, setupResult] = await Promise.all([
+        getSimplexStoppageEntriesAction(headerId),
+        getSimplexStoppageReasonsAction(),
+        getSimplexMachinesAction(),
+        getSimplexMachineSetupsAction(headerId)
+      ])
+      return { success: true, data: { stoppagesResult, reasonsResult, machineListResult, setupResult } }
+    }
+
+    throw new Error('Invalid Simplex entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runSimplexEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'setup-update': item => updateSimplexMachineSetupAction(item.id, item.updates),
+      'production-update': item => updateSimplexProductionDetailAction(item.id, item.updates),
+      'stoppage-update': item => updateSimplexStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeSimplexMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Simplex batch operation')
+    // These Simplex mutations were intentionally sequential before batching.
+    // Keep that database ordering while removing the browser round trip per row.
+    const results = []
+    for (const item of items) {
+      const result = await handler(item)
+      results.push(result)
+      if (operation !== 'stoppage-update' && !result?.success) break
+    }
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}

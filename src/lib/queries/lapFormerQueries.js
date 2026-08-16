@@ -15,19 +15,13 @@ import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
+import { compareMachineNumbers } from '../machineNumberSort';
 
 function compareLapFormerMachines(a, b) {
-  const sortA = a?.sort_order ?? 9999;
-  const sortB = b?.sort_order ?? 9999;
-  if (sortA !== sortB) return sortA - sortB;
+  const machineNumberOrder = compareMachineNumbers(a?.machine_no, b?.machine_no);
+  if (machineNumberOrder !== 0) return machineNumberOrder;
 
-  const aNo = String(a?.machine_no || '');
-  const bNo = String(b?.machine_no || '');
-  const aNum = parseInt(aNo.replace(/\D/g, ''), 10) || 0;
-  const bNum = parseInt(bNo.replace(/\D/g, ''), 10) || 0;
-  if (aNum !== bNum) return aNum - bNum;
-
-  return aNo.localeCompare(bNo);
+  return (a?.sort_order ?? 9999) - (b?.sort_order ?? 9999);
 }
 
 /**
@@ -219,7 +213,7 @@ export async function getActiveLapFormerMachines(entryDate = new Date()) {
     orderBy: { sort_order: 'asc' }
   });
   
-  return data;
+  return (data || []).sort(compareLapFormerMachines);
 }
 
 // ============================================
@@ -1133,7 +1127,7 @@ export async function getLapFormerMachineSetups(headerId = null) {
     });
   }
 
-  // Filter out any setups where machine is null, and sort by sort_order
+  // Machine number controls entry display order; sort_order is only a stable tie-breaker.
   const filteredData = data?.filter(setup => !!machineMap[setup.machine_id]).map(setup => {
     const machine = machineMap[setup.machine_id];
     const dateMixing = mixingMap[setup.machine_id] ?? setup.prodn_mixing ?? machine?.prodn_mixing;
@@ -1145,9 +1139,7 @@ export async function getLapFormerMachineSetups(headerId = null) {
     };
   }) || [];
   
-  return filteredData.sort((a, b) => {
-    return (a.machine?.sort_order || 0) - (b.machine?.sort_order || 0);
-  });
+  return filteredData.sort((a, b) => compareLapFormerMachines(a.machine, b.machine));
 }
 
 // Update or create machine setup

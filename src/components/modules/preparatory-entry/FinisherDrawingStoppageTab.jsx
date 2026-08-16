@@ -16,14 +16,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getFinisherDrawingStoppageEntriesAction,
+  getFinisherDrawingEntryTabDataAction,
   getFinisherDrawingProductionDetailsAction,
-  updateFinisherDrawingStoppageEntryAction,
-  getFinisherDrawingStoppageReasonsAction,
-  getFinisherDrawingMachinesAction,
-  getFinisherDrawingMachineSetupsAction,
-  updateFinisherDrawingDetailAction,
-  syncFinisherDrawingNewMachinesToHeaderAction
+  runFinisherDrawingEntryBatchAction
 } from '@/app/actions/finisher-drawing-entry'
 import { calculateFinisherDrawingValues } from '@/lib/queries/finisherDrawingEntryQueries'
 import {
@@ -306,15 +301,9 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
-
-      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
-        getFinisherDrawingStoppageEntriesAction(headerId),
-        getFinisherDrawingStoppageReasonsAction(),
-        getFinisherDrawingMachinesAction(),
-        getFinisherDrawingMachineSetupsAction(shift, headerId)
-      ])
+      const tabResult = await getFinisherDrawingEntryTabDataAction('stoppage', { headerId, shift })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { stoppagesResult, reasonsResult, machineListResult, setupsResult } = tabResult.data
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
       const reasons = reasonsResult.success ? reasonsResult.data : []
@@ -500,12 +489,14 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateFinisherDrawingStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const stoppageResults = await Promise.all(updatePromises)
+      const stoppageBatchResult = await runFinisherDrawingEntryBatchAction('stoppage-update', stoppageUpdates)
+      if (!stoppageBatchResult.success) throw new Error(stoppageBatchResult.error)
+      const stoppageResults = stoppageBatchResult.data
       const failedStoppage = stoppageResults.find(result => !result?.success)
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Finisher Drawing stoppage row')
@@ -519,7 +510,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         latestDetailMap[detail.id] = detail
       })
 
-      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
+      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -555,11 +546,14 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
           ? Math.round((preservedWaste / actProdn) * 100 * 100) / 100
           : 0
         
-        // Update production detail
-        return updateFinisherDrawingDetailAction(prodDetail.id, calculated)
+        return { id: prodDetail.id, updates: calculated }
       })
       
-      await Promise.all(productionUpdatePromises.filter(Boolean))
+      const productionBatchResult = await runFinisherDrawingEntryBatchAction(
+        'production-update',
+        productionUpdates.filter(Boolean)
+      )
+      if (!productionBatchResult.success) throw new Error(productionBatchResult.error)
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -568,8 +562,8 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

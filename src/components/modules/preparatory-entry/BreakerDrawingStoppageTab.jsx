@@ -16,13 +16,8 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getBreakerDrawingStoppageEntriesAction,
-  getBreakerDrawingStoppageReasonsAction,
-  updateStoppageEntryAction,
-  getBreakerDrawingMachinesAction,
-  getBreakerDrawingMachineSetupsAction,
-  updateBreakerDrawingDetailAction,
-  syncNewMachinesToBreakerDrawingHeaderAction
+  getBreakerDrawingEntryTabDataAction,
+  runBreakerDrawingEntryBatchAction
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
 import { BREAKER_DRAWING_FORMULA_FALLBACK } from '@/lib/breakerDrawingFormulaFallback'
@@ -287,15 +282,9 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     
     setIsLoading(true)
     try {
-      // Sync any newly added machines to this header first
-      await syncNewMachinesToBreakerDrawingHeaderAction(headerId, shift)
-      
-      const [stoppagesRes, reasonsRes, machineListRes, setupsRes] = await Promise.all([
-        getBreakerDrawingStoppageEntriesAction(headerId),
-        getBreakerDrawingStoppageReasonsAction(),
-        getBreakerDrawingMachinesAction(),
-        getBreakerDrawingMachineSetupsAction(shift, headerId)
-      ])
+      const tabResult = await getBreakerDrawingEntryTabDataAction('stoppage', { headerId, shift })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { stoppagesRes, reasonsRes, machineListRes, setupsRes } = tabResult.data
       
       // Check for errors in responses
       if (!stoppagesRes?.success) {
@@ -516,19 +505,21 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const stoppageResults = await Promise.all(updatePromises)
+      const stoppageBatchResult = await runBreakerDrawingEntryBatchAction('stoppage-update', stoppageUpdates)
+      if (!stoppageBatchResult.success) throw new Error(stoppageBatchResult.error)
+      const stoppageResults = stoppageBatchResult.data
       const failedStoppage = stoppageResults.find(result => !result?.success)
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Breaker Drawing stoppage row')
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
+      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -566,11 +557,14 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
           act_hank: actHank
         }
         
-        // Update production detail
-        return updateBreakerDrawingDetailAction(mergedProduction.id, payload)
+        return { id: mergedProduction.id, updates: payload }
       })
       
-      await Promise.all(productionUpdatePromises.filter(Boolean))
+      const productionBatchResult = await runBreakerDrawingEntryBatchAction(
+        'production-update',
+        productionUpdates.filter(Boolean)
+      )
+      if (!productionBatchResult.success) throw new Error(productionBatchResult.error)
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -579,8 +573,8 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

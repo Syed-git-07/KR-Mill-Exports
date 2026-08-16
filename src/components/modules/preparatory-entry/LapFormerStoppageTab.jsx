@@ -16,12 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getLapFormerStoppageEntriesAction,
-  updateLapFormerStoppageEntryAction,
-  getLapFormerStoppageReasonsAction,
-  getLapFormerMachinesAction,
-  getLapFormerMachineSetupsAction,
-  updateLapFormerDetailAction
+  getLapFormerEntryTabDataAction,
+  runLapFormerEntryBatchAction
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
 import { getLapFormerActProdnConstant, resolveLapFormerFormulaInputs } from '@/lib/lapFormerFormulaFallback'
@@ -213,12 +209,9 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     
     setIsLoading(true)
     try {
-      const [stoppagesResult, reasonsResult, machinesResult, setupsResult] = await Promise.all([
-        getLapFormerStoppageEntriesAction(headerId),
-        getLapFormerStoppageReasonsAction(),
-        getLapFormerMachinesAction(),
-        getLapFormerMachineSetupsAction(headerId)
-      ])
+      const tabResult = await getLapFormerEntryTabDataAction('stoppage', { headerId })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { stoppagesResult, reasonsResult, machinesResult, setupsResult } = tabResult.data
       
       if (!stoppagesResult.success) throw new Error(stoppagesResult.error)
       if (!reasonsResult.success) throw new Error(reasonsResult.error)
@@ -450,19 +443,21 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateLapFormerStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const results = await Promise.all(updatePromises)
+      const stoppageBatchResult = await runLapFormerEntryBatchAction('stoppage-update', stoppageUpdates)
+      if (!stoppageBatchResult.success) throw new Error(stoppageBatchResult.error)
+      const results = stoppageBatchResult.data
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) {
         throw new Error('Some stoppage updates failed')
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
+      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -501,11 +496,14 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
           total_stoppage_mins: newTotalStoppage
         }
 
-        // Update production detail
-        return updateLapFormerDetailAction(prodDetail.id, recalculatedFields)
+        return { id: prodDetail.id, updates: recalculatedFields }
       })
       
-      await Promise.all(productionUpdatePromises.filter(Boolean))
+      const productionBatchResult = await runLapFormerEntryBatchAction(
+        'production-update',
+        productionUpdates.filter(Boolean)
+      )
+      if (!productionBatchResult.success) throw new Error(productionBatchResult.error)
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -514,8 +512,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

@@ -19,11 +19,8 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getAutoconerStoppageEntriesAction,
-  updateAutoconerStoppageEntryAction,
-  getStoppageDetailsAction,
-  getAutoconerMachinesAction,
-  syncNewMachinesToAutoconerHeaderAction
+  getAutoconerEntryTabDataAction,
+  runAutoconerEntryBatchAction
 } from '@/app/actions/autoconerEntryActions'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
 import { findSetupDraft as findMachineSetupDraft } from '@/lib/entryDraftSync'
@@ -150,15 +147,12 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      // This also initializes stoppage entries if header exists but has no details
-      await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
-
-      const [stoppagesResult, reasonsResult, machinesResult] = await Promise.all([
-        getAutoconerStoppageEntriesAction(headerId),
-        getStoppageDetailsAction(),
-        getAutoconerMachinesAction()
-      ])
+      const tabResult = await getAutoconerEntryTabDataAction('stoppage', {
+        headerId,
+        shift: shiftNo
+      })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { stoppagesResult, reasonsResult, machinesResult } = tabResult.data
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
       const reasons = reasonsResult.success ? reasonsResult.data : []
@@ -327,12 +321,14 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(draftRows).map(([rowId, changes]) => {
+      const updates = Object.entries(draftRows).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateAutoconerStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runAutoconerEntryBatchAction('stoppage-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error)
+      const results = batchResult.data
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save an Autoconer stoppage row')
       const savedCount = Object.keys(draftRows).length
@@ -342,8 +338,8 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {

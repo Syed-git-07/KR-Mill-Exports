@@ -268,8 +268,9 @@ test('Carding count selection updates the controlled setup value and saves the e
   const source = read('src/components/modules/preparatory-entry/CardingMachineSetupTab.jsx')
 
   assert.match(source, /const updatedRow = \{\s*\.\.\.row,\s*prodn_mixing: value,/)
-  assert.match(source, /updateMachineSetupAction\(rowId, changes, formattedDate, shift\)/)
-  assert.doesNotMatch(source, /updateMachineSetupAction\(machineId \|\| rowId/)
+  assert.match(source, /return \{ id: rowId, updates: changes, entryDate: formattedDate, shift \}/)
+  assert.match(source, /runCardingEntryBatchAction\('setup-update', updates\)/)
+  assert.doesNotMatch(source, /id: machineId \|\| rowId/)
   assert.match(source, /toast\.error\(error\?\.message \|\| 'Failed to save machine setups'\)/)
 })
 

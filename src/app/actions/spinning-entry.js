@@ -371,3 +371,54 @@ export async function copySpinningFromPreviousDateAction(targetDate, targetShift
     return { success: false, error: safeActionError(error) }
   }
 }
+
+export async function getSpinningEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { shift = 1, entryDate, headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, countsResult, machinesResult] = await Promise.all([
+        getSpinningMachineSetupsAction(shift, entryDate),
+        getSpinningCountsAction(),
+        getAllSpinningMachinesAction()
+      ])
+      return { success: true, data: { setupsResult, countsResult, machinesResult } }
+    }
+
+    if (tab === 'production') {
+      const syncResult = await syncNewMachinesToSpinningHeaderAction(headerId, shift)
+      const detailsResult = await getSpinningProductionDetailsAction(headerId)
+      return { success: true, data: { syncResult, detailsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const [stoppageResult, reasonsResult, machinesResult] = await Promise.all([
+        getSpinningStoppageEntriesAction(headerId),
+        getSpinningStoppageReasonsAction(),
+        getSpinningMachinesAction()
+      ])
+      return { success: true, data: { stoppageResult, reasonsResult, machinesResult } }
+    }
+
+    throw new Error('Invalid Spinning entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runSpinningEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'stoppage-update': item => updateSpinningStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeSpinningMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Spinning batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
