@@ -202,16 +202,9 @@ export async function getSpinningMachineSetupsAction(shift = 1, entryDate) {
   await requireUser()
   try {
     const data = await queries.getSpinningMachineSetups(entryDate, shift)
-    // Get shift-based time values
-    const shiftTime = await queries.getSpinningShiftTime(shift)
-    
-    // Override run_time in each setup with the dynamic shift-based value
-    const modifiedData = data.map(setup => ({
-      ...setup,
-      run_time: shiftTime
-    }))
-    
-    return { success: true, data: serializeData(modifiedData) }
+    // Each count run owns its saved portion of the shift. Unsplit rows are
+    // initialized with the full shift time by the query layer.
+    return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
@@ -221,16 +214,6 @@ export async function updateSpinningMachineSetupAction(id, updates, shift = null
   await requireUser()
   try {
     const data = await queries.updateSpinningMachineSetup(id, updates, shift)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function upsertSpinningMachineSetupAction(machineId, entryDate, setupData) {
-  await requireUser()
-  try {
-    const data = await queries.upsertSpinningMachineSetup(machineId, entryDate, setupData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -271,10 +254,10 @@ export async function getAllSpinningMachinesAction() {
   }
 }
 
-export async function lookupSpinningMachineByNoAction(machineNo) {
+export async function lookupSpinningMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupSpinningMachineByNo(machineNo)
+    const data = await queries.lookupSpinningMachineByNo(machineNo, entryDate)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -329,16 +312,6 @@ export async function removeSpinningMachineAction(id, headerId) {
   await requireUser()
   try {
     const data = await queries.removeSpinningMachine(id, headerId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function removeSpinningMachineSetupsAction(setupIds) {
-  await requireUser()
-  try {
-    const data = await queries.removeSpinningMachineSetups(setupIds)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

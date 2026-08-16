@@ -748,6 +748,7 @@ function LapFormerEntryContent() {
                 <LapFormerMachineSetupTab 
                   ref={setupTabRef}
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
                   shift={parseInt(shift)}
                   totalTime={shiftTime}
                   onRefresh={handleRefresh}

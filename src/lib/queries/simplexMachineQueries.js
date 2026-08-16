@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { machineRemovalDate } from '../machineLifecycle';
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null;
@@ -54,37 +55,11 @@ export async function createSimplexMachine(machineData) {
   const effectiveTpi = machineData.tpi ?? parsedCountTpi;
 
   const existing = await prisma.simplex_machines.findFirst({
-    where: { machine_no: machineData.machine_no }
+    where: { machine_no: machineData.machine_no, is_active: true }
   });
 
   if (existing) {
-    if (!existing.is_active) {
-      return await prisma.simplex_machines.update({
-        where: { id: existing.id },
-        data: {
-          machine_no: machineData.machine_no,
-          mc_id: mcId,
-          description: machineData.description,
-          make_name: machineData.make_name,
-          model: machineData.model,
-          prodn_mixing: machineData.prodn_mixing,
-          speed: machineData.speed,
-          prodn_efficiency: machineData.prodn_effi,
-          mc_effi: machineData.mc_effi,
-          tpi: effectiveTpi,
-          no_of_spindles: machineData.no_of_spindles,
-          installed_date: installedDate,
-          is_active: true,
-          activated_at: new Date(),
-          deactivated_at: null,
-          direct_hank_entry: machineData.direct_hank_entry ?? false,
-          direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-          updated_at: new Date(),
-        }
-      });
-    }
-
-    throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
+    throw new Error(`Machine ${machineData.machine_no} already exists and is available`);
   }
 
   const maxSortResult = await prisma.simplex_machines.aggregate({ _max: { sort_order: true } });
@@ -131,6 +106,7 @@ export async function updateSimplexMachine(id, machineData) {
   const shouldUpdateTpi = hasField('tpi') || hasField('count_tpi');
 
   const currentMachine = await prisma.simplex_machines.findUnique({ where: { id }, select: { is_active: true } });
+  if (currentMachine?.is_active === false) throw new Error('Removed machines cannot be changed or restored');
   const isActivating = machineData.is_active === true && currentMachine?.is_active !== true;
   const isDeactivating = machineData.is_active === false && currentMachine?.is_active !== false;
 
@@ -151,7 +127,7 @@ export async function updateSimplexMachine(id, machineData) {
       ...(hasField('installed_date') && { installed_date: installedDate }),
       ...(hasField('is_active') && { is_active: machineData.is_active }),
       ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
-      ...(isDeactivating && { deactivated_at: new Date() }),
+      ...(isDeactivating && { deactivated_at: machineRemovalDate() }),
       ...(hasField('direct_hank_entry') && { direct_hank_entry: machineData.direct_hank_entry }),
       ...(hasField('direct_kgs_entry') && { direct_kgs_entry: machineData.direct_kgs_entry }),
       updated_at: new Date(),

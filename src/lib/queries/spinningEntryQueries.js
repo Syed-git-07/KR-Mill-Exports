@@ -13,6 +13,8 @@ import {
   normalizeSpinningEntryDate,
   validateSpinningOptionCheckSource
 } from '../spinningOptionCheck'
+import { machineAvailableOnDateWhere, machineLookupWhere } from '../machineLifecycle'
+import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
 
 const isProvided = value => value !== null && value !== undefined && value !== ''
 
@@ -386,6 +388,7 @@ export async function getSpinningProductionDetails(headerId) {
     const setupMap = {}
     setups?.forEach(s => {
       setupMap[s.machine_id] = s
+      setupMap[`${s.machine_id}:${s.run_sequence || 1}`] = s
     })
     
     const stoppageMap = {}
@@ -398,7 +401,7 @@ export async function getSpinningProductionDetails(headerId) {
       ?.map(detail => ({
         ...detail,
         machine: machineMap[detail.machine_id] || null,
-        setup: setupMap[detail.machine_id] || null,
+        setup: setupMap[`${detail.machine_id}:${detail.run_sequence || 1}`] || setupMap[detail.machine_id] || null,
         stoppage: stoppageMap[detail.id] ? [stoppageMap[detail.id]] : []
       }))
       .filter(detail => !!detail.machine) || []
@@ -440,7 +443,7 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
     const machines = await prisma.spinning_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       orderBy: { sort_order: 'asc' }
@@ -543,7 +546,7 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
     const machines = await prisma.spinning_machines.findMany({
       where: {
         id: { in: machineIdsWithSetup },
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       orderBy: { sort_order: 'asc' }
@@ -741,7 +744,13 @@ export async function getSpinningStoppageEntries(headerId) {
     machines?.forEach(m => { machineMap[m.id] = m })
     
     const setupMap = {}
-    setups?.forEach(s => { setupMap[s.machine_id] = s })
+    setups?.forEach(s => {
+      const runSequence = Number(s.run_sequence || 1)
+      setupMap[`${s.machine_id}:${runSequence}`] = s
+      if (!setupMap[s.machine_id] || runSequence === 1) {
+        setupMap[s.machine_id] = s
+      }
+    })
 
     const stoppageReasonMap = {}
     stoppageReasons?.forEach(r => { stoppageReasonMap[r.id] = r })
@@ -755,12 +764,13 @@ export async function getSpinningStoppageEntries(headerId) {
       .filter(detail => !!machineMap[detail.machine_id])
       .map(detail => {
         const machine = machineMap[detail.machine_id]
-        const setup = setupMap[detail.machine_id] || {}
+        const setup = setupMap[`${detail.machine_id}:${detail.run_sequence || 1}`] || setupMap[detail.machine_id] || {}
         const stoppage = stoppageMap[detail.id] || {}
 
         return {
           id: detail.id,
           machine_id: detail.machine_id,
+          run_sequence: Number(detail.run_sequence || 1),
           setup_id: setup.id || null,
           // Nested structure to match production query
           production_detail: {
@@ -823,7 +833,7 @@ export async function getSpinningStoppageEntries(headerId) {
 export async function updateSpinningStoppageEntry(stoppageId, updates) {
   await assertEntryStoppageUnlocked('spinning', stoppageId)
   updates = sanitizeEntryStoppageUpdate(updates)
-  try {
+  return prisma.$transaction(async tx => {
     const normalizedUpdates = { ...updates }
     ;[1, 2, 3, 4].forEach((slot) => {
       const idField = `stoppage${slot}_id`
@@ -839,9 +849,10 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
     })
 
     // First, fetch the existing record to get current stoppage values (like Carding module)
-    const existing = await prisma.spinning_stoppage_entry.findUnique({
+    const existing = await tx.spinning_stoppage_entry.findUnique({
       where: { id: stoppageId },
       select: {
+        production_detail_id: true,
         stoppage1_id: true,
         stoppage1_time: true,
         stoppage2_id: true,
@@ -872,11 +883,25 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
       (parseInt(mergedStoppages.stoppage3_time) || 0) +
       (parseInt(mergedStoppages.stoppage4_time) || 0)
 
-    const data = await prisma.spinning_stoppage_entry.update({
+    const prodDetail = await tx.spinning_production_detail.findUnique({
+      where: { id: existing.production_detail_id }
+    })
+    if (!prodDetail) throw new Error('Production row for this stoppage no longer exists')
+    const header = await tx.spinning_production_header.findUnique({
+      where: { id: prodDetail.header_id }
+    })
+    if (!header) throw new Error('Production entry for this stoppage no longer exists')
+    const runTime = Number(prodDetail.run_time ?? resolveSpinningShiftFallbackTime(header.shift))
+    if (totalStoppageTime > runTime) {
+      throw new Error(`Stoppage minutes cannot exceed this count run's ${runTime} minutes`)
+    }
+
+    const data = await tx.spinning_stoppage_entry.update({
       where: { id: stoppageId },
       data: {
         ...normalizedUpdates,
         ...mergedStoppages,
+        run_time: runTime,
         total_stoppage_time: totalStoppageTime,
         updated_at: new Date()
       }
@@ -884,36 +909,31 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
 
     // Recalculate stopped_spindles and worked_spindles in production detail
     // Get production detail with header to know shift
-    const prodDetail = await prisma.spinning_production_detail.findUnique({
-      where: { id: data.production_detail_id }
-    })
     if (prodDetail) {
-      const header = await prisma.spinning_production_header.findUnique({
-        where: { id: prodDetail.header_id }
-      })
-      const setup = await prisma.spinning_machine_setup.findFirst({
+      const setup = await tx.spinning_machine_setup.findFirst({
         where: { 
           machine_id: prodDetail.machine_id,
           entry_date: header?.entry_date || new Date(),
-          shift: header?.shift || 1
+          shift: header?.shift || 1,
+          run_sequence: Number(prodDetail.run_sequence || 1)
         }
       })
-      const machine = await prisma.spinning_machines.findUnique({
+      const machine = await tx.spinning_machines.findUnique({
         where: { id: prodDetail.machine_id }
       })
       const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
       const shift = header?.shift || 1
-      const runTime = prodDetail.run_time ?? resolveSpinningShiftFallbackTime(shift)
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
       // STOPPED SPL = (Total Stoppage Mins / Total Min) × No of Spindles
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       // WORKED SPL = No of Spindles - STOPPED SPL
       const workedSpl = noOfSpindles - stoppedSpl
 
-      await prisma.spinning_production_detail.update({
+      await tx.spinning_production_detail.update({
         where: { id: data.production_detail_id },
         data: {
           total_stoppage_mins: totalStoppageTime,
+          work_time: runTime - totalStoppageTime,
           stopped_spindles: Math.round(stoppedSpl * 100) / 100,
           worked_spindles: workedSpl,
           updated_at: new Date()
@@ -922,50 +942,69 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
     }
 
     return data
-  } catch (error) {
-    throw error
-  }
+  })
 }
 
 // Apply full stoppage to all machines
 export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
   await assertEntryHeaderUnlocked('spinning', headerId)
-  try {
+  const appliedTime = Number.parseInt(String(stoppageTime), 10)
+  if (!stoppageId || !Number.isFinite(appliedTime) || appliedTime <= 0) {
+    throw new Error('A stoppage reason and positive stoppage minutes are required')
+  }
+
+  return prisma.$transaction(async tx => {
     // Get header to know shift
-    const header = await prisma.spinning_production_header.findUnique({
+    const header = await tx.spinning_production_header.findUnique({
       where: { id: headerId }
     })
-    const shift = header?.shift || 1
+    if (!header) throw new Error('Production entry not found')
+    const shift = header.shift || 1
 
     // Get machine setups for allocated spindles
-    const setups = await prisma.spinning_machine_setup.findMany({
+    const setups = await tx.spinning_machine_setup.findMany({
       where: { 
-        entry_date: header?.entry_date || new Date(),
-        shift: shift
+        entry_date: header.entry_date,
+        shift,
+        is_included: true
       }
     })
     const setupMap = {}
-    setups?.forEach(s => { setupMap[s.machine_id] = s })
+    setups?.forEach(s => {
+      setupMap[`${s.machine_id}:${s.run_sequence || 1}`] = s
+      if (!setupMap[s.machine_id] || Number(s.run_sequence || 1) === 1) setupMap[s.machine_id] = s
+    })
 
     // Get machines for fallback spindle counts (all, no filter — historical)
-    const machines = await prisma.spinning_machines.findMany()
+    const machines = await tx.spinning_machines.findMany()
     const machineMap = {}
     machines?.forEach(m => { machineMap[m.id] = m })
 
     // Get all production details for this header
-    const details = await prisma.spinning_production_detail.findMany({
+    const details = await tx.spinning_production_detail.findMany({
       where: { header_id: headerId }
     })
 
-    const results = []
+    // A bulk stoppage entered after Count Change belongs to the current
+    // (latest) count run of each physical machine, not to every historical run.
+    const latestByMachine = new Map()
     for (const detail of details) {
+      const existing = latestByMachine.get(detail.machine_id)
+      if (!existing || Number(detail.run_sequence || 1) > Number(existing.run_sequence || 1)) {
+        latestByMachine.set(detail.machine_id, detail)
+      }
+    }
+    const targetDetails = [...latestByMachine.values()]
+
+    const results = []
+    for (const detail of targetDetails) {
       // Get or create stoppage entry
-      let stoppage = await prisma.spinning_stoppage_entry.findFirst({
+      let stoppage = await tx.spinning_stoppage_entry.findUnique({
         where: { production_detail_id: detail.id }
       })
 
       if (!stoppage) {
-        stoppage = await prisma.spinning_stoppage_entry.create({
+        stoppage = await tx.spinning_stoppage_entry.create({
           data: {
             production_detail_id: detail.id,
             run_time: detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
@@ -978,28 +1017,33 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
       if (!slot) continue
       const updateData = {}
       updateData[`stoppage${slot}_id`] = stoppageId
-      updateData[`stoppage${slot}_time`] = parseInt(stoppageTime) || 0
+      updateData[`stoppage${slot}_time`] = appliedTime
 
       // Recalculate total
       const currentStoppage = { ...stoppage }
-      currentStoppage[`stoppage${slot}_time`] = parseInt(stoppageTime) || 0
+      currentStoppage[`stoppage${slot}_time`] = appliedTime
       
       const totalStoppageTime = 
         (parseInt(currentStoppage.stoppage1_time) || 0) +
         (parseInt(currentStoppage.stoppage2_time) || 0) +
         (parseInt(currentStoppage.stoppage3_time) || 0) +
         (parseInt(currentStoppage.stoppage4_time) || 0)
+      const detailRunTime = Number(detail.run_time ?? resolveSpinningShiftFallbackTime(shift))
+      if (totalStoppageTime > detailRunTime) {
+        throw new Error(`Stoppage minutes cannot exceed ${detailRunTime} for this count run`)
+      }
 
       updateData.total_stoppage_time = totalStoppageTime
+      updateData.run_time = detailRunTime
       updateData.is_full_stoppage = true
 
-      const result = await prisma.spinning_stoppage_entry.update({
+      const result = await tx.spinning_stoppage_entry.update({
         where: { id: stoppage.id },
         data: updateData
       })
 
       // Recalculate stopped_spindles and worked_spindles
-      const setup = setupMap[detail.machine_id]
+      const setup = setupMap[`${detail.machine_id}:${detail.run_sequence || 1}`] || setupMap[detail.machine_id]
       const machine = machineMap[detail.machine_id]
       const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
       const runTime = detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
@@ -1007,10 +1051,11 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       const workedSpl = noOfSpindles - stoppedSpl
 
-      await prisma.spinning_production_detail.update({
+      await tx.spinning_production_detail.update({
         where: { id: detail.id },
         data: {
           total_stoppage_mins: totalStoppageTime,
+          work_time: runTime - totalStoppageTime,
           stopped_spindles: Math.round(stoppedSpl * 100) / 100,
           worked_spindles: workedSpl
         }
@@ -1020,33 +1065,53 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
     }
 
     return results
-  } catch (error) {
-    throw error
-  }
+  })
 }
 
 // Apply partial stoppage to range of machines
 export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo, stoppageId, stoppageTime) {
   await assertEntryHeaderUnlocked('spinning', headerId)
-  try {
+  const appliedTime = Number.parseInt(String(stoppageTime), 10)
+  if (!stoppageId || !Number.isFinite(appliedTime) || appliedTime <= 0) {
+    throw new Error('A stoppage reason and positive stoppage minutes are required')
+  }
+
+  return prisma.$transaction(async tx => {
     // Get header to know shift
-    const header = await prisma.spinning_production_header.findUnique({
+    const header = await tx.spinning_production_header.findUnique({
       where: { id: headerId }
     })
-    const shift = header?.shift || 1
+    if (!header) throw new Error('Production entry not found')
+    const shift = header.shift || 1
 
     // Get machine setups for allocated spindles
-    const setups = await prisma.spinning_machine_setup.findMany({
+    const setups = await tx.spinning_machine_setup.findMany({
       where: { 
-        entry_date: header?.entry_date || new Date(),
-        shift: shift
+        entry_date: header.entry_date,
+        shift,
+        is_included: true
       }
     })
     const setupMap = {}
-    setups?.forEach(s => { setupMap[s.machine_id] = s })
+    setups?.forEach(s => {
+      setupMap[`${s.machine_id}:${s.run_sequence || 1}`] = s
+      if (!setupMap[s.machine_id] || Number(s.run_sequence || 1) === 1) setupMap[s.machine_id] = s
+    })
 
-    // Get all production details with machines
-    const details = await getSpinningProductionDetails(headerId)
+    // Get all production details with their exact historical Machine row.
+    const details = await tx.spinning_production_detail.findMany({
+      where: { header_id: headerId },
+      include: { spinning_machines: true }
+    })
+
+    const latestByMachine = new Map()
+    for (const detail of details) {
+      const existing = latestByMachine.get(detail.machine_id)
+      if (!existing || Number(detail.run_sequence || 1) > Number(existing.run_sequence || 1)) {
+        latestByMachine.set(detail.machine_id, detail)
+      }
+    }
+    const latestDetails = [...latestByMachine.values()]
 
     // Filter by machine range
     const parsedFrom = parseInt(String(fromMachineNo || '').replace(/\D/g, '') || '0')
@@ -1054,8 +1119,8 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
     const fromNum = Math.min(parsedFrom, parsedTo)
     const toNum = Math.max(parsedFrom, parsedTo)
 
-    const filteredDetails = details.filter(d => {
-      const machineNum = parseInt(d.machine?.machine_no?.replace(/\D/g, '') || '0')
+    const filteredDetails = latestDetails.filter(d => {
+      const machineNum = parseInt(d.spinning_machines?.machine_no?.replace(/\D/g, '') || '0')
       return machineNum >= fromNum && machineNum <= toNum
     })
 
@@ -1074,12 +1139,12 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 
     for (const detail of filteredDetails) {
       // Get or create stoppage entry
-      let stoppage = await prisma.spinning_stoppage_entry.findFirst({
+      let stoppage = await tx.spinning_stoppage_entry.findUnique({
         where: { production_detail_id: detail.id }
       })
 
       if (!stoppage) {
-        stoppage = await prisma.spinning_stoppage_entry.create({
+        stoppage = await tx.spinning_stoppage_entry.create({
           data: {
             production_detail_id: detail.id,
             run_time: detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
@@ -1096,11 +1161,11 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
 
       const updateData = {}
       updateData[`stoppage${resolvedSlot}_id`] = stoppageId
-      updateData[`stoppage${resolvedSlot}_time`] = parseInt(stoppageTime) || 0
+      updateData[`stoppage${resolvedSlot}_time`] = appliedTime
 
       // Recalculate total
       const currentStoppage = { ...stoppage }
-      currentStoppage[`stoppage${resolvedSlot}_time`] = parseInt(stoppageTime) || 0
+      currentStoppage[`stoppage${resolvedSlot}_time`] = appliedTime
       currentStoppage[`stoppage${resolvedSlot}_id`] = stoppageId
       
       const totalStoppageTime = 
@@ -1108,26 +1173,32 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
         (parseInt(currentStoppage.stoppage2_time) || 0) +
         (parseInt(currentStoppage.stoppage3_time) || 0) +
         (parseInt(currentStoppage.stoppage4_time) || 0)
+      const detailRunTime = Number(detail.run_time ?? resolveSpinningShiftFallbackTime(shift))
+      if (totalStoppageTime > detailRunTime) {
+        throw new Error(`Stoppage minutes cannot exceed ${detailRunTime} for this count run`)
+      }
 
       updateData.total_stoppage_time = totalStoppageTime
+      updateData.run_time = detailRunTime
 
-      const result = await prisma.spinning_stoppage_entry.update({
+      await tx.spinning_stoppage_entry.update({
         where: { id: stoppage.id },
         data: updateData
       })
 
       // Recalculate stopped_spindles and worked_spindles
-      const setup = setupMap[detail.machine_id]
-      const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, detail.machine?.allocated_spindles], 1104)
+      const setup = setupMap[`${detail.machine_id}:${detail.run_sequence || 1}`] || setupMap[detail.machine_id]
+      const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, detail.spinning_machines?.allocated_spindles], 1104)
       const runTime = detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
       const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       const workedSpl = noOfSpindles - stoppedSpl
 
-      await prisma.spinning_production_detail.update({
+      await tx.spinning_production_detail.update({
         where: { id: detail.id },
         data: {
           total_stoppage_mins: totalStoppageTime,
+          work_time: runTime - totalStoppageTime,
           stopped_spindles: Math.round(stoppedSpl * 100) / 100,
           worked_spindles: workedSpl
         }
@@ -1142,18 +1213,16 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
       overflowCount,
       skippedCount: filteredDetails.length - updatedCount
     }
-  } catch (error) {
-    throw error
-  }
+  })
 }
 
 // ============================================
 // MACHINE SETUP OPERATIONS
 // ============================================
 
-// Create new date/shift snapshots from the canonical machine defaults.
-// Explicit copy actions remain available, but initialization never carries
-// forward the most recently edited setup automatically.
+// Create an independent date/shift snapshot from the exact preceding entry.
+// Membership and selected count carry forward; current Machine/Count Master
+// values refresh the technical defaults used by the new entry.
 export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
   try {
     const dateObj = new Date(entryDate)
@@ -1172,37 +1241,113 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
       return existingSetups.filter(setup => setup.is_included)
     }
 
-    // A new date/shift combines machine-owned fields with the selected Count
-    // Master's current values, then persists the result as the entry snapshot.
-    const activeMachines = await prisma.spinning_machines.findMany({
-      where: {
-        activated_at: { lte: dateObj },
-        OR: [
-          { deactivated_at: null },
-          { deactivated_at: { gt: dateObj } }
-        ]
-      },
-      orderBy: { sort_order: 'asc' }
+    const previousSnapshot = await findPreviousEntrySetupSnapshot({
+      headerModel: prisma.spinning_production_header,
+      setupModel: prisma.spinning_machine_setup,
+      entryDate: dateObj,
+      shift: shiftNum
     })
+    const previousHeader = previousSnapshot.header
 
-    const countIds = [...new Set(activeMachines.map(machine => machine.count_id).filter(Boolean))]
-    const countMasters = countIds.length
-      ? await prisma.spinning_counts.findMany({ where: { id: { in: countIds } } })
+    const previousRows = previousSnapshot.rows
+
+    // A machine with multiple count runs carries only its final selected count
+    // into the next entry; every new entry starts again at run sequence 1.
+    const latestByMachine = new Map()
+    previousRows.forEach(row => {
+      if (!latestByMachine.has(row.machine_id)) latestByMachine.set(row.machine_id, row)
+    })
+    const sourceRows = [...latestByMachine.values()]
+    const sourceMachineIds = sourceRows.map(row => row.machine_id)
+
+    const machines = previousHeader
+      ? (sourceMachineIds.length
+          ? await prisma.spinning_machines.findMany({
+              where: { id: { in: sourceMachineIds } },
+              orderBy: { sort_order: 'asc' }
+            })
+          : [])
+      : await prisma.spinning_machines.findMany({
+          where: machineAvailableOnDateWhere(dateObj),
+          orderBy: { sort_order: 'asc' }
+        })
+
+    const availableMachines = machines.length
+      ? await prisma.spinning_machines.findMany({
+          where: {
+            id: { in: machines.map(machine => machine.id) },
+            ...machineAvailableOnDateWhere(dateObj)
+          }
+        })
+      : []
+    const machineById = new Map(machines.map(machine => [machine.id, machine]))
+    const availableMachineIds = new Set(availableMachines.map(machine => machine.id))
+
+    const countIds = [...new Set(
+      (previousHeader ? sourceRows.map(row => row.count_id) : machines.map(machine => machine.count_id)).filter(Boolean)
+    )]
+    const countNames = [...new Set(
+      (previousHeader ? sourceRows.map(row => row.count_name) : []).filter(Boolean)
+    )]
+    const countMasters = countIds.length || countNames.length
+      ? await prisma.spinning_counts.findMany({
+          where: {
+            OR: [
+              ...(countIds.length ? [{ id: { in: countIds } }] : []),
+              ...(countNames.length ? [{ count_name: { in: countNames } }] : [])
+            ]
+          }
+        })
       : []
     const countById = new Map(countMasters.map(count => [count.id, count]))
+    const countByName = new Map(countMasters.map(count => [count.count_name, count]))
 
-    const defaultSetups = activeMachines.map(machine => ({
-      machine_id: machine.id,
-      is_included: true,
-      entry_date: dateObj,
-      shift: shiftNum,
-      ...buildSpinningCountSnapshot(countById.get(machine.count_id), { machineSpeed: machine.speed }),
-      allocated_spindles: firstProvidedNumber([machine.allocated_spindles], 1104),
-      session_no: 1,
-      run_time: targetShiftTime,
-      efficiency: 0.985,
-      conversion_factor: 2.20456
-    }))
+    const defaultSetups = previousHeader
+      ? sourceRows.map(source => {
+          const machine = machineById.get(source.machine_id)
+          const isAvailable = availableMachineIds.has(source.machine_id)
+          const count = countById.get(source.count_id) || countByName.get(source.count_name)
+          const {
+            id: _id,
+            created_at: _createdAt,
+            updated_at: _updatedAt,
+            entry_date: _sourceDate,
+            shift: _sourceShift,
+            run_sequence: _sourceSequence,
+            ...inherited
+          } = source
+
+          return {
+            ...inherited,
+            machine_id: source.machine_id,
+            entry_date: dateObj,
+            shift: shiftNum,
+            run_sequence: 1,
+            is_included: source.is_included !== false && isAvailable,
+            ...(count ? buildSpinningCountSnapshot(count, { machineSpeed: machine?.speed }) : {}),
+            allocated_spindles: firstProvidedNumber(
+              [machine?.allocated_spindles, source.allocated_spindles],
+              1104
+            ),
+            session_no: 1,
+            run_time: targetShiftTime,
+            efficiency: 0.985,
+            conversion_factor: 2.20456
+          }
+        })
+      : machines.map(machine => ({
+          machine_id: machine.id,
+          is_included: true,
+          entry_date: dateObj,
+          shift: shiftNum,
+          run_sequence: 1,
+          ...buildSpinningCountSnapshot(countById.get(machine.count_id), { machineSpeed: machine.speed }),
+          allocated_spindles: firstProvidedNumber([machine.allocated_spindles], 1104),
+          session_no: 1,
+          run_time: targetShiftTime,
+          efficiency: 0.985,
+          conversion_factor: 2.20456
+        }))
     
     if (defaultSetups.length > 0) {
       await prisma.spinning_machine_setup.createMany({
@@ -1245,16 +1390,26 @@ export async function getSpinningMachineSetups(entryDate, shift = 1) {
     machines?.forEach(m => { machineMap[m.id] = m })
 
     // Combine setup with machine info
+    const latestSequenceByMachine = new Map()
+    const runCountByMachine = new Map()
+    setups.forEach(setup => {
+      const sequence = Number(setup.run_sequence || 1)
+      latestSequenceByMachine.set(setup.machine_id, Math.max(latestSequenceByMachine.get(setup.machine_id) || 0, sequence))
+      runCountByMachine.set(setup.machine_id, (runCountByMachine.get(setup.machine_id) || 0) + 1)
+    })
     const enrichedSetups = setups
       .filter(s => machineMap[s.machine_id]) // Only setups for active machines
       .map(setup => ({
         ...setup,
-        machine: machineMap[setup.machine_id] || null
+        machine: machineMap[setup.machine_id] || null,
+        is_latest_run: Number(setup.run_sequence || 1) === latestSequenceByMachine.get(setup.machine_id),
+        has_multiple_runs: (runCountByMachine.get(setup.machine_id) || 0) > 1
       }))
 
     // Return in sort_order
     return enrichedSetups.sort((a, b) => {
       return (a.machine?.sort_order || 0) - (b.machine?.sort_order || 0)
+        || Number(a.run_sequence || 1) - Number(b.run_sequence || 1)
     })
   } catch (error) {
     throw error
@@ -1309,7 +1464,11 @@ async function syncSpinningSetupCountToDetail(db, setup, countName) {
   const headerIds = headers.map(header => header.id)
   if (headerIds.length === 0) return
   await db.spinning_production_detail.updateMany({
-    where: { machine_id: setup.machine_id, header_id: { in: headerIds } },
+    where: {
+      machine_id: setup.machine_id,
+      header_id: { in: headerIds },
+      run_sequence: Number(setup.run_sequence || 1)
+    },
     data: { count_name: countName }
   })
 }
@@ -1318,6 +1477,30 @@ async function updateSpinningSetupInTransaction(db, id, updates) {
   const existing = await db.spinning_machine_setup.findUnique({ where: { id } })
   if (!existing) throw new Error('Spinning machine setup not found')
   const prepared = await prepareSpinningSetupUpdate(db, existing, updates)
+  if (hasOwn(prepared.data, 'run_time')) {
+    const header = await db.spinning_production_header.findFirst({
+      where: { entry_date: existing.entry_date, shift: existing.shift },
+      select: { id: true, total_time: true }
+    })
+    const runs = await db.spinning_machine_setup.findMany({
+      where: {
+        machine_id: existing.machine_id,
+        entry_date: existing.entry_date,
+        shift: existing.shift,
+        is_included: true
+      },
+      select: { id: true, run_time: true }
+    })
+    if (runs.length > 1) {
+      const combined = runs.reduce(
+        (sum, run) => sum + Number(run.id === id ? prepared.data.run_time : run.run_time || 0),
+        0
+      )
+      if (combined > Number(header?.total_time || 0)) {
+        throw new Error(`Combined count-run time cannot exceed the ${header?.total_time}-minute shift`)
+      }
+    }
+  }
   const result = await db.spinning_machine_setup.update({
     where: { id },
     data: { ...prepared.data, updated_at: new Date() }
@@ -1325,13 +1508,94 @@ async function updateSpinningSetupInTransaction(db, id, updates) {
   if (prepared.changesCount) {
     await syncSpinningSetupCountToDetail(db, result, result.count_name)
   }
+  if (hasOwn(prepared.data, 'run_time')) {
+    const headers = await db.spinning_production_header.findMany({
+      where: { entry_date: result.entry_date, shift: result.shift },
+      select: { id: true }
+    })
+    await db.spinning_production_detail.updateMany({
+      where: {
+        header_id: { in: headers.map(header => header.id) },
+        machine_id: result.machine_id,
+        run_sequence: Number(result.run_sequence || 1)
+      },
+      data: { run_time: result.run_time, work_time: result.run_time }
+    })
+    const details = await db.spinning_production_detail.findMany({
+      where: {
+        header_id: { in: headers.map(header => header.id) },
+        machine_id: result.machine_id,
+        run_sequence: Number(result.run_sequence || 1)
+      },
+      select: { id: true }
+    })
+    await db.spinning_stoppage_entry.updateMany({
+      where: { production_detail_id: { in: details.map(detail => detail.id) } },
+      data: { run_time: result.run_time }
+    })
+  }
   return result
+}
+
+async function assertProjectedSpinningRunTotals(db, updates) {
+  const runtimeUpdates = (updates || []).filter(update => hasOwn(update, 'run_time'))
+  if (runtimeUpdates.length === 0) return
+
+  for (const update of runtimeUpdates) {
+    const runtime = Number(update.run_time)
+    if (!Number.isFinite(runtime) || runtime <= 0) {
+      throw new Error('Every count run must have at least 1 minute')
+    }
+  }
+
+  const ids = runtimeUpdates.map(update => update.id)
+  const editedRows = await db.spinning_machine_setup.findMany({
+    where: { id: { in: ids }, is_included: true },
+    select: { id: true, machine_id: true, entry_date: true, shift: true }
+  })
+  if (editedRows.length !== ids.length) throw new Error('One or more spinning count runs no longer exist')
+
+  const updateById = new Map(runtimeUpdates.map(update => [update.id, Number(update.run_time)]))
+  const groups = new Map()
+  for (const row of editedRows) {
+    const key = `${row.machine_id}:${row.entry_date.toISOString()}:${row.shift}`
+    if (!groups.has(key)) groups.set(key, row)
+  }
+
+  for (const group of groups.values()) {
+    const [runs, header] = await Promise.all([
+      db.spinning_machine_setup.findMany({
+        where: {
+          machine_id: group.machine_id,
+          entry_date: group.entry_date,
+          shift: group.shift,
+          is_included: true
+        },
+        select: { id: true, run_time: true }
+      }),
+      db.spinning_production_header.findFirst({
+        where: { entry_date: group.entry_date, shift: group.shift },
+        select: { total_time: true }
+      })
+    ])
+    const projected = runs.reduce(
+      (sum, run) => sum + (updateById.get(run.id) ?? Number(run.run_time || 0)),
+      0
+    )
+    const totalTime = Number(header?.total_time || 0)
+    if (projected !== totalTime) {
+      throw new Error(`Count-run minutes must total exactly ${totalTime}; current edited total is ${projected}`)
+    }
+  }
 }
 
 export async function updateSpinningMachineSetup(id, updates) {
   await assertEntrySetupUnlocked('spinning', id)
   updates = sanitizeEntrySetupUpdate(updates)
-  return prisma.$transaction(tx => updateSpinningSetupInTransaction(tx, id, updates))
+  return prisma.$transaction(async tx => {
+    await assertProjectedSpinningRunTotals(tx, [{ id, ...updates }])
+    return updateSpinningSetupInTransaction(tx, id, updates)
+  })
 }
 
 export async function upsertSpinningMachineSetup(machineId, entryDate, setupData) {
@@ -1345,14 +1609,13 @@ export async function upsertSpinningMachineSetup(machineId, entryDate, setupData
     if (!header) throw new Error('Entry not found')
     if (header.is_locked) throw new Error('This entry is locked and cannot be changed')
     const safeSetupData = sanitizeEntrySetupUpdate(setupData)
-    const existing = await tx.spinning_machine_setup.findUnique({
+    const existing = await tx.spinning_machine_setup.findFirst({
       where: {
-        idx_spinning_machine_setup_date: {
-          machine_id: machineId,
-          entry_date: dateObj,
-          shift: shiftNum
-        }
-      }
+        machine_id: machineId,
+        entry_date: dateObj,
+        shift: shiftNum
+      },
+      orderBy: { run_sequence: 'desc' }
     })
     if (existing) return updateSpinningSetupInTransaction(tx, existing.id, { ...safeSetupData, is_included: true })
 
@@ -1377,7 +1640,26 @@ export async function batchUpdateSpinningMachineSetups(updates) {
   await Promise.all(updates.map(({ id }) => assertEntrySetupUnlocked('spinning', id)))
   return prisma.$transaction(async tx => {
     const results = []
-    for (const update of updates) {
+    const sanitizedUpdates = updates.map(update => ({
+      id: update.id,
+      ...sanitizeEntrySetupUpdate(update)
+    }))
+    await assertProjectedSpinningRunTotals(tx, sanitizedUpdates)
+    // Apply time reductions before increases. This allows two edited count-run
+    // rows to keep the same valid combined shift time without a temporary
+    // intermediate value exceeding the shift during the transaction.
+    const ids = sanitizedUpdates.map(update => update.id)
+    const currentRows = await tx.spinning_machine_setup.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, run_time: true }
+    })
+    const currentById = new Map(currentRows.map(row => [row.id, Number(row.run_time || 0)]))
+    const orderedUpdates = [...sanitizedUpdates].sort((a, b) => {
+      const deltaA = a.run_time == null ? 0 : Number(a.run_time) - (currentById.get(a.id) || 0)
+      const deltaB = b.run_time == null ? 0 : Number(b.run_time) - (currentById.get(b.id) || 0)
+      return deltaA - deltaB
+    })
+    for (const update of orderedUpdates) {
       const { id, machine_id: _machineId, ...data } = update
       results.push(await updateSpinningSetupInTransaction(tx, id, sanitizeEntrySetupUpdate(data)))
     }
@@ -1556,7 +1838,7 @@ export async function applySpinningOptionCheck(payload) {
           {
             OR: [
               { activated_at: null },
-              { activated_at: { lte: targetHeader.entry_date } }
+              { installed_date: { lte: targetHeader.entry_date } }
             ]
           },
           {
@@ -1875,14 +2157,14 @@ export async function copySpinningFromPreviousDate(targetDate, targetShift, targ
 // ============================================
 
 // Add spinning machine
-export async function lookupSpinningMachineByNo(machineNo) {
+export async function lookupSpinningMachineByNo(machineNo, entryDate = null) {
   const activeMachine = await prisma.spinning_machines.findFirst({
-    where: { machine_no: { equals: machineNo }, is_active: true },
+    where: { ...machineLookupWhere(machineNo, entryDate), is_active: true },
     include: { spinning_counts: true }
   })
   const machine = activeMachine || await prisma.spinning_machines.findFirst({
-    where: { machine_no: { equals: machineNo } },
-    orderBy: { updated_at: 'desc' },
+    where: machineLookupWhere(machineNo, entryDate),
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }],
     include: { spinning_counts: true }
   })
   if (!machine) return null
@@ -1891,7 +2173,8 @@ export async function lookupSpinningMachineByNo(machineNo) {
   return {
     ...machineData,
     machine_speed: machine.speed,
-    ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: machine.speed })
+    ...buildSpinningCountSnapshot(selectedCount, { machineSpeed: machine.speed }),
+    speed: machine.speed
   }
 }
 
@@ -2038,15 +2321,29 @@ export async function addSpinningMachine(machineData) {
 
 // Remove spinning machine (deactivate)
 export async function addSpinningEntryMachine(machineData) {
-  const selectedCount = machineData.count_id || machineData.count_name
+  const targetHeader = await prisma.spinning_production_header.findUnique({
+    where: { id: machineData.headerId },
+    select: { entry_date: true }
+  })
+  if (!targetHeader) throw new Error('Production entry not found')
+  const masterMachine = await prisma.spinning_machines.findFirst({
+    where: machineData.machine_id
+      ? { id: machineData.machine_id }
+      : machineLookupWhere(machineData.machine_no, targetHeader.entry_date),
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }],
+    select: { count_id: true, speed: true }
+  })
+  if (!masterMachine) throw new Error('Machine does not exist in Machine Master for this entry date')
+  const requestedCountId = machineData.count_id || masterMachine?.count_id
+  const selectedCount = requestedCountId || machineData.count_name
     ? await prisma.spinning_counts.findFirst({
         where: {
           is_active: true,
-          ...(machineData.count_id ? { id: machineData.count_id } : { count_name: machineData.count_name })
+          ...(requestedCountId ? { id: requestedCountId } : { count_name: machineData.count_name })
         }
       })
     : null
-  if ((machineData.count_id || machineData.count_name) && !selectedCount) {
+  if ((requestedCountId || machineData.count_name) && !selectedCount) {
     throw new Error('Selected spinning count is not active')
   }
   const result = await addMachineToEntrySnapshot('spinning', machineData.headerId, {
@@ -2054,7 +2351,11 @@ export async function addSpinningEntryMachine(machineData) {
     machineNo: machineData.machine_no,
     setupOverrides: {
       ...machineData,
-      ...(selectedCount && buildSpinningCountSnapshot(selectedCount, { machineSpeed: machineData.speed }))
+      // An unselected dropdown supplies an empty string in the browser. The
+      // setup foreign key must receive NULL, never an invalid empty UUID.
+      count_id: selectedCount?.id ?? null,
+      count_name: selectedCount?.count_name ?? null,
+      ...(selectedCount && buildSpinningCountSnapshot(selectedCount, { machineSpeed: masterMachine?.speed ?? machineData.speed }))
     }
   })
   await syncNewMachinesToSpinningHeader(machineData.headerId, result.header.shift)
@@ -2063,19 +2364,5 @@ export async function addSpinningEntryMachine(machineData) {
 
 export async function removeSpinningMachine(id, headerId) {
   return removeMachineFromEntrySnapshot('spinning', headerId, id)
-}
-
-// Remove spinning machine setups (batch)
-export async function removeSpinningMachineSetups(setupIds) {
-  try {
-    const result = await prisma.spinning_machine_setup.deleteMany({
-      where: {
-        id: { in: setupIds }
-      }
-    })
-    return result
-  } catch (error) {
-    throw error
-  }
 }
 

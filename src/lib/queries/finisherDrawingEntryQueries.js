@@ -12,6 +12,7 @@ import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtil
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
+import { machineLookupWhere } from '../machineLifecycle';
 
 function normalizeFinisherDrawingWaste(wasteValue, actProdnValue) {
   const waste = Number.parseFloat(wasteValue)
@@ -397,7 +398,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
     // Get machines active on entry_date
     const machines = await prisma.drawing_finisher_machines.findMany({
       where: {
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       select: {
@@ -413,15 +414,20 @@ export async function initializeFinisherDrawingDetails(headerId) {
     const machineIds = machines.map(m => m.id)
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
+    const newMachineSetupDefaultsMap = {};
     machines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
-        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(Number.isFinite(rawEfficiency) && {
           std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
         })
+      };
+      newMachineSetupDefaultsMap[m.id] = {
+        speed: 350, hank_constant: 0.14, std_efficiency_factor: 0.9,
+        std_prodn: 677.79, shift_time: 510, default_stoppage: 0,
+        divisor_constant: 1693, delivery: 1, machine_type: 'FINISHER'
       };
     });
     const setups = await getOrCreateDateScopedSetups({
@@ -430,7 +436,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
       headerId,
       machineIds,
       machineSpeedMap,
-      machineSetupOverridesMap
+      machineSetupOverridesMap,
+      newMachineSetupDefaultsMap
     })
 
     const setupMap = {}
@@ -513,7 +520,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     // Get machines active on entry_date
     const machines = await prisma.drawing_finisher_machines.findMany({
       where: {
-        activated_at: { lte: entryDate },
+        installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
       },
       select: {
@@ -534,7 +541,6 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
-        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(Number.isFinite(rawEfficiency) && {
           std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
         })
@@ -1110,8 +1116,24 @@ export async function applyFinisherDrawingPartialStoppage(headerId, fromMachineN
 export async function getFinisherDrawingMachineSetups(headerId = null) {
   try {
     const validHeaderId = typeof headerId === 'string' && headerId.trim() ? headerId.trim() : null
+    const header = validHeaderId
+      ? await prisma.finisher_drawing_production_header.findUnique({
+          where: { id: validHeaderId },
+          select: { entry_date: true }
+        })
+      : null
     const machines = await prisma.drawing_finisher_machines.findMany({
-      where: { is_active: true },
+      // Historical entry grids use lifecycle state on the entry date. A later
+      // permanent Master removal must not make an older snapshot disappear.
+      where: header?.entry_date
+        ? {
+            installed_date: { lte: header.entry_date },
+            OR: [
+              { deactivated_at: null },
+              { deactivated_at: { gt: header.entry_date } }
+            ]
+          }
+        : { is_active: true },
       select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, prodn_efficiency: true, is_active: true }
     })
     const machineSpeedMap = {};
@@ -1121,7 +1143,6 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
         ...(m.speed != null && { speed: m.speed }),
-        ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
         ...(Number.isFinite(rawEfficiency) && {
           std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
         })
@@ -1611,6 +1632,9 @@ export async function addFinisherDrawingMachine(machineData) {
       speed: true,
     }
   })
+  if (existingMachine?.is_active === false) {
+    throw new Error('Removed machines cannot be restored. Add a new machine with a different machine number.')
+  }
 
   if (existingMachine && !existingMachine.is_active) {
     // Reactivate the machine — clear deactivated_at, set new activated_at
@@ -1803,21 +1827,19 @@ export async function removeFinisherDrawingMachine(machineId, headerId) {
 }
 
 // Lookup finisher drawing machine by machine_no (for setup tab auto-fill)
-export async function lookupFinisherDrawingMachineByNo(machineNo) {
+export async function lookupFinisherDrawingMachineByNo(machineNo, entryDate = null) {
   const machine = await prisma.drawing_finisher_machines.findFirst({
-    where: { machine_no: { equals: machineNo } }
+    where: machineLookupWhere(machineNo, entryDate),
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }]
   })
   if (!machine) return null
 
-  const setup = await prisma.finisher_drawing_machine_setup.findFirst({
-    where: { machine_id: machine.id }
-  })
-
   return {
     ...machine,
-    std_efficiency_factor: setup?.std_efficiency_factor != null ? parseFloat(setup.std_efficiency_factor) : null,
-    setup_hank_constant: setup?.hank_constant != null ? parseFloat(setup.hank_constant) : null,
-    has_setup: !!setup,
+    std_efficiency_factor: machine.prodn_efficiency != null
+      ? (Number(machine.prodn_efficiency) > 1 ? Number(machine.prodn_efficiency) / 100 : Number(machine.prodn_efficiency))
+      : null,
+    has_setup: false,
   }
 }
 

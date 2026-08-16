@@ -3,14 +3,25 @@
 --   2. repairs legacy details that have no stoppage row, and
 --   3. makes entry/detail/stoppage initialization idempotent at the database level.
 
-ALTER TABLE autoconer_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE breaker_drawing_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE carding_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE comber_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE finisher_drawing_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE lap_former_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE simplex_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE spinning_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE;
+-- Some existing installations received these columns through an earlier schema
+-- synchronization. Add each one only when it is genuinely missing so a failed
+-- migration can be safely replayed without discarding data.
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'autoconer_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE autoconer_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'breaker_drawing_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE breaker_drawing_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'carding_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE carding_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'comber_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE comber_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'finisher_drawing_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE finisher_drawing_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'lap_former_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE lap_former_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'simplex_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE simplex_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'spinning_machine_setup' AND column_name = 'is_included') = 0, 'ALTER TABLE spinning_machine_setup ADD COLUMN is_included BOOLEAN NOT NULL DEFAULT TRUE', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 INSERT INTO autoconer_stoppage_entry (id, production_detail_id)
 SELECT UUID(), detail.id

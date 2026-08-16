@@ -38,7 +38,7 @@ const parseIntOr = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed
 }
 
-const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ headerId = null, totalTime = 510, onRefresh, sharedDraftEdits, onSharedDraftEditsChange }, ref) {
+const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ headerId = null, entryDate = null, totalTime = 510, onRefresh, sharedDraftEdits, onSharedDraftEditsChange }, ref) {
   const [setupData, setSetupData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [localEditedRows, setLocalEditedRows] = useState({})
@@ -91,6 +91,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
   
   // New machine form (like Comber - creates new machine)
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -186,7 +187,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     if (!val) return
 
     const toastId = toast.loading(`Looking up machine #${val}...`)
-    const result = await lookupSimplexMachineByNoAction(val)
+    const result = await lookupSimplexMachineByNoAction(val, entryDate)
 
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
@@ -207,6 +208,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     const selectedCountTpi = getSelectedCountTpi(d.prodn_mixing)
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
@@ -368,6 +370,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       const selectedCountTpi = getSelectedCountTpi(newMachine.prodn_mixing)
       const result = await addSimplexMachineAction({
         headerId,
+        machine_id: newMachine.machine_id || null,
         machine_no: newMachine.machine_no,
         description: newMachine.description,
         make_name: newMachine.make_name,
@@ -392,6 +395,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       toast.success('Machine added to this entry')
       setShowAddDialog(false)
       setNewMachine({
+        machine_id: '',
         machine_no: '',
         description: '',
         make_name: '',
@@ -415,7 +419,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     }
   }
 
-  // Handle remove selected machines (soft delete - deactivates machine)
+  // Remove selected machines from this date-and-shift entry snapshot only.
   const handleRemoveMachines = async () => {
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
@@ -525,7 +529,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
                     {/* Machine No */}
                     <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                      {machine.machine_no || '-'}
+                      <div>{machine.machine_no || '-'}</div>
                     </td>
                     
                     {/* Make */}
@@ -734,13 +738,13 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           <DialogHeader>
             <DialogTitle>Add Master Machine to Entry</DialogTitle>
             <DialogDescription>
-              Create or reactivate a simplex machine and add it to setup
+              Look up an existing Simplex Machine Master record and add it only to this entry
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-5 py-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="add-machine-no">M/C No. *</Label>
+                <Label htmlFor="add-machine-no">M/C No. / Name *</Label>
                 <Input
                   id="add-machine-no"
                   type="text"
@@ -748,7 +752,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
                   onChange={(e) => {
                     const raw = e.target.value.toUpperCase()
                     setNewMachine(prev => {
-                      const next = { ...prev, machine_no: raw }
+                      const next = { ...prev, machine_id: '', machine_no: raw }
                       if (!prev.description || prev.description === buildSimplexDescription(prev.machine_no)) {
                         next.description = buildSimplexDescription(raw)
                       }
@@ -906,8 +910,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           <DialogHeader>
             <DialogTitle>Remove Machines</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {selectedRows.length} selected machine(s) from setup?
-              This action cannot be undone.
+              Remove {selectedRows.length} selected machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">

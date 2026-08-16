@@ -131,7 +131,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     const val = String(machineNo || '').trim()
     if (!val) return
     const toastId = toast.loading(`Looking up machine ${val}…`)
-    const result = await lookupCardingMachineByNoAction(val)
+    const result = await lookupCardingMachineByNoAction(val, entryDate)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -140,13 +140,10 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       toast.error(`Machine ${val} not found in master`, { id: toastId })
       return
     }
-    if (result.data.has_setup) {
-      toast.error(`Machine ${val} already exists in setup`, { id: toastId })
-      return
-    }
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
@@ -167,6 +164,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   // New machine form
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -423,6 +421,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
         }
         setShowAddDialog(false)
         setNewMachine({
+          machine_id: '',
           machine_no: '',
           description: '',
           make_name: '',
@@ -572,7 +571,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine?.machine_no}
+                    <div>{row.machine?.machine_no}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">
                     {row.machine?.make_name || ''}
@@ -684,7 +683,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       {/* Add Machine Dialog */}
       <Dialog open={showAddDialog} onOpenChange={(open) => {
         setShowAddDialog(open)
-        if (!open) setNewMachine({ machine_no: '', description: '', make_name: '', model: '', prodn_mixing: '', installed_date: '', speed: CARDING_FORMULA_FALLBACK.speed, shift_time: effectiveTotalTime, hank_constant: CARDING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: CARDING_FORMULA_FALLBACK.stdEfficiencyFactor })
+        if (!open) setNewMachine({ machine_id: '', machine_no: '', description: '', make_name: '', model: '', prodn_mixing: '', installed_date: '', speed: CARDING_FORMULA_FALLBACK.speed, shift_time: effectiveTotalTime, hank_constant: CARDING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: CARDING_FORMULA_FALLBACK.stdEfficiencyFactor })
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -694,10 +693,11 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No *</Label>
+                <Label className="text-sm font-medium mb-2 block">Machine No / Name *</Label>
                 <Input
                   value={newMachine.machine_no}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_id: '', machine_no: e.target.value }))}
+                  onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
@@ -863,13 +863,11 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
             <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s)? 
-              This will deactivate them from the system.
+              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
             </DialogDescription>
           </DialogHeader>
           <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            <strong>Warning:</strong> Removing machines will affect any future production entries.
-            Existing production data will be preserved.
+            This affects only this date and shift. Machine Master and all other entries remain unchanged.
           </div>
           <DialogFooter className="gap-3">
             <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>

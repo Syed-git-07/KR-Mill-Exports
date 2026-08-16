@@ -139,7 +139,7 @@ export default function DrawingFinisherPage() {
         return;
       }
 
-      if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) {
+      if (!confirm(`Permanently remove ${activeRows.length} machine(s)?\n\nThey will be excluded from entries initialized today onward and cannot be restored.`)) {
         return;
       }
 
@@ -148,7 +148,7 @@ export default function DrawingFinisherPage() {
           activeRows,
           row => updateDrawingFinisherMachineAction(row.id, { is_active: false })
         );
-        if (succeeded.length) toast.success(`${succeeded.length} machine(s) deactivated`);
+        if (succeeded.length) toast.success(`${succeeded.length} machine(s) removed`);
         if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
         setSelectedRows(failed.map(outcome => outcome.item));
         setIsSelectMode(failed.length > 0);
@@ -159,7 +159,7 @@ export default function DrawingFinisherPage() {
     } else {
       const targetMachine = selectedMachine;
       if (!targetMachine) {
-        toast.warning('Please select a machine to deactivate');
+        toast.warning('Please select a machine to remove');
         return;
       }
 
@@ -168,7 +168,7 @@ export default function DrawingFinisherPage() {
         return;
       }
 
-      if (!confirm(`Deactivate machine "${targetMachine.machine_no}"?\n\nIt will be hidden from new production entries.`)) {
+      if (!confirm(`Permanently remove machine "${targetMachine.machine_no}"?\n\nIt will be excluded from entries initialized today onward and cannot be restored.`)) {
         return;
       }
 
@@ -177,7 +177,7 @@ export default function DrawingFinisherPage() {
         if (!result.success) {
           throw new Error(result.error);
         }
-        toast.success('Machine deactivated');
+        toast.success('Machine removed');
         setIsModalOpen(false);
         setIsEditing(false);
         setSelectedMachine(null);
@@ -186,15 +186,6 @@ export default function DrawingFinisherPage() {
         toast.error('Failed to deactivate: ' + error.message);
       }
     }
-  };
-
-  const handleActivate = async () => {
-    if (!isEditing || !selectedMachine || selectedMachine.is_active) return;
-    if (!confirm(`Activate machine "${selectedMachine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
-    const result = await updateDrawingFinisherMachineAction(selectedMachine.id, { is_active: true });
-    if (!result.success) return toast.error('Failed to activate: ' + result.error);
-    toast.success('Machine activated');
-    setIsModalOpen(false); setSelectedMachine(null); setIsEditing(false); loadMachines();
   };
 
   const handleDelete = async () => {
@@ -309,6 +300,7 @@ export default function DrawingFinisherPage() {
           </Button>
           <Button 
             onClick={handleDeactivate}
+            style={{ display: 'none' }}
             variant="outline"
             className="border-orange-500 text-orange-600 hover:bg-orange-50 flex-1 sm:flex-none"
             disabled={isSelectMode
@@ -317,7 +309,7 @@ export default function DrawingFinisherPage() {
             }
           >
             <PowerOff className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Deactivate</span>
+            <span className="hidden sm:inline">Remove Machine</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.filter(r => r.is_active).length > 0 && ` (${selectedRows.filter(r => r.is_active).length})`}</span>
           </Button>
           <Button 
@@ -383,8 +375,8 @@ export default function DrawingFinisherPage() {
       {!loading && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span>Total Records: {machines.length}</span>
-          <span className="text-green-700">Active: {machines.filter(m => m.is_active).length}</span>
-          <span className="text-red-600">Inactive: {machines.filter(m => !m.is_active).length}</span>
+          <span className="text-green-700">Available: {machines.filter(m => m.is_active).length}</span>
+          <span className="text-red-600">Removed: {machines.filter(m => !m.is_active).length}</span>
         </div>
       )}
 
@@ -402,8 +394,9 @@ export default function DrawingFinisherPage() {
         showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={isEditing && selectedMachine ? (selectedMachine.is_active ? handleDeactivate : handleActivate) : null}
-        secondaryActionLabel={selectedMachine?.is_active ? "Deactivate" : "Activate"}
+        onSecondaryAction={null}
+        secondaryActionLabel="Remove Machine"
+        showSave={!selectedMachine || selectedMachine.is_active}
         isLoading={isLoading}
         saveLabel={isEditing ? "Update" : "Create"}
       >

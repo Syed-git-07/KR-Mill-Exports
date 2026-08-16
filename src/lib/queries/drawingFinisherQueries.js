@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { machineRemovalDate } from '../machineLifecycle';
 
 /**
  * Drawing Finisher Machine Master - CRUD Operations
@@ -42,32 +43,12 @@ export async function createDrawingFinisherMachine(machineData) {
     installedDate = new Date(installedDate);
   }
 
-  // Reactivate if inactive machine with same machine_no exists
+  // Removed rows are immutable history. A reused number creates a new record.
   const existing = await prisma.drawing_finisher_machines.findFirst({
-    where: { machine_no: machineData.machine_no }
+    where: { machine_no: machineData.machine_no, is_active: true }
   });
   if (existing) {
-    if (!existing.is_active) {
-      return prisma.drawing_finisher_machines.update({
-        where: { id: existing.id },
-        data: {
-          description: machineData.description,
-          make_name: machineData.make_name,
-          model: machineData.model,
-          prodn_mixing: machineData.prodn_mixing,
-          speed: machineData.speed,
-          prodn_efficiency: machineData.prodn_effi,
-          installed_date: installedDate,
-          is_active: true,
-          direct_hank_entry: machineData.direct_hank_entry ?? false,
-          direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-          activated_at: installedDate || new Date(),
-          deactivated_at: null,
-        }
-      });
-    } else {
-      throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
-    }
+    throw new Error(`Machine ${machineData.machine_no} already exists and is available`);
   }
 
   // Fetch max sort_order so new machine goes to the end
@@ -103,6 +84,7 @@ export async function updateDrawingFinisherMachine(id, machineData) {
   }
 
   const currentMachine = await prisma.drawing_finisher_machines.findUnique({ where: { id }, select: { is_active: true } });
+  if (currentMachine?.is_active === false) throw new Error('Removed machines cannot be changed or restored');
   const isActivating = machineData.is_active === true && currentMachine?.is_active !== true;
   const isDeactivating = machineData.is_active === false && currentMachine?.is_active !== false;
 
@@ -125,7 +107,7 @@ export async function updateDrawingFinisherMachine(id, machineData) {
     processedData.activated_at = new Date();
     processedData.deactivated_at = null;
   } else if (isDeactivating) {
-    processedData.deactivated_at = new Date();
+    processedData.deactivated_at = machineRemovalDate();
   }
 
   const data = await prisma.drawing_finisher_machines.update({

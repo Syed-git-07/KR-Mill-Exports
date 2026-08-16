@@ -225,7 +225,10 @@ function FinisherDrawingEntryContent() {
       }
       
       // Initialize details for all machines
-      await initializeFinisherDrawingDetailsAction(headerResult.data.id)
+      const initializationResult = await initializeFinisherDrawingDetailsAction(headerResult.data.id)
+      if (!initializationResult.success) {
+        throw new Error(initializationResult.error || 'Failed to initialize production details')
+      }
       
       setHeaderId(headerResult.data.id)
       setHeaderData(headerResult.data)
@@ -738,6 +741,7 @@ function FinisherDrawingEntryContent() {
                 <FinisherDrawingMachineSetupTab
                   ref={setupTabRef}
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
                   shift={parseInt(shift)}
                   totalTime={tabTotalTime}
                   onRefresh={handleRefresh}

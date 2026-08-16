@@ -28,13 +28,11 @@ import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 import {
   getAutoconerMachineSetupsAction,
   batchUpdateAutoconerMachineSetupsAction,
-  upsertAutoconerMachineSetupAction,
   getSpinningCountsAction,
   getAutoconerMachinesAction,
   lookupAutoconerMachineByNoAction,
   addAutoconerMachineAction,
-  removeAutoconerMachineAction,
-  removeAutoconerMachineSetupsAction
+  removeAutoconerMachineAction
 } from '@/app/actions/autoconerEntryActions'
 
 /**
@@ -119,6 +117,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
   // Add NEW machine dialog (for creating new machine in master)
   const [addNewMachineDialog, setAddNewMachineDialog] = useState(false)
   const [newMachineData, setNewMachineData] = useState({
+    machine_id: '',
     mc_id: '',
     group_id: '',
     machine_no: '',
@@ -155,7 +154,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     const trimmed = machineNo?.trim()
     if (!trimmed) return
     toast.loading('Looking up machine...', { id: 'machine-lookup' })
-    const result = await lookupAutoconerMachineByNoAction(trimmed)
+    const result = await lookupAutoconerMachineByNoAction(trimmed, entryDate)
     if (!result.success) {
       toast.error(`Lookup error: ${result.error}`, { id: 'machine-lookup' })
       return
@@ -173,6 +172,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       : new Date().toISOString().split('T')[0]
     setNewMachineData(prev => ({
       ...prev,
+      machine_id: found.id,
       machine_no: found.machine_no,
       group_id: found.group_id?.toString() || '',
       description: found.description || '',
@@ -181,15 +181,15 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       from_drum: found.from_drum?.toString() || '',
       to_drum: found.to_drum?.toString() || '',
       no_of_drums: found.no_of_drums?.toString() || '',
-      speed: matchedCount?.speed_autoconer?.toString() || '',
+      speed: found.speed?.toString() || matchedCount?.speed_autoconer?.toString() || '',
       count: found.count || '',
       count_id: found.count_id || matchedCount?.id || '',
       count_name: found.count || '',
-      act_effi: derivedActEffi != null ? derivedActEffi.toString() : '',
+      act_effi: found.act_effi != null ? found.act_effi.toString() : (derivedActEffi != null ? derivedActEffi.toString() : ''),
       installed_date: dateStr,
     }))
     toast.success(`Machine ${found.machine_no} found — all fields auto-filled from master`, { id: 'machine-lookup' })
-  }, [counts])
+  }, [counts, entryDate])
 
   const mergeServerRowsWithDrafts = useCallback((rows = []) => {
     const drafts = editedRowsRef.current || {}
@@ -410,17 +410,15 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       const machine = machines.find(m => m.id === newMachine.machine_id)
       const count = counts.find(c => c.id === newMachine.count_id)
       
-      const result = await upsertAutoconerMachineSetupAction(
-        newMachine.machine_id,
-        entryDate,
-        shift,
-        {
-          count_id: newMachine.count_id,
-          count_name: count?.count_name,
-          session_no: newMachine.session_no,
-          run_time: newMachine.run_time
-        }
-      )
+      const result = await addAutoconerMachineAction({
+        headerId,
+        machine_id: newMachine.machine_id,
+        machine_no: machine?.machine_no,
+        count_id: newMachine.count_id,
+        count_name: count?.count_name,
+        session_no: newMachine.session_no,
+        run_time: newMachine.run_time
+      })
 
       if (!result.success) throw new Error(result.error)
 
@@ -484,6 +482,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       
       setAddNewMachineDialog(false)
       setNewMachineData({
+        machine_id: '',
         mc_id: '',
         group_id: '',
         machine_no: '',
@@ -525,16 +524,16 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     setIsSaving(true)
     try {
       // Get machine IDs from selected setup rows (machine is a nested object)
-      const machineIds = selectedRows
+      const machineIds = [...new Set(selectedRows
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
-        .filter(id => id !== undefined)
+        .filter(id => id !== undefined))]
 
       const removePromises = machineIds.map(id => removeAutoconerMachineAction(id, headerId))
       const results = await Promise.all(removePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
-      toast.success(`${selectedRows.length} machine(s) removed successfully`)
+      toast.success(`${machineIds.length} machine(s) removed successfully`)
       setRemoveDialog(false)
       setSelectedRows([])
       await loadData()
@@ -634,7 +633,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
                     </td>
                     {/* Machine No */}
                     <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                      {machine?.machine_no}
+                      <div>{machine?.machine_no}</div>
                     </td>
                     {/* Make Name */}
                     <td className="border border-gray-300 px-2 py-1 text-xs text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">
@@ -852,8 +851,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
           </DialogHeader>
           <div className="py-4">
             <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-              <strong>Warning:</strong> Are you sure you want to remove {selectedRows.length} selected machine(s) from setup? 
-              This will not affect existing production data.
+              Remove {selectedRows.length} selected machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
             </div>
           </div>
           <DialogFooter>
@@ -884,12 +882,13 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
           <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto">
             {/* Row 1: M/c No. — primary field, press Enter to auto-fill from master */}
             <div>
-              <Label>M/c No. *</Label>
+              <Label>M/c No. / Name *</Label>
               <Input
                 type="text"
                 placeholder="Type machine no. e.g. AC5-2 and press Enter to auto-fill from master"
                 value={newMachineData.machine_no}
-                onChange={(e) => setNewMachineData(prev => ({ ...prev, machine_no: e.target.value }))}
+                onChange={(e) => setNewMachineData(prev => ({ ...prev, machine_id: '', machine_no: e.target.value }))}
+                onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()

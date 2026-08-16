@@ -24,6 +24,7 @@ model shift_config {
 
 model autoconer_machine_setup {
   id                 String             @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence       Int                @default(1)
   machine_id         String             @db.Char(36)
   count_name         String?            @db.VarChar(100)
   count_id           String?            @db.Char(36)
@@ -40,7 +41,7 @@ model autoconer_machine_setup {
   spinning_counts    spinning_counts?   @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_ac_setup_count")
   autoconer_machines autoconer_machines @relation(fields: [machine_id], references: [id], map: "fk_ac_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_autoconer_machine_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_autoconer_machine_setup_date")
   @@index([entry_date, shift], map: "idx_autoconer_setup_date_shift")
   @@index([count_id], map: "fk_ac_setup_count")
 }
@@ -77,6 +78,7 @@ model autoconer_machines {
 
 model autoconer_production_detail {
   id                          String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence                Int                         @default(1)
   header_id                   String                      @db.Char(36)
   machine_id                  String                      @db.Char(36)
   emp_name                    String?                     @db.VarChar(100)
@@ -101,7 +103,7 @@ model autoconer_production_detail {
   autoconer_machines          autoconer_machines          @relation(fields: [machine_id], references: [id], map: "fk_ac_detail_machine")
   autoconer_stoppage_entry    autoconer_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_autoconer_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_autoconer_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_autoconer_detail_header_machine")
   @@index([count_id], map: "fk_ac_detail_count")
   @@index([machine_id], map: "fk_ac_detail_machine")
@@ -159,6 +161,7 @@ model autoconer_stoppage_entry {
 
 model breaker_drawing_machine_setup {
   id                       String                   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence             Int                      @default(1)
   machine_id               String                   @db.Char(36)
   speed                    Int?                     @default(750)
   hank_constant            Decimal?                 @default(0.1400) @db.Decimal(10, 4)
@@ -177,12 +180,13 @@ model breaker_drawing_machine_setup {
   prodn_mixing             String?                  @db.VarChar(100)
   drawing_breaker_machines drawing_breaker_machines @relation(fields: [machine_id], references: [id], map: "fk_breaker_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_breaker_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_breaker_setup_date")
   @@index([entry_date, shift], map: "idx_breaker_setup_date_shift")
 }
 
 model breaker_drawing_production_detail {
   id                                String                            @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence                      Int                               @default(1)
   header_id                         String                            @db.Char(36)
   machine_id                        String                            @db.Char(36)
   employee_name                     String?                           @db.VarChar(100)
@@ -207,7 +211,7 @@ model breaker_drawing_production_detail {
   drawing_breaker_machines          drawing_breaker_machines          @relation(fields: [machine_id], references: [id], map: "fk_breaker_detail_machine")
   breaker_drawing_stoppage_entry    breaker_drawing_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_breaker_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_breaker_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_breaker_detail_header_machine")
   @@index([machine_id], map: "fk_breaker_detail_machine")
 }
@@ -266,6 +270,7 @@ model breaker_drawing_stoppage_entry {
 
 model carding_machine_setup {
   id                    String           @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence          Int              @default(1)
   machine_id            String           @db.Char(36)
   speed                 Decimal?         @default(130.00) @db.Decimal(10, 2)
   hank_constant         Decimal?         @default(0.1300) @db.Decimal(10, 4)
@@ -283,7 +288,7 @@ model carding_machine_setup {
   prodn_mixing          String?          @db.VarChar(100)
   carding_machines      carding_machines @relation(fields: [machine_id], references: [id], map: "fk_card_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_carding_machine_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_carding_machine_setup_date")
   @@index([entry_date, shift], map: "idx_carding_setup_date_shift")
 }
 
@@ -314,6 +319,7 @@ model carding_machines {
 
 model carding_production_detail {
   id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence              Int                       @default(1)
   header_id                 String                    @db.Char(36)
   machine_id                String                    @db.Char(36)
   employee_name             String?                   @db.VarChar(100)
@@ -338,7 +344,7 @@ model carding_production_detail {
   carding_machines          carding_machines          @relation(fields: [machine_id], references: [id], map: "fk_card_detail_machine")
   carding_stoppage_entry    carding_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_carding_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_carding_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_carding_detail_header_machine")
   @@index([machine_id], map: "fk_card_detail_machine")
 }
@@ -397,6 +403,7 @@ model carding_stoppage_entry {
 
 model comber_machine_setup {
   id              String          @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence    Int             @default(1)
   machine_id      String          @db.Char(36)
   prodn_mixing    String?         @db.VarChar(100)
   session_no      Int?            @default(1)
@@ -415,7 +422,7 @@ model comber_machine_setup {
   is_included     Boolean         @default(true)
   comber_machines comber_machines @relation(fields: [machine_id], references: [id], map: "fk_comber_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_comber_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_comber_setup_date")
   @@index([entry_date, shift], map: "idx_comber_setup_date_shift")
 }
 
@@ -447,6 +454,7 @@ model comber_machines {
 
 model comber_production_detail {
   id                       String                   @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence             Int                      @default(1)
   header_id                String                   @db.Char(36)
   machine_id               String                   @db.Char(36)
   employee_name            String?                  @db.VarChar(100)
@@ -472,7 +480,7 @@ model comber_production_detail {
   comber_machines          comber_machines          @relation(fields: [machine_id], references: [id], map: "fk_comber_detail_machine")
   comber_stoppage_entry    comber_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_comber_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_comber_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_comber_detail_header_machine")
   @@index([machine_id], map: "fk_comber_detail_machine")
 }
@@ -595,6 +603,7 @@ model drawing_finisher_machines {
 
 model finisher_drawing_machine_setup {
   id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence              Int                       @default(1)
   machine_id                String                    @db.Char(36)
   speed                     Int?                      @default(350)
   hank_constant             Decimal?                  @default(0.1400) @db.Decimal(10, 4)
@@ -615,12 +624,13 @@ model finisher_drawing_machine_setup {
   is_included               Boolean                   @default(true)
   drawing_finisher_machines drawing_finisher_machines @relation(fields: [machine_id], references: [id], map: "fk_finisher_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_finisher_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_finisher_setup_date")
   @@index([entry_date, shift], map: "idx_finisher_setup_date_shift")
 }
 
 model finisher_drawing_production_detail {
   id                                 String                             @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence                       Int                                @default(1)
   header_id                          String                             @db.Char(36)
   machine_id                         String                             @db.Char(36)
   employee_name                      String?                            @db.VarChar(100)
@@ -645,7 +655,7 @@ model finisher_drawing_production_detail {
   drawing_finisher_machines          drawing_finisher_machines          @relation(fields: [machine_id], references: [id], map: "fk_finisher_detail_machine")
   finisher_drawing_stoppage_entry    finisher_drawing_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_finisher_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_finisher_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_finisher_detail_header_machine")
   @@index([machine_id], map: "fk_finisher_detail_machine")
 }
@@ -731,6 +741,7 @@ model hok_strength_head {
 
 model lap_former_machine_setup {
   id                    String              @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence          Int                 @default(1)
   machine_id            String              @db.Char(36)
   speed                 Int?                @default(90)
   hank_constant         Decimal?            @default(0.0082) @db.Decimal(10, 4)
@@ -749,7 +760,7 @@ model lap_former_machine_setup {
   prodn_mixing          String?             @db.VarChar(100)
   lap_former_machines   lap_former_machines @relation(fields: [machine_id], references: [id], map: "fk_lap_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_lap_former_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_lap_former_setup_date")
   @@index([entry_date, shift], map: "idx_lap_former_setup_date_shift")
 }
 
@@ -779,6 +790,7 @@ model lap_former_machines {
 
 model lap_former_production_detail {
   id                           String                       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence                 Int                          @default(1)
   header_id                    String                       @db.Char(36)
   machine_id                   String                       @db.Char(36)
   employee_name                String?                      @db.VarChar(100)
@@ -803,7 +815,7 @@ model lap_former_production_detail {
   lap_former_machines          lap_former_machines          @relation(fields: [machine_id], references: [id], map: "fk_lap_detail_machine")
   lap_former_stoppage_entry    lap_former_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_lap_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_lap_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_lap_former_detail_header_machine")
   @@index([machine_id], map: "fk_lap_detail_machine")
 }
@@ -862,6 +874,7 @@ model lap_former_stoppage_entry {
 
 model simplex_machine_setup {
   id               String           @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence     Int              @default(1)
   machine_id       String           @db.Char(36)
   prodn_mixing     String?          @db.VarChar(50)
   session_no       Int?             @default(1)
@@ -880,7 +893,7 @@ model simplex_machine_setup {
   is_included      Boolean          @default(true)
   simplex_machines simplex_machines @relation(fields: [machine_id], references: [id], map: "fk_simplex_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_simplex_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_simplex_setup_date")
   @@index([entry_date, shift], map: "idx_simplex_setup_date_shift")
 }
 
@@ -913,6 +926,7 @@ model simplex_machines {
 
 model simplex_production_detail {
   id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  run_sequence              Int                       @default(1)
   header_id                 String                    @db.Char(36)
   machine_id                String                    @db.Char(36)
   employee_name             String?                   @db.VarChar(100)
@@ -937,7 +951,7 @@ model simplex_production_detail {
   simplex_machines          simplex_machines          @relation(fields: [machine_id], references: [id], map: "fk_simplex_detail_machine")
   simplex_stoppage_entry    simplex_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_simplex_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_simplex_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_simplex_detail_header_machine")
   @@index([machine_id], map: "fk_simplex_detail_machine")
 }
@@ -1051,11 +1065,12 @@ model spinning_machine_setup {
   updated_at         DateTime?         @default(now()) @db.DateTime(0)
   entry_date         DateTime          @default(dbgenerated("'1970-01-01'")) @db.Date
   shift              Int               @default(1)
+  run_sequence       Int               @default(1)
   is_included        Boolean           @default(true)
   spinning_counts    spinning_counts?  @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_spinning_setup_count")
   spinning_machines  spinning_machines @relation(fields: [machine_id], references: [id], map: "fk_spinning_setup_machine")
 
-  @@unique([machine_id, entry_date, shift], name: "idx_spinning_machine_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_spinning_machine_setup_date")
   @@index([entry_date, shift], map: "idx_spinning_setup_date_shift")
   @@index([count_id], map: "fk_spinning_setup_count")
 }
@@ -1094,6 +1109,7 @@ model spinning_production_detail {
   id                         String                     @id @default(dbgenerated("(uuid())")) @db.Char(36)
   header_id                  String                     @db.Char(36)
   machine_id                 String                     @db.Char(36)
+  run_sequence               Int                        @default(1)
   count_name                 String?                    @db.VarChar(100)
   act_hank                   Decimal?                   @db.Decimal(10, 2)
   act_prodn                  Decimal?                   @db.Decimal(10, 2)
@@ -1119,7 +1135,7 @@ model spinning_production_detail {
   spinning_machines          spinning_machines          @relation(fields: [machine_id], references: [id], map: "fk_spinning_detail_machine")
   spinning_stoppage_entry    spinning_stoppage_entry[]
 
-  @@unique([header_id, machine_id], name: "uq_spinning_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_spinning_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_spinning_detail_header_machine")
   @@index([machine_id], map: "fk_spinning_detail_machine")
 }

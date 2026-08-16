@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { applyPermanentRemoval } from '../machineLifecycle';
 
 const machineCountSelect = { id: true, count_name: true };
 
@@ -143,17 +144,15 @@ export async function updateAutoconerMachine(id, machineData) {
   
   const existing = await prisma.autoconer_machines.findUnique({ where: { id } });
   if (!existing) throw new Error('Autoconer machine not found');
+  if (existing.is_active === false) {
+    throw new Error('Removed machines are historical records and cannot be changed or restored');
+  }
+  Object.assign(processedData, applyPermanentRemoval(existing, processedData));
 
   // Status-only operations are lifecycle changes, not revisions.
   const changedKeys = Object.keys(processedData).filter(key => processedData[key] !== existing[key]);
   const isStatusOnly = changedKeys.every(key => ['is_active', 'activated_at', 'deactivated_at'].includes(key));
   if (isStatusOnly) {
-    if (processedData.is_active === true && existing.is_active !== true) {
-      processedData.activated_at = new Date();
-      processedData.deactivated_at = null;
-    } else if (processedData.is_active === false && existing.is_active !== false) {
-      processedData.deactivated_at = new Date();
-    }
     return prisma.autoconer_machines.update({ where: { id }, data: processedData });
   }
 

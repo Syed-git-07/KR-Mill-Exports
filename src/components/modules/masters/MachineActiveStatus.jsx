@@ -8,7 +8,7 @@ export default function MachineActiveStatus({ isActive }) {
           : 'border-red-200 bg-red-50 text-red-700'
       }`}
     >
-      Machine status: {isActive ? 'Active' : 'Inactive'}
+      Machine status: {isActive ? 'Available for new entries' : 'Permanently removed (historical record)'}
     </div>
   )
 }

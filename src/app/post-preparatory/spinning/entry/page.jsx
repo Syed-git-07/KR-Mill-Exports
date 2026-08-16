@@ -49,7 +49,8 @@ import {
   copySpinningFromPreviousDateAction,
   getSpinningAvailableDatesAction,
   getSpinningShiftConfigAction,
-  getSpinningCountsAction
+  getSpinningCountsAction,
+  batchUpdateSpinningMachineSetupsAction
 } from '@/app/actions/spinning-entry'
 
 function SpinningEntryContent() {
@@ -111,11 +112,25 @@ function SpinningEntryContent() {
       ...(sharedDraftsRef.current.setup || {}),
       [setupId]: {
         ...(sharedDraftsRef.current.setup?.[setupId] || {}),
+        setup_id: setupId,
         ...(machineId ? { machine_id: machineId } : {}),
         ...buildSpinningCountSnapshot(selectedCount, { machineSpeed })
       }
     })
   }, [spinningCounts, setSetupDraftEdits])
+
+  const handleMachineSetupFieldChange = useCallback((setupId, machineId, field, value) => {
+    if (!setupId) return
+    setSetupDraftEdits({
+      ...(sharedDraftsRef.current.setup || {}),
+      [setupId]: {
+        ...(sharedDraftsRef.current.setup?.[setupId] || {}),
+        setup_id: setupId,
+        ...(machineId ? { machine_id: machineId } : {}),
+        [field]: value
+      }
+    })
+  }, [setSetupDraftEdits])
 
   const replaceAllDrafts = useCallback((next) => {
     sharedDraftsRef.current = next
@@ -399,14 +414,19 @@ function SpinningEntryContent() {
     setIsSavingAll(true)
     try {
       // Persist dependencies first so the final production save uses current setup/stoppage values.
-      const setupResult = await (
-        setupTabRef.current?.saveChanges?.({
+      const setupResult = setupTabRef.current?.saveChanges
+        ? await setupTabRef.current.saveChanges({
           suppressNoChangesToast: true,
           suppressSuccessToast: true,
           skipParentRefresh: true,
           dependencyDrafts: draftsAtSaveStart
-        }) || Promise.resolve({ success: true, saved: 0 })
-      )
+        })
+        : Object.keys(draftsAtSaveStart.setup || {}).length > 0
+          ? await batchUpdateSpinningMachineSetupsAction(
+              Object.entries(draftsAtSaveStart.setup).map(([id, changes]) => ({ id, ...changes })),
+              parseInt(shift)
+            )
+          : { success: true, saved: 0 }
       const stoppageResult = await (
         stoppageTabRef.current?.saveChanges?.({
           suppressNoChangesToast: true,
@@ -710,6 +730,7 @@ function SpinningEntryContent() {
                   stoppageDraftEdits={sharedDrafts.stoppage}
                   counts={spinningCounts}
                   onMachineCountChange={handleMachineCountChange}
+                  onMachineSetupFieldChange={handleMachineSetupFieldChange}
                 />
                 </DeferredMount>
               </TabsContent>
@@ -729,6 +750,7 @@ function SpinningEntryContent() {
                   productionDraftEdits={sharedDrafts.production}
                   counts={spinningCounts}
                   onMachineCountChange={handleMachineCountChange}
+                  onMachineSetupFieldChange={handleMachineSetupFieldChange}
                 />
                 </DeferredMount>
               </TabsContent>

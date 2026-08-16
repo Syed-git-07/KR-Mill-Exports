@@ -1,5 +1,6 @@
 import { prisma } from '../prisma'
 import { buildTypedSearchWhere } from '../masterSearch'
+import { machineRemovalDate } from '../machineLifecycle'
 
 const machineCountSelect = { id: true, count_name: true }
 
@@ -94,6 +95,7 @@ export async function updateSpinningMachine(id, machineData) {
 
   const currentMachine = await prisma.spinning_machines.findUnique({ where: { id } })
   if (!currentMachine) throw new Error('Spinning machine not found')
+  if (currentMachine.is_active === false) throw new Error('Removed machines cannot be changed or restored')
   if (Object.hasOwn(processedData, 'count_id')) {
     await resolveActiveCount(prisma, processedData.count_id)
   }
@@ -109,7 +111,7 @@ export async function updateSpinningMachine(id, machineData) {
       data: {
         ...processedData,
         ...(isActivating && { activated_at: new Date(), deactivated_at: null }),
-        ...(isDeactivating && { deactivated_at: new Date() })
+        ...(isDeactivating && { deactivated_at: machineRemovalDate() })
       },
       include: { spinning_counts: { select: machineCountSelect } }
     })

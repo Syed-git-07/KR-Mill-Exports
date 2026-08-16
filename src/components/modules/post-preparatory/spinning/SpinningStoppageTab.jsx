@@ -47,7 +47,8 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   productionDraftEdits,
   setupDraftEdits,
   counts = [],
-  onMachineCountChange
+  onMachineCountChange,
+  onMachineSetupFieldChange
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [stoppageData, setStoppageData] = useState([])
@@ -59,7 +60,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
   const editedRowsRef = useRef({})
   const shiftTimeVal = effectiveTotalTime
-  const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
+  const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > Number(row.run_time ?? shiftTimeVal))
 
   const formatExpectedGps = (value) => {
     const numeric = Number(value)
@@ -146,13 +147,15 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   })
 
   // Calculate values
-  const findSetupDraftForMachine = useCallback((machineId) => {
+  const findSetupDraftForMachine = useCallback((machineId, setupId = null) => {
     if (!setupDraftEdits) return null
-    const direct = setupDraftEdits[machineId] || setupDraftEdits[String(machineId)]
+    const direct = setupDraftEdits[setupId] || setupDraftEdits[String(setupId)]
     if (direct) return direct
     const drafts = Object.values(setupDraftEdits)
+    const exactSetup = drafts.find(draft => String(draft?.setup_id) === String(setupId))
+    if (exactSetup) return exactSetup
     for (const draft of drafts) {
-      if (draft?.machine_id && String(draft.machine_id) === String(machineId)) {
+      if (!draft?.setup_id && draft?.machine_id && String(draft.machine_id) === String(machineId)) {
         return draft
       }
     }
@@ -160,9 +163,9 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   }, [setupDraftEdits])
 
   const calculateStoppageValues = useCallback((row, totalStoppageTime) => {
-    const setupDraft = findSetupDraftForMachine(row.machine_id)
+    const setupDraft = findSetupDraftForMachine(row.machine_id, row.setup_id)
     const allocatedSpindles = setupDraft?.allocated_spindles ?? row.total_spindles ?? 1104
-    const runTime = effectiveTotalTime
+    const runTime = Number(setupDraft?.run_time ?? row.run_time ?? effectiveTotalTime)
     const actCount = setupDraft?.act_count ?? row.act_count ?? 0
     const productionDraft = productionDraftEdits?.[row.id] || productionDraftEdits?.[String(row.id)]
     const actHank = productionDraft?.act_hank ?? row.act_hank ?? 0
@@ -235,7 +238,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
           const calculated = calculateStoppageValues(mergedRow, mergedTotal)
           return {
             ...mergedRow,
-            run_time: effectiveTotalTime,
+            run_time: mergedRow.run_time ?? effectiveTotalTime,
             total_stoppage_time: mergedTotal,
             ...calculated
           }
@@ -288,7 +291,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       const calculated = calculateStoppageValues(mergedRow, mergedTotal)
       return {
         ...mergedRow,
-        run_time: effectiveTotalTime,
+        run_time: mergedRow.run_time ?? effectiveTotalTime,
         total_stoppage_time: mergedTotal,
         ...calculated
       }
@@ -593,7 +596,9 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
             </thead>
             <tbody>
               {stoppageData.map((row, index) => {
-                const setupDraft = findSetupDraftForMachine(row.machine_id)
+                const setupDraft = findSetupDraftForMachine(row.machine_id, row.setup_id)
+                const hasMultipleRuns = stoppageData.filter(item => String(item.machine_id) === String(row.machine_id)).length > 1
+                const effectiveRunTime = setupDraft?.run_time ?? row.run_time ?? effectiveTotalTime
                 return <tr
                   key={row.id}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
@@ -623,8 +628,21 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                       className="h-9 rounded-none text-xs"
                     />
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
-                    {effectiveTotalTime}
+                  <td className="border border-gray-300 px-0 py-0 text-right tabular-nums whitespace-nowrap">
+                    {hasMultipleRuns ? (
+                      <NumberInput
+                        type="number"
+                        min="0"
+                        value={effectiveRunTime}
+                        onChange={(e) => onMachineSetupFieldChange?.(
+                          row.setup_id,
+                          row.machine_id,
+                          'run_time',
+                          parseFloat(e.target.value) || 0
+                        )}
+                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-sm tabular-nums shadow-none focus-visible:ring-0"
+                      />
+                    ) : effectiveRunTime}
                   </td>
                   <td className={`border border-gray-300 px-2 py-1 text-center font-medium tabular-nums whitespace-nowrap ${
                     row.gps !== undefined && row.expGps !== undefined && row.gps !== null && row.expGps !== null && row.gps < row.expGps

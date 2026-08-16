@@ -144,13 +144,13 @@ export default function SpinningMachineMaster() {
         toast.info('All selected machines are already inactive');
         return;
       }
-      if (!confirm(`Deactivate ${activeRows.length} machine(s)?\n\nThey will be hidden from new production entries.`)) return;
+      if (!confirm(`Permanently remove ${activeRows.length} machine(s)?\n\nThey will be excluded from entries initialized today onward and cannot be restored.`)) return;
       try {
         const { succeeded, failed } = await runBulkActions(
           activeRows,
           row => updateSpinningMachineAction(row.id, { is_active: false })
         );
-        if (succeeded.length) toast.success(`${succeeded.length} machine(s) deactivated`);
+        if (succeeded.length) toast.success(`${succeeded.length} machine(s) removed`);
         if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
         setSelectedRows(failed.map(outcome => outcome.item));
         setIsSelectMode(failed.length > 0);
@@ -161,7 +161,7 @@ export default function SpinningMachineMaster() {
     } else {
       const targetId = editingMachine?.id || selectedRowId;
       if (!targetId) {
-        toast.warning('Please select a machine to deactivate');
+        toast.warning('Please select a machine to remove');
         return;
       }
       const machine = machines.find(m => m.id === targetId) || editingMachine;
@@ -170,11 +170,11 @@ export default function SpinningMachineMaster() {
         return;
       }
       const machineName = machine?.machine_no || 'this machine';
-      if (!confirm(`Deactivate machine "${machineName}"?\n\nIt will be hidden from new production entries.`)) return;
+      if (!confirm(`Permanently remove machine "${machineName}"?\n\nIt will be excluded from entries initialized today onward and cannot be restored.`)) return;
       try {
         const result = await updateSpinningMachineAction(targetId, { is_active: false });
         if (result.success) {
-          toast.success('Machine deactivated');
+          toast.success('Machine removed');
           setIsModalOpen(false);
           setEditingMachine(null);
           setSelectedRowId(null);
@@ -186,16 +186,6 @@ export default function SpinningMachineMaster() {
         toast.error('Failed to deactivate: ' + error.message);
       }
     }
-  };
-
-  const handleActivate = async () => {
-    const machine = editingMachine;
-    if (!machine || machine.is_active) return;
-    if (!confirm(`Activate machine "${machine.machine_no}"?\n\nIt will be included in new production entries from today onward.`)) return;
-    const result = await updateSpinningMachineAction(machine.id, { is_active: true });
-    if (!result.success) return toast.error('Failed to activate: ' + result.error);
-    toast.success('Machine activated');
-    setIsModalOpen(false); setEditingMachine(null); setSelectedRowId(null); loadMachines();
   };
 
   const handleDelete = async () => {
@@ -316,6 +306,7 @@ export default function SpinningMachineMaster() {
           </Button>
           <Button 
             onClick={handleDeactivate}
+            style={{ display: 'none' }}
             variant="outline"
             className="border-orange-500 text-orange-600 hover:bg-orange-50 flex-1 sm:flex-none"
             disabled={isSelectMode
@@ -324,7 +315,7 @@ export default function SpinningMachineMaster() {
             }
           >
             <PowerOff className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Deactivate</span>
+            <span className="hidden sm:inline">Remove Machine</span>
             <span className="text-xs sm:text-sm">{isSelectMode && selectedRows.filter(r=>r.is_active).length > 0 && ` (${selectedRows.filter(r=>r.is_active).length})`}</span>
           </Button>
           <Button 
@@ -387,8 +378,8 @@ export default function SpinningMachineMaster() {
       {!loading && !error && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span>Total Records: {machines.length}</span>
-          <span className="text-green-700">Active: {machines.filter(m => m.is_active).length}</span>
-          <span className="text-red-600">Inactive: {machines.filter(m => !m.is_active).length}</span>
+          <span className="text-green-700">Available: {machines.filter(m => m.is_active).length}</span>
+          <span className="text-red-600">Removed: {machines.filter(m => !m.is_active).length}</span>
         </div>
       )}
 
@@ -406,8 +397,9 @@ export default function SpinningMachineMaster() {
         showDelete={false}
         deleteLabel="Remove Permanently"
         deleteIsDanger={true}
-        onSecondaryAction={editingMachine ? (editingMachine.is_active ? handleDeactivate : handleActivate) : null}
-        secondaryActionLabel={editingMachine?.is_active ? "Deactivate" : "Activate"}
+        onSecondaryAction={null}
+        secondaryActionLabel="Remove Machine"
+        showSave={!editingMachine || editingMachine.is_active}
         saveLabel={editingMachine ? "Update" : "Create"}
       >
         <SpinningMachineForm

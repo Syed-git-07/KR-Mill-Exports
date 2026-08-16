@@ -22,6 +22,7 @@ export default function FormModal({
   onCancel,
   onDelete,
   saveLabel = "Update",
+  showSave = true,
   isLoading = false,
   showDelete = false,
   deleteLabel = "Delete",
@@ -124,15 +125,17 @@ export default function FormModal({
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              form={formId || undefined}
-              onClick={handleSave}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              disabled={isLoading}
-            >
-              {isLoading ? "Saving..." : saveLabel}
-            </Button>
+            {showSave && (
+              <Button
+                type="button"
+                form={formId || undefined}
+                onClick={handleSave}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={isLoading}
+              >
+                {isLoading ? "Saving..." : saveLabel}
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

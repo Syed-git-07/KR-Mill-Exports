@@ -85,6 +85,7 @@ const findDraftByKeys = (drafts, ...keys) => {
 
 const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   headerId = null,
+  entryDate = null,
   shift = 1,
   totalTime = resolveLapFormerShiftFallbackTime(shift),
   onRefresh,
@@ -143,6 +144,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   // New machine form - defaults come from centralized Lap Former formula fallback.
   // shift_time uses totalTime from shift configuration
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -212,7 +214,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           machine_id: setup.machine_id,
           machine_no: setup.machine?.machine_no,
           make_name: setup.machine?.make_name || '',
-          mixing: setup.machine?.prodn_mixing || '',
+          mixing: setup.prodn_mixing || setup.machine?.prodn_mixing || '',
           speed: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).speed,
           std_prodn: setup.std_prodn || 0,
           std_efficiency_factor: resolveLapFormerFormulaInputs(setup, setup.machine?.speed).stdEfficiencyFactor,
@@ -407,7 +409,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     if (!val) return
 
     const toastId = toast.loading(`Looking up machine #${val}...`)
-    const result = await lookupLapFormerMachineByNoAction(val)
+    const result = await lookupLapFormerMachineByNoAction(val, entryDate)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -420,6 +422,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: getLapFormerDescription(d.machine_no || d.description || prev.description),
       make_name: d.make_name || prev.make_name,
@@ -443,15 +446,11 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   }
 
   const handleAddMachine = async () => {
-    if (!newMachine.is_active) {
-      toast.warning('Machine must be active to add from setup')
-      return
-    }
-
     setIsSaving(true)
     try {
       const result = await addLapFormerMachineAction({
         headerId,
+        machine_id: newMachine.machine_id || null,
         machine_no: newMachine.machine_no,
         description: newMachine.description,
         make_name: newMachine.make_name,
@@ -468,6 +467,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       toast.success('Machine added to this entry')
       setShowAddDialog(false)
       setNewMachine({
+        machine_id: '',
         machine_no: '',
         description: '',
         make_name: '',
@@ -619,7 +619,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
                     />
                   </td>
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
-                    {row.machine_no}
+                    <div>{row.machine_no}</div>
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
                     {row.make_name || ''}
@@ -743,13 +743,14 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Machine No</Label>
+                <Label className="text-sm font-medium">Machine No / Name</Label>
                 <Input
                   value={newMachine.machine_no}
                   onChange={(e) => {
                     const machineNo = e.target.value.toUpperCase()
                     setNewMachine(prev => ({
                       ...prev,
+                      machine_id: '',
                       machine_no: machineNo,
                       description: getLapFormerDescription(machineNo)
                     }))
@@ -919,13 +920,11 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
             <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s)? 
-              This will deactivate them from the system.
+              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
             </DialogDescription>
           </DialogHeader>
           <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            <strong>Warning:</strong> Removing machines will affect any future production entries.
-            Existing production data will be preserved.
+            This affects only this date and shift. Machine Master and all other entries remain unchanged.
           </div>
           <DialogFooter className="gap-3">
             <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>

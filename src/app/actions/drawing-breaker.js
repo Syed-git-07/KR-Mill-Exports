@@ -94,10 +94,10 @@ export async function getDrawingBreakerCountOptionsAction() {
   }
 }
 
-export async function lookupDrawingBreakerMachineByNoAction(machineNo) {
+export async function lookupDrawingBreakerMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupDrawingBreakerMachineByNo(machineNo)
+    const data = await queries.lookupDrawingBreakerMachineByNo(machineNo, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
