@@ -16,12 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getComberStoppageEntriesAction,
-  updateComberStoppageEntryAction,
-  getComberStoppageReasonsAction,
-  getComberMachinesAction,
-  getComberMachineSetupsAction,
-  syncNewMachinesToComberHeaderAction
+  getComberEntryTabDataAction,
+  runComberEntryBatchAction
 } from '@/app/actions/comber-entry'
 import { NumberInput } from '@/components/ui/number-input'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
@@ -276,15 +272,9 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
     
     setIsLoading(true)
     try {
-      // Sync new/removed machines before loading
-      await syncNewMachinesToComberHeaderAction(headerId)
-
-      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
-        getComberStoppageEntriesAction(headerId),
-        getComberStoppageReasonsAction(),
-        getComberMachinesAction(),
-        getComberMachineSetupsAction(headerId)
-      ])
+      const tabResult = await getComberEntryTabDataAction('stoppage', { headerId })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { stoppagesResult, reasonsResult, machineListResult, setupsResult } = tabResult.data
       
       if (!stoppagesResult.success || !reasonsResult.success || !machineListResult.success || !setupsResult.success) {
         throw new Error(stoppagesResult.error || reasonsResult.error || machineListResult.error || setupsResult.error)
@@ -469,12 +459,14 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateComberStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runComberEntryBatchAction('stoppage-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error)
+      const results = batchResult.data
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Comber stoppage row')
       const savedCount = Object.keys(currentEdits).length
@@ -484,8 +476,8 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {

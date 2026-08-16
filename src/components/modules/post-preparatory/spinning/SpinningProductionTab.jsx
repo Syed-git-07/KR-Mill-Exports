@@ -11,9 +11,8 @@ import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getSpinningProductionDetailsAction,
+  getSpinningEntryTabDataAction,
   batchUpdateSpinningProductionDetailsAction,
-  syncNewMachinesToSpinningHeaderAction,
   calculateSpinningProductionAction
 } from '@/app/actions/spinning-entry'
 import {
@@ -180,14 +179,19 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     
     setIsLoading(true)
     try {
-      // Sync any new machines
-      const syncResult = await syncNewMachinesToSpinningHeaderAction(headerId, shiftNo)
+      const tabResult = await getSpinningEntryTabDataAction('production', {
+        headerId,
+        shift: shiftNo
+      })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { syncResult, detailsResult } = tabResult.data
+
       if (syncResult.success && syncResult.data?.added > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.added} machine(s) for this shift`)
         hasShownInitToast.current = true
       }
 
-      const result = await getSpinningProductionDetailsAction(headerId)
+      const result = detailsResult
       if (!result.success) throw new Error(result.error)
       
       const details = result.data || []
@@ -416,8 +420,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         }
         setEditedRows({})
         if (!skipParentRefresh) {
-          await loadData()
-          onRefresh?.()
+          if (onRefresh) await onRefresh()
+          else await loadData()
         }
         return { success: true, saved: updates.length }
       } else {

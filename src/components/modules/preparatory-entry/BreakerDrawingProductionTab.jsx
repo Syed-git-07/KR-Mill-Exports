@@ -8,10 +8,8 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import {
-  getBreakerDrawingProductionWithSetupAction,
-  updateBreakerDrawingDetailAction,
-  getBreakerDrawingMachineSetupsAction,
-  syncNewMachinesToBreakerDrawingHeaderAction
+  getBreakerDrawingEntryTabDataAction,
+  runBreakerDrawingEntryBatchAction
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
 import {
@@ -214,16 +212,13 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      const syncResult = await syncNewMachinesToBreakerDrawingHeaderAction(headerId)
+      const tabResult = await getBreakerDrawingEntryTabDataAction('production', { headerId, shift })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { syncResult, detailsResult, setupsResult } = tabResult.data
+
       if (syncResult?.success && syncResult?.data?.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
-
-      const [detailsResult, setupsResult] = await Promise.all([
-        getBreakerDrawingProductionWithSetupAction(headerId),
-        getBreakerDrawingMachineSetupsAction(shift, headerId)
-      ])
       
       const details = detailsResult?.data || []
       const setups = setupsResult?.data || []
@@ -453,7 +448,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -484,16 +479,21 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
         calculated.waste = waste
         calculated.waste_percent = actProdn > 0 ? Math.round((((waste ?? 0) / actProdn) * 100) * 100) / 100 : 0
 
-        return updateBreakerDrawingDetailAction(row.id, {
-          employee_name: changes.employee_name ?? row.employee_name,
-          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-          act_hank: actHank,
-          act_prodn: actProdn,
-          ...calculated
-        })
+        return {
+          id: row.id,
+          updates: {
+            employee_name: changes.employee_name ?? row.employee_name,
+            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+            act_hank: actHank,
+            act_prodn: actProdn,
+            ...calculated
+          }
+        }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runBreakerDrawingEntryBatchAction('production-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error)
+      const results = batchResult.data
       
       // Check if any updates failed
       const failed = results.filter(r => !r?.success)
@@ -507,8 +507,8 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

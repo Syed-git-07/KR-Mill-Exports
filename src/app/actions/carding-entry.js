@@ -327,3 +327,63 @@ export async function removeCardingMachineAction(machineId, headerId) {
     return { success: false, error: safeActionError(error) }
   }
 }
+
+// Load all read-only data needed by an entry tab in one Server Action request.
+// The nested results intentionally keep the existing action response shapes so
+// tab behavior and error handling remain unchanged while network round trips
+// are reduced.
+export async function getCardingEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { entryDate, shift = 1, headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, countsResult] = await Promise.all([
+        getCardingMachineSetupsAction(entryDate, shift),
+        getCountOptionsAction()
+      ])
+      return { success: true, data: { setupsResult, countsResult } }
+    }
+
+    if (tab === 'production') {
+      const syncResult = await syncNewMachinesToHeaderAction(headerId)
+      const [detailsResult, setupsResult] = await Promise.all([
+        getCardingProductionWithSetupAction(headerId),
+        getCardingMachineSetupsAction(entryDate, shift)
+      ])
+      return { success: true, data: { syncResult, detailsResult, setupsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
+        getCardingStoppageEntriesAction(headerId),
+        getCardingStoppageReasonsAction(),
+        getCardingMachinesAction(),
+        getCardingMachineSetupsAction(entryDate, shift)
+      ])
+      return { success: true, data: { stoppagesResult, reasonsResult, machineListResult, setupsResult } }
+    }
+
+    throw new Error('Invalid Carding entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runCardingEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'setup-update': item => updateMachineSetupAction(item.id, item.updates, item.entryDate, item.shift),
+      'production-update': item => updateProductionDetailAction(item.id, item.updates),
+      'stoppage-update': item => updateStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeCardingMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Carding batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
