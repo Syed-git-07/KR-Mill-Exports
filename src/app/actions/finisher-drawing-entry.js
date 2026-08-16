@@ -346,13 +346,13 @@ export async function getFinisherDrawingEntryTabDataAction(tab, context = {}) {
 
     if (tab === 'stoppage') {
       const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
-      const [stoppagesResult, reasonsResult, machinesResult, setupsResult] = await Promise.all([
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
         getFinisherDrawingStoppageEntriesAction(headerId),
         getFinisherDrawingStoppageReasonsAction(),
         getFinisherDrawingMachinesAction(),
         getFinisherDrawingMachineSetupsAction(shift, headerId)
       ])
-      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machinesResult, setupsResult } }
+      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machineListResult, setupsResult } }
     }
 
     throw new Error('Invalid Finisher Drawing entry tab')
