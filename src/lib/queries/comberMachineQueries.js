@@ -1,6 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
-import { machineRemovalDate } from '../machineLifecycle';
+import { machineLookupWhere, machineRemovalDate } from '../machineLifecycle';
 
 /**
  * Comber Machine Master - CRUD Operations
@@ -214,14 +214,20 @@ export async function searchComberMachines(field, condition, value) {
 }
 
 // Lookup a single comber machine by machine_no (for setup tab auto-fill)
-export async function lookupComberMachineByNo(machineNo) {
+export async function lookupComberMachineByNo(machineNo, entryDate = null) {
   const machine = await prisma.comber_machines.findFirst({
-    where: { machine_no: machineNo }
+    where: machineLookupWhere(machineNo, entryDate),
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }]
   });
   if (!machine) return null;
 
   const setup = await prisma.comber_machine_setup.findFirst({
-    where: { machine_id: machine.id }
+    where: {
+      machine_id: machine.id,
+      is_included: true,
+      ...(entryDate ? { entry_date: { lte: new Date(entryDate) } } : {})
+    },
+    orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }, { run_sequence: 'desc' }]
   });
 
   return {

@@ -112,6 +112,7 @@ function SpinningEntryContent() {
       ...(sharedDraftsRef.current.setup || {}),
       [setupId]: {
         ...(sharedDraftsRef.current.setup?.[setupId] || {}),
+        setup_id: setupId,
         ...(machineId ? { machine_id: machineId } : {}),
         ...buildSpinningCountSnapshot(selectedCount, { machineSpeed })
       }

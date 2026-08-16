@@ -220,16 +220,6 @@ export async function updateSpinningMachineSetupAction(id, updates, shift = null
   }
 }
 
-export async function upsertSpinningMachineSetupAction(machineId, entryDate, setupData) {
-  await requireUser()
-  try {
-    const data = await queries.upsertSpinningMachineSetup(machineId, entryDate, setupData)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 export async function batchUpdateSpinningMachineSetupsAction(updates, shift = null) {
   await requireUser()
   try {
@@ -264,10 +254,10 @@ export async function getAllSpinningMachinesAction() {
   }
 }
 
-export async function lookupSpinningMachineByNoAction(machineNo) {
+export async function lookupSpinningMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupSpinningMachineByNo(machineNo)
+    const data = await queries.lookupSpinningMachineByNo(machineNo, entryDate)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -322,16 +312,6 @@ export async function removeSpinningMachineAction(id, headerId) {
   await requireUser()
   try {
     const data = await queries.removeSpinningMachine(id, headerId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function removeSpinningMachineSetupsAction(setupIds) {
-  await requireUser()
-  try {
-    const data = await queries.removeSpinningMachineSetups(setupIds)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

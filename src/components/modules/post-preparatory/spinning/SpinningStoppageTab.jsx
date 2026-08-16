@@ -152,8 +152,10 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     const direct = setupDraftEdits[setupId] || setupDraftEdits[String(setupId)]
     if (direct) return direct
     const drafts = Object.values(setupDraftEdits)
+    const exactSetup = drafts.find(draft => String(draft?.setup_id) === String(setupId))
+    if (exactSetup) return exactSetup
     for (const draft of drafts) {
-      if (draft?.machine_id && String(draft.machine_id) === String(machineId)) {
+      if (!draft?.setup_id && draft?.machine_id && String(draft.machine_id) === String(machineId)) {
         return draft
       }
     }

@@ -1,6 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
-import { machineRemovalDate } from '../machineLifecycle';
+import { machineLookupWhere, machineRemovalDate } from '../machineLifecycle';
 
 /**
  * Drawing Breaker Machine Master - CRUD Operations
@@ -32,9 +32,10 @@ export async function getDrawingBreakerMachineById(id) {
 }
 
 // Look up a machine by machine_no (for setup tab auto-fill)
-export async function lookupDrawingBreakerMachineByNo(machineNo) {
+export async function lookupDrawingBreakerMachineByNo(machineNo, entryDate = null) {
   const machine = await prisma.drawing_breaker_machines.findFirst({
-    where: { machine_no: { equals: machineNo } }
+    where: machineLookupWhere(machineNo, entryDate),
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }]
   });
   if (!machine) return null;
 

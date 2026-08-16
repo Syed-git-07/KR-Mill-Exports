@@ -35,6 +35,7 @@ import {
 
 const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachineSetupTab({
   headerId = null,
+  entryDate = null,
   shift = 1,
   totalTime = 0,
   onRefresh,
@@ -77,6 +78,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
   // New machine form seeded from centralized fallback defaults.
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -100,7 +102,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     const val = String(machineNo || '').trim()
     if (!val) return
     const toastId = toast.loading(`Looking up machine ${val}…`)
-    const result = await lookupFinisherDrawingMachineByNoAction(val)
+    const result = await lookupFinisherDrawingMachineByNoAction(val, entryDate)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -112,6 +114,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
@@ -397,6 +400,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     try {
       const result = await addFinisherDrawingMachineAction({
         headerId,
+        machine_id: newMachine.machine_id || null,
         machine_no: newMachine.machine_no,
         description: newMachine.description || `Finisher Drawing Machine ${newMachine.machine_no}`,
         shift,
@@ -415,6 +419,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         toast.success(result.data.reactivated ? 'Machine added back to this entry' : 'Machine added to this entry')
         setShowAddDialog(false)
         setNewMachine({
+          machine_id: '',
           machine_no: '',
           description: '',
           make_name: '',
@@ -644,6 +649,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           setShowAddDialog(open)
           if (!open) {
             setNewMachine({
+              machine_id: '',
               machine_no: '',
               description: '',
               make_name: '',
@@ -670,11 +676,11 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           <div className="space-y-5 py-2">
             <div className="grid grid-cols-2 gap-5">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No *</Label>
+                <Label className="text-sm font-medium mb-2 block">Machine No / Name *</Label>
                 <Input
                   placeholder="e.g. FD11"
                   value={newMachine.machine_no}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_id: '', machine_no: e.target.value.toUpperCase() }))}
                   onBlur={(e) => handleMachineNoLookup(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleMachineNoLookup(e.target.value) } }}
                   className="h-10 text-sm"

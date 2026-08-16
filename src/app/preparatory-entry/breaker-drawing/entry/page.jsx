@@ -222,7 +222,10 @@ function BreakerDrawingEntryContent() {
       const header = result.data
       
       // Initialize details for all machines with shift parameter
-      await initializeBreakerDrawingDetailsAction(header.id, parseInt(shift))
+      const initializationResult = await initializeBreakerDrawingDetailsAction(header.id, parseInt(shift))
+      if (!initializationResult.success) {
+        throw new Error(initializationResult.error || 'Failed to initialize production details')
+      }
       
       setHeaderId(header.id)
       toast.success('Production entry initialized successfully')
@@ -721,6 +724,7 @@ function BreakerDrawingEntryContent() {
                   ref={setupTabRef}
                   key={`setup-${refreshKey}`} 
                   headerId={headerId}
+                  entryDate={format(date, 'yyyy-MM-dd')}
                   shift={parseInt(shift)}
                   totalTime={shiftTime}
                   onRefresh={handleRefresh}

@@ -111,7 +111,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       ? Number(setup.allocated_spindles)
       : (row.machine?.allocated_spindles ?? 1104)
     const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
-    const productionTime = resolveProductionTime(effectiveTotalTime, requestedStoppageMins)
+    const rowRunTime = setup.run_time ?? row.run_time ?? effectiveTotalTime
+    const productionTime = resolveProductionTime(rowRunTime, requestedStoppageMins)
     const stoppageMins = productionTime.stoppageTime
     const runTime = productionTime.totalTime
 

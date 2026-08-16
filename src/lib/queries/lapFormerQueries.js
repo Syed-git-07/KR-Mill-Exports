@@ -1,7 +1,7 @@
 import { prisma } from '../prisma';
 import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeaderUnlocked, assertEntrySetupUnlocked, assertEntryStoppageUnlocked, removeMachineFromEntrySnapshot, updateEntryMixingSnapshot } from './entryMachineSnapshot';
 import { buildTypedSearchWhere } from '../masterSearch';
-import { machineRemovalDate } from '../machineLifecycle';
+import { machineLookupWhere, machineRemovalDate } from '../machineLifecycle';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { resolveLapFormerShiftFallbackTime } from '../lapFormerShiftFallback';
 import {
@@ -1101,7 +1101,6 @@ export async function getLapFormerMachineSetups(headerId = null) {
     const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
     machineSetupOverridesMap[m.id] = {
       ...(m.speed != null && { speed: m.speed }),
-      ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
       ...(Number.isFinite(rawEfficiency) && {
         std_efficiency_factor: rawEfficiency > 1 ? rawEfficiency / 100 : rawEfficiency
       })
@@ -1419,20 +1418,27 @@ export async function copyLapFormerFromYesterday(targetDate, targetShift, target
 // ============================================
 
 // Lookup lap former machine by machine number for setup autofill
-export async function lookupLapFormerMachineByNo(machineNo) {
+export async function lookupLapFormerMachineByNo(machineNo, entryDate = null) {
   const activeMachine = await prisma.lap_former_machines.findFirst({
-    where: { machine_no: { equals: machineNo }, is_active: true }
+    where: { ...machineLookupWhere(machineNo, entryDate), is_active: true }
   });
 
   const machine = activeMachine || await prisma.lap_former_machines.findFirst({
-    where: { machine_no: { equals: machineNo } },
-    orderBy: { is_active: 'desc' }
+    where: machineLookupWhere(machineNo, entryDate),
+    orderBy: [{ is_active: 'desc' }, { updated_at: 'desc' }]
   });
 
   if (!machine) return null;
 
   let setup = activeMachine
-    ? await prisma.lap_former_machine_setup.findFirst({ where: { machine_id: activeMachine.id } })
+    ? await prisma.lap_former_machine_setup.findFirst({
+        where: {
+          machine_id: activeMachine.id,
+          is_included: true,
+          ...(entryDate ? { entry_date: { lte: new Date(entryDate) } } : {})
+        },
+        orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }, { run_sequence: 'desc' }]
+      })
     : null;
 
   if (!setup) {
@@ -1442,7 +1448,12 @@ export async function lookupLapFormerMachineByNo(machineNo) {
     })).map(m => m.id);
 
     setup = await prisma.lap_former_machine_setup.findFirst({
-      where: { machine_id: { in: allIds } }
+      where: {
+        machine_id: { in: allIds },
+        is_included: true,
+        ...(entryDate ? { entry_date: { lte: new Date(entryDate) } } : {})
+      },
+      orderBy: [{ entry_date: 'desc' }, { shift: 'desc' }, { run_sequence: 'desc' }]
     });
   }
 

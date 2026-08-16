@@ -131,7 +131,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     const val = String(machineNo || '').trim()
     if (!val) return
     const toastId = toast.loading(`Looking up machine ${val}…`)
-    const result = await lookupCardingMachineByNoAction(val)
+    const result = await lookupCardingMachineByNoAction(val, entryDate)
     if (!result.success) {
       toast.error(result.error || 'Lookup failed', { id: toastId })
       return
@@ -143,6 +143,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     const d = result.data
     setNewMachine(prev => ({
       ...prev,
+      machine_id: d.id,
       machine_no: d.machine_no ?? prev.machine_no,
       description: d.description || prev.description,
       make_name: d.make_name || prev.make_name,
@@ -163,6 +164,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   // New machine form
   const [newMachine, setNewMachine] = useState({
+    machine_id: '',
     machine_no: '',
     description: '',
     make_name: '',
@@ -419,6 +421,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
         }
         setShowAddDialog(false)
         setNewMachine({
+          machine_id: '',
           machine_no: '',
           description: '',
           make_name: '',
@@ -680,7 +683,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       {/* Add Machine Dialog */}
       <Dialog open={showAddDialog} onOpenChange={(open) => {
         setShowAddDialog(open)
-        if (!open) setNewMachine({ machine_no: '', description: '', make_name: '', model: '', prodn_mixing: '', installed_date: '', speed: CARDING_FORMULA_FALLBACK.speed, shift_time: effectiveTotalTime, hank_constant: CARDING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: CARDING_FORMULA_FALLBACK.stdEfficiencyFactor })
+        if (!open) setNewMachine({ machine_id: '', machine_no: '', description: '', make_name: '', model: '', prodn_mixing: '', installed_date: '', speed: CARDING_FORMULA_FALLBACK.speed, shift_time: effectiveTotalTime, hank_constant: CARDING_FORMULA_FALLBACK.hankConstant, std_efficiency_factor: CARDING_FORMULA_FALLBACK.stdEfficiencyFactor })
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -690,10 +693,10 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-sm font-medium mb-2 block">Machine No *</Label>
+                <Label className="text-sm font-medium mb-2 block">Machine No / Name *</Label>
                 <Input
                   value={newMachine.machine_no}
-                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_no: e.target.value }))}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, machine_id: '', machine_no: e.target.value }))}
                   onBlur={(e) => handleMachineNoLookup(e.currentTarget.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {

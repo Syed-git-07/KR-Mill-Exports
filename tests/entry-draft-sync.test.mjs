@@ -83,6 +83,12 @@ test('a setup draft is found whether keyed by setup id or carrying machine_id', 
   const byUnrelatedKey = { 'draft-row': { speed: 90, machine_id: 'machine-1' } }
   assert.equal(findSetupDraft(byUnrelatedKey, 'setup-1', 'machine-1').speed, 90)
   assert.equal(mergeSetupDraft(setup, 'machine-1', byUnrelatedKey).speed, 90)
+
+  const anotherRun = {
+    'setup-2': { setup_id: 'setup-2', machine_id: 'machine-1', speed: 100 }
+  }
+  assert.equal(findSetupDraft(anotherRun, 'setup-1', 'machine-1'), null)
+  assert.equal(findSetupDraft(anotherRun, 'setup-2', 'machine-1').speed, 100)
 })
 
 test('stoppage draft totals override saved slot values without touching the database row', () => {

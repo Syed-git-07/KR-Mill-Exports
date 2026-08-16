@@ -851,7 +851,6 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
     machineSetupOverridesMap[m.id] = {
       ...(m.speed != null && { speed: m.speed }),
-      ...(m.prodn_mixing != null && { prodn_mixing: m.prodn_mixing }),
       ...(m.delivery != null && { delivery: m.delivery }),
       ...(m.sliver_hank != null && { hank_constant: m.sliver_hank }),
       ...(Number.isFinite(rawEfficiency) && {

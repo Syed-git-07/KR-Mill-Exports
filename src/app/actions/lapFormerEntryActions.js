@@ -273,10 +273,10 @@ export async function getSpinningCountOptionsAction() {
   }
 }
 
-export async function lookupLapFormerMachineByNoAction(machineNo) {
+export async function lookupLapFormerMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupLapFormerMachineByNo(machineNo)
+    const data = await queries.lookupLapFormerMachineByNo(machineNo, entryDate)
     return { success: true, data: data ? serializeData(data) : null }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

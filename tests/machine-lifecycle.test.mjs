@@ -4,12 +4,21 @@ import {
   applyPermanentRemoval,
   assertMachineCannotBeRestored,
   machineAvailableOnDateWhere,
+  machineLookupWhere,
   machineRemovalDate
 } from '../src/lib/machineLifecycle.js'
 
 test('machine removal is normalized to the same calendar date', () => {
   assert.equal(machineRemovalDate('2026-08-15T17:45:12Z').toISOString(), '2026-08-15T00:00:00.000Z')
   assert.equal(machineRemovalDate('2026-08-14T22:00:00Z').toISOString(), '2026-08-15T00:00:00.000Z')
+})
+
+test('entry lookup accepts an exact machine number or floor name and remains date scoped', () => {
+  const where = machineLookupWhere('FT1', '2026-08-15')
+  assert.ok(where.OR.some(clause => clause.machine_no?.equals === 'FT1'))
+  assert.ok(where.OR.some(clause => clause.description?.equals === 'FT1'))
+  assert.ok(where.OR.some(clause => clause.active_machine_no?.equals === 'FT1'))
+  assert.deepEqual(where.AND, machineAvailableOnDateWhere('2026-08-15').AND)
 })
 
 test('entry eligibility starts at installed date and excludes removal date', () => {

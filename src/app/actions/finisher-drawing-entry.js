@@ -311,10 +311,10 @@ export async function getSpinningCountOptionsAction() {
   }
 }
 
-export async function lookupFinisherDrawingMachineByNoAction(machineNo) {
+export async function lookupFinisherDrawingMachineByNoAction(machineNo, entryDate = null) {
   await requireUser()
   try {
-    const data = await queries.lookupFinisherDrawingMachineByNo(machineNo)
+    const data = await queries.lookupFinisherDrawingMachineByNo(machineNo, entryDate)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
