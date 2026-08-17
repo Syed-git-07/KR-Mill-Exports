@@ -128,7 +128,9 @@ function buildSetupFromMachineMaster(moduleName, machine, header) {
       count_name: machine.spinning_counts?.count_name,
       allocated_spindles: machine.allocated_spindles,
       speed: machine.speed,
-      run_time: shiftTime
+      run_time: shiftTime,
+      efficiency: 0.95,
+      conversion_factor: 2.20456
     },
     autoconer: {
       count_id: machine.count_id,

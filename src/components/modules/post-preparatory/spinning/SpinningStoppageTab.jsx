@@ -24,7 +24,7 @@ import {
   runSpinningEntryBatchAction,
 } from '@/app/actions/spinning-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
-import { calculateSpinningExpectedGps } from '@/lib/productionFormulaMath'
+import { calculateSpinningEntryMetrics } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Stoppage Entry Tab
@@ -163,50 +163,31 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
   const calculateStoppageValues = useCallback((row, totalStoppageTime) => {
     const setupDraft = findSetupDraftForMachine(row.machine_id, row.setup_id)
     const allocatedSpindles = setupDraft?.allocated_spindles ?? row.total_spindles ?? 1104
-    const runTime = Number(setupDraft?.run_time ?? row.run_time ?? effectiveTotalTime)
     const actCount = setupDraft?.act_count ?? row.act_count ?? 0
     const productionDraft = productionDraftEdits?.[row.id] || productionDraftEdits?.[String(row.id)]
     const actHank = productionDraft?.act_hank ?? row.act_hank ?? 0
-
-    // Get values needed for Exp GPS calculation (from machine setup, sourced from spinning_counts master)
-    const speed = parseInt(setupDraft?.speed ?? row.speed) || 0
-    const tpi = parseFloat(setupDraft?.tpi ?? row.tpi) || 0
-    // Use act_count from machine setup for Exp GPS calculation
-    const count = actCount
-
-    // Calculate No of Spindles based on shift
-    // Shift 1 & 2: allocated / 8 * 8.5, Shift 3: allocated / 8 * 7
-    const multiplier = shiftNo === 3 ? 7 : 8.5
-    const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
-
-    // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
-    const stoppedSpindles = runTime > 0 ? (totalStoppageTime / runTime) * totalSpindles : 0
-    // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
-    const workedSpindles = totalSpindles - stoppedSpindles
-
-    // Calculate constant (uses fixed 0.985 efficiency, NOT the setup efficiency)
-    const CONSTANT_EFFICIENCY = 0.985
-    const constant = (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
-
-    // GPS = (Act Prodn / Worked Spl) × 1000
-    const actProdn = actHank * constant
-    const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
-
-    // Expected GPS = 7.2 × Speed / TPI / Count × Effi
-    const expGps = calculateSpinningExpectedGps({
-      speed,
-      tpi,
-      count,
+    const metrics = calculateSpinningEntryMetrics({
+      actHank,
+      actCount,
+      expectedCount: actCount,
+      allocatedSpindles,
+      shift: shiftNo,
+      stoppageMins: totalStoppageTime,
+      runTime: setupDraft?.run_time ?? row.run_time ?? effectiveTotalTime,
+      speed: setupDraft?.speed ?? row.speed,
+      tpi: setupDraft?.tpi ?? row.tpi,
       twCon: setupDraft?.tw_con ?? row.tw_con,
+      cWastePercent: setupDraft?.c_waste_percent ?? row.c_waste_percent,
       doffLoss: setupDraft?.doff_loss ?? row.doff_loss,
-      cWastePercent: setupDraft?.c_waste_percent ?? row.c_waste_percent
+      efficiency: setupDraft?.efficiency ?? row.efficiency,
+      conversionFactor: setupDraft?.conversion_factor ?? row.conversion_factor,
     })
 
     return {
-      stoppedSpindles: Math.round(stoppedSpindles * 100) / 100,
-      workedSpindles: Math.round(workedSpindles * 100) / 100,
-      gps: Math.round(gps * 100) / 100,
-      expGps: Math.round(expGps * 1000) / 1000
+      stoppedSpindles: metrics.stoppedSpindles,
+      workedSpindles: metrics.workedSpindles,
+      gps: metrics.gps,
+      expGps: metrics.expGps
     }
   }, [effectiveTotalTime, findSetupDraftForMachine, productionDraftEdits])
 
@@ -573,7 +554,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       {/* Stoppage Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
         <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
-          <table className="w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

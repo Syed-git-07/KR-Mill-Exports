@@ -363,13 +363,13 @@ export async function getComberEntryTabDataAction(tab, context = {}) {
 
     if (tab === 'stoppage') {
       const syncResult = await syncNewMachinesToComberHeaderAction(headerId)
-      const [stoppagesResult, reasonsResult, machinesResult, setupsResult] = await Promise.all([
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
         getComberStoppageEntriesAction(headerId),
         getComberStoppageReasonsAction(),
         getComberMachinesAction(),
         getComberMachineSetupsAction(headerId)
       ])
-      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machinesResult, setupsResult } }
+      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machineListResult, setupsResult } }
     }
 
     throw new Error('Invalid Comber entry tab')

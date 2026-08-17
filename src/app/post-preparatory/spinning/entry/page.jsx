@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { NumberInput } from "@/components/ui/number-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -29,7 +30,8 @@ import {
 } from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
 import DeferredMount from '@/components/common/DeferredMount'
-import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
+import SimpleCalculator from '@/components/common/SimpleCalculator'
+import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft, Gauge } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -80,6 +82,8 @@ function SpinningEntryContent() {
   const [selectedSourceDate, setSelectedSourceDate] = useState(null)
   const [isLoadingDates, setIsLoadingDates] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
+  const [efficiencyDialogOpen, setEfficiencyDialogOpen] = useState(false)
+  const [efficiencyPercent, setEfficiencyPercent] = useState('95')
   const [isSavingAll, setIsSavingAll] = useState(false)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
@@ -399,6 +403,33 @@ function SpinningEntryContent() {
     }
   }
 
+  const handleOpenEfficiencyDialog = () => {
+    if (!headerId) {
+      toast.warning('Please initialize the entry first')
+      return
+    }
+    const currentPercent = setupTabRef.current?.getCommonEfficiencyPercent?.()
+    setEfficiencyPercent(String(currentPercent ?? 95))
+    setEfficiencyDialogOpen(true)
+  }
+
+  const handleApplyEfficiency = () => {
+    const numericPercent = Number(efficiencyPercent)
+    if (!Number.isFinite(numericPercent) || numericPercent < 0 || numericPercent > 100) {
+      toast.warning('Efficiency must be between 0 and 100 percent')
+      return
+    }
+
+    const result = setupTabRef.current?.applyEfficiencyPercent?.(numericPercent)
+    if (!result?.success || result.count === 0) {
+      toast.warning('No spinning machine setup rows are available')
+      return
+    }
+
+    setEfficiencyDialogOpen(false)
+    toast.success(`Set ${numericPercent}% efficiency for ${result.count} setup row(s). Click Update to save.`)
+  }
+
   const handleSaveAllTabs = async () => {
     if (!headerId || saveInFlightRef.current) return
 
@@ -587,6 +618,8 @@ function SpinningEntryContent() {
               </Select>
             </div>
 
+            <SimpleCalculator />
+
             {/* Initialize Button */}
             {!headerId && (
               <Button 
@@ -603,7 +636,51 @@ function SpinningEntryContent() {
 
             {/* Copy Previous Speed is available only inside Machine Setup. */}
             {headerId && activeTab === 'setup' && (
-              <div className="ml-auto flex flex-col items-end gap-2">
+              <div className="ml-auto flex items-center gap-2">
+                <Dialog open={efficiencyDialogOpen} onOpenChange={setEfficiencyDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      onClick={handleOpenEfficiencyDialog}
+                      variant="outline"
+                      className="border-blue-500 text-blue-600 hover:bg-blue-50"
+                    >
+                      <Gauge className="h-4 w-4 mr-1" />
+                      Set Efficiency
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle>Set Spinning Efficiency</DialogTitle>
+                      <DialogDescription>
+                        Apply one efficiency value to every machine setup row for {format(date, 'dd-MMM-yyyy')}, Shift {shift}. Other entries are unchanged.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 py-4">
+                      <Label htmlFor="spinning-efficiency">Efficiency (%)</Label>
+                      <NumberInput
+                        id="spinning-efficiency"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={efficiencyPercent}
+                        onChange={(event) => setEfficiencyPercent(event.target.value)}
+                        autoFocus
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Default is 95%. You can still adjust an individual machine in the Effi. % column.
+                      </p>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setEfficiencyDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleApplyEfficiency}>
+                        Apply Efficiency
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
                   <DialogTrigger asChild>
                     <Button 

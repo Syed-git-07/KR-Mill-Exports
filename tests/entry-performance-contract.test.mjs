@@ -79,6 +79,21 @@ test('all eight entry modules consolidate each tab load into one Server Action r
   }
 })
 
+test('Comber and Finisher Drawing stoppage loaders share their action response keys', () => {
+  for (const [name, actionFile, componentFile] of [
+    ['Comber', 'comber-entry.js', 'ComberStoppageTab.jsx'],
+    ['Finisher Drawing', 'finisher-drawing-entry.js', 'FinisherDrawingStoppageTab.jsx'],
+  ]) {
+    const actionSource = read(`src/app/actions/${actionFile}`)
+    const componentSource = read(`src/components/modules/preparatory-entry/${componentFile}`)
+
+    for (const key of ['stoppagesResult', 'reasonsResult', 'machineListResult', 'setupsResult']) {
+      assert.match(actionSource, new RegExp(`\\b${key}\\b`), `${name} action must return ${key}`)
+      assert.match(componentSource, new RegExp(`\\b${key}\\b`), `${name} stoppage tab must read ${key}`)
+    }
+  }
+})
+
 test('multi-row entry writes and removals no longer create one browser request per row', () => {
   for (const entryModule of [...entryModules, ...postEntryModules]) {
     const actionSource = read(`src/app/actions/${entryModule.actionFile}`)
