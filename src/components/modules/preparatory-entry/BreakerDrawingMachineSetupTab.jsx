@@ -25,9 +25,11 @@ import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getBreakerDrawingEntryTabDataAction,
-  runBreakerDrawingEntryBatchAction,
+  getBreakerDrawingMachineSetupsAction,
+  updateMachineSetupAction,
   addBreakerDrawingMachineAction,
+  removeBreakerDrawingMachineAction,
+  getMixingOptionsAction,
   lookupDrawingBreakerMachineByNoAction
 } from '@/app/actions/breaker-drawing-entry'
 import { NumberInput } from '@/components/ui/number-input'
@@ -172,9 +174,10 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const tabResult = await getBreakerDrawingEntryTabDataAction('setup', { shift, headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { setupsRes, mixingsRes } = tabResult.data
+      const [setupsRes, mixingsRes] = await Promise.all([
+        getBreakerDrawingMachineSetupsAction(shift, headerId),
+        getMixingOptionsAction()
+      ])
       
       const setups = setupsRes?.data || []
       const mixings = mixingsRes?.data || []
@@ -257,10 +260,11 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const updates = Object.entries(currentEdits).map(([id, changes]) => ({ id, updates: changes }))
-      const batchResult = await runBreakerDrawingEntryBatchAction('setup-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => 
+        updateMachineSetupAction(rowId, changes)
+      )
+
+      const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a machine setup row')
       const savedCount = Object.keys(currentEdits).length
@@ -270,8 +274,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -355,8 +359,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
         std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
         delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery
       })
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -376,17 +380,17 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const removals = selectedRows.map(id => ({ id }))
-      const batchResult = await runBreakerDrawingEntryBatchAction('machine-remove', removals, { headerId })
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const removePromises = selectedRows.map(machineId => 
+        removeBreakerDrawingMachineAction(machineId, headerId)
+      )
+      const results = await Promise.all(removePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -460,7 +464,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-100 overflow-y-auto">
-          <table ref={tableRef} className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table ref={tableRef} className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 w-10 whitespace-nowrap">

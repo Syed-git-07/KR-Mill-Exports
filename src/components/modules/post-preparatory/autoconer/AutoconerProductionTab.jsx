@@ -17,8 +17,10 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getAutoconerEntryTabDataAction,
+  getAutoconerProductionDetailsAction,
   batchUpdateAutoconerProductionDetailsAction,
+  getIdleReasonsAction,
+  syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
 import { calculateAutoconerProductionValues } from '@/lib/queries/autoconerEntryQueries'
 import {
@@ -102,6 +104,17 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     hasShownInitToast.current = false
   }, [headerId])
 
+  // Load idle reasons on mount
+  useEffect(() => {
+    const loadIdleReasons = async () => {
+      const result = await getIdleReasonsAction()
+      if (result.success) {
+        setIdleReasons(result.data)
+      }
+    }
+    loadIdleReasons()
+  }, [])
+
   const findSetupDraft = useCallback((row, drafts = setupDraftEdits) => {
     const machineId = row?.machine_id ?? row?.machine?.id
     if (!machineId) return null
@@ -162,21 +175,16 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getAutoconerEntryTabDataAction('production', {
-        headerId,
-        shift: shiftNo
-      })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { syncResult, detailsResult, idleReasonsResult } = tabResult.data
-
+      // First, sync any new machines that were added after this header was created
+      // This also initializes production details if header exists but has no details
+      const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
       if (syncResult.success && syncResult.data && syncResult.data.length > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.length} machine(s) for this shift`)
         hasShownInitToast.current = true
       }
 
-      const result = detailsResult
+      const result = await getAutoconerProductionDetailsAction(headerId)
       if (!result.success) throw new Error(result.error)
-      if (idleReasonsResult.success) setIdleReasons(idleReasonsResult.data)
       
       const details = result.data || []
       setProductionData(mergeServerRowsWithDrafts(details))
@@ -359,8 +367,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -417,7 +425,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       {/* Production Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">Mc No.</th>

@@ -16,8 +16,13 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getBreakerDrawingEntryTabDataAction,
-  runBreakerDrawingEntryBatchAction
+  getBreakerDrawingStoppageEntriesAction,
+  getBreakerDrawingStoppageReasonsAction,
+  updateStoppageEntryAction,
+  getBreakerDrawingMachinesAction,
+  getBreakerDrawingMachineSetupsAction,
+  updateBreakerDrawingDetailAction,
+  syncNewMachinesToBreakerDrawingHeaderAction
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
 import { BREAKER_DRAWING_FORMULA_FALLBACK } from '@/lib/breakerDrawingFormulaFallback'
@@ -282,9 +287,15 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     
     setIsLoading(true)
     try {
-      const tabResult = await getBreakerDrawingEntryTabDataAction('stoppage', { headerId, shift })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { stoppagesRes, reasonsRes, machineListRes, setupsRes } = tabResult.data
+      // Sync any newly added machines to this header first
+      await syncNewMachinesToBreakerDrawingHeaderAction(headerId, shift)
+      
+      const [stoppagesRes, reasonsRes, machineListRes, setupsRes] = await Promise.all([
+        getBreakerDrawingStoppageEntriesAction(headerId),
+        getBreakerDrawingStoppageReasonsAction(),
+        getBreakerDrawingMachinesAction(),
+        getBreakerDrawingMachineSetupsAction(shift, headerId)
+      ])
       
       // Check for errors in responses
       if (!stoppagesRes?.success) {
@@ -505,21 +516,19 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return { id: rowId, updates: persistedChanges }
+        return updateStoppageEntryAction(rowId, persistedChanges)
       })
 
-      const stoppageBatchResult = await runBreakerDrawingEntryBatchAction('stoppage-update', stoppageUpdates)
-      if (!stoppageBatchResult.success) throw new Error(stoppageBatchResult.error)
-      const stoppageResults = stoppageBatchResult.data
+      const stoppageResults = await Promise.all(updatePromises)
       const failedStoppage = stoppageResults.find(result => !result?.success)
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Breaker Drawing stoppage row')
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
+      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -557,14 +566,11 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
           act_hank: actHank
         }
         
-        return { id: mergedProduction.id, updates: payload }
+        // Update production detail
+        return updateBreakerDrawingDetailAction(mergedProduction.id, payload)
       })
       
-      const productionBatchResult = await runBreakerDrawingEntryBatchAction(
-        'production-update',
-        productionUpdates.filter(Boolean)
-      )
-      if (!productionBatchResult.success) throw new Error(productionBatchResult.error)
+      await Promise.all(productionUpdatePromises.filter(Boolean))
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -573,8 +579,8 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -728,7 +734,7 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       {/* Stoppage Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
-          <table ref={tableRef} className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table ref={tableRef} className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

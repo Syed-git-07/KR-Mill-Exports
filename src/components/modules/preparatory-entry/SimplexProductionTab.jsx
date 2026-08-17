@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import { 
-  getSimplexEntryTabDataAction,
-  runSimplexEntryBatchAction
+  getSimplexProductionWithSetupAction,
+  getSimplexMachineSetupsAction,
+  updateSimplexProductionDetailAction
 } from '@/app/actions/simplexEntryActions'
 import { calculateSimplexProductionValues } from '@/lib/utils/simplexCalculations'
 import { NumberInput } from '@/components/ui/number-input'
@@ -199,9 +200,10 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getSimplexEntryTabDataAction('production', { headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { detailsResult, setupsResult } = tabResult.data
+      const [detailsResult, setupsResult] = await Promise.all([
+        getSimplexProductionWithSetupAction(headerId),
+        getSimplexMachineSetupsAction(headerId)
+      ])
       
       const setupMap = {}
       if (setupsResult.success) {
@@ -277,7 +279,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
     setIsSaving(true)
     try {
-      const updates = rowsToSave.map(row => {
+      for (const row of rowsToSave) {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const setup = mergeSetupDraft(
           machineSetups[row.machine_id],
@@ -309,29 +311,25 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           stoppageTime
         })
 
-        return {
-          id: row.id,
-          updates: {
-            employee_name: effectiveRow.employee_name,
-            prodn_mixing: setup?.prodn_mixing ?? effectiveRow.prodn_mixing,
-            run_hrs: effectiveRow.run_hrs,
-            run_min: calculated.run_min,
-            run_time: totalTime,
-            idle_spindles: effectiveRow.idle_spindles,
-            waste: effectiveRow.waste,
-            act_prodn: calculated.act_prodn,
-            waste_percent: calculated.waste_percent,
-            act_effi_percent: calculated.act_effi_percent,
-            uti_percent: calculated.uti_percent,
-            std_hrs: calculated.std_hrs,
-            work_time: calculated.work_time
-          }
+        const result = await updateSimplexProductionDetailAction(row.id, {
+          employee_name: effectiveRow.employee_name,
+          prodn_mixing: setup?.prodn_mixing ?? effectiveRow.prodn_mixing,
+          run_hrs: effectiveRow.run_hrs,
+          run_min: calculated.run_min,
+          run_time: totalTime,
+          idle_spindles: effectiveRow.idle_spindles,
+          waste: effectiveRow.waste,
+          act_prodn: calculated.act_prodn,
+          waste_percent: calculated.waste_percent,
+          act_effi_percent: calculated.act_effi_percent,
+          uti_percent: calculated.uti_percent,
+          std_hrs: calculated.std_hrs,
+          work_time: calculated.work_time
+        })
+        if (!result?.success) {
+          throw new Error(result?.error || `Failed to update simplex production row ${row.id}`)
         }
-      })
-      const batchResult = await runSimplexEntryBatchAction('production-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const failed = batchResult.data.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to update a Simplex production row')
+      }
 
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
@@ -339,8 +337,8 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       setEditedRows({})
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: rowsToSave.length }
     } catch (error) {
@@ -403,7 +401,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       {/* Production Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Mc.No.</th>

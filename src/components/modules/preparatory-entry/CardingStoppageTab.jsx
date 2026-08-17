@@ -28,8 +28,11 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { resolveCardingFormulaInputs } from '@/lib/cardingFormulaFallback'
 import {
-  getCardingEntryTabDataAction,
-  runCardingEntryBatchAction,
+  getCardingStoppageEntriesAction,
+  getCardingStoppageReasonsAction,
+  getCardingMachineSetupsAction,
+  updateStoppageEntryAction,
+  getCardingMachinesAction
 } from '@/app/actions/carding-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
 
@@ -285,13 +288,12 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getCardingEntryTabDataAction('stoppage', {
-        headerId,
-        entryDate,
-        shift
-      })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { stoppagesResult, reasonsResult, machineListResult, setupsResult } = tabResult.data
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
+        getCardingStoppageEntriesAction(headerId),
+        getCardingStoppageReasonsAction(),
+        getCardingMachinesAction(),
+        getCardingMachineSetupsAction(entryDate, shift)
+      ])
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
       const reasons = reasonsResult.success ? reasonsResult.data : []
@@ -479,14 +481,12 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
 
     setIsSaving(true)
     try {
-      const updates = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return { id: rowId, updates: persistedChanges }
+        return updateStoppageEntryAction(rowId, persistedChanges)
       })
 
-      const batchResult = await runCardingEntryBatchAction('stoppage-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Carding stoppage row')
       const savedCount = Object.keys(currentEdits).length
@@ -496,8 +496,8 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -652,7 +652,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
       {/* Stoppage Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
-          <table ref={tableRef} className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table ref={tableRef} className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

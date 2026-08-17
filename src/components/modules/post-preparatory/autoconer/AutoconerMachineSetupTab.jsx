@@ -26,11 +26,13 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { buildAutoconerCountSnapshot } from '@/lib/countMasterSnapshots'
 import {
-  getAutoconerEntryTabDataAction,
-  runAutoconerEntryBatchAction,
+  getAutoconerMachineSetupsAction,
   batchUpdateAutoconerMachineSetupsAction,
+  getSpinningCountsAction,
+  getAutoconerMachinesAction,
   lookupAutoconerMachineByNoAction,
   addAutoconerMachineAction,
+  removeAutoconerMachineAction
 } from '@/app/actions/autoconerEntryActions'
 
 /**
@@ -202,9 +204,11 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     if (!entryDate) return
     setIsLoading(true)
     try {
-      const tabResult = await getAutoconerEntryTabDataAction('setup', { shift, entryDate })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { setupsResult, countsResult, machinesResult } = tabResult.data
+      const [setupsResult, countsResult, machinesResult] = await Promise.all([
+        getAutoconerMachineSetupsAction(shift, entryDate),  // Pass shift and entryDate
+        getSpinningCountsAction(),
+        getAutoconerMachinesAction()
+      ])
       
       const rows = setupsResult.success ? setupsResult.data || [] : []
       setSetupData(mergeServerRowsWithDrafts(rows))
@@ -346,8 +350,8 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -422,8 +426,8 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       setNewMachine({ machine_id: '', count_id: '', session_no: 1, run_time: totalTime })
       toast.success(`Machine ${machine?.machine_no} added to setup`)
       
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error('Failed to add machine')
@@ -498,8 +502,8 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         run_time: totalTime
       })
       
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error adding new machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -524,18 +528,16 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
         .filter(id => id !== undefined))]
 
-      const removals = machineIds.map(id => ({ id }))
-      const batchResult = await runAutoconerEntryBatchAction('machine-remove', removals, { headerId })
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const removePromises = machineIds.map(id => removeAutoconerMachineAction(id, headerId))
+      const results = await Promise.all(removePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${machineIds.length} machine(s) removed successfully`)
       setRemoveDialog(false)
       setSelectedRows([])
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -586,7 +588,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       {/* Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
         <div className="overflow-x-auto max-h-112.5 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 w-10">

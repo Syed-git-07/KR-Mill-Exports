@@ -17,8 +17,10 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getCardingEntryTabDataAction,
-  runCardingEntryBatchAction
+  getCardingProductionWithSetupAction,
+  updateProductionDetailAction,
+  getCardingMachineSetupsAction,
+  syncNewMachinesToHeaderAction
 } from '@/app/actions/carding-entry'
 import { calculateProductionValues } from '@/lib/queries/cardingEntryQueries'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
@@ -168,17 +170,16 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getCardingEntryTabDataAction('production', {
-        headerId,
-        entryDate,
-        shift
-      })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { syncResult, detailsResult, setupsResult } = tabResult.data
-
+      // First, sync any new machines that were added after this header was created
+      const syncResult = await syncNewMachinesToHeaderAction(headerId)
       if (syncResult.success && syncResult.data?.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
+
+      const [detailsResult, setupsResult] = await Promise.all([
+        getCardingProductionWithSetupAction(headerId),
+        getCardingMachineSetupsAction(entryDate, shift)
+      ])
       
       // Create machine setup map first
       const setupMap = {}
@@ -381,7 +382,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 
     setIsSaving(true)
     try {
-      const updates = rowsToSave.map((row) => {
+      const updatePromises = rowsToSave.map(async (row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -411,26 +412,24 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         const finalExpProdn = toNumber(calculated.exp_prodn)
         const finalEffiPercent = finalExpProdn > 0 ? (toNumber(actProdn) / finalExpProdn) * 100 : 0
 
-        return {
-          id: row.id,
-          updates: {
-            ...changes,
-            ...calculatedWithoutWaste,
-            count_mixing: setup?.prodn_mixing ?? changes.count_mixing ?? row.count_mixing,
-            act_hank: actHank,
-            act_prodn: actProdn,
-            waste: wasteValue,
-            waste_percent: wastePercent,
-            exp_prodn: Math.round(finalExpProdn * 100) / 100,
-            effi_percent: Math.round(finalEffiPercent * 100) / 100
-          }
+        const result = await updateProductionDetailAction(row.id, {
+          ...changes,
+          ...calculatedWithoutWaste,
+          count_mixing: setup?.prodn_mixing ?? changes.count_mixing ?? row.count_mixing,
+          act_hank: actHank,
+          act_prodn: actProdn,
+          waste: wasteValue,
+          waste_percent: wastePercent,
+          exp_prodn: Math.round(finalExpProdn * 100) / 100,
+          effi_percent: Math.round(finalEffiPercent * 100) / 100
+        })
+        if (!result?.success) {
+          throw new Error(result?.error || `Failed to update carding production row ${row.id}`)
         }
+        return result
       })
 
-      const batchResult = await runCardingEntryBatchAction('production-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const failed = batchResult.data.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to update a Carding production row')
+      await Promise.all(updatePromises)
       const savedCount = rowsToSave.length
       setEditedRows({})
       if (!suppressSuccessToast) {
@@ -438,8 +437,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -501,7 +500,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
       {/* Production Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table ref={tableRef} className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table ref={tableRef} className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

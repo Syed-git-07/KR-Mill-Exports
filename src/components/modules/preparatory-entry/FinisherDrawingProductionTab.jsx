@@ -8,8 +8,10 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
-  getFinisherDrawingEntryTabDataAction,
-  runFinisherDrawingEntryBatchAction
+  getFinisherDrawingProductionWithSetupAction,
+  updateFinisherDrawingDetailAction,
+  getFinisherDrawingMachineSetupsAction,
+  syncFinisherDrawingNewMachinesToHeaderAction
 } from '@/app/actions/finisher-drawing-entry'
 import { calculateFinisherDrawingValues } from '@/lib/queries/finisherDrawingEntryQueries'
 import {
@@ -249,13 +251,16 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     
     setIsLoading(true)
     try {
-      const tabResult = await getFinisherDrawingEntryTabDataAction('production', { headerId, shift })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { syncResult, detailsResult, setupsResult } = tabResult.data
-
+      // First, sync any new machines that were added after this header was created
+      const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
       if (syncResult.success && syncResult.data.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
+
+      const [detailsResult, setupsResult] = await Promise.all([
+        getFinisherDrawingProductionWithSetupAction(headerId),
+        getFinisherDrawingMachineSetupsAction(shift, headerId)
+      ])
       
       const details = detailsResult.success ? detailsResult.data : []
       const setups = setupsResult.success ? setupsResult.data : []
@@ -469,7 +474,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
     setIsSaving(true)
     try {
-      const updates = rowsToSave.map((row) => {
+      const updatePromises = rowsToSave.map((row) => {
         const rowId = String(row.id)
         const changes = findDraftByKeys(pendingEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
@@ -501,23 +506,18 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         // Exclude waste and waste_percent from calculated, then add them explicitly to preserve edited waste value
         const { waste_percent: calculatedWastePercent, ...otherCalculated } = calculated
         
-        return {
-          id: rowId,
-          updates: {
-            employee_name: changes.employee_name ?? row.employee_name,
-            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-            act_hank: actHank,
-            act_prodn: roundedActProdn,
-            ...otherCalculated,
-            waste,
-            waste_percent: calculatedWastePercent,
-          }
-        }
+        return updateFinisherDrawingDetailAction(rowId, {
+          employee_name: changes.employee_name ?? row.employee_name,
+          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+          act_hank: actHank,
+          act_prodn: roundedActProdn,
+          ...otherCalculated,
+          waste,
+          waste_percent: calculatedWastePercent,
+        })
       }).filter(Boolean)
 
-      const batchResult = await runFinisherDrawingEntryBatchAction('production-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const results = await Promise.all(updatePromises)
 
       const failed = results.find(result => !result?.success)
       if (failed) {
@@ -531,8 +531,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -599,7 +599,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       {/* Production Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">Mc.No.</th>

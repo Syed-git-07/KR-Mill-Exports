@@ -18,9 +18,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { 
-  getSimplexEntryTabDataAction,
-  runSimplexEntryBatchAction,
+  updateSimplexMachineSetupAction,
+  getSimplexCountOptionsAction,
   addSimplexMachineAction,
+  removeSimplexMachineAction,
+  getSimplexMachineSetupsAction,
   lookupSimplexMachineByNoAction
 } from '@/app/actions/simplexEntryActions'
 import { NumberInput } from '@/components/ui/number-input'
@@ -129,9 +131,10 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
     setIsLoading(true)
     try {
-      const tabResult = await getSimplexEntryTabDataAction('setup', { headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { setupsResult, countsResult } = tabResult.data
+      const [setupsResult, countsResult] = await Promise.all([
+        getSimplexMachineSetupsAction(headerId),
+        getSimplexCountOptionsAction()
+      ])
       
       const setups = setupsResult.success ? setupsResult.data : []
       const counts = countsResult.success ? countsResult.data : []
@@ -276,9 +279,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
     try {
       const rowsToSave = setupData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
       
-      const updates = rowsToSave.map(row => ({
-        id: row.id,
-        updates: {
+      for (const row of rowsToSave) {
+        const result = await updateSimplexMachineSetupAction(row.id, {
           prodn_mixing: row.prodn_mixing,
           session_no: parseIntOr(row.session_no, 1),
           cc_time: parseFloatOr(row.cc_time, 0),
@@ -287,12 +289,11 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
           tpi: parseFloatOr(row.tpi, 1.73),
           spindles: parseIntOr(row.spindles, 140),
           shift_time: parseIntOr(row.shift_time, 510)
+        })
+        if (!result?.success) {
+          throw new Error(result?.error || `Failed to save simplex setup for machine ${row.machine?.machine_no || row.machine_id}`)
         }
-      }))
-      const batchResult = await runSimplexEntryBatchAction('setup-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const failed = batchResult.data.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to save a Simplex machine setup row')
+      }
 
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
@@ -300,8 +301,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       setEditedRows({})
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: rowsToSave.length }
     } catch (error) {
@@ -407,8 +408,8 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         speed: 1000
       })
       
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
       const errorMsg = error?.message || error?.toString() || 'Failed to add machine'
@@ -427,21 +428,20 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
     setIsSaving(true)
     try {
-      const removals = selectedRows.flatMap(rowId => {
+      for (const rowId of selectedRows) {
         const machineSetup = setupData.find(s => s.id === rowId)
-        return machineSetup?.machine?.id ? [{ id: machineSetup.machine.id }] : []
-      })
-      const batchResult = await runSimplexEntryBatchAction('machine-remove', removals, { headerId })
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const failed = batchResult.data.find(result => !result?.success)
-      if (failed) throw new Error(failed.error || 'Failed to remove machine')
+        if (machineSetup?.machine?.id) {
+          const result = await removeSimplexMachineAction(machineSetup.machine.id, headerId)
+          if (!result?.success) throw new Error(result?.error || 'Failed to remove machine')
+        }
+      }
       
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
       
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -477,7 +477,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 w-10">

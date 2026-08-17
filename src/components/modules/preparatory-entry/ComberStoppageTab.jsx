@@ -16,8 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getComberEntryTabDataAction,
-  runComberEntryBatchAction
+  getComberStoppageEntriesAction,
+  updateComberStoppageEntryAction,
+  getComberStoppageReasonsAction,
+  getComberMachinesAction,
+  getComberMachineSetupsAction,
+  syncNewMachinesToComberHeaderAction
 } from '@/app/actions/comber-entry'
 import { NumberInput } from '@/components/ui/number-input'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
@@ -272,9 +276,15 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getComberEntryTabDataAction('stoppage', { headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { stoppagesResult, reasonsResult, machineListResult, setupsResult } = tabResult.data
+      // Sync new/removed machines before loading
+      await syncNewMachinesToComberHeaderAction(headerId)
+
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
+        getComberStoppageEntriesAction(headerId),
+        getComberStoppageReasonsAction(),
+        getComberMachinesAction(),
+        getComberMachineSetupsAction(headerId)
+      ])
       
       if (!stoppagesResult.success || !reasonsResult.success || !machineListResult.success || !setupsResult.success) {
         throw new Error(stoppagesResult.error || reasonsResult.error || machineListResult.error || setupsResult.error)
@@ -459,14 +469,12 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
     setIsSaving(true)
     try {
-      const updates = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return { id: rowId, updates: persistedChanges }
+        return updateComberStoppageEntryAction(rowId, persistedChanges)
       })
 
-      const batchResult = await runComberEntryBatchAction('stoppage-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Comber stoppage row')
       const savedCount = Object.keys(currentEdits).length
@@ -476,8 +484,8 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -631,7 +639,7 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
       {/* Stoppage Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16 whitespace-nowrap">Mc.No.</th>

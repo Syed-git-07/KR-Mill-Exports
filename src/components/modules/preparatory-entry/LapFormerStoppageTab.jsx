@@ -16,8 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getLapFormerEntryTabDataAction,
-  runLapFormerEntryBatchAction
+  getLapFormerStoppageEntriesAction,
+  updateLapFormerStoppageEntryAction,
+  getLapFormerStoppageReasonsAction,
+  getLapFormerMachinesAction,
+  getLapFormerMachineSetupsAction,
+  updateLapFormerDetailAction
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
 import { getLapFormerActProdnConstant, resolveLapFormerFormulaInputs } from '@/lib/lapFormerFormulaFallback'
@@ -209,9 +213,12 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getLapFormerEntryTabDataAction('stoppage', { headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { stoppagesResult, reasonsResult, machinesResult, setupsResult } = tabResult.data
+      const [stoppagesResult, reasonsResult, machinesResult, setupsResult] = await Promise.all([
+        getLapFormerStoppageEntriesAction(headerId),
+        getLapFormerStoppageReasonsAction(),
+        getLapFormerMachinesAction(),
+        getLapFormerMachineSetupsAction(headerId)
+      ])
       
       if (!stoppagesResult.success) throw new Error(stoppagesResult.error)
       if (!reasonsResult.success) throw new Error(reasonsResult.error)
@@ -443,21 +450,19 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return { id: rowId, updates: persistedChanges }
+        return updateLapFormerStoppageEntryAction(rowId, persistedChanges)
       })
 
-      const stoppageBatchResult = await runLapFormerEntryBatchAction('stoppage-update', stoppageUpdates)
-      if (!stoppageBatchResult.success) throw new Error(stoppageBatchResult.error)
-      const results = stoppageBatchResult.data
+      const results = await Promise.all(updatePromises)
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) {
         throw new Error('Some stoppage updates failed')
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
+      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -496,14 +501,11 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
           total_stoppage_mins: newTotalStoppage
         }
 
-        return { id: prodDetail.id, updates: recalculatedFields }
+        // Update production detail
+        return updateLapFormerDetailAction(prodDetail.id, recalculatedFields)
       })
       
-      const productionBatchResult = await runLapFormerEntryBatchAction(
-        'production-update',
-        productionUpdates.filter(Boolean)
-      )
-      if (!productionBatchResult.success) throw new Error(productionBatchResult.error)
+      await Promise.all(productionUpdatePromises.filter(Boolean))
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -512,8 +514,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -663,7 +665,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       {/* Stoppage Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

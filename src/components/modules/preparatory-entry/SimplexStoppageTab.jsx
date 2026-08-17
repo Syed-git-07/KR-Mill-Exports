@@ -14,8 +14,11 @@ import { NumberInput } from '@/components/ui/number-input'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
 
 import {
-  getSimplexEntryTabDataAction,
-  runSimplexEntryBatchAction,
+  getSimplexStoppageEntriesAction,
+  updateSimplexStoppageEntryAction,
+  getSimplexStoppageReasonsAction,
+  getSimplexMachinesAction,
+  getSimplexMachineSetupsAction
 } from '@/app/actions/simplexEntryActions'
 import { calculateSimplexProductionValues } from '@/lib/utils/simplexCalculations'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
@@ -211,9 +214,12 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getSimplexEntryTabDataAction('stoppage', { headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { stoppagesResult, reasonsResult, machineListResult, setupResult } = tabResult.data
+      const [stoppagesResult, reasonsResult, machineListResult, setupResult] = await Promise.all([
+        getSimplexStoppageEntriesAction(headerId),
+        getSimplexStoppageReasonsAction(),
+        getSimplexMachinesAction(),
+        getSimplexMachineSetupsAction(headerId)
+      ])
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
       const reasons = reasonsResult.success ? reasonsResult.data : []
@@ -400,9 +406,8 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
     try {
       const rowsToSave = stoppageData.filter(row => currentEdits[row.id] || currentEdits[String(row.id)])
       
-      const updates = rowsToSave.map(row => ({
-        id: row.id,
-        updates: {
+      for (const row of rowsToSave) {
+        await updateSimplexStoppageEntryAction(row.id, {
           stoppage1_id: row.stoppage1_id || null,
           stoppage1_time: row.stoppage1_id ? (row.stoppage1_time || 0) : 0,
           stoppage2_id: row.stoppage2_id || null,
@@ -411,10 +416,8 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
           stoppage3_time: row.stoppage3_id ? (row.stoppage3_time || 0) : 0,
           stoppage4_id: row.stoppage4_id || null,
           stoppage4_time: row.stoppage4_id ? (row.stoppage4_time || 0) : 0
-        }
-      }))
-      const batchResult = await runSimplexEntryBatchAction('stoppage-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
+        })
+      }
 
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
@@ -422,8 +425,8 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       setEditedRows({})
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: rowsToSave.length }
     } catch (error) {
@@ -573,7 +576,7 @@ const SimplexStoppageTab = forwardRef(function SimplexStoppageTab({
       {/* Stoppage Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

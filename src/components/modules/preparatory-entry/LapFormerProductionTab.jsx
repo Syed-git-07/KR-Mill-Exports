@@ -8,8 +8,9 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
-  getLapFormerEntryTabDataAction,
-  runLapFormerEntryBatchAction,
+  getLapFormerProductionWithSetupAction,
+  updateLapFormerDetailAction,
+  getLapFormerMachineSetupsAction
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
 import {
@@ -247,9 +248,10 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getLapFormerEntryTabDataAction('production', { headerId })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { detailsResult, setupsResult } = tabResult.data
+      const [detailsResult, setupsResult] = await Promise.all([
+        getLapFormerProductionWithSetupAction(headerId),
+        getLapFormerMachineSetupsAction(headerId)
+      ])
       
       if (!detailsResult.success) {
         throw new Error(detailsResult.error)
@@ -453,7 +455,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
     setIsSaving(true)
     try {
-      const updates = rowsToSave.map((row) => {
+      const updatePromises = rowsToSave.map((row) => {
         const changes = findSharedDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -483,23 +485,18 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
         const wastePercent = actProdn > 0 ? Math.round((waste / actProdn) * 100 * 100) / 100 : 0
 
-        return {
-          id: row.id,
-          updates: {
-            ...calculated,
-            employee_name: changes.employee_name ?? row.employee_name,
-            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-            act_hank: actHank,
-            act_prodn: actProdn,
-            waste,
-            waste_percent: wastePercent
-          }
-        }
+        return updateLapFormerDetailAction(row.id, {
+          ...calculated,
+          employee_name: changes.employee_name ?? row.employee_name,
+          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+          act_hank: actHank,
+          act_prodn: actProdn,
+          waste,
+          waste_percent: wastePercent
+        })
       })
 
-      const batchResult = await runLapFormerEntryBatchAction('production-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const results = await Promise.all(updatePromises)
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) {
         throw new Error('Some updates failed')
@@ -512,8 +509,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -576,7 +573,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
       {/* Production Grid - Layout matches Carding Entry */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

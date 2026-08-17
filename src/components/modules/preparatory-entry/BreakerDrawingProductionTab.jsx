@@ -8,8 +8,10 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import {
-  getBreakerDrawingEntryTabDataAction,
-  runBreakerDrawingEntryBatchAction
+  getBreakerDrawingProductionWithSetupAction,
+  updateBreakerDrawingDetailAction,
+  getBreakerDrawingMachineSetupsAction,
+  syncNewMachinesToBreakerDrawingHeaderAction
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
 import {
@@ -212,13 +214,16 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
     
     setIsLoading(true)
     try {
-      const tabResult = await getBreakerDrawingEntryTabDataAction('production', { headerId, shift })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { syncResult, detailsResult, setupsResult } = tabResult.data
-
+      // First, sync any new machines that were added after this header was created
+      const syncResult = await syncNewMachinesToBreakerDrawingHeaderAction(headerId)
       if (syncResult?.success && syncResult?.data?.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
+
+      const [detailsResult, setupsResult] = await Promise.all([
+        getBreakerDrawingProductionWithSetupAction(headerId),
+        getBreakerDrawingMachineSetupsAction(shift, headerId)
+      ])
       
       const details = detailsResult?.data || []
       const setups = setupsResult?.data || []
@@ -448,7 +453,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
 
     setIsSaving(true)
     try {
-      const updates = rowsToSave.map((row) => {
+      const updatePromises = rowsToSave.map((row) => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -479,21 +484,16 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
         calculated.waste = waste
         calculated.waste_percent = actProdn > 0 ? Math.round((((waste ?? 0) / actProdn) * 100) * 100) / 100 : 0
 
-        return {
-          id: row.id,
-          updates: {
-            employee_name: changes.employee_name ?? row.employee_name,
-            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-            act_hank: actHank,
-            act_prodn: actProdn,
-            ...calculated
-          }
-        }
+        return updateBreakerDrawingDetailAction(row.id, {
+          employee_name: changes.employee_name ?? row.employee_name,
+          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+          act_hank: actHank,
+          act_prodn: actProdn,
+          ...calculated
+        })
       })
 
-      const batchResult = await runBreakerDrawingEntryBatchAction('production-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const results = await Promise.all(updatePromises)
       
       // Check if any updates failed
       const failed = results.filter(r => !r?.success)
@@ -507,8 +507,8 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData({ force: true })
+        await loadData({ force: true })
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -570,7 +570,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
       {/* Production Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table ref={tableRef} className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table ref={tableRef} className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>

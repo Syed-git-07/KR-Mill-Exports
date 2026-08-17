@@ -18,9 +18,13 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EnterSelect from '@/components/ui/enter-select'
 import {
-  getComberEntryTabDataAction,
-  runComberEntryBatchAction,
+  getComberMachineSetupsAction,
+  updateComberMachineSetupAction,
   addComberMachineAction,
+  removeComberMachineAction,
+  getComberMachinesAction,
+  getComberCountOptionsAction,
+  getComberShiftConfigurationAction,
   lookupComberMachineByNoAction
 } from '@/app/actions/comber-entry'
 import { NumberInput } from '@/components/ui/number-input'
@@ -136,13 +140,32 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Load shift time from database when shift changes
+  useEffect(() => {
+    const loadShiftTime = async () => {
+      try {
+        const result = await getComberShiftConfigurationAction(shift)
+        if (result.success && result.data) {
+          setShiftTime(result.data.totalTime || resolveComberShiftFallbackTime(shift))
+        } else {
+          setShiftTime(resolveComberShiftFallbackTime(shift))
+        }
+      } catch (error) {
+        console.error('Error loading shift time:', error)
+        setShiftTime(resolveComberShiftFallbackTime(shift))
+      }
+    }
+    loadShiftTime()
+  }, [shift])
+
   // Load machine setups
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const tabResult = await getComberEntryTabDataAction('setup', { headerId, shift })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { setupsResult, countsResult, shiftConfigResult } = tabResult.data
+      const [setupsResult, countsResult] = await Promise.all([
+        getComberMachineSetupsAction(headerId),
+        getComberCountOptionsAction()
+      ])
       
       if (!setupsResult.success || !countsResult.success) {
         throw new Error(setupsResult.error || countsResult.error)
@@ -150,11 +173,6 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       
       const setups = setupsResult.data
       const counts = countsResult.data
-      setShiftTime(
-        shiftConfigResult.success && shiftConfigResult.data
-          ? shiftConfigResult.data.totalTime || resolveComberShiftFallbackTime(shift)
-          : resolveComberShiftFallbackTime(shift)
-      )
       
       // Sort by natural machine number order (CO1, CO2, ... CO10, CO11)
       const sortedSetups = setups?.sort((a, b) => {
@@ -171,9 +189,9 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     } finally {
       setIsLoading(false)
     }
-  }, [headerId, shift, mergeServerRowsWithDrafts])
+  }, [mergeServerRowsWithDrafts])
 
-  useServerDataLoader(loadData, [headerId, shift])
+  useServerDataLoader(loadData, [])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
@@ -218,10 +236,11 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updates = Object.entries(currentEdits).map(([id, changes]) => ({ id, updates: changes }))
-      const batchResult = await runComberEntryBatchAction('setup-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
+        updateComberMachineSetupAction(rowId, changes)
+      )
+
+      const results = await Promise.all(updatePromises)
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       
@@ -232,8 +251,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -358,8 +377,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         mc_effi: COMBER_FORMULA_FALLBACK.mcEffiFactor,
         installed_date: ''
       })
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -379,17 +398,15 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const removals = selectedRows.map(id => ({ id }))
-      const batchResult = await runComberEntryBatchAction('machine-remove', removals, { headerId })
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const promises = selectedRows.map(id => removeComberMachineAction(id, headerId))
+      const results = await Promise.all(promises)
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -451,7 +468,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-112.5 overflow-y-auto">
-          <table className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-10">

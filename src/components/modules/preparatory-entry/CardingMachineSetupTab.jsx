@@ -37,9 +37,11 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { CARDING_FORMULA_FALLBACK } from '@/lib/cardingFormulaFallback'
 import {
-  getCardingEntryTabDataAction,
-  runCardingEntryBatchAction,
+  getCardingMachineSetupsAction,
+  updateMachineSetupAction,
   addCardingMachineAction,
+  removeCardingMachineAction,
+  getCountOptionsAction,
   lookupCardingMachineByNoAction
 } from '@/app/actions/carding-entry'
 
@@ -186,12 +188,10 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     setIsLoading(true)
     try {
       const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
-      const tabResult = await getCardingEntryTabDataAction('setup', {
-        entryDate: formattedDate,
-        shift
-      })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { setupsResult, countsResult } = tabResult.data
+      const [setupsResult, countsResult] = await Promise.all([
+        getCardingMachineSetupsAction(formattedDate, shift),
+        getCountOptionsAction()
+      ])
       
       const setups = setupsResult.success ? setupsResult.data : []
       const counts = countsResult.success ? countsResult.data : []
@@ -327,16 +327,14 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     setIsSaving(true)
     try {
       const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
-      const updates = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
         // Drafts are keyed by the exact dated setup UUID. Save that row
         // directly instead of converting it to a machine ID and rediscovering
         // the setup by date/shift on the server.
-        return { id: rowId, updates: changes, entryDate: formattedDate, shift }
+        return updateMachineSetupAction(rowId, changes, formattedDate, shift)
       })
 
-      const batchResult = await runCardingEntryBatchAction('setup-update', updates)
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const results = await Promise.all(updatePromises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Carding machine setup row')
       const savedCount = Object.keys(currentEdits).length
@@ -346,8 +344,8 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       }
       
       if (!skipParentRefresh) {
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -435,8 +433,8 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           hank_constant: CARDING_FORMULA_FALLBACK.hankConstant,
           std_efficiency_factor: CARDING_FORMULA_FALLBACK.stdEfficiencyFactor
         })
-        if (onRefresh) await onRefresh()
-        else await loadData()
+        await loadData()
+        onRefresh?.()
       } else {
         throw new Error(result.error || 'Failed to add machine')
       }
@@ -459,17 +457,15 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const removals = selectedRows.map(id => ({ id }))
-      const batchResult = await runCardingEntryBatchAction('machine-remove', removals, { headerId })
-      if (!batchResult.success) throw new Error(batchResult.error)
-      const results = batchResult.data
+      const promises = selectedRows.map(id => removeCardingMachineAction(id, headerId))
+      const results = await Promise.all(promises)
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      if (onRefresh) await onRefresh()
-      else await loadData()
+      await loadData()
+      onRefresh?.()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -538,7 +534,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       {/* Machine Setup Grid */}
       <div className="border-2 border-gray-400 rounded overflow-hidden">
         <div className="overflow-x-auto max-h-112.5 overflow-y-auto">
-          <table ref={tableRef} className="entry-color-grid w-max min-w-full border-collapse text-sm table-fixed">
+          <table ref={tableRef} className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-10">
