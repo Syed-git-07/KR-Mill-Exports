@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
 import { withBasePath } from "@/lib/app-path";
 import { Button } from "@/components/ui/button";
+import ProductionCalculator from "@/components/common/ProductionCalculator";
 
 export default function AppHeader({ user }) {
   const router = useRouter();
@@ -76,6 +77,8 @@ export default function AppHeader({ user }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
+          <ProductionCalculator userId={user.id} />
+
           {user.role === "ADMIN" && (
             <Button
               asChild
