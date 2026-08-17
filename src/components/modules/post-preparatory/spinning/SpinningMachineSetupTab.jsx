@@ -786,7 +786,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-28 whitespace-nowrap">Description</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40 whitespace-nowrap">CountName</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Act.Count</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">ShiftTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">ShiftTime</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-24 whitespace-nowrap">Alloc. Spls</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-24 whitespace-nowrap">No of Spls</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">TW.Con</th>
@@ -846,14 +846,14 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         zeroAsEmpty
                       />
                     </td>
-                    <td className="border border-gray-300 px-0 py-0 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                    <td className="border border-gray-300 px-0 py-0 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
                       {row.has_multiple_runs ? (
                         <NumberInput
                           type="number"
                           min="1"
                           value={row.run_time ?? ''}
                           onChange={(e) => handleInputChange(row.id, 'run_time', e.target.value)}
-                          className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-xs tabular-nums shadow-none focus-visible:ring-0"
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0"
                         />
                       ) : (row.run_time ?? effectiveTotalTime)}
                     </td>

@@ -498,7 +498,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                 <th className="border border-gray-300 px-3 py-2 text-center font-semibold w-20 whitespace-nowrap">G.P.S</th>
                 <th className="border border-gray-300 px-3 py-2 text-center font-semibold w-20 whitespace-nowrap">W. Spls.</th>
                 <th className="border border-gray-300 px-3 py-2 text-center font-semibold w-20 whitespace-nowrap">Exp. GPS</th>
-                <th className="border border-gray-300 px-3 py-2 text-right font-semibold w-20 whitespace-nowrap">ShiftTime</th>
+                <th className="border border-gray-300 px-3 py-2 text-center font-semibold w-20 whitespace-nowrap">ShiftTime</th>
                 <th className="border border-gray-300 px-3 py-2 text-center font-semibold w-20 whitespace-nowrap">Total Stopp</th>
               </tr>
             </thead>
@@ -604,7 +604,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     <td className="border border-gray-300 px-3 py-1 text-center text-purple-600 tabular-nums whitespace-nowrap">
                       {formatExpectedGps(row.exp_gps)}
                     </td>
-                    <td className="border border-gray-300 px-0 py-0 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                    <td className="border border-gray-300 px-0 py-0 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
                       {hasMultipleRuns ? (
                         <NumberInput
                           type="number"
@@ -616,7 +616,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                             'run_time',
                             parseFloat(e.target.value) || 0
                           )}
-                          className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-sm tabular-nums shadow-none focus-visible:ring-0"
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0"
                         />
                       ) : effectiveRunTime}
                     </td>

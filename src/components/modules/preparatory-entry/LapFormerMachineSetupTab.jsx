@@ -598,7 +598,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Make</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-40 whitespace-nowrap">Mixing</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Shift Time</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Shift Time</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Std.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Speed</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Std.Effi</th>
@@ -631,7 +631,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
                     1
                   </td>
                   {/* Shift Time - readonly, from shift configuration */}
-                  <td className="border border-gray-300 px-2 py-1 text-right text-gray-600 tabular-nums whitespace-nowrap">
+                  <td className="border border-gray-300 px-2 py-1 text-center text-gray-600 tabular-nums whitespace-nowrap">
                     {totalTime}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-700 tabular-nums whitespace-nowrap">

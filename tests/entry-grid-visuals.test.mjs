@@ -54,5 +54,25 @@ test('entry grid CSS distinguishes editable and fixed cells without replacing al
   assert.match(css, /\.entry-data-grid tbody tr:nth-child\(odd\) > td/)
   assert.match(css, /\.entry-data-grid tbody tr:nth-child\(even\) > td/)
   assert.match(css, /border-color: #94a3b8 !important/)
+  assert.match(css, /text-align: center !important/)
   assert.doesNotMatch(css, /\.entry-data-grid[^}]*text-red-600/)
+})
+
+test('entry grids center shift-time columns across every machine family', async () => {
+  let shiftTimeHeaderCount = 0
+
+  for (const relativePath of entryGridFiles) {
+    const source = await readFile(path.join(root, relativePath), 'utf8')
+    const shiftTimeHeaders = [
+      ...source.matchAll(/<th className="([^"]*)">Shift ?Time<\/th>/g),
+    ]
+
+    for (const [, className] of shiftTimeHeaders) {
+      shiftTimeHeaderCount += 1
+      assert.match(className, /\btext-center\b/, `${relativePath} must center Shift Time`)
+      assert.doesNotMatch(className, /\btext-right\b/, `${relativePath} cannot right-align Shift Time`)
+    }
+  }
+
+  assert.equal(shiftTimeHeaderCount, 12)
 })

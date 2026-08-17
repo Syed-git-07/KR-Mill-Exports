@@ -553,7 +553,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Std.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Std.Effi</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Hank</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Shift Time</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-24 whitespace-nowrap">Shift Time</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">TYPE</th>
               </tr>
             </thead>
@@ -601,7 +601,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {Number(row.hank_constant || FINISHER_DRAWING_FORMULA_FALLBACK.hankConstant)}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                  <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     {row.shift_time || totalTime}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-center text-xs whitespace-nowrap">

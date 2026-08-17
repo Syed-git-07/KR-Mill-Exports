@@ -549,7 +549,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-20 whitespace-nowrap">MakeName</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-56 whitespace-nowrap">Count</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">ShiftTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">ShiftTime</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Std.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Speed</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Std.Effi.</th>
@@ -592,7 +592,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
                   <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     1
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap">
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium tabular-nums whitespace-nowrap">
                     {effectiveTotalTime}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right font-medium text-green-700 tabular-nums whitespace-nowrap">

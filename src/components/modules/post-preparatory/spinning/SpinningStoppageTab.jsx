@@ -583,7 +583,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-16 whitespace-nowrap">Frame No</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-48 whitespace-nowrap">Count</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">ShiftTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">ShiftTime</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">G.P.S</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Exp G.P.S</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36 whitespace-nowrap">Stoppage 1</th>
@@ -631,7 +631,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                       className="h-9 rounded-none text-xs"
                     />
                   </td>
-                  <td className="border border-gray-300 px-0 py-0 text-right tabular-nums whitespace-nowrap">
+                  <td className="border border-gray-300 px-0 py-0 text-center tabular-nums whitespace-nowrap">
                     {hasMultipleRuns ? (
                       <NumberInput
                         type="number"
@@ -643,7 +643,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                           'run_time',
                           parseFloat(e.target.value) || 0
                         )}
-                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-right text-sm tabular-nums shadow-none focus-visible:ring-0"
+                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-sm tabular-nums shadow-none focus-visible:ring-0"
                       />
                     ) : effectiveRunTime}
                   </td>

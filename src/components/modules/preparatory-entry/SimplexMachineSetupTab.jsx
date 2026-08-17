@@ -498,7 +498,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14 whitespace-nowrap">TPI</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Spindles</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Speed</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">ShiftTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">ShiftTime</th>
               </tr>
             </thead>
             <tbody ref={tableRef}>
@@ -640,7 +640,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
                     </td>
                     
                     {/* Shift Time - Read-only from shift config */}
-                    <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-600 tabular-nums whitespace-nowrap">
+                    <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
                       {totalTime}
                     </td>
                   </tr>
