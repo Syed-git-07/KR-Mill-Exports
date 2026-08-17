@@ -478,7 +478,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-24 whitespace-nowrap">Make</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-56 whitespace-nowrap">Mixing</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-20 whitespace-nowrap">Shift Time</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Shift Time</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-24 whitespace-nowrap">Std.Prodn</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Speed</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">Std.Effi</th>
@@ -510,7 +510,7 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
                   <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     1
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap">
+                  <td className="border border-gray-300 px-2 py-1 text-center font-medium tabular-nums whitespace-nowrap">
                     {totalTime}
                   </td>
                   <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-700 tabular-nums whitespace-nowrap">

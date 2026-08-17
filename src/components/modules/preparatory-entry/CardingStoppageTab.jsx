@@ -658,7 +658,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-14 whitespace-nowrap">Mc.No.</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-14 whitespace-nowrap">Session</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-14 whitespace-nowrap">Effi</th>
-                <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">ShiftTime</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">ShiftTime</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36 whitespace-nowrap">Stoppage 1</th>
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold w-16 whitespace-nowrap">S.Time1</th>
                 <th className="border border-gray-300 px-2 py-2 text-left font-semibold w-36 whitespace-nowrap">Stoppage 2</th>
@@ -685,7 +685,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
                   <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {formatNumber(row.production_detail?.effi_percent)}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                  <td className="border border-gray-300 px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     {effectiveTotalTime}
                   </td>
                   <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="stoppage1_id">

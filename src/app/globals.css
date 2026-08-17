@@ -245,7 +245,9 @@ div[class*="overflow-x-auto"][class*="overflow-y-auto"]
 
   .entry-data-grid :is(th, td).text-right,
   .entry-data-grid td > :is(input, textarea).text-right {
-    text-align: center;
+    /* Entry grids use centered numeric columns. Tailwind utilities are emitted
+       in a later cascade layer, so this must remain authoritative. */
+    text-align: center !important;
   }
 }
 
