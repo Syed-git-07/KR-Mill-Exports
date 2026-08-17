@@ -128,9 +128,8 @@ function buildSetupFromMachineMaster(moduleName, machine, header) {
       count_name: machine.spinning_counts?.count_name,
       allocated_spindles: machine.allocated_spindles,
       speed: machine.speed,
-      run_time: shiftTime,
       efficiency: 0.95,
-      conversion_factor: 2.20456
+      run_time: shiftTime
     },
     autoconer: {
       count_id: machine.count_id,
@@ -227,7 +226,7 @@ export async function changeEntryMachineCountRun(moduleName, headerId, setupId, 
       }
     })
     if (!currentDetail) throw new Error('Production row for this machine run is missing; refresh the entry before changing count')
-    const currentStoppage = await tx.spinning_stoppage_entry.findUnique({
+    const currentStoppage = await tx.spinning_stoppage_entry.findFirst({
       where: { production_detail_id: currentDetail.id }
     })
     const currentStoppageTime = Number(currentStoppage?.total_stoppage_time || 0)

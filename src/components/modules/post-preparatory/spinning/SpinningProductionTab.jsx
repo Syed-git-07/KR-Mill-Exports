@@ -11,8 +11,10 @@ import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getSpinningEntryTabDataAction,
-  batchUpdateSpinningProductionDetailsAction
+  getSpinningProductionDetailsAction,
+  batchUpdateSpinningProductionDetailsAction,
+  syncNewMachinesToSpinningHeaderAction,
+  calculateSpinningProductionAction
 } from '@/app/actions/spinning-entry'
 import {
   findDraftByKeys,
@@ -20,14 +22,13 @@ import {
   mergeSetupDraft,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
-import { calculateSpinningEntryMetrics } from '@/lib/productionFormulaMath'
+import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Production Entry Tab
  * 
  * FORMULAS:
- * LOSS_EFFI = (100 - (TW.Con + C.Waste % + Doff Loss)) / 100
- * CONSTANT = 1 / 2.20456 / ACL_Count × Total_Spl × LOSS_EFFI
+ * CONSTANT = 1 / 2.20456 / ACL_Count × Total_Spl × Loss_Efficiency
  * ACL_PROD (Kg) = ACL_Hank × Constant
  * WASTE % = (Waste / ACL_Prod) × 100
  * STOPPED_SPL = (Stoppage_Mins / Total_Mins) × Total_Spl
@@ -109,36 +110,69 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const allocatedSpindles = setup.allocated_spindles != null && setup.allocated_spindles !== ''
       ? Number(setup.allocated_spindles)
       : (row.machine?.allocated_spindles ?? 1104)
+    const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
     const rowRunTime = setup.run_time ?? row.run_time ?? effectiveTotalTime
-    const metrics = calculateSpinningEntryMetrics({
-      actHank: updates.act_hank ?? row.act_hank,
-      waste: updates.waste ?? row.waste,
-      actCount,
-      expectedCount: actCount,
-      allocatedSpindles,
-      shift: shiftNo,
-      stoppageMins: updates.total_stoppage_mins ?? row.total_stoppage_mins,
-      runTime: rowRunTime,
-      speed: setup.speed,
-      tpi: setup.tpi,
+    const productionTime = resolveProductionTime(rowRunTime, requestedStoppageMins)
+    const stoppageMins = productionTime.stoppageTime
+    const runTime = productionTime.totalTime
+
+    // Get values needed for Exp GPS calculation (from machine setup, sourced from spinning_counts master)
+    const speed = parseInt(setup.speed) || 0
+    const tpi = parseFloat(setup.tpi) || 0
+    // Use act_count from machine setup for Exp GPS calculation
+    const count = actCount
+
+    // Calculate No of Spindles based on shift
+    // Shift 1 & 2: allocated / 8 * 8.5, Shift 3: allocated / 8 * 7
+    const multiplier = shiftNo === 3 ? 7 : 8.5
+    const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
+
+    const lossEfficiency = calculateSpinningLossEfficiency({
       twCon: setup.tw_con,
-      cWastePercent: setup.c_waste_percent,
       doffLoss: setup.doff_loss,
-      efficiency: setup.efficiency,
-      conversionFactor: setup.conversion_factor,
+      cWastePercent: setup.c_waste_percent
+    })
+    const constant = actCount > 0
+      ? (1 / 2.20456 / actCount) * totalSpindles * lossEfficiency
+      : 0
+
+    const actHank = parseFloat(updates.act_hank ?? row.act_hank) || 0
+    const actProdn = actHank * constant
+
+    const waste = parseFloat(updates.waste ?? row.waste) || 0
+
+    // Calculate waste percentage
+    const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
+
+    // Calculate stopped and worked spindles
+    // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
+    const stoppedSpindles = runTime > 0 ? (stoppageMins / runTime) * totalSpindles : 0
+    // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
+    const workedSpindles = Math.max(totalSpindles - stoppedSpindles, 0)
+
+    // Calculate GPS = (ACL_Prod / Worked_Spl) × 1000
+    const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
+
+    // Calculate Expected GPS = 7.2 × Speed / TPI / Count × Effi
+    const expGps = calculateSpinningExpectedGps({
+      speed,
+      tpi,
+      count,
+      efficiency: setup.efficiency ?? 0.95
     })
 
-    return {
-      act_prodn: metrics.actProdn,
-      waste_percent: metrics.wastePercent,
-      stopped_spindles: metrics.stoppedSpindles,
-      worked_spindles: metrics.workedSpindles,
-      gps: metrics.gps,
-      exp_gps: metrics.expGps,
-      work_time: metrics.workTime,
-      _constant: metrics.constant,
-      _totalSpindles: metrics.totalSpindles
+    const result = {
+      act_prodn: Math.round(actProdn * 100) / 100,
+      waste_percent: Math.round(wastePercent * 100) / 100,
+      stopped_spindles: Math.round(stoppedSpindles * 100) / 100,
+      worked_spindles: workedSpindles,
+      gps: Math.round(gps * 100) / 100,
+      exp_gps: Math.round(expGps * 1000) / 1000,
+      work_time: runTime - stoppageMins,
+      _constant: Math.round(constant * 1000) / 1000,
+      _totalSpindles: totalSpindles
     }
+    return result
   }, [effectiveTotalTime, shiftNo])
 
   // Load production data
@@ -147,19 +181,14 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     
     setIsLoading(true)
     try {
-      const tabResult = await getSpinningEntryTabDataAction('production', {
-        headerId,
-        shift: shiftNo
-      })
-      if (!tabResult.success) throw new Error(tabResult.error)
-      const { syncResult, detailsResult } = tabResult.data
-
+      // Sync any new machines
+      const syncResult = await syncNewMachinesToSpinningHeaderAction(headerId, shiftNo)
       if (syncResult.success && syncResult.data?.added > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.added} machine(s) for this shift`)
         hasShownInitToast.current = true
       }
 
-      const result = detailsResult
+      const result = await getSpinningProductionDetailsAction(headerId)
       if (!result.success) throw new Error(result.error)
       
       const details = result.data || []
@@ -388,8 +417,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         }
         setEditedRows({})
         if (!skipParentRefresh) {
-          if (onRefresh) await onRefresh()
-          else await loadData()
+          await loadData()
+          onRefresh?.()
         }
         return { success: true, saved: updates.length }
       } else {
@@ -454,7 +483,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       {/* Production Table */}
       <div className="border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
         <div className="overflow-x-auto max-h-125 overflow-y-auto">
-          <table className="entry-color-grid w-full border-collapse text-sm table-fixed">
+          <table className="w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
                 <th className="border border-gray-300 px-3 py-2 text-left font-semibold w-20 whitespace-nowrap">Machine</th>
@@ -592,7 +621,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                       ) : effectiveRunTime}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-center font-medium text-orange-600 tabular-nums whitespace-nowrap">
-                      {row.total_stoppage_mins ?? 0}
+                      {row.stoppage?.[0]?.total_stoppage_time ?? 0}
                     </td>
                   </tr>
                 )

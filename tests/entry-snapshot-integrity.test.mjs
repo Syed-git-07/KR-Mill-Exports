@@ -102,6 +102,8 @@ test('split Count Change is exposed only by the selected-row Spinning workflow',
   assert.match(helper, /run_sequence: nextSequence/)
   assert.match(helper, /buildSpinningCountSnapshot/)
   assert.match(helper, /Count Change is supported only for Spinning entries/)
+  assert.match(helper, /spinning_stoppage_entry\.findFirst\(\{\s*where:\s*\{ production_detail_id:/)
+  assert.doesNotMatch(helper, /spinning_stoppage_entry\.findUnique\(\{\s*where:\s*\{ production_detail_id:/)
   assert.match(spinning, /countId: selectedCount\.id/)
   assert.match(helper, /where: \{ id: countId, is_active: true \}/)
   assert.match(helper, /work_time: elapsed - currentStoppageTime/)
@@ -189,6 +191,22 @@ test('Spinning count-run time and count stay distinct across all three tabs', ()
   assert.match(stoppage, /mergedRow\.run_time \?\? effectiveTotalTime/)
   assert.match(stoppage, /findSetupDraftForMachine\(row\.machine_id, row\.setup_id\)/)
   assert.match(stoppage, /onMachineSetupFieldChange/)
+})
+
+test('Spinning entry efficiency is date-shift scoped and drives Expected GPS only', () => {
+  const page = read('src/app/post-preparatory/spinning/entry/page.jsx')
+  const production = read('src/components/modules/post-preparatory/spinning/SpinningProductionTab.jsx')
+  const stoppage = read('src/components/modules/post-preparatory/spinning/SpinningStoppageTab.jsx')
+  const formulas = read('src/lib/productionFormulaMath.js')
+
+  assert.match(page, /Set Efficiency/)
+  assert.match(page, /efficiency:\s*percent \/ 100|const efficiency = percent \/ 100/)
+  assert.match(page, /Click Update to save/)
+  assert.match(production, /calculateSpinningLossEfficiency/)
+  assert.match(stoppage, /calculateSpinningLossEfficiency/)
+  assert.match(production, /efficiency:\s*setup\.efficiency \?\? 0\.95/)
+  assert.match(stoppage, /efficiency:\s*setupDraft\?\.efficiency \?\? row\.efficiency \?\? 0\.95/)
+  assert.doesNotMatch(formulas, /calculateSpinningExpectedGpsEfficiency/)
 })
 
 test('re-adding an excluded machine normalizes its local run structure before detail sync', () => {

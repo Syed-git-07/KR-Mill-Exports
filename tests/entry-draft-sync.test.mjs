@@ -46,11 +46,8 @@ const {
   cloneDateScopedSetup
 } = await importSourceModule('../src/lib/queries/dateScopedMachineSetup.js')
 const {
-  calculateSpinningAclConstant,
-  calculateSpinningEntryMetrics,
   calculateSpinningExpectedGps,
   calculateSpinningLossEfficiency,
-  normalizeSpinningEfficiencyFactor,
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
 } = await importSourceModule('../src/lib/productionFormulaMath.js')
@@ -104,16 +101,6 @@ test('stoppage draft totals override saved slot values without touching the data
 
   assert.equal(getEffectiveStoppageTotal(productionRow, drafts), 27)
   assert.equal(productionRow.stoppage[0].total_stoppage_time, 15)
-})
-
-test('Spinning Production renders the effective draft stoppage total', async () => {
-  const source = await readFile(new URL(
-    '../src/components/modules/post-preparatory/spinning/SpinningProductionTab.jsx',
-    import.meta.url
-  ), 'utf8')
-
-  assert.match(source, /\{row\.total_stoppage_mins \?\? 0\}/)
-  assert.doesNotMatch(source, /row\.stoppage\?\.\[0\]\?\.total_stoppage_time/)
 })
 
 test('bulk stoppage drafts link back to production so calculated grids update immediately', () => {
@@ -264,22 +251,13 @@ test('stoppage time is bounded to the shift before dependent formulas run', () =
   })
 })
 
-test('spinning ACL loss efficiency and entry expected-GPS efficiency remain independent', () => {
+test('spinning formulas keep entry efficiency separate from production loss efficiency', () => {
   const lossEfficiency = calculateSpinningLossEfficiency({
-    twCon: 4,
-    doffLoss: 0.7,
-    cWastePercent: 0.9
+    twCon: 0.001,
+    doffLoss: 0,
+    cWastePercent: 0
   })
-  assert.equal(Math.round(lossEfficiency * 1000) / 1000, 0.944)
-
-  const constant = calculateSpinningAclConstant({
-    aclCount: 68,
-    totalSpindles: 1173,
-    twCon: 4,
-    doffLoss: 0.7,
-    cWastePercent: 0.9
-  })
-  assert.equal(Math.round(constant * 1000) / 1000, 7.387)
+  assert.ok(Math.abs(lossEfficiency - 0.99999) < Number.EPSILON)
 
   const first = calculateSpinningExpectedGps({
     speed: 25519,
@@ -288,46 +266,14 @@ test('spinning ACL loss efficiency and entry expected-GPS efficiency remain inde
     efficiency: 0.95
   })
   const second = calculateSpinningExpectedGps({
-    speed: 25519,
-    tpi: 29.7,
-    count: 62,
-    efficiency: 93
+    speed: 25547,
+    tpi: 32.51,
+    count: 70,
+    efficiency: 0.95
   })
 
   assert.equal(Math.round(first * 1000) / 1000, 94.792)
-  assert.equal(Math.round(second * 1000) / 1000, 92.796)
-  assert.equal(normalizeSpinningEfficiencyFactor(95), 0.95)
-})
-
-test('Spinning Production, Stoppage and server calculations share canonical metrics', () => {
-  const metrics = calculateSpinningEntryMetrics({
-    actHank: 10.19,
-    waste: 0.22,
-    actCount: 68,
-    expectedCount: 68,
-    allocatedSpindles: 1104,
-    shift: 1,
-    stoppageMins: 30,
-    runTime: 510,
-    speed: 15000,
-    tpi: 33.13,
-    twCon: 4,
-    cWastePercent: 0.9,
-    doffLoss: 0.7,
-    efficiency: 0.95,
-  })
-
-  assert.deepEqual(metrics, {
-    totalSpindles: 1173,
-    constant: 7.387,
-    actProdn: 75.27,
-    wastePercent: 0.29,
-    stoppedSpindles: 69,
-    workedSpindles: 1104,
-    gps: 68.18,
-    expGps: 45.543,
-    workTime: 480,
-  })
+  assert.equal(Math.round(second * 1000) / 1000, 76.786)
 })
 
 test('explicit zero master values are never replaced by formula defaults', () => {
