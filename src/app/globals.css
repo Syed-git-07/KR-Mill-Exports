@@ -178,6 +178,77 @@ div[class*="overflow-x-auto"][class*="overflow-y-auto"]
   box-shadow: 0 1px 0 #1d4ed8;
 }
 
+/*
+ * Shared visual language for production-entry grids.
+ *
+ * - Warm, alternating cells identify displayed/calculated values.
+ * - Pale-blue cells identify controls the operator can edit.
+ * - Existing semantic utilities (GPS alerts, selected/edited rows, totals,
+ *   etc.) remain authoritative because this sits in the component layer.
+ */
+@layer components {
+  .entry-data-grid {
+    color: #172033;
+  }
+
+  .entry-data-grid :is(th, td) {
+    vertical-align: middle;
+    border-color: #94a3b8 !important;
+  }
+
+  .entry-data-grid thead th {
+    border-color: #93c5fd !important;
+    box-shadow: inset -1px 0 0 rgb(30 64 175 / 65%), 0 1px 0 #1d4ed8;
+  }
+
+  .entry-data-grid tbody tr:nth-child(odd) > td {
+    background-color: #fff7ed;
+  }
+
+  .entry-data-grid tbody tr:nth-child(even) > td {
+    background-color: #fff1f2;
+  }
+
+  .entry-data-grid tbody td:has(
+    input:not(:disabled):not([readonly]),
+    textarea:not(:disabled):not([readonly]),
+    select:not(:disabled),
+    button[role="combobox"]:not(:disabled)
+  ) {
+    background-color: #eff6ff;
+  }
+
+  .entry-data-grid tbody td:has(
+    input:not(:disabled):not([readonly]):focus,
+    textarea:not(:disabled):not([readonly]):focus,
+    select:not(:disabled):focus,
+    button[role="combobox"][data-state="open"]
+  ) {
+    background-color: #dbeafe;
+  }
+
+  .entry-data-grid tbody tr.bg-yellow-50 > td {
+    background-color: #fefce8;
+  }
+
+  .entry-data-grid tbody tr.bg-blue-100 > td {
+    background-color: #dbeafe;
+  }
+
+  .entry-data-grid tbody tr:hover > td {
+    background-color: #eff6ff;
+  }
+
+  .entry-data-grid tbody td > :is(input, textarea, select, button[role="combobox"]) {
+    background-color: transparent;
+  }
+
+  .entry-data-grid :is(th, td).text-right,
+  .entry-data-grid td > :is(input, textarea).text-right {
+    text-align: center;
+  }
+}
+
 /* Print Styles */
 @media print {
   body {
