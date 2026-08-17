@@ -26,7 +26,7 @@ import {
   getSpinningMachinesAction
 } from '@/app/actions/spinning-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
-import { calculateSpinningExpectedGps } from '@/lib/productionFormulaMath'
+import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Stoppage Entry Tab
@@ -186,9 +186,14 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
     const workedSpindles = totalSpindles - stoppedSpindles
 
-    // Calculate constant (uses fixed 0.985 efficiency, NOT the setup efficiency)
-    const CONSTANT_EFFICIENCY = 0.985
-    const constant = (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
+    const lossEfficiency = calculateSpinningLossEfficiency({
+      twCon: setupDraft?.tw_con ?? row.tw_con,
+      doffLoss: setupDraft?.doff_loss ?? row.doff_loss,
+      cWastePercent: setupDraft?.c_waste_percent ?? row.c_waste_percent
+    })
+    const constant = actCount > 0
+      ? (1 / 2.20456 / actCount) * totalSpindles * lossEfficiency
+      : 0
 
     // GPS = (Act Prodn / Worked Spl) × 1000
     const actProdn = actHank * constant
@@ -199,9 +204,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
       speed,
       tpi,
       count,
-      twCon: setupDraft?.tw_con ?? row.tw_con,
-      doffLoss: setupDraft?.doff_loss ?? row.doff_loss,
-      cWastePercent: setupDraft?.c_waste_percent ?? row.c_waste_percent
+      efficiency: setupDraft?.efficiency ?? row.efficiency ?? 0.95
     })
 
     return {

@@ -23,7 +23,7 @@ export function resolveProductionTime(totalTime, stoppageTime) {
   }
 }
 
-export function calculateSpinningExpectedGpsEfficiency({
+export function calculateSpinningLossEfficiency({
   twCon,
   doffLoss,
   cWastePercent,
@@ -33,29 +33,23 @@ export function calculateSpinningExpectedGpsEfficiency({
     toFiniteNumber(doffLoss) +
     toFiniteNumber(cWastePercent)
 
-  return (100 - totalLossPercent) / 100
+  return Math.max(100 - totalLossPercent, 0) / 100
 }
 
 export function calculateSpinningExpectedGps({
   speed,
   tpi,
   count,
-  twCon,
-  doffLoss,
-  cWastePercent,
+  efficiency = 0.95,
 }) {
   const safeSpeed = toFiniteNumber(speed)
   const safeTpi = toFiniteNumber(tpi)
   const safeCount = toFiniteNumber(count)
   if (!safeSpeed || !safeTpi || !safeCount) return 0
 
-  const efficiency = calculateSpinningExpectedGpsEfficiency({
-    twCon,
-    doffLoss,
-    cWastePercent,
-  })
+  const safeEfficiency = Math.min(Math.max(toFiniteNumber(efficiency, 0.95), 0), 1)
 
-  return (7.2 * safeSpeed / safeTpi / safeCount) * efficiency
+  return (7.2 * safeSpeed / safeTpi / safeCount) * safeEfficiency
 }
 
 /**

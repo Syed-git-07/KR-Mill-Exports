@@ -3,7 +3,7 @@ import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeader
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
-import { calculateSpinningExpectedGps, resolveProductionTime } from '../productionFormulaMath'
+import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildSpinningCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
@@ -45,7 +45,7 @@ function firstProvidedNumber(values, fallback = 0) {
  * 
  * FORMULAS (from spinning_count-formula.md):
  * 
- * CONSTANT = 1 / 2.20456 / ACL_Count × Total_Spl × 0.985 (constant efficiency)
+ * CONSTANT = 1 / 2.20456 / ACL_Count × Total_Spl × Loss_Efficiency
  * ACL_PROD (Kg) = ACL_Hank × Constant
  * WASTE % = (Waste / ACL_Prod) × 100
  * STOPPED_SPL = (Stoppage_Mins / Total_Mins) × Total_Spl
@@ -138,15 +138,13 @@ export function calculateNoOfSpindles(allocatedSpindles, shift) {
 
 /**
  * Calculate Constant for spinning production
- * Formula: Constant = 1 / 2.20456 / ACL_Count × Total_Spl × CONSTANT_EFFICIENCY
- * Note: CONSTANT_EFFICIENCY is always 0.985 (98.5%) - this is a fixed conversion factor,
- *       NOT the same as the machine setup efficiency (0.95) used in Exp GPS calculation.
+ * Formula: Constant = 1 / 2.20456 / ACL_Count × Total_Spl × Loss_Efficiency
+ * Loss_Efficiency = (100 - (TW.Con + C.Waste% + Doff Loss)) / 100.
  */
-const CONSTANT_EFFICIENCY = 0.985
-
-export function calculateConstant(aclCount, totalSpindles) {
+export function calculateConstant(aclCount, totalSpindles, twCon = 0, doffLoss = 0, cWastePercent = 0) {
   if (!aclCount || aclCount === 0) return 0
-  return (1 / 2.20456 / aclCount) * totalSpindles * CONSTANT_EFFICIENCY
+  const lossEfficiency = calculateSpinningLossEfficiency({ twCon, doffLoss, cWastePercent })
+  return (1 / 2.20456 / aclCount) * totalSpindles * lossEfficiency
 }
 
 /**
@@ -195,8 +193,7 @@ export function calculateGps(actProdn, workedSpindles) {
 
 /**
  * Calculate Expected GPS
- * Formula: Exp_GPS = 7.2 × Speed / TPI / Count × Loss_Effi
- * Loss_Effi = (100 - (TW.Con + Doff Loss + C.Waste %)) / 100
+ * Formula: Exp_GPS = 7.2 × Speed / TPI / Count × Entry_Efficiency
  * @param {number} speed - Machine speed (RPM)
  * @param {number} tpi - Twists per inch
  * @param {number} count - Act Count value (e.g., 69.5 from machine setup)
@@ -204,14 +201,12 @@ export function calculateGps(actProdn, workedSpindles) {
  * @param {number} doffLoss - Doff loss percentage
  * @param {number} cWastePercent - C.Waste percentage
  */
-export function calculateExpGps(speed, tpi, count, twCon = 0, doffLoss = 0, cWastePercent = 0) {
+export function calculateExpGps(speed, tpi, count, efficiency = 0.95) {
   return calculateSpinningExpectedGps({
     speed,
     tpi,
     count,
-    twCon,
-    doffLoss,
-    cWastePercent
+    efficiency
   })
 }
 
@@ -233,19 +228,20 @@ export function calculateSpinningProduction(params) {
     count = 0,
     twCon = 0,
     doffLoss = 0,
-    cWastePercent = 0
+    cWastePercent = 0,
+    efficiency = 0.95
   } = params
 
   // Calculate No of Spindles based on shift
   const totalSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
 
-  const constant = calculateConstant(actCount, totalSpindles)
+  const constant = calculateConstant(actCount, totalSpindles, twCon, doffLoss, cWastePercent)
   const actProdn = calculateActProdn(actHank, constant)
   const wastePercent = calculateWastePercent(waste, actProdn)
   const stoppedSpindles = calculateStoppedSpindles(stoppageMins, runTime, totalSpindles)
   const workedSpindles = calculateWorkedSpindles(totalSpindles, stoppedSpindles)
   const gps = calculateGps(actProdn, workedSpindles)
-  const expGps = calculateExpGps(speed, tpi, count, twCon, doffLoss, cWastePercent)
+  const expGps = calculateExpGps(speed, tpi, count, efficiency)
 
   return {
     totalSpindles: totalSpindles,
@@ -1331,7 +1327,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
             ),
             session_no: 1,
             run_time: targetShiftTime,
-            efficiency: 0.985,
+            efficiency: 0.95,
             conversion_factor: 2.20456
           }
         })
@@ -1345,7 +1341,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
           allocated_spindles: firstProvidedNumber([machine.allocated_spindles], 1104),
           session_no: 1,
           run_time: targetShiftTime,
-          efficiency: 0.985,
+          efficiency: 0.95,
           conversion_factor: 2.20456
         }))
     

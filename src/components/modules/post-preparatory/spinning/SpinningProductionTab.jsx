@@ -22,13 +22,13 @@ import {
   mergeSetupDraft,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
-import { calculateSpinningExpectedGps, resolveProductionTime } from '@/lib/productionFormulaMath'
+import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Production Entry Tab
  * 
  * FORMULAS:
- * CONSTANT = 1 / 2.20456 / ACL_Count × Total_Spl × Effi (0.985)
+ * CONSTANT = 1 / 2.20456 / ACL_Count × Total_Spl × Loss_Efficiency
  * ACL_PROD (Kg) = ACL_Hank × Constant
  * WASTE % = (Waste / ACL_Prod) × 100
  * STOPPED_SPL = (Stoppage_Mins / Total_Mins) × Total_Spl
@@ -127,10 +127,13 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const multiplier = shiftNo === 3 ? 7 : 8.5
     const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
 
-    // Calculate constant (uses fixed 0.985 efficiency, NOT the setup efficiency)
-    const CONSTANT_EFFICIENCY = 0.985
+    const lossEfficiency = calculateSpinningLossEfficiency({
+      twCon: setup.tw_con,
+      doffLoss: setup.doff_loss,
+      cWastePercent: setup.c_waste_percent
+    })
     const constant = actCount > 0
-      ? (1 / 2.20456 / actCount) * totalSpindles * CONSTANT_EFFICIENCY
+      ? (1 / 2.20456 / actCount) * totalSpindles * lossEfficiency
       : 0
 
     const actHank = parseFloat(updates.act_hank ?? row.act_hank) || 0
@@ -155,9 +158,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       speed,
       tpi,
       count,
-      twCon: setup.tw_con,
-      doffLoss: setup.doff_loss,
-      cWastePercent: setup.c_waste_percent
+      efficiency: setup.efficiency ?? 0.95
     })
 
     const result = {

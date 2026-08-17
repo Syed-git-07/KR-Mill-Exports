@@ -47,7 +47,7 @@ const {
 } = await importSourceModule('../src/lib/queries/dateScopedMachineSetup.js')
 const {
   calculateSpinningExpectedGps,
-  calculateSpinningExpectedGpsEfficiency,
+  calculateSpinningLossEfficiency,
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
 } = await importSourceModule('../src/lib/productionFormulaMath.js')
@@ -251,33 +251,29 @@ test('stoppage time is bounded to the shift before dependent formulas run', () =
   })
 })
 
-test('spinning expected GPS derives efficiency from setup losses and retains three-decimal precision', () => {
-  const efficiency = calculateSpinningExpectedGpsEfficiency({
+test('spinning formulas keep entry efficiency separate from production loss efficiency', () => {
+  const lossEfficiency = calculateSpinningLossEfficiency({
     twCon: 0.001,
     doffLoss: 0,
     cWastePercent: 0
   })
-  assert.ok(Math.abs(efficiency - 0.99999) < Number.EPSILON)
+  assert.ok(Math.abs(lossEfficiency - 0.99999) < Number.EPSILON)
 
   const first = calculateSpinningExpectedGps({
     speed: 25519,
     tpi: 29.7,
     count: 62,
-    twCon: 0.001,
-    doffLoss: 0,
-    cWastePercent: 0
+    efficiency: 0.95
   })
   const second = calculateSpinningExpectedGps({
     speed: 25547,
     tpi: 32.51,
     count: 70,
-    twCon: 0.001,
-    doffLoss: 0,
-    cWastePercent: 0
+    efficiency: 0.95
   })
 
-  assert.equal(Math.round(first * 1000) / 1000, 99.78)
-  assert.equal(Math.round(second * 1000) / 1000, 80.826)
+  assert.equal(Math.round(first * 1000) / 1000, 94.792)
+  assert.equal(Math.round(second * 1000) / 1000, 76.786)
 })
 
 test('explicit zero master values are never replaced by formula defaults', () => {
