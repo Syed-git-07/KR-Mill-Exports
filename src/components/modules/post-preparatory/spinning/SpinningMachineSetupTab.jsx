@@ -794,7 +794,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">C.Waste%</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Speed</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">TPI</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Effi%</th>
               </tr>
             </thead>
             <tbody>
@@ -923,9 +922,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100"
                         zeroAsEmpty
                       />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
-                      {(Number(row.efficiency ?? 0.95) * 100).toFixed(2)}
                     </td>
                   </tr>
                 )
