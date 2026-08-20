@@ -311,3 +311,58 @@ export async function copyAutoconerFromPreviousDateAction(...args) {
   void args
   return { success: false, error: 'Autoconer machine setup has no speed to copy.' }
 }
+
+export async function getAutoconerEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { shift = 1, entryDate, headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, countsResult, machinesResult] = await Promise.all([
+        getAutoconerMachineSetupsAction(shift, entryDate),
+        getSpinningCountsAction(),
+        getAutoconerMachinesAction()
+      ])
+      return { success: true, data: { setupsResult, countsResult, machinesResult } }
+    }
+
+    if (tab === 'production') {
+      const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shift)
+      const [detailsResult, idleReasonsResult] = await Promise.all([
+        getAutoconerProductionDetailsAction(headerId),
+        getIdleReasonsAction()
+      ])
+      return { success: true, data: { syncResult, detailsResult, idleReasonsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shift)
+      const [stoppagesResult, reasonsResult, machinesResult] = await Promise.all([
+        getAutoconerStoppageEntriesAction(headerId),
+        getStoppageDetailsAction(),
+        getAutoconerMachinesAction()
+      ])
+      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machinesResult } }
+    }
+
+    throw new Error('Invalid Autoconer entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runAutoconerEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'stoppage-update': item => updateAutoconerStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeAutoconerMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Autoconer batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}

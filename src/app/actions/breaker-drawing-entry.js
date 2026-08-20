@@ -320,3 +320,60 @@ export async function applyBreakerDrawingPartialStoppageAction(headerId, fromMac
     return { success: false, error: safeActionError(error) }
   }
 }
+
+export async function getBreakerDrawingEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { shift = 1, headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsRes, mixingsRes] = await Promise.all([
+        getBreakerDrawingMachineSetupsAction(shift, headerId),
+        getMixingOptionsAction()
+      ])
+      return { success: true, data: { setupsRes, mixingsRes } }
+    }
+
+    if (tab === 'production') {
+      const syncResult = await syncNewMachinesToBreakerDrawingHeaderAction(headerId)
+      const [detailsResult, setupsResult] = await Promise.all([
+        getBreakerDrawingProductionWithSetupAction(headerId),
+        getBreakerDrawingMachineSetupsAction(shift, headerId)
+      ])
+      return { success: true, data: { syncResult, detailsResult, setupsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const syncResult = await syncNewMachinesToBreakerDrawingHeaderAction(headerId, shift)
+      const [stoppagesRes, reasonsRes, machineListRes, setupsRes] = await Promise.all([
+        getBreakerDrawingStoppageEntriesAction(headerId),
+        getBreakerDrawingStoppageReasonsAction(),
+        getBreakerDrawingMachinesAction(),
+        getBreakerDrawingMachineSetupsAction(shift, headerId)
+      ])
+      return { success: true, data: { syncResult, stoppagesRes, reasonsRes, machineListRes, setupsRes } }
+    }
+
+    throw new Error('Invalid Breaker Drawing entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runBreakerDrawingEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'setup-update': item => updateMachineSetupAction(item.id, item.updates),
+      'production-update': item => updateBreakerDrawingDetailAction(item.id, item.updates),
+      'stoppage-update': item => updateStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeBreakerDrawingMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Breaker Drawing batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}

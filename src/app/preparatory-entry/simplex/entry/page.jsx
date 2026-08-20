@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import Calendar from '@/components/common/HolidayAwareCalendar'
 import DeferredMount from '@/components/common/DeferredMount'
+import SimpleCalculator from '@/components/common/SimpleCalculator'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -517,6 +518,8 @@ function SimplexEntryContent() {
                 </SelectContent>
               </Select>
             </div>
+
+            <SimpleCalculator />
 
             {/* Initialize Button */}
             {!headerId && !isLoading && (

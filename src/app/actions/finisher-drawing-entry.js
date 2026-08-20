@@ -320,3 +320,61 @@ export async function lookupFinisherDrawingMachineByNoAction(machineNo, entryDat
     return { success: false, error: safeActionError(error) }
   }
 }
+
+export async function getFinisherDrawingEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { shift = 1, headerId } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, mixingsResult, countsResult] = await Promise.all([
+        getFinisherDrawingMachineSetupsAction(shift, headerId),
+        getFinisherDrawingMixingOptionsAction(),
+        getSpinningCountOptionsAction()
+      ])
+      return { success: true, data: { setupsResult, mixingsResult, countsResult } }
+    }
+
+    if (tab === 'production') {
+      const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
+      const [detailsResult, setupsResult] = await Promise.all([
+        getFinisherDrawingProductionWithSetupAction(headerId),
+        getFinisherDrawingMachineSetupsAction(shift, headerId)
+      ])
+      return { success: true, data: { syncResult, detailsResult, setupsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
+        getFinisherDrawingStoppageEntriesAction(headerId),
+        getFinisherDrawingStoppageReasonsAction(),
+        getFinisherDrawingMachinesAction(),
+        getFinisherDrawingMachineSetupsAction(shift, headerId)
+      ])
+      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machineListResult, setupsResult } }
+    }
+
+    throw new Error('Invalid Finisher Drawing entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runFinisherDrawingEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'setup-update': item => updateFinisherDrawingMachineSetupAction(item.id, item.updates),
+      'production-update': item => updateFinisherDrawingDetailAction(item.id, item.updates),
+      'stoppage-update': item => updateFinisherDrawingStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeFinisherDrawingMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Finisher Drawing batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}

@@ -337,3 +337,61 @@ export async function copyComberFromPreviousDateAction(...args) {
   void args
   return { success: false, error: 'Comber speed is fixed and cannot be copied.' }
 }
+
+export async function getComberEntryTabDataAction(tab, context = {}) {
+  await requireUser()
+  try {
+    const { headerId, shift = 1 } = context
+
+    if (tab === 'setup') {
+      const [setupsResult, countsResult, shiftConfigResult] = await Promise.all([
+        getComberMachineSetupsAction(headerId),
+        getComberCountOptionsAction(),
+        getComberShiftConfigurationAction(shift)
+      ])
+      return { success: true, data: { setupsResult, countsResult, shiftConfigResult } }
+    }
+
+    if (tab === 'production') {
+      const syncResult = await syncNewMachinesToComberHeaderAction(headerId)
+      const [detailsResult, setupsResult] = await Promise.all([
+        getComberProductionWithSetupAction(headerId),
+        getComberMachineSetupsAction(headerId)
+      ])
+      return { success: true, data: { syncResult, detailsResult, setupsResult } }
+    }
+
+    if (tab === 'stoppage') {
+      const syncResult = await syncNewMachinesToComberHeaderAction(headerId)
+      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
+        getComberStoppageEntriesAction(headerId),
+        getComberStoppageReasonsAction(),
+        getComberMachinesAction(),
+        getComberMachineSetupsAction(headerId)
+      ])
+      return { success: true, data: { syncResult, stoppagesResult, reasonsResult, machineListResult, setupsResult } }
+    }
+
+    throw new Error('Invalid Comber entry tab')
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function runComberEntryBatchAction(operation, items = [], context = {}) {
+  await requireUser()
+  try {
+    const handlers = {
+      'setup-update': item => updateComberMachineSetupAction(item.id, item.updates),
+      'production-update': item => updateComberProductionDetailAction(item.id, item.updates),
+      'stoppage-update': item => updateComberStoppageEntryAction(item.id, item.updates),
+      'machine-remove': item => removeComberMachineAction(item.id, context.headerId)
+    }
+    const handler = handlers[operation]
+    if (!handler) throw new Error('Invalid Comber batch operation')
+    const results = await Promise.all(items.map(handler))
+    return { success: true, data: results }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
