@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
 import DeferredMount from '@/components/common/DeferredMount'
-import SimpleCalculator from '@/components/common/SimpleCalculator'
 import { CalendarIcon, Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
@@ -567,7 +566,6 @@ function FinisherDrawingEntryContent() {
               </Select>
             </div>
 
-            <SimpleCalculator />
 
             {/* Initialize Button */}
             {!headerId && (
