@@ -1674,7 +1674,7 @@ export function calculateAutoconerProductionValues(actProdn, wasteKg, idleDrum, 
 
   return {
     waste_percent: wastePercent === null ? null : Math.round(wastePercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100,
+    uti_percent: Math.round(utiPercent * 1000) / 1000,
     prodn_effi: Math.round(prodnEffi * 100) / 100,
     work_time: workTime,
     run_time: runTime,
