@@ -116,8 +116,8 @@ export default function AutoconerLowEfficiencyReportPage() {
           body: tableData,
           theme: 'grid',
           headStyles: {
-            fillColor: [22, 163, 74], // green-600
-            textColor: 255,
+            fillColor: [235, 237, 240],
+            textColor: [24, 32, 42],
             fontStyle: 'bold',
             halign: 'left'
           },
@@ -138,15 +138,8 @@ export default function AutoconerLowEfficiencyReportPage() {
             if (data.column.index === 4 && data.section === 'body') {
               const machine = shift.machines[data.row.index]
               if (machine) {
-                if (machine.shift_effi >= machine.act_effi) {
-                  // Green for good efficiency (meets or exceeds target)
-                  data.cell.styles.textColor = [22, 163, 74] // green-600
-                  data.cell.styles.fontStyle = 'bold'
-                } else {
-                  // Red for low efficiency (below target)
-                  data.cell.styles.textColor = [220, 38, 38] // red-600
-                  data.cell.styles.fontStyle = 'bold'
-                }
+                data.cell.styles.textColor = [145, 32, 38]
+                data.cell.styles.fontStyle = 'bold'
               }
             }
           }
@@ -198,7 +191,7 @@ export default function AutoconerLowEfficiencyReportPage() {
               <div>
                 <CardTitle className="text-2xl">Autoconer Sider Efficiency Report</CardTitle>
                 <p className="text-green-100 mt-2">
-                  Machine efficiency performance tracking (Green: Above target, Red: Below target)
+                  Machines below their dated target efficiency
                 </p>
               </div>
               <Link href="/reports">
@@ -312,7 +305,7 @@ export default function AutoconerLowEfficiencyReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse border border-gray-300 text-sm">
                   <thead>
-                    <tr className="bg-green-600 text-white">
+                    <tr className="bg-slate-100 text-slate-900">
                       <th className="border border-gray-300 px-3 py-2 text-left font-semibold">
                         MC NO
                       </th>
@@ -353,9 +346,7 @@ export default function AutoconerLowEfficiencyReportPage() {
                         </td>
                         <td className={cn(
                           "border border-gray-300 px-3 py-2 text-right font-semibold",
-                          machine.shift_effi >= machine.act_effi 
-                            ? "text-green-600" 
-                            : "text-red-600"
+                          "text-red-700"
                         )}>
                           {machine.shift_effi.toFixed(2)}
                         </td>

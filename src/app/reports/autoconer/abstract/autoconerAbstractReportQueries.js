@@ -57,13 +57,13 @@ async function getAutoconerAbstractReport(date) {
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
         )                                                                             AS effi,
         ROUND(AVG(d.red_light), 2)                                                   AS red_light,
-        ROUND(AVG((d.run_time / d.work_time) * 100), 2)                              AS utti
+        ROUND(AVG((d.work_time / NULLIF(d.run_time, 0)) * 100), 2)                  AS utti
       FROM autoconer_production_header h
       JOIN autoconer_production_detail d ON d.header_id = h.id
       JOIN autoconer_machines          m ON m.id         = d.machine_id
@@ -82,13 +82,13 @@ async function getAutoconerAbstractReport(date) {
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
         )                                                                             AS effi,
         ROUND(AVG(d.red_light), 2)                                                   AS red_light,
-        ROUND(AVG((d.run_time / d.work_time) * 100), 2)                              AS utti
+        ROUND(AVG((d.work_time / NULLIF(d.run_time, 0)) * 100), 2)                  AS utti
       FROM autoconer_production_header h
       JOIN autoconer_production_detail d ON d.header_id = h.id
       JOIN autoconer_machines          m ON m.id         = d.machine_id
@@ -108,8 +108,8 @@ async function getAutoconerAbstractReport(date) {
         ROUND(
           (SUM(d.act_prodn) /
             NULLIF(
-              SUM((m.no_of_drums - d.idle_drum) * d.run_time
-                  / m.no_of_drums / d.work_time
+              SUM((m.no_of_drums - d.idle_drum) * d.work_time
+                  / m.no_of_drums / NULLIF(d.run_time, 0)
                   * d.act_prodn / NULLIF(d.act_prodn, 0)),
               0
             )
@@ -117,7 +117,7 @@ async function getAutoconerAbstractReport(date) {
         )                                                                             AS effi_raw,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2
@@ -142,7 +142,7 @@ async function getAutoconerAbstractReport(date) {
         ROUND(SUM(d.act_prodn), 2)                                                   AS prod_kgs,
         ROUND(
           AVG(
-            (d.run_time / d.work_time)
+            (d.work_time / NULLIF(d.run_time, 0))
             * ((m.no_of_drums - d.idle_drum) / m.no_of_drums)
             * 100
           ), 2

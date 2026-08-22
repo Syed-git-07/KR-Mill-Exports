@@ -8,8 +8,8 @@ export async function fetchSpinningAbstractSummary(reportDate) {
     SELECT 
       d.count_name,
       h.shift,
-      sms.allocated_spindles,
-      sms.conv_40s_value,
+      SUM(sms.allocated_spindles) as allocated_spindles,
+      AVG(sms.conv_40s_value) as conv_40s_value,
       COUNT(DISTINCT d.machine_id) as machine_count,
       SUM(d.act_prodn) as production_kg,
       SUM(d.waste) as waste_kg,
@@ -17,16 +17,18 @@ export async function fetchSpinningAbstractSummary(reportDate) {
       AVG(d.gps) as achieved_gps,
       SUM(d.worked_spindles) as worked_spindles,
       SUM(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) as total_stoppage_mins,
-      d.run_time
+      SUM(d.work_time) as total_work_time,
+      SUM(d.run_time) as total_run_time
     FROM spinning_production_header h
     JOIN spinning_production_detail d ON h.id = d.header_id
     JOIN spinning_machine_setup sms
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
     WHERE h.entry_date = ${dateStr}
-    GROUP BY d.count_name, h.shift, sms.conv_40s_value, sms.allocated_spindles, d.run_time
+    GROUP BY d.count_name, h.shift
     ORDER BY d.count_name, h.shift
   `
 
@@ -43,9 +45,9 @@ export async function fetchSpinningAbstractSummary(reportDate) {
         allocatedSpindles: Number(row.allocated_spindles ?? 1104),
         machines: new Set(),
         shifts: {
-          1: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, stoppageMins: 0, runTime: 510 },
-          2: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, stoppageMins: 0, runTime: 510 },
-          3: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, stoppageMins: 0, runTime: 420 }
+          1: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, workTime: 0, runTime: 0, allocatedSpindles: 0 },
+          2: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, workTime: 0, runTime: 0, allocatedSpindles: 0 },
+          3: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, workTime: 0, runTime: 0, allocatedSpindles: 0 }
         }
       }
     }
@@ -62,8 +64,9 @@ export async function fetchSpinningAbstractSummary(reportDate) {
     summary.shifts[shift].wasteKg = Number(row.waste_kg) || 0
     summary.shifts[shift].expGps = row.exp_gps ? Number(row.exp_gps) : null
     summary.shifts[shift].achievedGps = row.achieved_gps ? Number(row.achieved_gps) : null
-    summary.shifts[shift].stoppageMins = Number(row.total_stoppage_mins) || 0
-    summary.shifts[shift].runTime = Number(row.run_time) || (shift === 3 ? 420 : 510)
+    summary.shifts[shift].workTime = Number(row.total_work_time) || 0
+    summary.shifts[shift].runTime = Number(row.total_run_time) || 0
+    summary.shifts[shift].allocatedSpindles = Number(row.allocated_spindles) || 0
     
     // Store machine count per shift to calculate max later
     if (!summary.machineCountByShift) {
@@ -76,7 +79,7 @@ export async function fetchSpinningAbstractSummary(reportDate) {
   const summaryData = Object.values(countSummary).map(summary => {
     // Get maximum machine count across all shifts (same machines may run in multiple shifts)
     const machineCount = Math.max(...Object.values(summary.machineCountByShift || { 1: 0 }))
-    const totalSpindles = summary.allocatedSpindles * machineCount
+    const totalSpindles = Math.max(...Object.values(summary.shifts).map(shift => shift.allocatedSpindles), 0)
 
     // Total Production KG (sum of all 3 shifts)
     const totalProductionKg = 
@@ -117,14 +120,7 @@ export async function fetchSpinningAbstractSummary(reportDate) {
       ? (totalWasteKg / totalProductionKg) * 100 
       : 0
 
-    // Utilization % Calculation
-    // Total possible time = Shift1 (510) + Shift2 (510) + Shift3 (420) = 1440 mins
-    // Actual run time per shift = run_time - stoppage_mins
-    const actualRunTime1 = Math.max(0, summary.shifts[1].runTime - summary.shifts[1].stoppageMins)
-    const actualRunTime2 = Math.max(0, summary.shifts[2].runTime - summary.shifts[2].stoppageMins)
-    const actualRunTime3 = Math.max(0, summary.shifts[3].runTime - summary.shifts[3].stoppageMins)
-    
-    const totalActualRunTime = actualRunTime1 + actualRunTime2 + actualRunTime3
+    const totalActualRunTime = summary.shifts[1].workTime + summary.shifts[2].workTime + summary.shifts[3].workTime
     const totalPossibleTime = summary.shifts[1].runTime + summary.shifts[2].runTime + summary.shifts[3].runTime // 1440
     
     const utilizationPercent = totalPossibleTime > 0 
@@ -134,7 +130,7 @@ export async function fetchSpinningAbstractSummary(reportDate) {
     // Gain/Loss calculation: Expected GPS - Achieved GPS
     // Positive value = Loss (achieved is less than expected)
     // Negative value = Gain (achieved is more than expected)
-    const gainLoss = gpsStd - gpsAchieved
+    const gainLoss = gpsAchieved > 0 ? totalProductionKg * ((gpsAchieved - gpsStd) / gpsAchieved) : 0
 
     return {
       countName: summary.countName,
@@ -174,15 +170,21 @@ function formatDateForQuery(date) {
   return `${year}-${month}-${day}`
 }
 
+function previousMonthComparableDate(date) {
+  const year = date.getFullYear()
+  const month = date.getMonth()
+  const previousMonthLastDay = new Date(year, month, 0).getDate()
+  return new Date(year, month - 1, Math.min(date.getDate(), previousMonthLastDay))
+}
+
 export async function fetchSpinningAbstractTableData(reportDate) {
   const dateStr = formatDateForQuery(reportDate)
   const selectedDate = new Date(reportDate)
-  const selectedDay = selectedDate.getDate()
   const selectedMonth = selectedDate.getMonth() + 1
   const selectedYear = selectedDate.getFullYear()
 
   // Calculate last month's year and month
-  const lastMonthDate = new Date(selectedYear, selectedMonth - 2, selectedDay) // -2 because month is 1-indexed
+  const lastMonthDate = previousMonthComparableDate(selectedDate)
   const lastMonthYear = lastMonthDate.getFullYear()
   const lastMonthMonth = lastMonthDate.getMonth() + 1
   const lastMonthDateStr = formatDateForQuery(lastMonthDate)
@@ -335,6 +337,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date = ${dateStr}
     GROUP BY h.shift
     ORDER BY h.shift
@@ -369,6 +372,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date = ${lastMonthDateStr}
   `
 
@@ -384,6 +388,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date >= ${firstDayCurrentMonth} 
       AND h.entry_date <= ${dateStr}
   `
@@ -400,6 +405,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date >= ${firstDayLastMonth} 
       AND h.entry_date <= ${lastMonthDateStr}
   `
@@ -419,6 +425,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date = ${dateStr}
     GROUP BY h.shift
     ORDER BY h.shift
@@ -457,6 +464,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date = ${lastMonthDateStr}
   `
 
@@ -472,6 +480,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date >= ${firstDayCurrentMonth} 
       AND h.entry_date <= ${dateStr}
   `
@@ -488,6 +497,7 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date >= ${firstDayLastMonth} 
       AND h.entry_date <= ${lastMonthDateStr}
   `
@@ -656,6 +666,59 @@ export async function fetchSpinningAbstractTableData(reportDate) {
 
   const lastMonthUptoDateStoppageTotal = Number(lastMonthUptoDateStoppageData[0]?.total_stoppage) || 0
 
+  const [currentDayConverted, lastMonthConverted, currentMonthConverted, lastMonthUptoConverted] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT h.shift,
+        SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
+        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
+      FROM spinning_production_header h
+      JOIN spinning_production_detail d ON d.header_id = h.id
+      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
+        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
+      WHERE h.entry_date = ${dateStr}
+      GROUP BY h.shift`,
+    prisma.$queryRaw`
+      SELECT SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
+        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
+      FROM spinning_production_header h
+      JOIN spinning_production_detail d ON d.header_id = h.id
+      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
+        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
+      WHERE h.entry_date = ${lastMonthDateStr}`,
+    prisma.$queryRaw`
+      SELECT SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
+        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
+      FROM spinning_production_header h
+      JOIN spinning_production_detail d ON d.header_id = h.id
+      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
+        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
+      WHERE h.entry_date BETWEEN ${firstDayCurrentMonth} AND ${dateStr}`,
+    prisma.$queryRaw`
+      SELECT SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
+        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
+      FROM spinning_production_header h
+      JOIN spinning_production_detail d ON d.header_id = h.id
+      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
+        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
+      WHERE h.entry_date BETWEEN ${firstDayLastMonth} AND ${lastMonthDateStr}`
+  ])
+
+  const convertedShift = { shift1: 0, shift2: 0, shift3: 0 }
+  const convertedGpsShift = { shift1: 0, shift2: 0, shift3: 0 }
+  currentDayConverted.forEach(row => {
+    convertedShift[`shift${row.shift}`] = Number(row.conv_production) || 0
+    convertedGpsShift[`shift${row.shift}`] = Number(row.conv_gps) || 0
+  })
+  const convertedTotal = Object.values(convertedShift).reduce((sum, value) => sum + value, 0)
+  const convertedGpsValues = Object.values(convertedGpsShift).filter(value => value > 0)
+  const convertedGpsAverage = convertedGpsValues.length ? convertedGpsValues.reduce((sum, value) => sum + value, 0) / convertedGpsValues.length : 0
+  const unavailableMetric = {
+    currentMonthToday: { shift1: null, shift2: null, shift3: null, total: null },
+    lastMonthSameDate: null,
+    currentMonthUptoDate: null,
+    lastMonthUptoDate: null
+  }
+
   return {
     totalProduction: {
       currentMonthToday: {
@@ -689,6 +752,18 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       lastMonthSameDate: lastMonthSpindlesTotal,
       currentMonthUptoDate: currentMonthUptoDateSpindlesTotal,
       lastMonthUptoDate: lastMonthUptoDateSpindlesTotal
+    },
+    convertedProduction40s: {
+      currentMonthToday: { ...convertedShift, total: convertedTotal },
+      lastMonthSameDate: Number(lastMonthConverted[0]?.conv_production) || 0,
+      currentMonthUptoDate: Number(currentMonthConverted[0]?.conv_production) || 0,
+      lastMonthUptoDate: Number(lastMonthUptoConverted[0]?.conv_production) || 0
+    },
+    convertedGps40s: {
+      currentMonthToday: { ...convertedGpsShift, average: convertedGpsAverage },
+      lastMonthSameDate: Number(lastMonthConverted[0]?.conv_gps) || 0,
+      currentMonthUptoDate: Number(currentMonthConverted[0]?.conv_gps) || 0,
+      lastMonthUptoDate: Number(lastMonthUptoConverted[0]?.conv_gps) || 0
     },
     averageCount: {
       currentMonthToday: {
@@ -733,7 +808,16 @@ export async function fetchSpinningAbstractTableData(reportDate) {
       lastMonthSameDate: lastMonthStoppageTotal,
       currentMonthUptoDate: currentMonthUptoDateStoppageTotal,
       lastMonthUptoDate: lastMonthUptoDateStoppageTotal
-    }
+    },
+    ebUnits: unavailableMetric,
+    solarUnits: unavailableMetric,
+    generatorUnits: unavailableMetric,
+    totalUnits: unavailableMetric,
+    actualUnitPerKg: unavailableMetric,
+    convertedUnitPerKg: unavailableMetric,
+    unitPerThousandSpindles: unavailableMetric,
+    powerFailureOff: unavailableMetric,
+    powerFailureOn: unavailableMetric
   }
 }
 
@@ -742,7 +826,6 @@ export async function getTotalStoppageMins(reportDate) {
   const dateStr = formatDateForQuery(reportDate)
   
   const selectedDate = new Date(reportDate)
-  const selectedDay = selectedDate.getDate()
   const selectedMonth = selectedDate.getMonth() + 1
   const selectedYear = selectedDate.getFullYear()
 
@@ -750,7 +833,7 @@ export async function getTotalStoppageMins(reportDate) {
   const firstDayCurrentMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`
 
   // Calculate last month's year and month
-  const lastMonthDate = new Date(selectedYear, selectedMonth - 2, selectedDay)
+  const lastMonthDate = previousMonthComparableDate(selectedDate)
   const lastMonthYear = lastMonthDate.getFullYear()
   const lastMonthMonth = lastMonthDate.getMonth() + 1
   const lastMonthDateStr = formatDateForQuery(lastMonthDate)
@@ -869,6 +952,7 @@ export async function fetchCountwiseSummary(reportDate) {
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
     WHERE h.entry_date >= ${firstDayCurrentMonth} 
       AND h.entry_date <= ${dateStr}
     GROUP BY d.count_name, sms.conv_40s_value

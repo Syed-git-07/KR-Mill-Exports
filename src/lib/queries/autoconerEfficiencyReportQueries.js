@@ -97,12 +97,20 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
         }
       }
 
-      // Store efficiency value at position
-      shiftData.grid[groupNum].machines[position] = {
-        machine_no: row.machine_no,
-        efficiency: efficiency,
-        count: countName
-      }
+      // AC1 and AC1A share a printed group. Add matching positions instead
+      // of allowing the later detail to overwrite the earlier one.
+      const existing = shiftData.grid[groupNum].machines[position]
+      shiftData.grid[groupNum].machines[position] = existing
+        ? {
+            machine_no: `${existing.machine_no} + ${row.machine_no}`,
+            efficiency: existing.efficiency + efficiency,
+            count: existing.count || countName
+          }
+        : {
+            machine_no: row.machine_no,
+            efficiency,
+            count: countName
+          }
     })
 
     // Convert map to array and ensure proper structure

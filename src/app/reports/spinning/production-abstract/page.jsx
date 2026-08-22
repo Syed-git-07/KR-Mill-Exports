@@ -14,6 +14,37 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { fetchSpinningProductionAbstract } from './actions'
 
+const formatMetricValue = value => value === null || value === undefined ? '-' : Number(value).toFixed(2)
+
+function supplementalAbstractRows(data) {
+  const definitions = [
+    ['40s Conv Prod', 'convertedProduction40s', 'total'],
+    ['40s Conv GPS', 'convertedGps40s', 'average'],
+    ['EB Unit Consumed', 'ebUnits', 'total'],
+    ['Solar Unit Consumed', 'solarUnits', 'total'],
+    ['Gen. Unit Consumed', 'generatorUnits', 'total'],
+    ['Total Unit Consumed', 'totalUnits', 'total'],
+    ['Actual Prod / Unit / Kg', 'actualUnitPerKg', 'total'],
+    ['40s Conv Prod / Unit / Kg', 'convertedUnitPerKg', 'total'],
+    ['Unit / 1000 Spindle', 'unitPerThousandSpindles', 'total'],
+    ['P.F. Times OFF', 'powerFailureOff', 'total'],
+    ['P.F. Times ON', 'powerFailureOn', 'total']
+  ]
+  return definitions.map(([label, key, totalKey]) => {
+    const metric = data[key]
+    return [
+      label,
+      formatMetricValue(metric?.currentMonthToday?.shift1),
+      formatMetricValue(metric?.currentMonthToday?.shift2),
+      formatMetricValue(metric?.currentMonthToday?.shift3),
+      formatMetricValue(metric?.currentMonthToday?.[totalKey]),
+      formatMetricValue(metric?.lastMonthSameDate),
+      formatMetricValue(metric?.currentMonthUptoDate),
+      formatMetricValue(metric?.lastMonthUptoDate)
+    ]
+  })
+}
+
 export default function SpinningProductionAbstractReport() {
   const [reportDate, setReportDate] = useState(new Date())
   const [reportData, setReportData] = useState(null)
@@ -117,8 +148,8 @@ export default function SpinningProductionAbstractReport() {
           halign: 'center'
         },
         headStyles: {
-          fillColor: [147, 51, 234], // purple-600
-          textColor: [255, 255, 255],
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center',
           fontSize: 8
@@ -229,6 +260,7 @@ export default function SpinningProductionAbstractReport() {
             reportData.abstractData.totalStoppageMins.lastMonthUptoDate.toFixed(2)
           ]
         ]
+        abstractTableData.push(...supplementalAbstractRows(reportData.abstractData))
 
         autoTable(doc, {
           startY: finalY + 15,
@@ -257,8 +289,8 @@ export default function SpinningProductionAbstractReport() {
             halign: 'center'
           },
           headStyles: {
-            fillColor: [147, 51, 234], // purple-600
-            textColor: [255, 255, 255],
+            fillColor: [235, 237, 240],
+            textColor: [24, 32, 42],
             fontStyle: 'bold',
             halign: 'center',
             fontSize: 9
@@ -329,8 +361,8 @@ export default function SpinningProductionAbstractReport() {
             halign: 'center'
           },
           headStyles: {
-            fillColor: [147, 51, 234], // purple-600
-            textColor: [255, 255, 255],
+            fillColor: [235, 237, 240],
+            textColor: [24, 32, 42],
             fontStyle: 'bold',
             halign: 'center'
           },
@@ -731,6 +763,15 @@ export default function SpinningProductionAbstractReport() {
                             {reportData.abstractData.totalStoppageMins.lastMonthUptoDate.toFixed(2)}
                           </TableCell>
                         </TableRow>
+                        {supplementalAbstractRows(reportData.abstractData).map((row) => (
+                          <TableRow key={row[0]} className="hover:bg-gray-50">
+                            {row.map((cell, index) => (
+                              <TableCell key={index} className={`border border-gray-300 ${index === 0 ? 'font-bold' : 'text-right tabular-nums'}`}>
+                                {cell}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </div>
@@ -744,7 +785,7 @@ export default function SpinningProductionAbstractReport() {
                   <div className="overflow-x-auto">
                     <Table className="border-collapse border border-gray-400">
                       <TableHeader>
-                        <TableRow className="bg-purple-600 text-white">
+                        <TableRow className="bg-slate-100 text-slate-900">
                           <TableHead className="border border-gray-300 text-white font-bold text-center">Count</TableHead>
                           <TableHead className="border border-gray-300 text-white font-bold text-center">Production</TableHead>
                           <TableHead className="border border-gray-300 text-white font-bold text-center">Worked Spindle</TableHead>

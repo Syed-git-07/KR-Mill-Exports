@@ -14,31 +14,22 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
     // Get all production details with sider information for the date range
     const productionData = await prisma.$queryRaw`
       SELECT 
-        sm.description as frame_no,
+        sm.machine_no as frame_no,
         sm.id as machine_id,
-        COALESCE(spd.sider1_name, 'NIL') as sider1_name,
-        em.doj,
+        COALESCE(GROUP_CONCAT(DISTINCT NULLIF(spd.sider1_name, '') ORDER BY spd.sider1_name SEPARATOR ', '), 'NIL') as sider1_name,
+        MIN(em.doj) as doj,
         sph.shift,
         SUM(spd.act_prodn) as total_production,
         SUM(spd.waste) as total_waste,
-        COALESCE(
-          AVG(spd.waste_percent),
-          (SUM(spd.waste) / NULLIF(SUM(spd.act_prodn), 0)) * 100
-        ) as avg_waste_percent
+        COALESCE((SUM(spd.waste) / NULLIF(SUM(spd.act_prodn), 0)) * 100, 0) as avg_waste_percent,
+        sm.sort_order
       FROM spinning_production_detail spd
       INNER JOIN spinning_production_header sph ON spd.header_id = sph.id
       INNER JOIN spinning_machines sm ON spd.machine_id = sm.id
       LEFT JOIN employee_master em ON spd.sider1_name = em.emp_name
       WHERE sph.entry_date BETWEEN ${format(fromDate, 'yyyy-MM-dd')} AND ${format(toDate, 'yyyy-MM-dd')}
-      GROUP BY sm.id, sm.description, spd.sider1_name, em.doj, sph.shift
-      ORDER BY 
-        CASE 
-          WHEN sm.description REGEXP '^RF[0-9]+$' THEN CAST(SUBSTRING(sm.description, 3) AS UNSIGNED)
-          WHEN sm.description REGEXP '^RF[0-9]+A$' THEN 1000 + CAST(SUBSTRING(sm.description, 3, LENGTH(sm.description)-4) AS UNSIGNED)
-          ELSE 9999
-        END,
-        sm.description,
-        sph.shift
+      GROUP BY sm.id, sm.machine_no, sm.sort_order, sph.shift
+      ORDER BY sm.sort_order, sm.machine_no, sph.shift
     `
 
     // Transform data into a structured format
@@ -51,9 +42,9 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
         frameMap.set(frameKey, {
           frameNo: row.frame_no,
           shifts: {
-            1: { siderName: null, waste: 0, wastePercent: 0, doj: null },
-            2: { siderName: null, waste: 0, wastePercent: 0, doj: null },
-            3: { siderName: null, waste: 0, wastePercent: 0, doj: null }
+            1: { siderName: null, production: 0, waste: 0, wastePercent: 0, doj: null },
+            2: { siderName: null, production: 0, waste: 0, wastePercent: 0, doj: null },
+            3: { siderName: null, production: 0, waste: 0, wastePercent: 0, doj: null }
           }
         })
       }
@@ -63,6 +54,7 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
 
       if (frame.shifts[shift]) {
         frame.shifts[shift].siderName = row.sider1_name || 'NIL'
+        frame.shifts[shift].production = parseFloat(row.total_production || 0)
         frame.shifts[shift].waste = parseFloat(row.total_waste || 0)
         frame.shifts[shift].wastePercent = parseFloat(row.avg_waste_percent || 0)
         // Format DOJ as dd-MMM-yy (e.g., "02-Sep-24")
@@ -84,43 +76,33 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
 
     // Calculate totals for each shift
     const totals = {
-      shift1: { waste: 0, wastePercent: 0 },
-      shift2: { waste: 0, wastePercent: 0 },
-      shift3: { waste: 0, wastePercent: 0 }
+      shift1: { production: 0, waste: 0, wastePercent: 0 },
+      shift2: { production: 0, waste: 0, wastePercent: 0 },
+      shift3: { production: 0, waste: 0, wastePercent: 0 }
     }
-
-    let shift1Count = 0
-    let shift2Count = 0
-    let shift3Count = 0
 
     reportData.forEach(frame => {
       if (frame.shifts[1].waste > 0) {
+        totals.shift1.production += frame.shifts[1].production
         totals.shift1.waste += frame.shifts[1].waste
         totals.shift1.wastePercent += frame.shifts[1].wastePercent
-        shift1Count++
       }
       if (frame.shifts[2].waste > 0) {
+        totals.shift2.production += frame.shifts[2].production
         totals.shift2.waste += frame.shifts[2].waste
         totals.shift2.wastePercent += frame.shifts[2].wastePercent
-        shift2Count++
       }
       if (frame.shifts[3].waste > 0) {
+        totals.shift3.production += frame.shifts[3].production
         totals.shift3.waste += frame.shifts[3].waste
         totals.shift3.wastePercent += frame.shifts[3].wastePercent
-        shift3Count++
       }
     })
 
-    // Calculate averages
-    if (shift1Count > 0) {
-      totals.shift1.wastePercent = totals.shift1.wastePercent / shift1Count
-    }
-    if (shift2Count > 0) {
-      totals.shift2.wastePercent = totals.shift2.wastePercent / shift2Count
-    }
-    if (shift3Count > 0) {
-      totals.shift3.wastePercent = totals.shift3.wastePercent / shift3Count
-    }
+    // Totals use total waste / total production, matching the mill report.
+    totals.shift1.wastePercent = totals.shift1.production > 0 ? totals.shift1.waste / totals.shift1.production * 100 : 0
+    totals.shift2.wastePercent = totals.shift2.production > 0 ? totals.shift2.waste / totals.shift2.production * 100 : 0
+    totals.shift3.wastePercent = totals.shift3.production > 0 ? totals.shift3.waste / totals.shift3.production * 100 : 0
 
     return {
       reportData,

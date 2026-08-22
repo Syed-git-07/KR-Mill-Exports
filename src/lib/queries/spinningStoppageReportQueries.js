@@ -12,15 +12,16 @@ import { prisma } from '../prisma'
  * 
  * @param {Date} selectedDate - Normalized UTC date object
  */
-export async function generateSpinningStoppageReport(selectedDate) {
+export async function generateSpinningStoppageReport(selectedDate, selectedToDate = selectedDate) {
   try {
     // Date is already normalized from the action
     const date = selectedDate
+    const toDate = selectedToDate
 
     // Get all production headers for the date across all shifts
     const headers = await prisma.spinning_production_header.findMany({
       where: {
-        entry_date: date,
+        entry_date: { gte: date, lte: toDate },
       },
     })
 
@@ -149,8 +150,6 @@ export async function generateSpinningStoppageReport(selectedDate) {
     const processedMachines = new Set()
 
     // Fixed shift time (as per specification)
-    const SHIFT_TIME = 510
-
     // Process each header and calculate stoppage data
     headers.forEach((header) => {
       const shift = header.shift
@@ -161,10 +160,7 @@ export async function generateSpinningStoppageReport(selectedDate) {
       headerDetails.forEach((detail) => {
         const machine = machineMap[detail.machine_id]
         
-        // Find stoppage entry for this detail
-        const stoppageEntry = stoppageEntries.find(s => s.production_detail_id === detail.id)
-
-        if (!machine || !stoppageEntry) return
+        if (!machine) return
 
         const allocatedSpindles = machine.allocated_spindles ?? 1104
 
@@ -175,11 +171,16 @@ export async function generateSpinningStoppageReport(selectedDate) {
             : (allocatedSpindles / 8) * 8.5
 
         // Add to total No of Spindles for this shift (avoid duplicates)
-        const machineKey = `${shift}-${machine.id}`
+        const machineKey = `${header.entry_date.toISOString().slice(0, 10)}-${shift}-${machine.id}`
         if (!processedMachines.has(machineKey)) {
           totalNoOfSpindlesPerShift[shift] += noOfSpindles
           processedMachines.add(machineKey)
         }
+
+        // The denominator includes every working machine, even when that
+        // machine has no stoppage-entry row for the selected period.
+        const stoppageEntry = stoppageEntries.find(s => s.production_detail_id === detail.id)
+        if (!stoppageEntry) return
 
         // Process each stoppage (stoppage1 to stoppage4)
         const stoppages = [
@@ -206,7 +207,8 @@ export async function generateSpinningStoppageReport(selectedDate) {
           if (!foundHead || !foundDetail) return
 
           // CORRECT FORMULA: Spl = (Stoppage Mins / 510) × No of Spindles
-          const stoppedSpindles = (stoppage.time / SHIFT_TIME) * noOfSpindles
+          const shiftTime = shift === 3 ? 420 : 510
+          const stoppedSpindles = (stoppage.time / shiftTime) * noOfSpindles
 
           // Add to detail level
           stoppageData[foundHead].details[foundDetail].shifts[shift].stoppedSpindles +=
@@ -323,6 +325,7 @@ export async function generateSpinningStoppageReport(selectedDate) {
     return {
       success: true,
       date: selectedDate,
+      toDate: selectedToDate,
       reportData,
       grandTotal,
       totalNoOfSpindlesPerShift,

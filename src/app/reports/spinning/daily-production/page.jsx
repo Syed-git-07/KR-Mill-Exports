@@ -78,7 +78,7 @@ export default function SpinningDailyProductionReport() {
       // Prepare table data with all columns
       const tableData = reportData.machines.map((machine, index) => [
         index + 1,
-        machine.machineNo,
+        `${machine.countName}\n${machine.machineNo}`,
         machine.expGpsShift1.toFixed(1),
         machine.expGpsShift2.toFixed(1),
         machine.expGpsShift3.toFixed(1),
@@ -120,8 +120,8 @@ export default function SpinningDailyProductionReport() {
           lineWidth: 0.1
         },
         headStyles: { 
-          fillColor: [147, 51, 234], 
-          textColor: 255, 
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center',
           fontSize: 6
@@ -303,7 +303,7 @@ export default function SpinningDailyProductionReport() {
                     {reportData.machines.map((machine, index) => (
                     <TableRow key={machine.machineNo} className="hover:bg-purple-50/50">
                       <TableCell className="text-center">{index + 1}</TableCell>
-                      <TableCell className="font-medium">{machine.machineNo}</TableCell>
+                      <TableCell className="font-medium"><span className="block whitespace-nowrap text-[10px] font-semibold text-purple-700">{machine.countName}</span>{machine.machineNo}</TableCell>
                       {/* Expected GPS */}
                       <TableCell className="text-center">{machine.expGpsShift1.toFixed(2)}</TableCell>
                       <TableCell className="text-center">{machine.expGpsShift2.toFixed(2)}</TableCell>

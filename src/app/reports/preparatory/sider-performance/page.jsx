@@ -106,7 +106,9 @@ export default function PreparatorySiderPerformanceReportPage() {
         // Prepare table data
         const tableData = deptData.employees.map(emp => [
           serialNumber++,
+          emp.tokenNo,
           emp.name,
+          emp.doj ? format(new Date(emp.doj), 'dd-MMM-yy') : '-',
           emp.productionKgs.toFixed(2),
           emp.efficiencyPercent.toFixed(2),
           emp.utilizationPercent.toFixed(2),
@@ -116,7 +118,7 @@ export default function PreparatorySiderPerformanceReportPage() {
         // Generate table
         autoTable(doc, {
           startY: yPosition,
-          head: [['SL', 'Name', 'Prod Kgs', 'Eff %', 'Util %', 'Waste %']],
+          head: [['SL', 'Token No', 'Name', 'DOJ', 'Prod Kgs', 'Eff %', 'UTTI %', 'Waste %']],
           body: tableData,
           theme: 'grid',
           headStyles: {
@@ -126,12 +128,14 @@ export default function PreparatorySiderPerformanceReportPage() {
             halign: 'center'
           },
           columnStyles: {
-            0: { halign: 'center', cellWidth: 15 },
-            1: { halign: 'left', cellWidth: 70 },
-            2: { halign: 'right', cellWidth: 25 },
-            3: { halign: 'right', cellWidth: 20 },
-            4: { halign: 'right', cellWidth: 20 },
-            5: { halign: 'right', cellWidth: 20 }
+            0: { halign: 'center', cellWidth: 10 },
+            1: { halign: 'center', cellWidth: 20 },
+            2: { halign: 'left', cellWidth: 45 },
+            3: { halign: 'center', cellWidth: 23 },
+            4: { halign: 'right', cellWidth: 22 },
+            5: { halign: 'right', cellWidth: 19 },
+            6: { halign: 'right', cellWidth: 19 },
+            7: { halign: 'right', cellWidth: 19 }
           },
           bodyStyles: {
             fontSize: 9
@@ -329,7 +333,9 @@ export default function PreparatorySiderPerformanceReportPage() {
                     <thead>
                       <tr className="bg-gray-100 print:bg-gray-200">
                         <th className="border border-gray-300 px-2 py-1 text-center w-12 print:border-black">SL</th>
+                        <th className="border border-gray-300 px-2 py-1 text-center print:border-black">Token No</th>
                         <th className="border border-gray-300 px-2 py-1 text-left print:border-black">Name</th>
+                        <th className="border border-gray-300 px-2 py-1 text-center print:border-black">DOJ</th>
                         <th className="border border-gray-300 px-2 py-1 text-right w-24 print:border-black">Prod Kgs</th>
                         <th className="border border-gray-300 px-2 py-1 text-right w-20 print:border-black">Eff %</th>
                         <th className="border border-gray-300 px-2 py-1 text-right w-20 print:border-black">Util %</th>
@@ -342,7 +348,11 @@ export default function PreparatorySiderPerformanceReportPage() {
                           <td className="border border-gray-300 px-2 py-1 text-center print:border-black">
                             {getSerialNumber(deptIndex, empIndex)}
                           </td>
+                          <td className="border border-gray-300 px-2 py-1 text-center print:border-black">{emp.tokenNo}</td>
                           <td className="border border-gray-300 px-2 py-1 print:border-black">{emp.name}</td>
+                          <td className="border border-gray-300 px-2 py-1 text-center print:border-black">
+                            {emp.doj ? format(new Date(emp.doj), 'dd-MMM-yy') : '-'}
+                          </td>
                           <td className="border border-gray-300 px-2 py-1 text-right print:border-black">
                             {emp.productionKgs.toFixed(2)}
                           </td>

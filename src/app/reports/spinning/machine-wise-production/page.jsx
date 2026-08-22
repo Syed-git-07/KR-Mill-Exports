@@ -142,8 +142,8 @@ export default function SpinningMachineWiseProductionReport() {
           valign: 'middle',
         },
         headStyles: {
-          fillColor: [37, 99, 235],   // blue-600
-          textColor: 255,
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center',
         },
@@ -305,7 +305,7 @@ export default function SpinningMachineWiseProductionReport() {
               <table className="min-w-full border-collapse border border-gray-300 text-sm">
                 <thead>
                   {/* Row 1: group headers */}
-                  <tr className="bg-blue-600 text-white">
+                  <tr className="bg-slate-100 text-slate-900">
                     <th rowSpan={2} className="border border-gray-300 px-3 py-2 text-center align-middle">
                       McName
                     </th>

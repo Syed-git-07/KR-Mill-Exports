@@ -87,7 +87,7 @@ export default function AutoconerEfficiencyReportPage() {
 
       // Loop through each shift
       reportData.shifts.forEach((shift, shiftIndex) => {
-        if (shiftIndex > 0) {
+        if (shiftIndex > 0 && yPos > doc.internal.pageSize.getHeight() - 58) {
           doc.addPage()
           yPos = 15
         }
@@ -102,7 +102,7 @@ export default function AutoconerEfficiencyReportPage() {
         const headers = [' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13']
        
         // Build count row (68 CS for all columns)
-        const countRow = [shift.primary_count || '68 CS']
+        const countRow = ['']
         for (let i = 1; i <= 13; i++) {
           const group = shift.groups.find(g => g.groupNumber === i)
           countRow.push(group?.count?.replace('COMBED STAR', 'CS') || '68 CS')
@@ -126,8 +126,8 @@ export default function AutoconerEfficiencyReportPage() {
           body: bodyRows,
           theme: 'grid',
           headStyles: {
-            fillColor: [22, 163, 74], // green-600
-            textColor: 255,
+            fillColor: [235, 237, 240],
+            textColor: [24, 32, 42],
             fontStyle: 'bold',
             halign: 'center'
           },
@@ -141,7 +141,7 @@ export default function AutoconerEfficiencyReportPage() {
           }
         })
 
-        yPos = doc.lastAutoTable.finalY || yPos
+        yPos = (doc.lastAutoTable.finalY || yPos) + 8
       })
 
       // Add designations footer on last page
@@ -272,7 +272,7 @@ export default function AutoconerEfficiencyReportPage() {
                 <table className="w-full border-collapse border border-gray-300 text-sm">
                   <thead>
                     {/* Machine group numbers */}
-                    <tr className="bg-green-600 text-white">
+                    <tr className="bg-slate-100 text-slate-900">
                       <th className="border border-gray-300 px-2 py-1"></th>
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(num => (
                         <th key={num} className="border border-gray-300 px-2 py-1 text-center font-bold">
@@ -281,7 +281,7 @@ export default function AutoconerEfficiencyReportPage() {
                       ))}
                     </tr>
                     {/* Count names row */}
-                    <tr className="bg-green-600 text-white">
+                    <tr className="bg-slate-100 text-slate-900">
                       <th className="border border-gray-300 px-2 py-1 text-center"></th>
                       {shift.groups.map((group, idx) => (
                         <th key={idx} className="border border-gray-300 px-2 py-1 text-center text-xs font-semibold">

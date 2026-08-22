@@ -156,8 +156,8 @@ export default function AutoconerParticularSiderReportPage() {
         body: tableData,
         theme: 'grid',
         headStyles: {
-          fillColor: [22, 163, 74], // green-600
-          textColor: 255,
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'left'
         },
@@ -374,7 +374,7 @@ export default function AutoconerParticularSiderReportPage() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse border border-gray-300">
                 <thead>
-                  <tr className="bg-green-600 text-white">
+                  <tr className="bg-slate-100 text-slate-900">
                     <th className="border border-gray-300 px-3 py-2 text-left">Date</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Drum</th>
                     <th className="border border-gray-300 px-3 py-2 text-right">Prod.Kgs</th>

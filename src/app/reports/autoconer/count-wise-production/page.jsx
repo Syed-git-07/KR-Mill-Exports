@@ -127,8 +127,8 @@ export default function AutoconerCountWiseProductionReport() {
           valign: 'middle',
         },
         headStyles: {
-          fillColor: [37, 99, 235],   // blue-600
-          textColor: 255,
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center',
         },
@@ -288,7 +288,7 @@ export default function AutoconerCountWiseProductionReport() {
 
               <table className="min-w-full border-collapse border border-gray-300 text-sm">
                 <thead>
-                  <tr className="bg-blue-600 text-white">
+                  <tr className="bg-slate-100 text-slate-900">
                     <th className="border border-gray-300 px-4 py-2 text-left">Date</th>
                     {reportData.uniqueCounts.map((count, i) => (
                       <th key={i} className="border border-gray-300 px-4 py-2 text-center">
