@@ -72,10 +72,12 @@ async function getPreparatoryRecords(fromDate, toDate) {
     if (!headers.length) return []
 
     const select = {
-      header_id: true, machine_id: true, employee_name: true, act_hank: true,
+      header_id: true, machine_id: true, employee_name: true,
       act_prodn: true, uti_percent: true, waste: true, waste_percent: true,
-      work_time: true, run_time: true, [department.effi]: true, [department.std]: true
+      work_time: true, [department.effi]: true, [department.std]: true
     }
+    if (department.model !== 'comber') select.run_time = true
+    if (department.model !== 'simplex') select.act_hank = true
     if (department.model !== 'simplex') select.total_stoppage_mins = true
 
     const details = await prisma[`${department.model}_production_detail`].findMany({
