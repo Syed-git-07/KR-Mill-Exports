@@ -41,7 +41,56 @@ function drawPageFooter(doc, page, totalPages, signatures, finalPage) {
   }
 }
 
+function createPreparatoryAbstractPdf(report) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  const width = doc.internal.pageSize.getWidth()
+  const height = doc.internal.pageSize.getHeight()
+  doc.setTextColor(0, 0, 0)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('Kayaar Exports Private Limited', width / 2, 8, { align: 'center' })
+  doc.setFontSize(8)
+  doc.text('Preparatory Hanks Abstract Report on', 25, 19)
+  doc.text(report.referenceDate || '', 105, 19)
+
+  let y = 25
+  for (const table of report.tables || []) {
+    doc.setDrawColor(255, 0, 0)
+    doc.setLineWidth(0.6)
+    doc.line(8, y, width - 8, y)
+    const head = table.headerGroups
+      ? [
+          table.headerGroups.map(group => ({ content: group.label, colSpan: group.span, styles: { halign: 'center', fontStyle: 'normal' } })),
+          table.columns
+        ]
+      : [table.columns]
+    autoTable(doc, {
+      startY: y,
+      head,
+      body: table.rows || [],
+      theme: table.headerGroups ? 'grid' : 'plain',
+      margin: { left: 8, right: 8 },
+      styles: { font: 'helvetica', fontSize: table.headerGroups ? 7 : 7.2, cellPadding: table.headerGroups ? 1.5 : 1.35, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: table.headerGroups ? 0.25 : 0 },
+      headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center', lineColor: [0, 0, 0], lineWidth: table.headerGroups ? 0.25 : 0 },
+      columnStyles: { 0: { halign: 'left', cellWidth: table.headerGroups ? 42 : 48 } },
+      didParseCell(data) {
+        if (data.section === 'body' && data.column.index > 0) data.cell.styles.halign = 'right'
+      }
+    })
+    y = (doc.lastAutoTable?.finalY || y) + 9
+  }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  const signatures = report.signatures || []
+  if (signatures[0]) doc.text(signatures[0], width - 78, height - 10)
+  if (signatures[1]) doc.text(signatures[1], width - 46, height - 10)
+  if (signatures[2]) doc.text(signatures[2], width - 12, height - 10, { align: 'right' })
+  return doc
+}
+
 export function createFinalReportPdf(report) {
+  if (report.template === 'preparatory-abstract') return createPreparatoryAbstractPdf(report)
   const doc = new jsPDF({ orientation: report.orientation || 'portrait', unit: 'mm', format: 'a4' })
   const width = doc.internal.pageSize.getWidth()
   let y = 27

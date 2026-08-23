@@ -20,6 +20,7 @@ function ReportTable({ table }) {
       <div className="overflow-x-auto rounded-md border border-slate-300">
         <table className="w-full border-collapse text-[11px] text-slate-800">
           <thead className="bg-slate-100">
+            {table.headerGroups && <tr>{table.headerGroups.map((group, index) => <th key={`${group.label}-${index}`} colSpan={group.span} className="border-b border-r border-slate-400 px-2 py-1 text-center font-medium last:border-r-0">{group.label}</th>)}</tr>}
             <tr>{table.columns.map((column, index) => <th key={`${column}-${index}`} className="whitespace-nowrap border-b border-r border-slate-300 px-2 py-1.5 text-center font-semibold last:border-r-0">{column}</th>)}</tr>
           </thead>
           <tbody>
@@ -92,13 +93,16 @@ export default function FinalReportClient({ reportKey, config }) {
 
       {report ? (
         <article className="rounded-xl border bg-white p-4 shadow-sm print:border-0 print:p-0 print:shadow-none">
-          <div className="mb-4 text-center">
+          {report.template === 'preparatory-abstract' ? <div className="mb-5">
+            <h2 className="text-center text-base font-bold text-slate-950">Kayaar Exports Private Limited</h2>
+            <div className="mt-7 grid grid-cols-[1fr_1fr_1fr] text-xs font-bold text-slate-950"><span>Preparatory Hanks Abstract Report on</span><span className="text-center">{report.referenceDate}</span><span /></div>
+          </div> : <div className="mb-4 text-center">
             <h2 className="text-lg font-bold tracking-wide text-slate-900">KAYAAR EXPORTS PRIVATE LIMITED</h2>
             <h3 className="mt-1 text-sm font-semibold uppercase text-slate-800">{report.title}</h3>
             <p className="mt-1 text-xs text-slate-600">{report.period}</p>
             <div className="mt-2 h-0.5 bg-red-800" />
-          </div>
-          {report.meta?.length > 0 && <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 rounded-md bg-slate-50 px-3 py-2 text-xs">{report.meta.map(([label, value]) => <span key={label}><strong>{label}:</strong> {value}</span>)}</div>}
+          </div>}
+          {report.template !== 'preparatory-abstract' && report.meta?.length > 0 && <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 rounded-md bg-slate-50 px-3 py-2 text-xs">{report.meta.map(([label, value]) => <span key={label}><strong>{label}:</strong> {value}</span>)}</div>}
           <div className="space-y-5">{report.tables?.length ? report.tables.map((table, index) => <ReportTable key={`${table.title || 'table'}-${index}`} table={table} />) : <div className="py-12 text-center text-sm text-slate-500"><FileText className="mx-auto mb-2 h-8 w-8 opacity-40" />No production records found.</div>}</div>
           {report.notes?.length > 0 && <div className="mt-4 space-y-1 text-[11px] italic text-slate-500">{report.notes.map((note, index) => <p key={index}>Note: {note}</p>)}</div>}
           <div className="mt-10 flex justify-between border-t pt-3 text-xs font-semibold">{report.signatures.map(signature => <span key={signature}>{signature}</span>)}</div>

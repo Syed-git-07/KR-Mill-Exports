@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { generatePreparatoryStoppageReport } from '@/lib/queries/preparatoryStoppageReportQueries'
 import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageReportQueries'
+import { getAutoconerStoppagePercentageReport } from '@/app/reports/autoconer/stoppage-percentage/autoconerStoppagePercentageQueries'
 
 const PREPARATORY_DEPARTMENTS = [
   { label: 'CARDING', model: 'carding', machineModel: 'carding_machines', effi: 'effi_percent', std: 'std_prodn' },
@@ -20,6 +21,11 @@ const dateKey = value => {
 const displayDate = value => {
   const [year, month, day] = dateKey(value).split('-')
   return `${day}-${month}-${year}`
+}
+const shortDisplayDate = value => {
+  const date = new Date(value)
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.getUTCMonth()]
+  return `${String(date.getUTCDate()).padStart(2, '0')}-${month}-${String(date.getUTCFullYear()).slice(-2)}`
 }
 const monthStart = value => {
   const date = new Date(value)
@@ -62,7 +68,7 @@ async function supervisorMap(ids) {
   return new Map(supervisors.map(supervisor => [supervisor.id, supervisor.supervisor_name]))
 }
 
-async function getPreparatoryRecords(fromDate, toDate) {
+async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = false } = {}) {
   const departmentResults = await Promise.all(PREPARATORY_DEPARTMENTS.map(async department => {
     const headers = await prisma[`${department.model}_production_header`].findMany({
       where: { entry_date: { gte: fromDate, lte: toDate } },
@@ -72,7 +78,7 @@ async function getPreparatoryRecords(fromDate, toDate) {
     if (!headers.length) return []
 
     const select = {
-      header_id: true, machine_id: true, employee_name: true,
+      header_id: true, machine_id: true, employee_name: true, run_sequence: true,
       act_prodn: true, uti_percent: true, waste: true, waste_percent: true,
       work_time: true, [department.effi]: true, [department.std]: true
     }
@@ -89,6 +95,16 @@ async function getPreparatoryRecords(fromDate, toDate) {
     }) : []
     const machineById = new Map(machines.map(machine => [machine.id, machine]))
     const headerById = new Map(headers.map(header => [header.id, header]))
+    const simplexSetups = includeSimplexHank && department.model === 'simplex' && machineIds.length
+      ? await prisma.simplex_machine_setup.findMany({
+          where: { entry_date: { gte: fromDate, lte: toDate }, machine_id: { in: machineIds } },
+          select: { machine_id: true, entry_date: true, shift: true, run_sequence: true, sl_hank: true }
+        })
+      : []
+    const simplexSetupByKey = new Map(simplexSetups.map(setup => [
+      `${setup.machine_id}|${dateKey(setup.entry_date)}|${setup.shift}|${setup.run_sequence}`,
+      setup
+    ]))
 
     return details.map(detail => {
       const header = headerById.get(detail.header_id)
@@ -101,7 +117,9 @@ async function getPreparatoryRecords(fromDate, toDate) {
         machineNo: machine?.machine_no || '-',
         sortOrder: machine?.sort_order || 0,
         employeeName: detail.employee_name || 'NIL',
-        hank: n(detail.act_hank),
+        hank: includeSimplexHank && department.model === 'simplex'
+          ? n(simplexSetupByKey.get(`${detail.machine_id}|${dateKey(header.entry_date)}|${header.shift}|${detail.run_sequence}`)?.sl_hank)
+          : n(detail.act_hank),
         standard: n(detail[department.std]),
         production: n(detail.act_prodn),
         efficiency: n(detail[department.effi]),
@@ -126,28 +144,80 @@ function weighted(rows, field) {
 async function preparatoryAbstract(fromDate, toDate) {
   const report = baseReport('Preparatory Abstract Report', fromDate, toDate, 'landscape')
   const uptoFrom = monthStart(toDate)
-  const records = await getPreparatoryRecords(uptoFrom, toDate)
+  const queryFrom = fromDate < uptoFrom ? fromDate : uptoFrom
+  const records = await getPreparatoryRecords(queryFrom, toDate, { includeSimplexHank: true })
   const productionRows = PREPARATORY_DEPARTMENTS.map(department => {
-    const rows = records.filter(row => row.department === department.label)
-    return [department.label, fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.standard, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(weighted(rows, 'efficiency')), fixed(weighted(rows, 'utilization'))]
+    const periodRows = records.filter(row => row.department === department.label && row.date >= fromDate && row.date <= toDate)
+    const uptoRows = records.filter(row => row.department === department.label && row.date >= uptoFrom && row.date <= toDate)
+    return [
+      department.label,
+      fixed(periodRows.reduce((s, r) => s + r.hank, 0)),
+      fixed(uptoRows.reduce((s, r) => s + r.hank, 0)),
+      fixed(periodRows.reduce((s, r) => s + r.standard, 0)),
+      fixed(uptoRows.reduce((s, r) => s + r.standard, 0)),
+      fixed(periodRows.reduce((s, r) => s + r.production, 0)),
+      fixed(uptoRows.reduce((s, r) => s + r.production, 0)),
+      fixed(weighted(periodRows, 'efficiency')),
+      fixed(weighted(uptoRows, 'efficiency')),
+      fixed(weighted(periodRows, 'utilization')),
+      fixed(weighted(uptoRows, 'utilization'))
+    ]
   })
+  report.template = 'preparatory-abstract'
+  report.referenceDate = shortDisplayDate(toDate)
+  report.signatures = ['AM(P)', 'GM', 'M.D']
   report.meta.push(['Up To', periodText(uptoFrom, toDate)])
   report.tables.push({
-    title: 'Department Production Abstract',
-    columns: ['Department', 'Up Hank', 'Up Std Hank / Prod', 'Up Production Kgs', 'Up Effi %', 'Up UTTI %'],
+    columns: ['Department', 'Hank', 'Up Hank', 'Std Hank\\Prod', 'Up StdHank', 'PROD(Kg)', 'Up ProdKgs', 'Effi', 'Up Effi', 'UTTi', 'Up Utti'],
     rows: productionRows
   })
 
-  const stoppage = await generatePreparatoryStoppageReport(uptoFrom, toDate)
-  const categories = [...new Set(Object.values(stoppage.departments).flatMap(dept => Object.keys(dept.categories || {})))]
-  report.tables.push({
-    title: 'Department Stoppage Abstract',
-    columns: ['Department', ...categories, 'Total Stop %'],
-    rows: Object.entries(stoppage.departments).map(([name, dept]) => [
+  const [stoppage, spinningStoppage, autoconerStoppage] = await Promise.all([
+    generatePreparatoryStoppageReport(fromDate, toDate),
+    generateSpinningStoppageReport(fromDate, toDate),
+    getAutoconerStoppagePercentageReport(dateKey(fromDate), dateKey(toDate))
+  ])
+  const abstractStoppageRow = (name, categories, total) => {
+    const category = label => categories?.[label]
+    const reasonTotal = pattern => Object.values(categories || {}).reduce((sum, item) => sum + (item.reasons || [])
+      .filter(reason => pattern.test(reason.reason || ''))
+      .reduce((reasonSum, reason) => reasonSum + n(reason.total), 0), 0)
+    const totalStop = n(total)
+    return [
       name,
-      ...categories.map(category => fixed(dept.categories?.[category]?.categoryTotal?.total)),
-      fixed(dept.netTotals?.total ?? dept.netTotal)
-    ])
+      fixed(category('Maintenance Routine')?.categoryTotal?.total),
+      fixed(category('Maintenance Breakdown')?.categoryTotal?.total),
+      fixed(category('Cleaning Work')?.categoryTotal?.total),
+      fixed(reasonTotal(/elect.*routine|routine.*elect/i)),
+      fixed(category('Electrical Breakdown')?.categoryTotal?.total),
+      fixed(reasonTotal(/power\s*fail/i)),
+      fixed(reasonTotal(/excess\s*stock/i)),
+      fixed(reasonTotal(/line\s*change/i)),
+      fixed(totalStop),
+      fixed(100 - totalStop)
+    ]
+  }
+  const stoppageRows = Object.entries(stoppage.departments).map(([name, dept]) =>
+    abstractStoppageRow(name, dept.categories, dept.netTotals?.total ?? dept.netTotal)
+  )
+  const externalStoppageRow = (name, data, total) => {
+    const heads = data || []
+    const headTotal = pattern => heads.filter(head => pattern.test(head.headName || '')).reduce((sum, head) => sum + n(head.shifts?.total?.percentage), 0)
+    const detailTotal = pattern => heads.flatMap(head => Array.isArray(head.details) ? head.details : Object.values(head.details || {}))
+      .filter(detail => pattern.test(detail.reasonName || detail.detailName || ''))
+      .reduce((sum, detail) => sum + n(detail.shifts?.total?.percentage), 0)
+    const totalStop = n(total)
+    return [name, fixed(headTotal(/MAINTEN.*ROUTINE/i)), fixed(headTotal(/MAINTEN.*BREAKDOWN/i)), fixed(headTotal(/CLEANING/i)), fixed(detailTotal(/elect.*routine|routine.*elect/i)), fixed(headTotal(/ELECT.*BREAKDOWN/i)), fixed(detailTotal(/power\s*fail/i)), fixed(detailTotal(/excess\s*stock/i)), fixed(detailTotal(/line\s*change/i)), fixed(totalStop), fixed(100 - totalStop)]
+  }
+  if (spinningStoppage.success) stoppageRows.push(externalStoppageRow('SPINNING', spinningStoppage.reportData, spinningStoppage.grandTotal?.shifts?.total?.percentage))
+  if (autoconerStoppage.success) stoppageRows.push(externalStoppageRow('AUTO CONER', autoconerStoppage.reportData, autoconerStoppage.netTotal?.total?.percentage))
+  report.tables.push({
+    columns: ['DEPARTMENT', 'ROUT.', 'B.D', 'CLEAN', 'ROUT.', 'B.D', 'POWER FAIL', 'EXCESS', 'LINE CHANGE', 'TOTAL Stop %', 'UTI %'],
+    headerGroups: [
+      { label: 'DEPARTMENT', span: 1 }, { label: 'MAINTENANCE', span: 3 }, { label: 'ELECTRICAL', span: 2 },
+      { label: 'POWER', span: 1 }, { label: 'OTHERS', span: 1 }, { label: 'LINE', span: 1 }, { label: 'TOTAL', span: 1 }, { label: 'UTI %', span: 1 }
+    ],
+    rows: stoppageRows
   })
   return report
 }
