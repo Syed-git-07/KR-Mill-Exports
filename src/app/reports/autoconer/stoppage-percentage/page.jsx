@@ -254,6 +254,7 @@ export default function AutoconerStoppagePercentageReport() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(d) => d && setFromDate(d)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -275,6 +276,7 @@ export default function AutoconerStoppagePercentageReport() {
                     mode="single"
                     selected={toDate}
                     onSelect={(d) => d && setToDate(d)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>

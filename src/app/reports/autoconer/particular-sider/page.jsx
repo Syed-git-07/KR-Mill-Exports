@@ -275,6 +275,7 @@ export default function AutoconerParticularSiderReportPage() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(date) => date && setFromDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -302,6 +303,7 @@ export default function AutoconerParticularSiderReportPage() {
                     mode="single"
                     selected={toDate}
                     onSelect={(date) => date && setToDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>

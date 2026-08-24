@@ -260,6 +260,7 @@ export default function SpinningStoppageReportPage() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(date) => date && setFromDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -276,7 +277,7 @@ export default function SpinningStoppageReportPage() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={toDate} onSelect={(date) => date && setToDate(date)} initialFocus />
+                  <Calendar mode="single" selected={toDate} onSelect={(date) => date && setToDate(date)} captionLayout="dropdown" initialFocus />
                 </PopoverContent>
               </Popover>
             </div>

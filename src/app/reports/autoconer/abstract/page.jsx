@@ -254,6 +254,7 @@ export default function AutoconerAbstractReport() {
                     mode="single"
                     selected={selectedDate}
                     onSelect={(d) => d && setSelectedDate(d)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>

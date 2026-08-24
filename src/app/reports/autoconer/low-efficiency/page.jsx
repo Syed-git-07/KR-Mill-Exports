@@ -233,6 +233,7 @@ export default function AutoconerLowEfficiencyReportPage() {
                     mode="single"
                     selected={selectedDate}
                     onSelect={(date) => date && setSelectedDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>

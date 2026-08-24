@@ -236,6 +236,7 @@ export default function SpinningDailyProductionReport() {
                     mode="single"
                     selected={reportDate}
                     onSelect={setReportDate}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
