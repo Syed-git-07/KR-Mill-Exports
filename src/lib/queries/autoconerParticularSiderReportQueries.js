@@ -28,20 +28,17 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
       throw new Error('From date must be before or equal to to date')
     }
 
-    // Get employee master data
-    const employeeData = await prisma.employee_master.findFirst({
-      where: {
-        emp_name: empName,
-        is_active: true
-      },
-      select: {
-        emp_name: true,
-        emp_code: true,
-        doj: true,
-        department: true,
-        designation: true
-      }
-    })
+    // Get employee identity details directly from payroll.
+    const employeeRows = await prisma.$queryRaw`
+      SELECT
+        firstName AS emp_name,
+        CAST(biometricEnrollmentId AS CHAR) AS emp_code,
+        dateOfJoining AS doj
+      FROM payroll.employees
+      WHERE firstName = ${empName}
+      LIMIT 1
+    `
+    const employeeData = employeeRows[0]
 
     if (!employeeData) {
       throw new Error(`Employee "${empName}" not found`)
@@ -182,9 +179,7 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
         employee: {
           name: employeeData.emp_name,
           emp_code: employeeData.emp_code || 'N/A',
-          doj: employeeData.doj,
-          department: employeeData.department,
-          designation: employeeData.designation
+          doj: employeeData.doj
         },
         period: {
           from: from,

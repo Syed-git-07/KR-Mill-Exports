@@ -333,7 +333,7 @@ async function autoconerShiftProduction(fromDate, toDate) {
 async function autoconerSiderMonthly(fromDate, toDate) {
   const report = baseReport('Sider Monthly Autoconer Production Report', fromDate, toDate, 'landscape')
   const records = await getAutoconerRecords(fromDate, toDate)
-  const masters = await employeeMasterMap(records.map(row => row.employeeName))
+  const masters = await payrollEmployeeMap(records.map(row => row.employeeName))
   const groups = new Map()
   for (const row of records) {
     const key = `${row.employeeName}|${row.count}`
@@ -342,7 +342,7 @@ async function autoconerSiderMonthly(fromDate, toDate) {
   }
   const rows = [...groups.entries()].map(([key, items]) => {
     const [name, count] = key.split('|')
-    const employee = masters.get(name)
+    const employee = masters.get(name.trim().toLowerCase())
     return [employee?.emp_code || '-', name, employee?.doj ? displayDate(employee.doj) : '-', count, fixed(items.reduce((s, r) => s + r.production, 0)), fixed(weighted(items, 'efficiency')), fixed(weighted(items, 'red'))]
   }).sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
   report.tables.push({ columns: ['Token No', 'Sider Name', 'DOJ', 'Count', 'Prod Kgs', 'EFF %', 'RED'], rows: rows.map((row, index) => [index + 1, ...row]), columnPrefix: 'S No' })
