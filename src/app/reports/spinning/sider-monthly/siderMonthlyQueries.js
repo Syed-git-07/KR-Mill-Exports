@@ -18,6 +18,7 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
         sm.machine_no as frame_no,
         sm.id as machine_id,
         GROUP_CONCAT(DISTINCT spd.sider1_payroll_employee_id ORDER BY spd.sider1_payroll_employee_id SEPARATOR ',') as sider1_employee_ids,
+        GROUP_CONCAT(DISTINCT spd.sider2_payroll_employee_id ORDER BY spd.sider2_payroll_employee_id SEPARATOR ',') as sider2_employee_ids,
         sph.shift,
         SUM(spd.act_prodn) as total_production,
         SUM(spd.waste) as total_waste,
@@ -31,7 +32,10 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       ORDER BY sm.sort_order, sm.machine_no, sph.shift
     `
 
-    const employeeIds = productionData.flatMap(row => String(row.sider1_employee_ids || '').split(',').map(Number).filter(Boolean))
+    const employeeIds = productionData.flatMap(row => [row.sider1_employee_ids, row.sider2_employee_ids]
+      .flatMap(value => String(value || '').split(','))
+      .map(Number)
+      .filter(id => Number.isSafeInteger(id) && id > 0))
     const employees = await getPayrollEmployeesByIds(employeeIds)
     const employeeById = new Map(employees.map(employee => [Number(employee.id), employee]))
 
@@ -56,9 +60,12 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       const shift = row.shift
 
       if (frame.shifts[shift]) {
-        const shiftEmployees = String(row.sider1_employee_ids || '')
-          .split(',')
-          .map(id => employeeById.get(Number(id)))
+        const shiftEmployeeIds = [...new Set([row.sider1_employee_ids, row.sider2_employee_ids]
+          .flatMap(value => String(value || '').split(','))
+          .map(Number)
+          .filter(id => Number.isSafeInteger(id) && id > 0))]
+        const shiftEmployees = shiftEmployeeIds
+          .map(id => employeeById.get(id))
           .filter(Boolean)
         frame.shifts[shift].siderName = shiftEmployees.map(employee => employee.emp_name).join(', ') || 'NIL'
         frame.shifts[shift].production = parseFloat(row.total_production || 0)
@@ -67,14 +74,15 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
         // Format DOJ as dd-MMM-yy (e.g., "02-Sep-24")
         const joiningDates = shiftEmployees.map(employee => employee.doj).filter(Boolean).map(value => new Date(value))
         if (joiningDates.length) {
-          const dojDate = new Date(Math.min(...joiningDates.map(date => date.getTime())))
           const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-          const day = String(dojDate.getDate()).padStart(2, '0')
-          const month = months[dojDate.getMonth()]
-          const year = String(dojDate.getFullYear()).slice(-2)
-          frame.shifts[shift].doj = `${day}-${month}-${year}`
+          frame.shifts[shift].doj = joiningDates.map(dojDate => {
+            const day = String(dojDate.getDate()).padStart(2, '0')
+            const month = months[dojDate.getMonth()]
+            const year = String(dojDate.getFullYear()).slice(-2)
+            return `${day}-${month}-${year}`
+          }).join(', ')
         } else {
-          frame.shifts[shift].doj = '01-Jan-00'
+          frame.shifts[shift].doj = null
         }
       }
     }
@@ -90,21 +98,12 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
     }
 
     reportData.forEach(frame => {
-      if (frame.shifts[1].waste > 0) {
-        totals.shift1.production += frame.shifts[1].production
-        totals.shift1.waste += frame.shifts[1].waste
-        totals.shift1.wastePercent += frame.shifts[1].wastePercent
-      }
-      if (frame.shifts[2].waste > 0) {
-        totals.shift2.production += frame.shifts[2].production
-        totals.shift2.waste += frame.shifts[2].waste
-        totals.shift2.wastePercent += frame.shifts[2].wastePercent
-      }
-      if (frame.shifts[3].waste > 0) {
-        totals.shift3.production += frame.shifts[3].production
-        totals.shift3.waste += frame.shifts[3].waste
-        totals.shift3.wastePercent += frame.shifts[3].wastePercent
-      }
+      totals.shift1.production += frame.shifts[1].production
+      totals.shift1.waste += frame.shifts[1].waste
+      totals.shift2.production += frame.shifts[2].production
+      totals.shift2.waste += frame.shifts[2].waste
+      totals.shift3.production += frame.shifts[3].production
+      totals.shift3.waste += frame.shifts[3].waste
     })
 
     // Totals use total waste / total production, matching the mill report.

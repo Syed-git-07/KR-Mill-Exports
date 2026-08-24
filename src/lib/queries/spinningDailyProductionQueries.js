@@ -46,10 +46,9 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
         m.sort_order,
         d.count_name,
         d.exp_gps,
-        d.gps as achieved_gps,
+        d.worked_spindles,
         d.act_prodn,
         d.waste as waste_kg,
-        d.waste_percent,
         COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0) as total_stoppage_mins
       FROM spinning_production_header h
       JOIN spinning_production_detail d ON h.id = d.header_id
@@ -71,9 +70,9 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
           sortOrder: row.sort_order || 0,
           counts: new Set(),
           shifts: {
-            1: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0 },
-            2: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0 },
-            3: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0 }
+            1: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0, workedSpindles: 0, expGpsWeighted: 0, expGpsSum: 0, rowCount: 0 },
+            2: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0, workedSpindles: 0, expGpsWeighted: 0, expGpsSum: 0, rowCount: 0 },
+            3: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0, workedSpindles: 0, expGpsWeighted: 0, expGpsSum: 0, rowCount: 0 }
           }
         })
       }
@@ -83,16 +82,32 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
       if (row.count_name) machine.counts.add(row.count_name)
       
       if (shift >= 1 && shift <= 3) {
-        machine.shifts[shift] = {
-          expGps: row.exp_gps !== null ? parseFloat(row.exp_gps) : 0,
-          achievedGps: row.achieved_gps !== null ? parseFloat(row.achieved_gps) : 0,
-          production: row.act_prodn !== null ? parseFloat(row.act_prodn) : 0,
-          waste: row.waste_percent !== null ? parseFloat(row.waste_percent) : 0,
-          wasteKg: row.waste_kg !== null ? parseFloat(row.waste_kg) : 0,
-          stoppage: row.total_stoppage_mins !== null ? parseInt(row.total_stoppage_mins) : 0
-        }
+        const shiftData = machine.shifts[shift]
+        const production = Number(row.act_prodn) || 0
+        const wasteKg = Number(row.waste_kg) || 0
+        const workedSpindles = Math.max(Number(row.worked_spindles) || 0, 0)
+        const expectedGps = Number(row.exp_gps) || 0
+
+        shiftData.production += production
+        shiftData.wasteKg += wasteKg
+        shiftData.stoppage += Number(row.total_stoppage_mins) || 0
+        shiftData.workedSpindles += workedSpindles
+        shiftData.expGpsWeighted += expectedGps * workedSpindles
+        shiftData.expGpsSum += expectedGps
+        shiftData.rowCount += 1
       }
     })
+
+    const finalizeShift = shift => {
+      shift.expGps = shift.workedSpindles > 0
+        ? shift.expGpsWeighted / shift.workedSpindles
+        : shift.rowCount > 0 ? shift.expGpsSum / shift.rowCount : 0
+      shift.achievedGps = shift.workedSpindles > 0
+        ? shift.production / shift.workedSpindles * 1000
+        : 0
+      shift.waste = shift.production > 0 ? shift.wasteKg / shift.production * 100 : 0
+      return shift
+    }
 
     // Convert map to array and calculate totals
     const machineData = []
@@ -103,9 +118,9 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
     }
 
     machineMap.forEach((machine) => {
-      const shift1 = machine.shifts[1]
-      const shift2 = machine.shifts[2]
-      const shift3 = machine.shifts[3]
+      const shift1 = finalizeShift(machine.shifts[1])
+      const shift2 = finalizeShift(machine.shifts[2])
+      const shift3 = finalizeShift(machine.shifts[3])
 
       // Calculate totals for this machine
       const totalProduction = shift1.production + shift2.production + shift3.production
@@ -116,9 +131,8 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
       // Total stoppage minutes
       const totalStoppage = shift1.stoppage + shift2.stoppage + shift3.stoppage
 
-      // Calculate average achieved GPS (average of all 3 shifts)
-      const achievedValues = [shift1.achievedGps, shift2.achievedGps, shift3.achievedGps].filter(value => value > 0)
-      const avgAchievedGps = achievedValues.length ? achievedValues.reduce((sum, value) => sum + value, 0) / achievedValues.length : 0
+      const totalWorkedSpindles = shift1.workedSpindles + shift2.workedSpindles + shift3.workedSpindles
+      const finalGps = totalWorkedSpindles > 0 ? totalProduction / totalWorkedSpindles * 1000 : 0
 
       machineData.push({
         machineNo: machine.machineNo,
@@ -147,8 +161,8 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
         stoppageShift2: shift2.stoppage,
         stoppageShift3: shift3.stoppage,
         totalStoppage: totalStoppage,
-        // Final GPS (average of achieved GPS)
-        finalGps: avgAchievedGps
+        // Final GPS uses the same production/worked-spindle ratio as entry rows.
+        finalGps
       })
 
       // Add to shift totals

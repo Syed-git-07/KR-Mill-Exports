@@ -153,7 +153,7 @@ export default function EmployeeAutocomplete({
                 className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600"
                 aria-label={`Payroll employee ID ${employeeId}`}
               >
-                Payroll #{employeeId}
+                ID {employeeId}
               </span>
             )}
           </div>
@@ -217,11 +217,6 @@ export default function EmployeeAutocomplete({
                         {emp.emp_code || ''}
                       </span>
                     </div>
-                    {(emp.middle_name || emp.last_name) && (
-                      <div className={cn("text-xs truncate", highlightedIndex === index ? "text-blue-100" : "text-gray-500")}>
-                        {[emp.middle_name, emp.last_name].filter(Boolean).join(' ')}
-                      </div>
-                    )}
                     {emp.department && (
                       <div className={cn("text-xs truncate", highlightedIndex === index ? "text-blue-100" : "text-gray-500")}>
                         {emp.department}

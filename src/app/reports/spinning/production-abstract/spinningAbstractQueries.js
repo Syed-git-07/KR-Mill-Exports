@@ -1,173 +1,14 @@
 import { prisma } from '@/lib/prisma'
 
-export async function fetchSpinningAbstractSummary(reportDate) {
-  const dateStr = formatDateForQuery(reportDate)
-
-  // Fetch raw data grouped by count and shift
-  const rawData = await prisma.$queryRaw`
-    SELECT 
-      d.count_name,
-      h.shift,
-      SUM(sms.allocated_spindles) as allocated_spindles,
-      AVG(sms.conv_40s_value) as conv_40s_value,
-      COUNT(DISTINCT d.machine_id) as machine_count,
-      SUM(d.act_prodn) as production_kg,
-      SUM(d.waste) as waste_kg,
-      AVG(d.exp_gps) as exp_gps,
-      AVG(d.gps) as achieved_gps,
-      SUM(d.worked_spindles) as worked_spindles,
-      SUM(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) as total_stoppage_mins,
-      SUM(d.work_time) as total_work_time,
-      SUM(d.run_time) as total_run_time
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY d.count_name, h.shift
-    ORDER BY d.count_name, h.shift
-  `
-
-  // Process data to calculate summary metrics per count
-  const countSummary = {}
-
-  rawData.forEach(row => {
-    const countName = row.count_name
-    
-    if (!countSummary[countName]) {
-      countSummary[countName] = {
-        countName,
-        conv40sValue: Number(row.conv_40s_value) || 0,
-        allocatedSpindles: Number(row.allocated_spindles ?? 1104),
-        machines: new Set(),
-        shifts: {
-          1: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, workTime: 0, runTime: 0, allocatedSpindles: 0 },
-          2: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, workTime: 0, runTime: 0, allocatedSpindles: 0 },
-          3: { productionKg: 0, wasteKg: 0, expGps: null, achievedGps: null, workTime: 0, runTime: 0, allocatedSpindles: 0 }
-        }
-      }
-    }
-
-    const shift = row.shift
-    const summary = countSummary[countName]
-    
-    // Track unique machines (using machine_count from query which gives distinct count per shift)
-    // We need to get the max machine count across shifts as the same machines may run in multiple shifts
-    const machineCount = Number(row.machine_count) || 0
-    
-    // Store shift-specific data
-    summary.shifts[shift].productionKg = Number(row.production_kg) || 0
-    summary.shifts[shift].wasteKg = Number(row.waste_kg) || 0
-    summary.shifts[shift].expGps = row.exp_gps ? Number(row.exp_gps) : null
-    summary.shifts[shift].achievedGps = row.achieved_gps ? Number(row.achieved_gps) : null
-    summary.shifts[shift].workTime = Number(row.total_work_time) || 0
-    summary.shifts[shift].runTime = Number(row.total_run_time) || 0
-    summary.shifts[shift].allocatedSpindles = Number(row.allocated_spindles) || 0
-    
-    // Store machine count per shift to calculate max later
-    if (!summary.machineCountByShift) {
-      summary.machineCountByShift = {}
-    }
-    summary.machineCountByShift[shift] = machineCount
-  })
-
-  // Calculate final metrics for each count
-  const summaryData = Object.values(countSummary).map(summary => {
-    // Get maximum machine count across all shifts (same machines may run in multiple shifts)
-    const machineCount = Math.max(...Object.values(summary.machineCountByShift || { 1: 0 }))
-    const totalSpindles = Math.max(...Object.values(summary.shifts).map(shift => shift.allocatedSpindles), 0)
-
-    // Total Production KG (sum of all 3 shifts)
-    const totalProductionKg = 
-      summary.shifts[1].productionKg + 
-      summary.shifts[2].productionKg + 
-      summary.shifts[3].productionKg
-
-    // Production 40's = Production KG * conv_40s_value
-    const production40s = totalProductionKg * summary.conv40sValue
-
-    // GPS Std - average of exp_gps for shifts that have data (not null)
-    const expGpsValues = [1, 2, 3]
-      .map(shift => summary.shifts[shift].expGps)
-      .filter(val => val !== null)
-    const gpsStd = expGpsValues.length > 0 
-      ? expGpsValues.reduce((sum, val) => sum + val, 0) / expGpsValues.length 
-      : 0
-
-    // GPS Achieved - average of achieved_gps for shifts that have data (not null)
-    const achievedGpsValues = [1, 2, 3]
-      .map(shift => summary.shifts[shift].achievedGps)
-      .filter(val => val !== null)
-    const gpsAchieved = achievedGpsValues.length > 0 
-      ? achievedGpsValues.reduce((sum, val) => sum + val, 0) / achievedGpsValues.length 
-      : 0
-
-    // 40's GPS = conv_40s_value * GPS Achieved
-    const gps40s = summary.conv40sValue * gpsAchieved
-
-    // Total Waste KGs (sum of all 3 shifts)
-    const totalWasteKg = 
-      summary.shifts[1].wasteKg + 
-      summary.shifts[2].wasteKg + 
-      summary.shifts[3].wasteKg
-
-    // Waste % = (Total Waste KG / Total Production KG) * 100
-    const wastePercent = totalProductionKg > 0 
-      ? (totalWasteKg / totalProductionKg) * 100 
-      : 0
-
-    const totalActualRunTime = summary.shifts[1].workTime + summary.shifts[2].workTime + summary.shifts[3].workTime
-    const totalPossibleTime = summary.shifts[1].runTime + summary.shifts[2].runTime + summary.shifts[3].runTime // 1440
-    
-    const utilizationPercent = totalPossibleTime > 0 
-      ? (totalActualRunTime / totalPossibleTime) * 100 
-      : 0
-
-    // Gain/Loss calculation: Expected GPS - Achieved GPS
-    // Positive value = Loss (achieved is less than expected)
-    // Negative value = Gain (achieved is more than expected)
-    const gainLoss = gpsAchieved > 0 ? totalProductionKg * ((gpsAchieved - gpsStd) / gpsAchieved) : 0
-
-    return {
-      countName: summary.countName,
-      machineCount,
-      totalSpindles,
-      productionKg: totalProductionKg,
-      production40s,
-      gpsStd,
-      gpsAchieved,
-      gps40s,
-      wasteKg: totalWasteKg,
-      wastePercent,
-      utilizationPercent,
-      gainLoss
-    }
-  })
-
-  // Calculate grand totals
-  const grandTotal = {
-    machineCount: summaryData.reduce((sum, row) => sum + row.machineCount, 0),
-    totalSpindles: summaryData.reduce((sum, row) => sum + row.totalSpindles, 0),
-    productionKg: summaryData.reduce((sum, row) => sum + row.productionKg, 0),
-    wasteKg: summaryData.reduce((sum, row) => sum + row.wasteKg, 0)
-  }
-
-  return {
-    date: dateStr,
-    summaryData,
-    grandTotal
-  }
-}
-
-function formatDateForQuery(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+function formatDateForQuery(value) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) throw new Error('A valid report date is required')
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
+  ].join('-')
 }
 
 function previousMonthComparableDate(date) {
@@ -177,541 +18,238 @@ function previousMonthComparableDate(date) {
   return new Date(year, month - 1, Math.min(date.getDate(), previousMonthLastDay))
 }
 
+function monthStart(dateString) {
+  return `${dateString.slice(0, 7)}-01`
+}
+
+const number = value => Number(value) || 0
+
+async function fetchPeriodRows(fromDate, toDate) {
+  return prisma.$queryRaw`
+    SELECT
+      h.shift,
+      SUM(COALESCE(d.act_prodn, 0)) AS production,
+      SUM(COALESCE(d.waste, 0)) AS waste,
+      SUM(COALESCE(d.work_time, 0)) AS work_time,
+      SUM(COALESCE(d.run_time, 0)) AS run_time,
+      SUM(COALESCE(d.worked_spindles, 0)) AS worked_spindles,
+      SUM(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) AS stoppage,
+      SUM(COALESCE(d.act_prodn, 0) * COALESCE(sms.conv_40s_value, 0)) AS converted_production,
+      SUM(COALESCE(sms.act_count, 0) * COALESCE(d.worked_spindles, 0)) AS count_weighted,
+      SUM(COALESCE(sms.act_count, 0)) AS count_sum,
+      COUNT(*) AS detail_count
+    FROM spinning_production_header h
+    JOIN spinning_production_detail d ON d.header_id = h.id
+    LEFT JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
+    LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
+    WHERE h.entry_date BETWEEN ${fromDate} AND ${toDate}
+    GROUP BY h.shift
+    ORDER BY h.shift
+  `
+}
+
+function normalizePeriodRow(row) {
+  return {
+    shift: number(row.shift),
+    production: number(row.production),
+    waste: number(row.waste),
+    workTime: number(row.work_time),
+    runTime: number(row.run_time),
+    workedSpindles: number(row.worked_spindles),
+    stoppage: number(row.stoppage),
+    convertedProduction: number(row.converted_production),
+    countWeighted: number(row.count_weighted),
+    countSum: number(row.count_sum),
+    detailCount: number(row.detail_count)
+  }
+}
+
+function aggregatePeriod(rows) {
+  const normalized = rows.map(normalizePeriodRow)
+  const totals = normalized.reduce((result, row) => {
+    result.production += row.production
+    result.waste += row.waste
+    result.workTime += row.workTime
+    result.runTime += row.runTime
+    result.workedSpindles += row.workedSpindles
+    result.stoppage += row.stoppage
+    result.convertedProduction += row.convertedProduction
+    result.countWeighted += row.countWeighted
+    result.countSum += row.countSum
+    result.detailCount += row.detailCount
+    return result
+  }, {
+    production: 0,
+    waste: 0,
+    workTime: 0,
+    runTime: 0,
+    workedSpindles: 0,
+    stoppage: 0,
+    convertedProduction: 0,
+    countWeighted: 0,
+    countSum: 0,
+    detailCount: 0
+  })
+
+  return {
+    ...totals,
+    utilization: totals.runTime > 0 ? totals.workTime / totals.runTime * 100 : 0,
+    wastePercent: totals.production > 0 ? totals.waste / totals.production * 100 : 0,
+    convertedGps: totals.workedSpindles > 0
+      ? totals.convertedProduction / totals.workedSpindles * 1000
+      : 0,
+    averageCount: totals.workedSpindles > 0
+      ? totals.countWeighted / totals.workedSpindles
+      : totals.detailCount > 0 ? totals.countSum / totals.detailCount : 0
+  }
+}
+
+function shiftValue(rows, shift, field) {
+  return normalizePeriodRow(rows.find(row => number(row.shift) === shift) || {})[field]
+}
+
+function shiftRatio(rows, shift, numerator, denominator, multiplier = 1) {
+  const row = normalizePeriodRow(rows.find(item => number(item.shift) === shift) || {})
+  return row[denominator] > 0 ? row[numerator] / row[denominator] * multiplier : 0
+}
+
+function currentDayMetric(rows, field, totalField = field) {
+  const total = aggregatePeriod(rows)
+  return {
+    shift1: shiftValue(rows, 1, field),
+    shift2: shiftValue(rows, 2, field),
+    shift3: shiftValue(rows, 3, field),
+    total: total[totalField]
+  }
+}
+
+function currentDayRatio(rows, numerator, denominator, totalKey, multiplier = 1) {
+  const total = aggregatePeriod(rows)
+  return {
+    shift1: shiftRatio(rows, 1, numerator, denominator, multiplier),
+    shift2: shiftRatio(rows, 2, numerator, denominator, multiplier),
+    shift3: shiftRatio(rows, 3, numerator, denominator, multiplier),
+    [totalKey]: total[denominator] > 0 ? total[numerator] / total[denominator] * multiplier : 0
+  }
+}
+
+export async function fetchSpinningAbstractSummary(reportDate) {
+  const dateStr = formatDateForQuery(reportDate)
+  const rawData = await prisma.$queryRaw`
+    SELECT
+      COALESCE(d.count_name, 'UNSPECIFIED') AS count_name,
+      h.shift,
+      COUNT(DISTINCT d.machine_id) AS machine_count,
+      SUM(
+        COALESCE(sms.allocated_spindles, 0)
+        * LEAST(
+            COALESCE(d.run_time, CASE WHEN h.shift = 3 THEN 420 ELSE 510 END),
+            CASE WHEN h.shift = 3 THEN 420 ELSE 510 END
+          )
+        / (CASE WHEN h.shift = 3 THEN 420 ELSE 510 END)
+      ) AS equivalent_spindles,
+      SUM(COALESCE(d.act_prodn, 0)) AS production,
+      SUM(COALESCE(d.waste, 0)) AS waste,
+      SUM(COALESCE(d.work_time, 0)) AS work_time,
+      SUM(COALESCE(d.run_time, 0)) AS run_time,
+      SUM(COALESCE(d.worked_spindles, 0)) AS worked_spindles,
+      SUM(COALESCE(d.exp_gps, 0) * COALESCE(d.worked_spindles, 0)) AS expected_gps_weighted,
+      SUM(COALESCE(d.act_prodn, 0) * COALESCE(sms.conv_40s_value, 0)) AS converted_production
+    FROM spinning_production_header h
+    JOIN spinning_production_detail d ON d.header_id = h.id
+    LEFT JOIN spinning_machine_setup sms
+      ON sms.machine_id = d.machine_id
+      AND sms.entry_date = h.entry_date
+      AND sms.shift = h.shift
+      AND sms.run_sequence = d.run_sequence
+    WHERE h.entry_date = ${dateStr}
+    GROUP BY COALESCE(d.count_name, 'UNSPECIFIED'), h.shift
+    ORDER BY COALESCE(d.count_name, 'UNSPECIFIED'), h.shift
+  `
+
+  const groups = new Map()
+  for (const raw of rawData) {
+    const countName = raw.count_name
+    if (!groups.has(countName)) groups.set(countName, [])
+    groups.get(countName).push({
+      shift: number(raw.shift),
+      machineCount: number(raw.machine_count),
+      equivalentSpindles: number(raw.equivalent_spindles),
+      production: number(raw.production),
+      waste: number(raw.waste),
+      workTime: number(raw.work_time),
+      runTime: number(raw.run_time),
+      workedSpindles: number(raw.worked_spindles),
+      expectedGpsWeighted: number(raw.expected_gps_weighted),
+      convertedProduction: number(raw.converted_production)
+    })
+  }
+
+  const summaryData = [...groups.entries()].map(([countName, shifts]) => {
+    const productionKg = shifts.reduce((sum, row) => sum + row.production, 0)
+    const production40s = shifts.reduce((sum, row) => sum + row.convertedProduction, 0)
+    const wasteKg = shifts.reduce((sum, row) => sum + row.waste, 0)
+    const workTime = shifts.reduce((sum, row) => sum + row.workTime, 0)
+    const runTime = shifts.reduce((sum, row) => sum + row.runTime, 0)
+    const workedSpindles = shifts.reduce((sum, row) => sum + row.workedSpindles, 0)
+    const shiftGps = shifts.filter(row => row.workedSpindles > 0).map(row => ({
+      expected: row.expectedGpsWeighted / row.workedSpindles,
+      achieved: row.production / row.workedSpindles * 1000
+    }))
+    const gpsStd = shiftGps.length
+      ? shiftGps.reduce((sum, row) => sum + row.expected, 0) / shiftGps.length
+      : 0
+    const gpsAchieved = shiftGps.length
+      ? shiftGps.reduce((sum, row) => sum + row.achieved, 0) / shiftGps.length
+      : 0
+
+    return {
+      countName,
+      machineCount: Math.max(0, ...shifts.map(row => row.machineCount)),
+      totalSpindles: Math.max(0, ...shifts.map(row => row.equivalentSpindles)),
+      productionKg,
+      production40s,
+      gpsStd,
+      gpsAchieved,
+      gps40s: workedSpindles > 0 ? production40s / workedSpindles * 1000 : 0,
+      wasteKg,
+      wastePercent: productionKg > 0 ? wasteKg / productionKg * 100 : 0,
+      utilizationPercent: runTime > 0 ? workTime / runTime * 100 : 0,
+      gainLoss: gpsAchieved > 0 ? productionKg * ((gpsAchieved - gpsStd) / gpsAchieved) : 0
+    }
+  })
+
+  const grandTotal = summaryData.reduce((total, row) => {
+    total.machineCount += row.machineCount
+    total.totalSpindles += row.totalSpindles
+    total.productionKg += row.productionKg
+    total.wasteKg += row.wasteKg
+    return total
+  }, { machineCount: 0, totalSpindles: 0, productionKg: 0, wasteKg: 0 })
+
+  return { date: dateStr, summaryData, grandTotal }
+}
+
 export async function fetchSpinningAbstractTableData(reportDate) {
   const dateStr = formatDateForQuery(reportDate)
-  const selectedDate = new Date(reportDate)
-  const selectedMonth = selectedDate.getMonth() + 1
-  const selectedYear = selectedDate.getFullYear()
+  const selectedDate = new Date(`${dateStr}T00:00:00`)
+  const lastMonthDateStr = formatDateForQuery(previousMonthComparableDate(selectedDate))
 
-  // Calculate last month's year and month
-  const lastMonthDate = previousMonthComparableDate(selectedDate)
-  const lastMonthYear = lastMonthDate.getFullYear()
-  const lastMonthMonth = lastMonthDate.getMonth() + 1
-  const lastMonthDateStr = formatDateForQuery(lastMonthDate)
-
-  // 1. Current Month Today - Shift-wise production for selected date
-  const currentDayShifts = await prisma.$queryRaw`
-    SELECT 
-      h.shift,
-      SUM(d.act_prodn) as total_production,
-      AVG(d.run_time) as avg_run_time,
-      AVG(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) as avg_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY h.shift
-    ORDER BY h.shift
-  `
-
-  // Format shift data - ensure all 3 shifts are present
-  const shiftProduction = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  const shiftUtilization = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  currentDayShifts.forEach(row => {
-    const production = Number(row.total_production) || 0
-    const avgRunTime = Number(row.avg_run_time) || (row.shift === 3 ? 420 : 510)
-    const avgStoppage = Number(row.avg_stoppage) || 0
-    const actualRunTime = Math.max(0, avgRunTime - avgStoppage)
-    const utilPercent = avgRunTime > 0 ? (actualRunTime / avgRunTime) * 100 : 0
-    
-    if (row.shift === 1) {
-      shiftProduction.shift1 = production
-      shiftUtilization.shift1 = utilPercent
-    } else if (row.shift === 2) {
-      shiftProduction.shift2 = production
-      shiftUtilization.shift2 = utilPercent
-    } else if (row.shift === 3) {
-      shiftProduction.shift3 = production
-      shiftUtilization.shift3 = utilPercent
-    }
-  })
-
-  const currentDayTotal = shiftProduction.shift1 + shiftProduction.shift2 + shiftProduction.shift3
-  
-  // Calculate average utilization for current day (only for shifts with data)
-  const currentDayUtilValues = currentDayShifts.map(row => {
-    const avgRunTime = Number(row.avg_run_time) || (row.shift === 3 ? 420 : 510)
-    const avgStoppage = Number(row.avg_stoppage) || 0
-    const actualRunTime = Math.max(0, avgRunTime - avgStoppage)
-    return avgRunTime > 0 ? (actualRunTime / avgRunTime) * 100 : 0
-  })
-  const currentDayAvgUtil = currentDayUtilValues.length > 0 
-    ? currentDayUtilValues.reduce((sum, val) => sum + val, 0) / currentDayUtilValues.length 
-    : 0
-
-  // 2. Last Month Same Date - Total production and utilization
-  const lastMonthSameDateData = await prisma.$queryRaw`
-    SELECT 
-      SUM(d.act_prodn) as total_production,
-      AVG(d.run_time) as avg_run_time,
-      AVG(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) as avg_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
-    WHERE h.entry_date = ${lastMonthDateStr}
-  `
-
-  const lastMonthSameDateTotal = Number(lastMonthSameDateData[0]?.total_production) || 0
-  
-  // Calculate utilization for last month same date
-  let lastMonthSameDateUtil = 0
-  if (lastMonthSameDateData.length > 0 && lastMonthSameDateData[0]?.avg_run_time) {
-    const avgRunTime = Number(lastMonthSameDateData[0].avg_run_time) || 510
-    const avgStoppage = Number(lastMonthSameDateData[0].avg_stoppage) || 0
-    const actualRunTime = Math.max(0, avgRunTime - avgStoppage)
-    lastMonthSameDateUtil = avgRunTime > 0 ? (actualRunTime / avgRunTime) * 100 : 0
-  }
-
-  // 3. Current Month Upto Date - From day 1 to selected date
-  const firstDayCurrentMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`
-  
-  const currentMonthUptoDateData = await prisma.$queryRaw`
-    SELECT 
-      SUM(d.act_prodn) as total_production,
-      AVG(d.run_time) as avg_run_time,
-      AVG(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) as avg_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-  `
-
-  const currentMonthUptoDateTotal = Number(currentMonthUptoDateData[0]?.total_production) || 0
-  
-  // Calculate average utilization for current month upto date
-  let currentMonthUptoDateUtil = 0
-  if (currentMonthUptoDateData.length > 0 && currentMonthUptoDateData[0]?.avg_run_time) {
-    const avgRunTime = Number(currentMonthUptoDateData[0].avg_run_time) || 510
-    const avgStoppage = Number(currentMonthUptoDateData[0].avg_stoppage) || 0
-    const actualRunTime = Math.max(0, avgRunTime - avgStoppage)
-    currentMonthUptoDateUtil = avgRunTime > 0 ? (actualRunTime / avgRunTime) * 100 : 0
-  }
-
-  // 4. Last Month Upto Date - From day 1 to same day in previous month
-  const firstDayLastMonth = `${lastMonthYear}-${String(lastMonthMonth).padStart(2, '0')}-01`
-  
-  const lastMonthUptoDateData = await prisma.$queryRaw`
-    SELECT 
-      SUM(d.act_prodn) as total_production,
-      AVG(d.run_time) as avg_run_time,
-      AVG(COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0)) as avg_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    LEFT JOIN spinning_stoppage_entry se ON se.production_detail_id = d.id
-    WHERE h.entry_date >= ${firstDayLastMonth} 
-      AND h.entry_date <= ${lastMonthDateStr}
-  `
-
-  const lastMonthUptoDateTotal = Number(lastMonthUptoDateData[0]?.total_production) || 0
-  
-  // Calculate average utilization for last month upto date
-  let lastMonthUptoDateUtil = 0
-  if (lastMonthUptoDateData.length > 0 && lastMonthUptoDateData[0]?.avg_run_time) {
-    const avgRunTime = Number(lastMonthUptoDateData[0].avg_run_time) || 510
-    const avgStoppage = Number(lastMonthUptoDateData[0].avg_stoppage) || 0
-    const actualRunTime = Math.max(0, avgRunTime - avgStoppage)
-    lastMonthUptoDateUtil = avgRunTime > 0 ? (actualRunTime / avgRunTime) * 100 : 0
-  }
-
-  // ============= WORKED SPINDLES CALCULATIONS =============
-  
-  // 1. Current Day Shifts - Worked spindles per shift
-  const currentDaySpindlesShifts = await prisma.$queryRaw`
-    SELECT 
-      h.shift,
-      SUM(sms.allocated_spindles) as worked_spindles
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY h.shift
-    ORDER BY h.shift
-  `
-
-  const shiftSpindles = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  currentDaySpindlesShifts.forEach(row => {
-    const spindles = Number(row.worked_spindles) || 0
-    if (row.shift === 1) {
-      shiftSpindles.shift1 = spindles
-    } else if (row.shift === 2) {
-      shiftSpindles.shift2 = spindles
-    } else if (row.shift === 3) {
-      shiftSpindles.shift3 = spindles
-    }
-  })
-
-  const currentDayTotalSpindles = shiftSpindles.shift1 + shiftSpindles.shift2 + shiftSpindles.shift3
-
-  // 2. Last Month Same Date - Worked spindles
-  const lastMonthSpindlesData = await prisma.$queryRaw`
-    SELECT 
-      SUM(sms.allocated_spindles) as worked_spindles
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date = ${lastMonthDateStr}
-  `
-
-  const lastMonthSpindlesTotal = Number(lastMonthSpindlesData[0]?.worked_spindles) || 0
-
-  // 3. Current Month Upto Date - Worked spindles
-  const currentMonthUptoDateSpindlesData = await prisma.$queryRaw`
-    SELECT 
-      SUM(sms.allocated_spindles) as worked_spindles
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-  `
-
-  const currentMonthUptoDateSpindlesTotal = Number(currentMonthUptoDateSpindlesData[0]?.worked_spindles) || 0
-
-  // 4. Last Month Upto Date - Worked spindles
-  const lastMonthUptoDateSpindlesData = await prisma.$queryRaw`
-    SELECT 
-      SUM(sms.allocated_spindles) as worked_spindles
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date >= ${firstDayLastMonth} 
-      AND h.entry_date <= ${lastMonthDateStr}
-  `
-
-  const lastMonthUptoDateSpindlesTotal = Number(lastMonthUptoDateSpindlesData[0]?.worked_spindles) || 0
-
-  // ============= AVERAGE COUNT CALCULATIONS =============
-  
-  // 1. Current Day Shifts - Average count per shift
-  const currentDayAvgCountShifts = await prisma.$queryRaw`
-    SELECT 
-      h.shift,
-      AVG(sms.act_count) as avg_count
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY h.shift
-    ORDER BY h.shift
-  `
-
-  const shiftAvgCount = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  currentDayAvgCountShifts.forEach(row => {
-    const avgCount = Number(row.avg_count) || 0
-    if (row.shift === 1) {
-      shiftAvgCount.shift1 = avgCount
-    } else if (row.shift === 2) {
-      shiftAvgCount.shift2 = avgCount
-    } else if (row.shift === 3) {
-      shiftAvgCount.shift3 = avgCount
-    }
-  })
-
-  // Average count for the day (average of shift averages that have data)
-  const dayAvgCountValues = currentDayAvgCountShifts.map(row => Number(row.avg_count) || 0)
-  const currentDayAvgCountTotal = dayAvgCountValues.length > 0
-    ? dayAvgCountValues.reduce((sum, val) => sum + val, 0) / dayAvgCountValues.length
-    : 0
-
-  // 2. Last Month Same Date - Average count
-  const lastMonthAvgCountData = await prisma.$queryRaw`
-    SELECT 
-      AVG(sms.act_count) as avg_count
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date = ${lastMonthDateStr}
-  `
-
-  const lastMonthAvgCountTotal = Number(lastMonthAvgCountData[0]?.avg_count) || 0
-
-  // 3. Current Month Upto Date - Average count
-  const currentMonthUptoDateAvgCountData = await prisma.$queryRaw`
-    SELECT 
-      AVG(sms.act_count) as avg_count
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-  `
-
-  const currentMonthUptoDateAvgCountTotal = Number(currentMonthUptoDateAvgCountData[0]?.avg_count) || 0
-
-  // 4. Last Month Upto Date - Average count
-  const lastMonthUptoDateAvgCountData = await prisma.$queryRaw`
-    SELECT 
-      AVG(sms.act_count) as avg_count
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
-      ON sms.machine_id = d.machine_id
-      AND sms.entry_date = h.entry_date
-      AND sms.shift = h.shift
-      AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date >= ${firstDayLastMonth} 
-      AND h.entry_date <= ${lastMonthDateStr}
-  `
-
-  const lastMonthUptoDateAvgCountTotal = Number(lastMonthUptoDateAvgCountData[0]?.avg_count) || 0
-
-  // ============= TOTAL WASTAGE (KG) CALCULATIONS =============
-  
-  // 1. Current Day Shifts - Total wastage per shift
-  const currentDayWastageShifts = await prisma.$queryRaw`
-    SELECT 
-      h.shift,
-      SUM(d.waste) as total_wastage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY h.shift
-    ORDER BY h.shift
-  `
-
-  const shiftWastage = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  currentDayWastageShifts.forEach(row => {
-    const wastage = Number(row.total_wastage) || 0
-    if (row.shift === 1) {
-      shiftWastage.shift1 = wastage
-    } else if (row.shift === 2) {
-      shiftWastage.shift2 = wastage
-    } else if (row.shift === 3) {
-      shiftWastage.shift3 = wastage
-    }
-  })
-
-  const currentDayTotalWastage = shiftWastage.shift1 + shiftWastage.shift2 + shiftWastage.shift3
-
-  // 2. Last Month Same Date - Total wastage
-  const lastMonthWastageData = await prisma.$queryRaw`
-    SELECT 
-      SUM(d.waste) as total_wastage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    WHERE h.entry_date = ${lastMonthDateStr}
-  `
-
-  const lastMonthWastageTotal = Number(lastMonthWastageData[0]?.total_wastage) || 0
-
-  // 3. Current Month Upto Date - Total wastage
-  const currentMonthUptoDateWastageData = await prisma.$queryRaw`
-    SELECT 
-      SUM(d.waste) as total_wastage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-  `
-
-  const currentMonthUptoDateWastageTotal = Number(currentMonthUptoDateWastageData[0]?.total_wastage) || 0
-
-  // 4. Last Month Upto Date - Total wastage
-  const lastMonthUptoDateWastageData = await prisma.$queryRaw`
-    SELECT 
-      SUM(d.waste) as total_wastage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    WHERE h.entry_date >= ${firstDayLastMonth} 
-      AND h.entry_date <= ${lastMonthDateStr}
-  `
-
-  const lastMonthUptoDateWastageTotal = Number(lastMonthUptoDateWastageData[0]?.total_wastage) || 0
-
-  // ============= AVG WASTAGE % CALCULATIONS =============
-  // Formula: (Total Waste / Total Production) × 100
-  
-  // Shift-wise waste percentage
-  const wastePercent = {
-    shift1: shiftProduction.shift1 > 0 ? (shiftWastage.shift1 / shiftProduction.shift1) * 100 : 0,
-    shift2: shiftProduction.shift2 > 0 ? (shiftWastage.shift2 / shiftProduction.shift2) * 100 : 0,
-    shift3: shiftProduction.shift3 > 0 ? (shiftWastage.shift3 / shiftProduction.shift3) * 100 : 0
-  }
-
-  // Day average waste percentage
-  const currentDayWastePercent = currentDayTotal > 0 ? (currentDayTotalWastage / currentDayTotal) * 100 : 0
-
-  // Last month same date waste percentage
-  const lastMonthWastePercent = lastMonthSameDateTotal > 0 ? (lastMonthWastageTotal / lastMonthSameDateTotal) * 100 : 0
-
-  // Current month upto date waste percentage
-  const currentMonthUptoDateWastePercent = currentMonthUptoDateTotal > 0 ? (currentMonthUptoDateWastageTotal / currentMonthUptoDateTotal) * 100 : 0
-
-  // Last month upto date waste percentage
-  const lastMonthUptoDateWastePercent = lastMonthUptoDateTotal > 0 ? (lastMonthUptoDateWastageTotal / lastMonthUptoDateTotal) * 100 : 0
-
-  // ============= TOTAL STOPPAGE MINS CALCULATIONS =============
-  
-  // 1. Current Month Today - Shift-wise stoppage for selected date
-  const currentDayStoppageShifts = await prisma.$queryRaw`
-    SELECT 
-      h.shift,
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY h.shift
-    ORDER BY h.shift
-  `
-
-  // Process shift stoppage data
-  const shiftStoppage = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  currentDayStoppageShifts.forEach(row => {
-    const shift = Number(row.shift)
-    const stoppage = Number(row.total_stoppage) || 0
-    
-    if (shift === 1) shiftStoppage.shift1 = stoppage
-    else if (shift === 2) shiftStoppage.shift2 = stoppage
-    else if (shift === 3) shiftStoppage.shift3 = stoppage
-  })
-
-  // Calculate day total stoppage
-  const currentDayTotalStoppage = shiftStoppage.shift1 + shiftStoppage.shift2 + shiftStoppage.shift3
-
-  // 2. Last Month Same Date - Total stoppage for same date in last month
-  const lastMonthStoppageData = await prisma.$queryRaw`
-    SELECT 
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date = ${lastMonthDateStr}
-  `
-
-  const lastMonthStoppageTotal = Number(lastMonthStoppageData[0]?.total_stoppage) || 0
-
-  // 3. Current Month Upto Date - Cumulative from 1st to selected date
-  const currentMonthUptoDateStoppageData = await prisma.$queryRaw`
-    SELECT 
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-  `
-
-  const currentMonthUptoDateStoppageTotal = Number(currentMonthUptoDateStoppageData[0]?.total_stoppage) || 0
-
-  // 4. Last Month Upto Date - Cumulative from 1st to same day in last month
-  const lastMonthUptoDateStoppageData = await prisma.$queryRaw`
-    SELECT 
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date >= ${firstDayLastMonth} 
-      AND h.entry_date <= ${lastMonthDateStr}
-  `
-
-  const lastMonthUptoDateStoppageTotal = Number(lastMonthUptoDateStoppageData[0]?.total_stoppage) || 0
-
-  const [currentDayConverted, lastMonthConverted, currentMonthConverted, lastMonthUptoConverted] = await Promise.all([
-    prisma.$queryRaw`
-      SELECT h.shift,
-        SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
-        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
-      FROM spinning_production_header h
-      JOIN spinning_production_detail d ON d.header_id = h.id
-      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
-        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
-      WHERE h.entry_date = ${dateStr}
-      GROUP BY h.shift`,
-    prisma.$queryRaw`
-      SELECT SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
-        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
-      FROM spinning_production_header h
-      JOIN spinning_production_detail d ON d.header_id = h.id
-      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
-        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
-      WHERE h.entry_date = ${lastMonthDateStr}`,
-    prisma.$queryRaw`
-      SELECT SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
-        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
-      FROM spinning_production_header h
-      JOIN spinning_production_detail d ON d.header_id = h.id
-      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
-        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
-      WHERE h.entry_date BETWEEN ${firstDayCurrentMonth} AND ${dateStr}`,
-    prisma.$queryRaw`
-      SELECT SUM(d.act_prodn * COALESCE(sms.conv_40s_value, 0)) AS conv_production,
-        AVG(d.gps * COALESCE(sms.conv_40s_value, 0)) AS conv_gps
-      FROM spinning_production_header h
-      JOIN spinning_production_detail d ON d.header_id = h.id
-      JOIN spinning_machine_setup sms ON sms.machine_id = d.machine_id
-        AND sms.entry_date = h.entry_date AND sms.shift = h.shift AND sms.run_sequence = d.run_sequence
-      WHERE h.entry_date BETWEEN ${firstDayLastMonth} AND ${lastMonthDateStr}`
+  const [currentDayRows, lastMonthDayRows, currentMonthRows, lastMonthRows] = await Promise.all([
+    fetchPeriodRows(dateStr, dateStr),
+    fetchPeriodRows(lastMonthDateStr, lastMonthDateStr),
+    fetchPeriodRows(monthStart(dateStr), dateStr),
+    fetchPeriodRows(monthStart(lastMonthDateStr), lastMonthDateStr)
   ])
 
-  const convertedShift = { shift1: 0, shift2: 0, shift3: 0 }
-  const convertedGpsShift = { shift1: 0, shift2: 0, shift3: 0 }
-  currentDayConverted.forEach(row => {
-    convertedShift[`shift${row.shift}`] = Number(row.conv_production) || 0
-    convertedGpsShift[`shift${row.shift}`] = Number(row.conv_gps) || 0
-  })
-  const convertedTotal = Object.values(convertedShift).reduce((sum, value) => sum + value, 0)
-  const convertedGpsValues = Object.values(convertedGpsShift).filter(value => value > 0)
-  const convertedGpsAverage = convertedGpsValues.length ? convertedGpsValues.reduce((sum, value) => sum + value, 0) / convertedGpsValues.length : 0
+  const current = aggregatePeriod(currentDayRows)
+  const lastDay = aggregatePeriod(lastMonthDayRows)
+  const currentMonth = aggregatePeriod(currentMonthRows)
+  const lastMonth = aggregatePeriod(lastMonthRows)
   const unavailableMetric = {
     currentMonthToday: { shift1: null, shift2: null, shift3: null, total: null },
     lastMonthSameDate: null,
@@ -721,93 +259,63 @@ export async function fetchSpinningAbstractTableData(reportDate) {
 
   return {
     totalProduction: {
-      currentMonthToday: {
-        shift1: shiftProduction.shift1,
-        shift2: shiftProduction.shift2,
-        shift3: shiftProduction.shift3,
-        total: currentDayTotal
-      },
-      lastMonthSameDate: lastMonthSameDateTotal,
-      currentMonthUptoDate: currentMonthUptoDateTotal,
-      lastMonthUptoDate: lastMonthUptoDateTotal
+      currentMonthToday: currentDayMetric(currentDayRows, 'production'),
+      lastMonthSameDate: lastDay.production,
+      currentMonthUptoDate: currentMonth.production,
+      lastMonthUptoDate: lastMonth.production
     },
     avgUtilization: {
-      currentMonthToday: {
-        shift1: shiftUtilization.shift1,
-        shift2: shiftUtilization.shift2,
-        shift3: shiftUtilization.shift3,
-        average: currentDayAvgUtil
-      },
-      lastMonthSameDate: lastMonthSameDateUtil,
-      currentMonthUptoDate: currentMonthUptoDateUtil,
-      lastMonthUptoDate: lastMonthUptoDateUtil
+      currentMonthToday: currentDayRatio(currentDayRows, 'workTime', 'runTime', 'average', 100),
+      lastMonthSameDate: lastDay.utilization,
+      currentMonthUptoDate: currentMonth.utilization,
+      lastMonthUptoDate: lastMonth.utilization
     },
     workedSpindles: {
-      currentMonthToday: {
-        shift1: shiftSpindles.shift1,
-        shift2: shiftSpindles.shift2,
-        shift3: shiftSpindles.shift3,
-        total: currentDayTotalSpindles
-      },
-      lastMonthSameDate: lastMonthSpindlesTotal,
-      currentMonthUptoDate: currentMonthUptoDateSpindlesTotal,
-      lastMonthUptoDate: lastMonthUptoDateSpindlesTotal
+      currentMonthToday: currentDayMetric(currentDayRows, 'workedSpindles'),
+      lastMonthSameDate: lastDay.workedSpindles,
+      currentMonthUptoDate: currentMonth.workedSpindles,
+      lastMonthUptoDate: lastMonth.workedSpindles
     },
     convertedProduction40s: {
-      currentMonthToday: { ...convertedShift, total: convertedTotal },
-      lastMonthSameDate: Number(lastMonthConverted[0]?.conv_production) || 0,
-      currentMonthUptoDate: Number(currentMonthConverted[0]?.conv_production) || 0,
-      lastMonthUptoDate: Number(lastMonthUptoConverted[0]?.conv_production) || 0
+      currentMonthToday: currentDayMetric(currentDayRows, 'convertedProduction'),
+      lastMonthSameDate: lastDay.convertedProduction,
+      currentMonthUptoDate: currentMonth.convertedProduction,
+      lastMonthUptoDate: lastMonth.convertedProduction
     },
     convertedGps40s: {
-      currentMonthToday: { ...convertedGpsShift, average: convertedGpsAverage },
-      lastMonthSameDate: Number(lastMonthConverted[0]?.conv_gps) || 0,
-      currentMonthUptoDate: Number(currentMonthConverted[0]?.conv_gps) || 0,
-      lastMonthUptoDate: Number(lastMonthUptoConverted[0]?.conv_gps) || 0
+      currentMonthToday: currentDayRatio(currentDayRows, 'convertedProduction', 'workedSpindles', 'average', 1000),
+      lastMonthSameDate: lastDay.convertedGps,
+      currentMonthUptoDate: currentMonth.convertedGps,
+      lastMonthUptoDate: lastMonth.convertedGps
     },
     averageCount: {
       currentMonthToday: {
-        shift1: shiftAvgCount.shift1,
-        shift2: shiftAvgCount.shift2,
-        shift3: shiftAvgCount.shift3,
-        average: currentDayAvgCountTotal
+        shift1: shiftRatio(currentDayRows, 1, 'countWeighted', 'workedSpindles'),
+        shift2: shiftRatio(currentDayRows, 2, 'countWeighted', 'workedSpindles'),
+        shift3: shiftRatio(currentDayRows, 3, 'countWeighted', 'workedSpindles'),
+        average: current.averageCount
       },
-      lastMonthSameDate: lastMonthAvgCountTotal,
-      currentMonthUptoDate: currentMonthUptoDateAvgCountTotal,
-      lastMonthUptoDate: lastMonthUptoDateAvgCountTotal
+      lastMonthSameDate: lastDay.averageCount,
+      currentMonthUptoDate: currentMonth.averageCount,
+      lastMonthUptoDate: lastMonth.averageCount
     },
     totalWastage: {
-      currentMonthToday: {
-        shift1: shiftWastage.shift1,
-        shift2: shiftWastage.shift2,
-        shift3: shiftWastage.shift3,
-        total: currentDayTotalWastage
-      },
-      lastMonthSameDate: lastMonthWastageTotal,
-      currentMonthUptoDate: currentMonthUptoDateWastageTotal,
-      lastMonthUptoDate: lastMonthUptoDateWastageTotal
+      currentMonthToday: currentDayMetric(currentDayRows, 'waste'),
+      lastMonthSameDate: lastDay.waste,
+      currentMonthUptoDate: currentMonth.waste,
+      lastMonthUptoDate: lastMonth.waste
     },
     avgWastagePercent: {
-      currentMonthToday: {
-        shift1: wastePercent.shift1,
-        shift2: wastePercent.shift2,
-        shift3: wastePercent.shift3,
-        average: currentDayWastePercent
-      },
-      lastMonthSameDate: lastMonthWastePercent,
-      currentMonthUptoDate: currentMonthUptoDateWastePercent,
-      lastMonthUptoDate: lastMonthUptoDateWastePercent
+      currentMonthToday: currentDayRatio(currentDayRows, 'waste', 'production', 'average', 100),
+      lastMonthSameDate: lastDay.wastePercent,
+      currentMonthUptoDate: currentMonth.wastePercent,
+      lastMonthUptoDate: lastMonth.wastePercent
     },
     totalStoppageMins: {
-      currentMonthToday: {
-        shift1: shiftStoppage.shift1,
-        shift2: shiftStoppage.shift2,
-        shift3: shiftStoppage.shift3,
-        total: currentDayTotalStoppage
-      },
-      lastMonthSameDate: lastMonthStoppageTotal,
-      currentMonthUptoDate: currentMonthUptoDateStoppageTotal,
-      lastMonthUptoDate: lastMonthUptoDateStoppageTotal
+      currentMonthToday: currentDayMetric(currentDayRows, 'stoppage'),
+      lastMonthSameDate: lastDay.stoppage,
+      currentMonthUptoDate: currentMonth.stoppage,
+      lastMonthUptoDate: lastMonth.stoppage
     },
     ebUnits: unavailableMetric,
     solarUnits: unavailableMetric,
@@ -821,186 +329,61 @@ export async function fetchSpinningAbstractTableData(reportDate) {
   }
 }
 
-// Helper function kept for potential future use
 export async function getTotalStoppageMins(reportDate) {
-  const dateStr = formatDateForQuery(reportDate)
-  
-  const selectedDate = new Date(reportDate)
-  const selectedMonth = selectedDate.getMonth() + 1
-  const selectedYear = selectedDate.getFullYear()
-
-  // Calculate first day of current month
-  const firstDayCurrentMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`
-
-  // Calculate last month's year and month
-  const lastMonthDate = previousMonthComparableDate(selectedDate)
-  const lastMonthYear = lastMonthDate.getFullYear()
-  const lastMonthMonth = lastMonthDate.getMonth() + 1
-  const lastMonthDateStr = formatDateForQuery(lastMonthDate)
-
-  // Calculate first day of last month
-  const firstDayLastMonth = `${lastMonthYear}-${String(lastMonthMonth).padStart(2, '0')}-01`
-
-  // 1. Current Month Today - Shift-wise stoppage for selected date
-  const currentDayShifts = await prisma.$queryRaw`
-    SELECT 
-      h.shift,
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date = ${dateStr}
-    GROUP BY h.shift
-    ORDER BY h.shift
-  `
-
-  // Process shift data
-  const shiftStoppage = {
-    shift1: 0,
-    shift2: 0,
-    shift3: 0
-  }
-
-  currentDayShifts.forEach(row => {
-    const shift = Number(row.shift)
-    const stoppage = Number(row.total_stoppage) || 0
-    
-    if (shift === 1) shiftStoppage.shift1 = stoppage
-    else if (shift === 2) shiftStoppage.shift2 = stoppage
-    else if (shift === 3) shiftStoppage.shift3 = stoppage
-  })
-
-  // Calculate day total
-  const currentDayTotal = shiftStoppage.shift1 + shiftStoppage.shift2 + shiftStoppage.shift3
-
-  // 2. Last Month Same Date - Total stoppage for same date in last month
-  const lastMonthSameDateData = await prisma.$queryRaw`
-    SELECT 
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date = ${lastMonthDateStr}
-  `
-
-  const lastMonthSameDateTotal = Number(lastMonthSameDateData[0]?.total_stoppage) || 0
-
-  // 3. Current Month Upto Date - Cumulative from 1st to selected date
-  const currentMonthUptoDateData = await prisma.$queryRaw`
-    SELECT 
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-  `
-
-  const currentMonthUptoDateTotal = Number(currentMonthUptoDateData[0]?.total_stoppage) || 0
-
-  // 4. Last Month Upto Date - Cumulative from 1st to same day in last month
-  const lastMonthUptoDateData = await prisma.$queryRaw`
-    SELECT 
-      SUM(se.total_stoppage_time) as total_stoppage
-    FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_stoppage_entry se ON d.id = se.production_detail_id
-    WHERE h.entry_date >= ${firstDayLastMonth} 
-      AND h.entry_date <= ${lastMonthDateStr}
-  `
-
-  const lastMonthUptoDateTotal = Number(lastMonthUptoDateData[0]?.total_stoppage) || 0
-
-  return {
-    currentMonthToday: {
-      shift1: shiftStoppage.shift1,
-      shift2: shiftStoppage.shift2,
-      shift3: shiftStoppage.shift3,
-      total: currentDayTotal
-    },
-    lastMonthSameDate: lastMonthSameDateTotal,
-    currentMonthUptoDate: currentMonthUptoDateTotal,
-    lastMonthUptoDate: lastMonthUptoDateTotal
-  }
+  const abstract = await fetchSpinningAbstractTableData(reportDate)
+  return abstract.totalStoppageMins
 }
 
-// Count-wise Summary Table - Cumulative from month start to selected date
 export async function fetchCountwiseSummary(reportDate) {
   const dateStr = formatDateForQuery(reportDate)
-  
-  const selectedDate = new Date(reportDate)
-  const selectedMonth = selectedDate.getMonth() + 1
-  const selectedYear = selectedDate.getFullYear()
-
-  // Calculate first day of current month
-  const firstDayCurrentMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`
-
-  // Fetch count-wise data for the period (1st to selected date)
   const countData = await prisma.$queryRaw`
-    SELECT 
-      d.count_name,
-      COUNT(DISTINCT d.machine_id) as machine_count,
-      SUM(sms.allocated_spindles) as total_spindles,
-      SUM(d.act_prodn) as production_kg,
-      AVG(d.exp_gps) as avg_exp_gps,
-      AVG(d.gps) as avg_achieved_gps,
-      SUM(d.waste) as waste_kgs,
-      sms.conv_40s_value
+    SELECT
+      COALESCE(d.count_name, 'UNSPECIFIED') AS count_name,
+      COUNT(DISTINCT d.machine_id) AS machine_count,
+      SUM(COALESCE(d.worked_spindles, 0)) AS worked_spindles,
+      SUM(COALESCE(d.act_prodn, 0)) AS production,
+      SUM(COALESCE(d.act_prodn, 0) * COALESCE(sms.conv_40s_value, 0)) AS production_40s,
+      SUM(COALESCE(d.exp_gps, 0) * COALESCE(d.worked_spindles, 0)) AS expected_gps_weighted,
+      SUM(COALESCE(d.waste, 0)) AS waste
     FROM spinning_production_header h
-    JOIN spinning_production_detail d ON h.id = d.header_id
-    JOIN spinning_machine_setup sms
+    JOIN spinning_production_detail d ON d.header_id = h.id
+    LEFT JOIN spinning_machine_setup sms
       ON sms.machine_id = d.machine_id
       AND sms.entry_date = h.entry_date
       AND sms.shift = h.shift
       AND sms.run_sequence = d.run_sequence
-    WHERE h.entry_date >= ${firstDayCurrentMonth} 
-      AND h.entry_date <= ${dateStr}
-    GROUP BY d.count_name, sms.conv_40s_value
-    ORDER BY d.count_name
+    WHERE h.entry_date BETWEEN ${monthStart(dateStr)} AND ${dateStr}
+    GROUP BY COALESCE(d.count_name, 'UNSPECIFIED')
+    ORDER BY COALESCE(d.count_name, 'UNSPECIFIED')
   `
 
-  // Process count data and calculate metrics
-  const countSummary = countData.map(row => {
-    const productionKg = Number(row.production_kg) || 0
-    const wasteKgs = Number(row.waste_kgs) || 0
-    const conv40sValue = Number(row.conv_40s_value) || 1
-    const avgExpGps = Number(row.avg_exp_gps) || 0
-    const avgAchievedGps = Number(row.avg_achieved_gps) || 0
-    const workedSpindles = Number(row.total_spindles) || 0
-
+  const counts = countData.map(row => {
+    const production = number(row.production)
+    const workedSpindles = number(row.worked_spindles)
+    const production40s = number(row.production_40s)
+    const wasteKgs = number(row.waste)
     return {
       countName: row.count_name,
-      machineCount: Number(row.machine_count) || 0,
-      production: productionKg,
-      workedSpindles: workedSpindles,
-      production40s: productionKg * conv40sValue,
-      standardGps: avgExpGps,
-      achievedGps: avgAchievedGps,
-      conv40sGps: avgAchievedGps * conv40sValue,
-      wasteKgs: wasteKgs,
-      wastePercent: productionKg > 0 ? (wasteKgs / productionKg) * 100 : 0
+      machineCount: number(row.machine_count),
+      production,
+      workedSpindles,
+      production40s,
+      standardGps: workedSpindles > 0 ? number(row.expected_gps_weighted) / workedSpindles : 0,
+      achievedGps: workedSpindles > 0 ? production / workedSpindles * 1000 : 0,
+      conv40sGps: workedSpindles > 0 ? production40s / workedSpindles * 1000 : 0,
+      wasteKgs,
+      wastePercent: production > 0 ? wasteKgs / production * 100 : 0
     }
   })
 
-  // Calculate totals
-  const totals = countSummary.reduce((acc, row) => {
-    acc.production += row.production
-    acc.workedSpindles += row.workedSpindles
-    acc.production40s += row.production40s
-    acc.wasteKgs += row.wasteKgs
-    return acc
-  }, {
-    production: 0,
-    workedSpindles: 0,
-    production40s: 0,
-    wasteKgs: 0
-  })
+  const totals = counts.reduce((total, row) => {
+    total.production += row.production
+    total.workedSpindles += row.workedSpindles
+    total.production40s += row.production40s
+    total.wasteKgs += row.wasteKgs
+    return total
+  }, { production: 0, workedSpindles: 0, production40s: 0, wasteKgs: 0 })
+  totals.wastePercent = totals.production > 0 ? totals.wasteKgs / totals.production * 100 : 0
 
-  // Calculate total waste percentage
-  totals.wastePercent = totals.production > 0 ? (totals.wasteKgs / totals.production) * 100 : 0
-
-  return {
-    counts: countSummary,
-    totals
-  }
+  return { counts, totals }
 }

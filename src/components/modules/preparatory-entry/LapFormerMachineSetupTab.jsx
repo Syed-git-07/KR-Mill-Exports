@@ -25,12 +25,9 @@ import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getLapFormerMachineSetupsAction,
-  updateLapFormerMachineSetupAction,
+  getLapFormerEntryTabDataAction,
+  runLapFormerEntryBatchAction,
   addLapFormerMachineAction,
-  removeLapFormerMachineAction,
-  getLapFormerMixingOptionsAction,
-  getSpinningCountOptionsAction,
   lookupLapFormerMachineByNoAction
 } from '@/app/actions/lapFormerEntryActions'
 import { NumberInput } from '@/components/ui/number-input'
@@ -193,11 +190,9 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsLoading(true)
     try {
-      const [setupsResult, mixingsResult, spinningCountsResult] = await Promise.all([
-        getLapFormerMachineSetupsAction(headerId),
-        getLapFormerMixingOptionsAction(),
-        getSpinningCountOptionsAction()
-      ])
+      const result = await getLapFormerEntryTabDataAction('setup', { headerId })
+      if (!result.success) throw new Error(result.error || 'Failed to load Lap Former setup data')
+      const { setupsResult, mixingsResult, countsResult: spinningCountsResult } = result.data
       
       if (!setupsResult.success) throw new Error(setupsResult.error)
       if (!mixingsResult.success) throw new Error(mixingsResult.error)
@@ -242,7 +237,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
     } finally {
       setIsLoading(false)
     }
-  }, [shift, totalTime, mergeServerRowsWithDrafts])
+  }, [headerId, shift, totalTime, mergeServerRowsWithDrafts])
 
   useServerDataLoader(loadData, [shift, totalTime])
 
@@ -328,15 +323,15 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         throw new Error(`Unable to map ${unresolvedEdits.length} machine setup edit(s) to table rows. Please refresh and try again.`)
       }
 
-      const updatePromises = resolvedUpdates.map(({ row, changes }) =>
-        updateLapFormerMachineSetupAction(row.id, changes)
-      )
+      const updates = resolvedUpdates.map(({ row, changes }) => ({ id: row.id, updates: changes }))
 
-      if (updatePromises.length === 0) {
+      if (updates.length === 0) {
         throw new Error('No machine setup updates were prepared for saving.')
       }
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runLapFormerEntryBatchAction('setup-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save machine setups')
+      const results = batchResult.data || []
       const failed = results.filter(r => !r?.success)
       if (failed.length > 0) {
         throw new Error(failed[0]?.error || 'Some setup updates failed')
@@ -349,8 +344,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -482,8 +477,8 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         delivery: LAP_FORMER_FORMULA_FALLBACK.delivery
       })
       setEditedRows({})
-      await loadData({ force: true })
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData({ force: true })
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error('Failed to add machine')
@@ -501,18 +496,21 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const removePromises = selectedRows.map(machineId => 
-        removeLapFormerMachineAction(machineId, headerId)
+      const batchResult = await runLapFormerEntryBatchAction(
+        'machine-remove',
+        selectedRows.map(id => ({ id })),
+        { headerId }
       )
-      const results = await Promise.all(removePromises)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to remove machines')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
       setEditedRows({})
-      await loadData({ force: true })
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData({ force: true })
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')

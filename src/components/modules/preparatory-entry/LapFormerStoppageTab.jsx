@@ -16,12 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getLapFormerStoppageEntriesAction,
-  updateLapFormerStoppageEntryAction,
-  getLapFormerStoppageReasonsAction,
-  getLapFormerMachinesAction,
-  getLapFormerMachineSetupsAction,
-  updateLapFormerDetailAction
+  getLapFormerEntryTabDataAction,
+  runLapFormerEntryBatchAction
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
 import { getLapFormerActProdnConstant, resolveLapFormerFormulaInputs } from '@/lib/lapFormerFormulaFallback'
@@ -213,12 +209,9 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     
     setIsLoading(true)
     try {
-      const [stoppagesResult, reasonsResult, machinesResult, setupsResult] = await Promise.all([
-        getLapFormerStoppageEntriesAction(headerId),
-        getLapFormerStoppageReasonsAction(),
-        getLapFormerMachinesAction(),
-        getLapFormerMachineSetupsAction(headerId)
-      ])
+      const result = await getLapFormerEntryTabDataAction('stoppage', { headerId })
+      if (!result.success) throw new Error(result.error || 'Failed to load Lap Former stoppage data')
+      const { stoppagesResult, reasonsResult, machinesResult, setupsResult } = result.data
       
       if (!stoppagesResult.success) throw new Error(stoppagesResult.error)
       if (!reasonsResult.success) throw new Error(reasonsResult.error)
@@ -450,19 +443,21 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateLapFormerStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const results = await Promise.all(updatePromises)
+      const stoppageBatch = await runLapFormerEntryBatchAction('stoppage-update', stoppageUpdates)
+      if (!stoppageBatch.success) throw new Error(stoppageBatch.error || 'Failed to save stoppage data')
+      const results = stoppageBatch.data || []
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) {
         throw new Error('Some stoppage updates failed')
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
+      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -502,10 +497,15 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
         }
 
         // Update production detail
-        return updateLapFormerDetailAction(prodDetail.id, recalculatedFields)
-      })
-      
-      await Promise.all(productionUpdatePromises.filter(Boolean))
+        return { id: prodDetail.id, updates: recalculatedFields }
+      }).filter(Boolean)
+
+      if (productionUpdates.length > 0) {
+        const productionBatch = await runLapFormerEntryBatchAction('production-update', productionUpdates)
+        if (!productionBatch.success) throw new Error(productionBatch.error || 'Failed to recalculate production data')
+        const failedProduction = (productionBatch.data || []).find(result => !result?.success)
+        if (failedProduction) throw new Error(failedProduction.error || 'Failed to recalculate a production row')
+      }
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -514,8 +514,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

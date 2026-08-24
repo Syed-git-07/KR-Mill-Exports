@@ -1,14 +1,10 @@
-import { findActivePayrollEmployeeById } from './employees'
-
-function normalizedName(value) {
-  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN')
-}
+import { findActivePayrollEmployeeById, getPayrollEmployeeById } from './employees'
 
 /**
  * Canonicalize employee fields before a production-detail update.
- * Existing unresolved legacy names may remain unchanged, but every new or
- * changed non-empty value must identify one employee in the configured payroll
- * company by its payroll primary key.
+ * A non-empty employee value must identify one employee in the configured
+ * payroll company by its payroll primary key. An unchanged historical payroll
+ * ID may refer to an inactive employee; a newly selected ID must be active.
  */
 export async function preparePayrollEmployeeUpdate(updates, current, bindings) {
   const prepared = { ...(updates || {}) }
@@ -29,14 +25,6 @@ export async function preparePayrollEmployeeUpdate(updates, current, bindings) {
         continue
       }
 
-      const unchangedLegacyName = current?.[idField] == null &&
-        normalizedName(current?.[nameField]) === normalizedName(nextName)
-      if (unchangedLegacyName) {
-        prepared[nameField] = String(current[nameField]).trim()
-        prepared[idField] = null
-        continue
-      }
-
       throw new Error('Select the employee from the payroll suggestions; a typed name alone cannot be saved.')
     }
 
@@ -44,9 +32,14 @@ export async function preparePayrollEmployeeUpdate(updates, current, bindings) {
       throw new Error('Invalid payroll employee ID.')
     }
 
-    const employee = await findActivePayrollEmployeeById(nextId)
+    const isUnchangedEmployee = Number(current?.[idField]) === nextId
+    const employee = isUnchangedEmployee
+      ? await getPayrollEmployeeById(nextId)
+      : await findActivePayrollEmployeeById(nextId)
     if (!employee) {
-      throw new Error('The selected employee is not active in the configured payroll company.')
+      throw new Error(isUnchangedEmployee
+        ? 'The stored employee no longer exists in the configured payroll company.'
+        : 'The selected employee is not active in the configured payroll company.')
     }
 
     prepared[idField] = Number(employee.id)

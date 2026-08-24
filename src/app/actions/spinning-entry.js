@@ -9,6 +9,7 @@ import * as queries from '@/lib/queries/spinningEntryQueries'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
 import { SPINNING_OPTION_CHECK_ERROR_CODE } from '@/lib/spinningOptionCheck'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -82,7 +83,11 @@ export async function updateSpinningProductionHeaderAction(id, updates) {
 export async function getSpinningProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getSpinningProductionDetails(headerId)
+    const rows = await queries.getSpinningProductionDetails(headerId)
+    const data = await hydratePayrollEmployeeNames(rows, [
+      { nameField: 'sider1_name', idField: 'sider1_payroll_employee_id' },
+      { nameField: 'sider2_name', idField: 'sider2_payroll_employee_id' }
+    ])
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

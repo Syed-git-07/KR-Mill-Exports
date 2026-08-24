@@ -8,6 +8,11 @@ import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/simplexEntryQueries'
 import { resolveSimplexShiftFallbackTime } from '@/lib/simplexFormulaFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -91,7 +96,7 @@ export async function updateSimplexProductionHeaderAction(id, updates) {
 export async function getSimplexProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getSimplexProductionDetails(headerId)
+    const data = await hydrateEmployeeNames(await queries.getSimplexProductionDetails(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -101,7 +106,7 @@ export async function getSimplexProductionDetailsAction(headerId) {
 export async function getSimplexProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getSimplexProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getSimplexProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -362,14 +367,10 @@ export async function copySimplexFromPreviousDateAction(...args) {
   return { success: false, error: 'Simplex speed is fixed and cannot be copied.' }
 }
 
-export async function copySimplexFromYesterdayAction(targetDate, targetShift, targetHeaderId) {
+export async function copySimplexFromYesterdayAction(...args) {
   await requireUser()
-  try {
-    const data = await queries.copySimplexFromYesterday(targetDate, targetShift, targetHeaderId)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
+  void args
+  return { success: false, error: 'Simplex speed is fixed and cannot be copied.' }
 }
 
 export async function getSimplexEntryTabDataAction(tab, context = {}) {

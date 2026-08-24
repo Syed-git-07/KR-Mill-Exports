@@ -1,4 +1,4 @@
-import { searchPayrollEmployees } from '@/lib/payroll/employees'
+import { formatPayrollEmployeeName, searchPayrollEmployees } from '@/lib/payroll/employees'
 
 export async function searchEmployees(searchTerm = '', limit = 10) {
   const rows = await searchPayrollEmployees(searchTerm, limit)
@@ -6,7 +6,7 @@ export async function searchEmployees(searchTerm = '', limit = 10) {
   return (rows || []).map((row, index) => ({
     id: String(row.id ?? row.biometricEnrollmentId ?? `${row.firstName}-${index}`),
     payroll_employee_id: Number(row.id),
-    emp_name: row.firstName || '',
+    emp_name: row.emp_name || formatPayrollEmployeeName(row),
     middle_name: row.middleName || '',
     last_name: row.lastName || '',
     emp_code: row.biometricEnrollmentId ? String(row.biometricEnrollmentId) : null,

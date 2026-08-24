@@ -1,8 +1,8 @@
 import { prisma } from '../prisma'
 
 /**
- * Generate Autoconer Efficiency Report
- * Shows efficiency grid with machine groups as columns and positions as rows
+ * Generate the Autoconer Production Report grid.
+ * Shows actual production with machine groups as columns and positions as rows.
  * 
  * @param {Date} selectedDate - Date for the report
  * @returns {Promise<Object>} Report data with grid structure for all shifts
@@ -21,7 +21,7 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
         aph.shift,
         am.machine_no,
         apd.count_name,
-        apd.prodn_effi,
+        apd.act_prodn,
         SUBSTRING_INDEX(am.machine_no, '-', 1) as machine_group,
         CAST(SUBSTRING_INDEX(am.machine_no, '-', -1) AS UNSIGNED) as machine_position
       FROM autoconer_production_detail apd
@@ -85,17 +85,18 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
 
       const groupNum = parseInt(groupMatch[1])
       const position = parseInt(row.machine_position)
-      const efficiency = parseFloat(row.prodn_effi) || 0
+      const production = parseFloat(row.act_prodn) || 0
 
       // Initialize group if not exists
       if (!shiftData.grid[groupNum]) {
         shiftData.grid[groupNum] = {
           groupName: row.machine_group,
           groupNumber: groupNum,
-          count: countName,
+          counts: new Set(),
           machines: {}
         }
       }
+      shiftData.grid[groupNum].counts.add(countName)
 
       // AC1 and AC1A share a printed group. Add matching positions instead
       // of allowing the later detail to overwrite the earlier one.
@@ -103,12 +104,12 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
       shiftData.grid[groupNum].machines[position] = existing
         ? {
             machine_no: `${existing.machine_no} + ${row.machine_no}`,
-            efficiency: existing.efficiency + efficiency,
-            count: existing.count || countName
+            production: existing.production + production,
+              count: existing.count === countName ? existing.count : `${existing.count} / ${countName}`
           }
         : {
             machine_no: row.machine_no,
-            efficiency,
+            production,
             count: countName
           }
     })
@@ -137,7 +138,7 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
                 machines.push({
                   position: pos,
                   machine_no: groupData.machines[pos].machine_no,
-                  efficiency: groupData.machines[pos].efficiency,
+                  production: groupData.machines[pos].production,
                   count: groupData.machines[pos].count
                 })
               } else {
@@ -148,7 +149,7 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
             groups.push({
               groupNumber: groupNum,
               groupName: groupData.groupName,
-              count: groupData.count,
+              count: [...groupData.counts].join(' / '),
               machines: machines
             })
           } else {

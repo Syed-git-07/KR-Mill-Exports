@@ -69,6 +69,20 @@ export async function generateSpinningStoppageReport(selectedDate, selectedToDat
       }
     })
 
+    const setups = await prisma.spinning_machine_setup.findMany({
+      where: {
+        entry_date: { gte: date, lte: toDate },
+        machine_id: { in: machineIds }
+      },
+      select: {
+        machine_id: true,
+        entry_date: true,
+        shift: true,
+        run_sequence: true,
+        allocated_spindles: true
+      }
+    })
+
     // Create lookup maps
     const headerMap = {}
     headers.forEach(h => {
@@ -84,6 +98,10 @@ export async function generateSpinningStoppageReport(selectedDate, selectedToDat
     machines.forEach(m => {
       machineMap[m.id] = m
     })
+    const setupMap = new Map(setups.map(setup => [
+      `${setup.entry_date.toISOString().slice(0, 10)}:${setup.shift}:${setup.machine_id}:${setup.run_sequence}`,
+      setup
+    ]))
 
     // Get stoppage heads and details for grouping
     const stoppageHeads = await prisma.stoppage_heads.findMany({
@@ -146,9 +164,6 @@ export async function generateSpinningStoppageReport(selectedDate, selectedToDat
       3: 0,
     }
 
-    // Track machines processed to avoid duplicates
-    const processedMachines = new Set()
-
     // Fixed shift time (as per specification)
     // Process each header and calculate stoppage data
     headers.forEach((header) => {
@@ -162,7 +177,9 @@ export async function generateSpinningStoppageReport(selectedDate, selectedToDat
         
         if (!machine) return
 
-        const allocatedSpindles = machine.allocated_spindles ?? 1104
+        const entryDateKey = header.entry_date.toISOString().slice(0, 10)
+        const setup = setupMap.get(`${entryDateKey}:${shift}:${machine.id}:${detail.run_sequence || 1}`)
+        const allocatedSpindles = setup?.allocated_spindles ?? machine.allocated_spindles ?? 1104
 
         // CALCULATE No of Spindles based on shift (as per formula)
         const noOfSpindles =
@@ -170,12 +187,11 @@ export async function generateSpinningStoppageReport(selectedDate, selectedToDat
             ? (allocatedSpindles / 8) * 7
             : (allocatedSpindles / 8) * 8.5
 
-        // Add to total No of Spindles for this shift (avoid duplicates)
-        const machineKey = `${header.entry_date.toISOString().slice(0, 10)}-${shift}-${machine.id}`
-        if (!processedMachines.has(machineKey)) {
-          totalNoOfSpindlesPerShift[shift] += noOfSpindles
-          processedMachines.add(machineKey)
-        }
+        // Count-run rows share one shift. Prorating the entry snapshot by its
+        // stored run time prevents a split run from duplicating the denominator.
+        const shiftTime = shift === 3 ? 420 : 510
+        const runTime = Math.min(Math.max(Number(detail.run_time ?? shiftTime) || 0, 0), shiftTime)
+        totalNoOfSpindlesPerShift[shift] += noOfSpindles * (runTime / shiftTime)
 
         // The denominator includes every working machine, even when that
         // machine has no stoppage-entry row for the selected period.
@@ -207,7 +223,6 @@ export async function generateSpinningStoppageReport(selectedDate, selectedToDat
           if (!foundHead || !foundDetail) return
 
           // CORRECT FORMULA: Spl = (Stoppage Mins / 510) × No of Spindles
-          const shiftTime = shift === 3 ? 420 : 510
           const stoppedSpindles = (stoppage.time / shiftTime) * noOfSpindles
 
           // Add to detail level

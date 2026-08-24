@@ -8,10 +8,8 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
-  getFinisherDrawingProductionWithSetupAction,
-  updateFinisherDrawingDetailAction,
-  getFinisherDrawingMachineSetupsAction,
-  syncFinisherDrawingNewMachinesToHeaderAction
+  getFinisherDrawingEntryTabDataAction,
+  runFinisherDrawingEntryBatchAction,
 } from '@/app/actions/finisher-drawing-entry'
 import { calculateFinisherDrawingValues } from '@/lib/queries/finisherDrawingEntryQueries'
 import {
@@ -251,16 +249,14 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      const syncResult = await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
+      const result = await getFinisherDrawingEntryTabDataAction('production', { headerId, shift })
+      if (!result.success) throw new Error(result.error || 'Failed to load Finisher Drawing production data')
+      const { syncResult, detailsResult, setupsResult } = result.data
       if (syncResult.success && syncResult.data.added > 0) {
         toast.info(`Added ${syncResult.data.added} new machine(s): ${syncResult.data.machines.join(', ')}`)
       }
-
-      const [detailsResult, setupsResult] = await Promise.all([
-        getFinisherDrawingProductionWithSetupAction(headerId),
-        getFinisherDrawingMachineSetupsAction(shift, headerId)
-      ])
+      if (!detailsResult.success) throw new Error(detailsResult.error || 'Failed to load production details')
+      if (!setupsResult.success) throw new Error(setupsResult.error || 'Failed to load machine setups')
       
       const details = detailsResult.success ? detailsResult.data : []
       const setups = setupsResult.success ? setupsResult.data : []
@@ -475,7 +471,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const rowId = String(row.id)
         const changes = findDraftByKeys(pendingEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
@@ -507,19 +503,24 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         // Exclude waste and waste_percent from calculated, then add them explicitly to preserve edited waste value
         const { waste_percent: calculatedWastePercent, ...otherCalculated } = calculated
         
-        return updateFinisherDrawingDetailAction(rowId, {
-          employee_name: changes.employee_name ?? row.employee_name,
-          payroll_employee_id: Object.hasOwn(changes, 'payroll_employee_id') ? changes.payroll_employee_id : row.payroll_employee_id,
-          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-          act_hank: actHank,
-          act_prodn: roundedActProdn,
-          ...otherCalculated,
-          waste,
-          waste_percent: calculatedWastePercent,
-        })
+        return {
+          id: rowId,
+          updates: {
+            employee_name: changes.employee_name ?? row.employee_name,
+            payroll_employee_id: Object.hasOwn(changes, 'payroll_employee_id') ? changes.payroll_employee_id : row.payroll_employee_id,
+            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+            act_hank: actHank,
+            act_prodn: roundedActProdn,
+            ...otherCalculated,
+            waste,
+            waste_percent: calculatedWastePercent,
+          }
+        }
       }).filter(Boolean)
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runFinisherDrawingEntryBatchAction('production-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save production data')
+      const results = batchResult.data || []
 
       const failed = results.find(result => !result?.success)
       if (failed) {
@@ -533,8 +534,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

@@ -8,6 +8,11 @@ import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/finisherDrawingEntryQueries'
 import { resolveFinisherDrawingShiftFallbackTime } from '@/lib/finisherDrawingShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -65,7 +70,7 @@ export async function updateFinisherDrawingHeaderAction(id, updates) {
 export async function getFinisherDrawingProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getFinisherDrawingProductionDetails(headerId)
+    const data = await hydrateEmployeeNames(await queries.getFinisherDrawingProductionDetails(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -75,7 +80,7 @@ export async function getFinisherDrawingProductionDetailsAction(headerId) {
 export async function getFinisherDrawingProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getFinisherDrawingProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getFinisherDrawingProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

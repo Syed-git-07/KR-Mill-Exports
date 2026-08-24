@@ -144,6 +144,21 @@ function weighted(rows, field) {
   return rows.length ? rows.reduce((sum, row) => sum + row[field], 0) / rows.length : 0
 }
 
+function spinningGps(rows) {
+  const workedSpindles = rows.reduce((sum, row) => sum + row.workedSpindles, 0)
+  return workedSpindles > 0
+    ? rows.reduce((sum, row) => sum + row.production, 0) / workedSpindles * 1000
+    : 0
+}
+
+function workedSpindleWeighted(rows, field) {
+  const workedSpindles = rows.reduce((sum, row) => sum + row.workedSpindles, 0)
+  if (workedSpindles > 0) {
+    return rows.reduce((sum, row) => sum + row[field] * row.workedSpindles, 0) / workedSpindles
+  }
+  return rows.length ? rows.reduce((sum, row) => sum + row[field], 0) / rows.length : 0
+}
+
 async function preparatoryAbstract(fromDate, toDate) {
   const report = baseReport('Preparatory Abstract Report', fromDate, toDate, 'landscape')
   const uptoFrom = monthStart(toDate)
@@ -371,7 +386,7 @@ async function getSpinningRecords(fromDate, toDate) {
       count: detail.count_name || 'UNSPECIFIED', hank: n(detail.act_hank), production: n(detail.act_prodn),
       waste: n(detail.waste), wastePercent: n(detail.waste_percent), gps: n(detail.gps), expGps: n(detail.exp_gps),
       workedSpindles: n(detail.worked_spindles), stoppedSpindles: n(detail.stopped_spindles),
-      allocatedSpindles: n(setup?.allocated_spindles) || n(machine?.allocated_spindles),
+      allocatedSpindles: n(setup?.allocated_spindles ?? machine?.allocated_spindles),
       conv40s: n(setup?.conv_40s_value), stoppage: n(detail.total_stoppage_mins),
       sider1Id: detail.sider1_payroll_employee_id,
       sider2Id: detail.sider2_payroll_employee_id,
@@ -404,8 +419,8 @@ async function spinningCountGps(fromDate, toDate) {
     report.tables.push({
       title: count,
       columns: ['Count', 'Frame', 'Production Kgs', 'Waste Kgs', 'Waste %', 'GPS'],
-      rows: frames.sort((a, b) => a.frame.localeCompare(b.frame, undefined, { numeric: true })).map(frame => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(weighted(frame.rows, 'gps'))]),
-      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(weighted(countRows, 'gps'))]
+      rows: frames.sort((a, b) => a.frame.localeCompare(b.frame, undefined, { numeric: true })).map(frame => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(spinningGps(frame.rows))]),
+      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(spinningGps(countRows))]
     })
   }
   return report
@@ -456,7 +471,7 @@ async function spinningDailyShift(fromDate, toDate) {
       title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
       columns: ['MC No', 'Hank', 'Worked Spl', 'Prod Kgs', 'GPS Std', 'GPS Act', 'Waste Kgs', 'Waste %', 'Gain / Loss', 'Stopped Spl', 'Stoppage Detail'],
       rows: rows.sort((a, b) => a.sortOrder - b.sortOrder || a.machineNo.localeCompare(b.machineNo, undefined, { numeric: true })).map(row => [row.machineNo, fixed(row.hank), fixed(row.workedSpindles), fixed(row.production), fixed(row.expGps), fixed(row.gps), fixed(row.waste), fixed(row.wastePercent), fixed(row.expGps - row.gps), fixed(row.stoppedSpindles), row.remarks || '-']),
-      footer: ['TOTAL', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.workedSpindles, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(weighted(rows, 'expGps')), fixed(weighted(rows, 'gps')), fixed(rows.reduce((s, r) => s + r.waste, 0)), fixed(rows.reduce((s, r) => s + r.waste, 0) / Math.max(rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(weighted(rows, 'expGps') - weighted(rows, 'gps')), fixed(rows.reduce((s, r) => s + r.stoppedSpindles, 0)), '']
+      footer: ['TOTAL', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.workedSpindles, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(workedSpindleWeighted(rows, 'expGps')), fixed(spinningGps(rows)), fixed(rows.reduce((s, r) => s + r.waste, 0)), fixed(rows.reduce((s, r) => s + r.waste, 0) / Math.max(rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(workedSpindleWeighted(rows, 'expGps') - spinningGps(rows)), fixed(rows.reduce((s, r) => s + r.stoppedSpindles, 0)), '']
     })
   }
   report.notes.push('Energy-unit and power-failure fields are not present in the current production or master schema, so no values are invented in this report.')
@@ -470,7 +485,9 @@ async function spinningParticularSider(fromDate, toDate, employeeId) {
   const employee = (await payrollEmployeeMap([payrollId])).get(payrollId)
   report.meta.push(['Sider', employee?.emp_name || '-'], ['Ticket No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
   const rows = records.map((row, index) => {
-    const divisor = [...new Set([row.sider1, row.sider2].filter(Boolean))].length || 1
+    const divisor = new Set([row.sider1Id, row.sider2Id]
+      .map(Number)
+      .filter(id => Number.isSafeInteger(id) && id > 0)).size || 1
     return [index + 1, displayDate(row.date), row.shift, row.machineNo, fixed(row.production / divisor), fixed(row.waste / divisor), fixed(row.production > 0 ? row.waste / row.production * 100 : 0)]
   })
   report.tables.push({

@@ -53,8 +53,10 @@ test('employee autocomplete fails visibly instead of falling back to employee_ma
   assert.match(payrollEmployees, /middleName/)
   assert.match(payrollEmployees, /lastName/)
   assert.match(payrollEmployees, /biometricEnrollmentId LIKE/)
+  assert.match(payrollEmployees, /formatPayrollEmployeeName/)
+  assert.match(payrollEmployees, /hydratePayrollEmployeeNames/)
   assert.match(autocomplete, /emp\.payroll_employee_id/)
-  assert.match(autocomplete, /Payroll #\{employeeId\}/)
+  assert.match(autocomplete, /ID \{employeeId\}/)
   assert.match(autocomplete, /onChange\(nextValue, null\)/)
 })
 
@@ -101,8 +103,45 @@ test('all production employee writes are canonicalized against payroll', async (
   const selection = await readFile(path.resolve('src/lib/payroll/employeeSelection.js'), 'utf8')
   assert.match(selection, /typed name alone cannot be saved/)
   assert.match(selection, /findActivePayrollEmployeeById/)
+  assert.match(selection, /getPayrollEmployeeById/)
+  assert.match(selection, /isUnchangedEmployee/)
+  assert.doesNotMatch(selection, /unchangedLegacyName/)
   const autoconerParticular = await readFile(path.resolve('src/lib/queries/autoconerParticularSiderReportQueries.js'), 'utf8')
   assert.match(autoconerParticular, /getPayrollEmployeeById/)
+})
+
+test('legacy full-entry copy actions cannot bypass payroll identity validation', async () => {
+  const actions = await Promise.all([
+    'autoconerEntryActions.js',
+    'comber-entry.js',
+    'simplexEntryActions.js'
+  ].map(file => readFile(path.resolve('src/app/actions', file), 'utf8')))
+
+  for (const source of actions) {
+    assert.doesNotMatch(source, /queries\.copy(?:Autoconer|Comber|Simplex)From/)
+  }
+})
+
+test('entry reads resolve payroll names by stored payroll IDs', async () => {
+  const actionFiles = [
+    'autoconerEntryActions.js',
+    'breaker-drawing-entry.js',
+    'carding-entry.js',
+    'comber-entry.js',
+    'finisher-drawing-entry.js',
+    'lapFormerEntryActions.js',
+    'simplexEntryActions.js',
+    'spinning-entry.js'
+  ]
+
+  for (const file of actionFiles) {
+    const source = await readFile(path.resolve('src/app/actions', file), 'utf8')
+    assert.match(source, /hydratePayrollEmployeeNames/, file)
+  }
+
+  const employees = await readFile(path.resolve('src/lib/payroll/employees.js'), 'utf8')
+  assert.match(employees, /hydrated\[nameField\] = employee\?\.emp_name \|\| ''/)
+  assert.doesNotMatch(employees, /if \(!employees\.length\) return records/)
 })
 
 test('reports no longer join or filter employees through local names', async () => {
@@ -137,17 +176,23 @@ test('employee backfill is dry-run by default and never guesses duplicates', asy
 })
 
 test('holiday and employee payroll queries use the configured company boundary', async () => {
-  const [holidayActions, holidayQueries, employees] = await Promise.all([
+  const [holidayActions, holidayQueries, employees, entryList] = await Promise.all([
     readFile(path.resolve('src/app/actions/holiday-list.js'), 'utf8'),
     readFile(path.resolve('src/lib/queries/holidayListQueries.js'), 'utf8'),
-    readFile(path.resolve('src/lib/payroll/employees.js'), 'utf8')
+    readFile(path.resolve('src/lib/payroll/employees.js'), 'utf8'),
+    readFile(path.resolve('src/components/modules/common/DateShiftListPage.jsx'), 'utf8')
   ])
 
-  assert.match(holidayActions, /getPayrollCompanyId/)
+  assert.doesNotMatch(holidayActions, /getPayrollCompanyId/)
   assert.match(holidayQueries, /hl\.companyId = \$\{companyId\}/)
-  assert.match(holidayQueries, /WHERE id = \$\{id\} AND companyId = \$\{companyId\}/)
+  assert.match(holidayQueries, /WHERE id = \$\{listId\} AND companyId = \$\{companyId\}/)
   assert.match(holidayQueries, /Holiday list not found for the configured payroll company/)
+  assert.doesNotMatch(holidayQueries, /isMissingTableError|information_schema/)
+  assert.match(holidayQueries, /isWeekOff/)
+  assert.match(holidayQueries, /Holiday date must be within the selected holiday list period/)
   assert.match(employees, /e\.companyId = \$\{companyId\}/)
+  assert.match(entryList, /holidayLoadError/)
+  assert.match(entryList, /New entries are temporarily blocked/)
 })
 
 test('deployment templates require independent payroll configuration', async () => {

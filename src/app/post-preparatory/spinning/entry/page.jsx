@@ -671,14 +671,14 @@ function SpinningEntryContent() {
                   disabled={isLoadingEfficiency}
                 >
                   {isLoadingEfficiency ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Percent className="h-4 w-4 mr-1" />}
-                  Set Efficiency
+                  <span>Set Efficiency</span>
                 </Button>
                 <Dialog open={efficiencyDialogOpen} onOpenChange={setEfficiencyDialogOpen}>
                   <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
                       <DialogTitle>Set Spinning Efficiency</DialogTitle>
                       <DialogDescription>
-                        Applies to every machine in {format(date, 'dd-MMM-yyyy')}, Shift {shift} only. Default is 95%.
+                        Applies to every machine in {format(date, 'dd-MMM-yyyy')}, Shift {shift} only. Other entries are unchanged. Default is 95%.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2 py-4">

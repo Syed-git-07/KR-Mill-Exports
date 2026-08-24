@@ -7,6 +7,11 @@ import { safeActionError } from '@/lib/security/errors'
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/cardingEntryQueries'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -72,7 +77,7 @@ export async function updateProductionHeaderAction(id, updates) {
 export async function getCardingProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getCardingProductionDetails(headerId)
+    const data = await hydrateEmployeeNames(await queries.getCardingProductionDetails(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -82,7 +87,7 @@ export async function getCardingProductionDetailsAction(headerId) {
 export async function getCardingProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getCardingProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getCardingProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -34,16 +34,13 @@ import { Label } from "@/components/ui/label"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getSpinningMachineSetupsAction,
+  getSpinningEntryTabDataAction,
+  runSpinningEntryBatchAction,
   updateSpinningMachineSetupAction,
   batchUpdateSpinningMachineSetupsAction,
   applySpinningOptionCheckAction,
   getSpinningOptionCheckSourceAction,
-  getSpinningCountsAction,
-  getSpinningMachinesAction,
-  getAllSpinningMachinesAction,
   addSpinningMachineAction,
-  removeSpinningMachineAction,
   lookupSpinningMachineByNoAction
 } from '@/app/actions/spinning-entry'
 import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
@@ -182,6 +179,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   const [countChangeDialog, setCountChangeDialog] = useState(false)
   const [newCountId, setNewCountId] = useState('')
   const [countRunMinutes, setCountRunMinutes] = useState('')
+  const [bulkEfficiencyPercent, setBulkEfficiencyPercent] = useState('95')
 
   // Option check (carry-forward from a selected earlier entry)
   const [optionCheck, setOptionCheck] = useState({
@@ -348,11 +346,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [setupsResult, countsResult, machinesResult] = await Promise.all([
-        getSpinningMachineSetupsAction(shift, entryDate),
-        getSpinningCountsAction(),
-        getAllSpinningMachinesAction()  // include inactive so re-added machines autofill correctly
-      ])
+      const tabResult = await getSpinningEntryTabDataAction('setup', { shift, entryDate })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { setupsResult, countsResult, machinesResult } = tabResult.data
       
       const setups = setupsResult.success ? setupsResult.data || [] : []
       setSetupData(mergeServerRowsWithDrafts(setups))
@@ -425,6 +421,19 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     }))
   }
 
+  const applyEfficiencyPercent = () => {
+    const percent = Number(bulkEfficiencyPercent)
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      toast.error('Efficiency must be between 0 and 100')
+      return
+    }
+
+    for (const row of setupData) {
+      handleInputChange(row.id, 'efficiency', percent / 100)
+    }
+    toast.success(`Efficiency staged at ${percent}% for this entry. Click Update to save.`)
+  }
+
   // Handle row selection
   const handleRowSelection = (rowId, checked) => {
     if (checked) {
@@ -495,8 +504,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         }
         setEditedRows({})
         if (!skipParentRefresh) {
-          await loadData()
-          onRefresh?.()
+          if (onRefresh) onRefresh()
+          else await loadData()
         }
         return { success: true, saved: updates.length }
       } else {
@@ -581,8 +590,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       setNewCountId('')
       setCountRunMinutes('')
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       toast.error(error.message || 'Unable to change count')
     } finally {
@@ -650,8 +659,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       }
 
       setEditedRows({})
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error applying option check:', error)
       toast.error(error.message || 'Failed to apply option check')
@@ -706,8 +715,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       setAddMachineDialog(false)
       resetMachineForm()
       
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -732,16 +741,21 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         .map(setupId => setupData.find(s => s.id === setupId)?.machine?.id)
         .filter(id => id !== undefined))]
 
-      const removePromises = machineIds.map(id => removeSpinningMachineAction(id, headerId))
-      const results = await Promise.all(removePromises)
+      const batchResult = await runSpinningEntryBatchAction(
+        'machine-remove',
+        machineIds.map(id => ({ id })),
+        { headerId }
+      )
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to remove machines')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${machineIds.length} machine(s) removed successfully`)
       setRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')
@@ -794,7 +808,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">C.Waste%</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Speed</th>
                 <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-16 whitespace-nowrap">TPI</th>
-                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Effi%</th>
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-20 whitespace-nowrap">Effi. %</th>
               </tr>
             </thead>
             <tbody>
@@ -924,8 +938,19 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         zeroAsEmpty
                       />
                     </td>
-                    <td className="border border-gray-300 px-2 py-1 text-center font-medium text-blue-600 tabular-nums whitespace-nowrap">
-                      {(Number(row.efficiency ?? 0.95) * 100).toFixed(2)}
+                    <td className="border border-gray-300 px-0 py-0">
+                      <NumberInput
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={Math.round(Number(row.efficiency ?? 0.95) * 10000) / 100}
+                        onChange={(event) => handleInputChange(row.id, 'efficiency', Number(event.target.value) / 100)}
+                        onKeyDown={(event) => handleEnterNavigation(event, index, 'efficiency')}
+                        data-row={index}
+                        data-col="efficiency"
+                        className="h-9 w-full rounded-none border-0 bg-transparent px-1 text-center text-xs tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:bg-orange-500 focus:text-white"
+                      />
                     </td>
                   </tr>
                 )
@@ -1053,6 +1078,22 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               disabled={isSaving || isLoadingOptionSource || !hasOptionSelected}
             >
               Check
+            </Button>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 rounded border border-gray-300 px-2 py-1">
+            <Label htmlFor="bulk-spinning-efficiency" className="whitespace-nowrap text-xs">Set Effi. %</Label>
+            <NumberInput
+              id="bulk-spinning-efficiency"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={bulkEfficiencyPercent}
+              onChange={(event) => setBulkEfficiencyPercent(event.target.value)}
+              className="h-8 w-20 text-center text-xs"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={applyEfficiencyPercent}>
+              Apply all
             </Button>
           </div>
           <Button 

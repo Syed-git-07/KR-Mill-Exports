@@ -19,12 +19,9 @@ import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getFinisherDrawingMachineSetupsAction,
-  updateFinisherDrawingMachineSetupAction,
+  getFinisherDrawingEntryTabDataAction,
+  runFinisherDrawingEntryBatchAction,
   addFinisherDrawingMachineAction,
-  removeFinisherDrawingMachineAction,
-  getFinisherDrawingMixingOptionsAction,
-  getSpinningCountOptionsAction,
   lookupFinisherDrawingMachineByNoAction
 } from '@/app/actions/finisher-drawing-entry'
 import {
@@ -167,11 +164,12 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     lastLoadKeyRef.current = loadKey
     setIsLoading(true)
     try {
-      const [setupsResult, mixingsResult, countsResult] = await Promise.all([
-        getFinisherDrawingMachineSetupsAction(shift, headerId),
-        getFinisherDrawingMixingOptionsAction(),
-        getSpinningCountOptionsAction()
-      ])
+      const result = await getFinisherDrawingEntryTabDataAction('setup', { shift, headerId })
+      if (!result.success) throw new Error(result.error || 'Failed to load Finisher Drawing setup data')
+      const { setupsResult, mixingsResult, countsResult } = result.data
+      if (!setupsResult.success) throw new Error(setupsResult.error || 'Failed to load machine setups')
+      if (!mixingsResult.success) throw new Error(mixingsResult.error || 'Failed to load mixing options')
+      if (!countsResult.success) throw new Error(countsResult.error || 'Failed to load count options')
       
       const setups = setupsResult.success ? setupsResult.data : []
       const mixings = mixingsResult.success ? mixingsResult.data : []
@@ -312,15 +310,15 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         throw new Error(`Unable to map ${unresolvedEdits.length} machine setup edit(s) to table rows. Please refresh and try again.`)
       }
 
-      const updatePromises = resolvedUpdates.map(({ row, changes }) =>
-        updateFinisherDrawingMachineSetupAction(row.id, changes)
-      )
+      const updates = resolvedUpdates.map(({ row, changes }) => ({ id: row.id, updates: changes }))
 
-      if (updatePromises.length === 0) {
+      if (updates.length === 0) {
         throw new Error('No machine setup updates were prepared for saving.')
       }
 
-      const updateResults = await Promise.all(updatePromises)
+      const batchResult = await runFinisherDrawingEntryBatchAction('setup-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save machine setups')
+      const updateResults = batchResult.data || []
       const failedUpdates = updateResults.filter(result => !result?.success)
       if (failedUpdates.length > 0) {
         const firstError = failedUpdates[0]?.error || 'Unknown error while saving machine setup changes'
@@ -334,8 +332,8 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        await onRefresh?.()
+        if (onRefresh) await onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -433,8 +431,8 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
           std_efficiency_factor: FINISHER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
           delivery: 1
         })
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       } else {
         throw new Error(result.error)
       }
@@ -455,17 +453,20 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
     setIsSaving(true)
     try {
-      const removePromises = selectedRows.map(machineId => 
-        removeFinisherDrawingMachineAction(machineId, headerId)
+      const batchResult = await runFinisherDrawingEntryBatchAction(
+        'machine-remove',
+        selectedRows.map(id => ({ id })),
+        { headerId }
       )
-      const results = await Promise.all(removePromises)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to remove machines')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      await loadData({ force: true })
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData({ force: true })
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')

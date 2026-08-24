@@ -25,11 +25,9 @@ import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getBreakerDrawingMachineSetupsAction,
-  updateMachineSetupAction,
+  getBreakerDrawingEntryTabDataAction,
+  runBreakerDrawingEntryBatchAction,
   addBreakerDrawingMachineAction,
-  removeBreakerDrawingMachineAction,
-  getMixingOptionsAction,
   lookupDrawingBreakerMachineByNoAction
 } from '@/app/actions/breaker-drawing-entry'
 import { NumberInput } from '@/components/ui/number-input'
@@ -174,10 +172,11 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [setupsRes, mixingsRes] = await Promise.all([
-        getBreakerDrawingMachineSetupsAction(shift, headerId),
-        getMixingOptionsAction()
-      ])
+      const result = await getBreakerDrawingEntryTabDataAction('setup', { shift, headerId })
+      if (!result.success) throw new Error(result.error || 'Failed to load Breaker Drawing setup data')
+      const { setupsRes, mixingsRes } = result.data
+      if (!setupsRes.success) throw new Error(setupsRes.error || 'Failed to load machine setups')
+      if (!mixingsRes.success) throw new Error(mixingsRes.error || 'Failed to load mixing options')
       
       const setups = setupsRes?.data || []
       const mixings = mixingsRes?.data || []
@@ -201,9 +200,9 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [headerId, shift])
 
-  useServerDataLoader(loadData, [])
+  useServerDataLoader(loadData, [headerId, shift])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
@@ -260,11 +259,10 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => 
-        updateMachineSetupAction(rowId, changes)
-      )
-
-      const results = await Promise.all(updatePromises)
+      const updates = Object.entries(currentEdits).map(([rowId, changes]) => ({ id: rowId, updates: changes }))
+      const batchResult = await runBreakerDrawingEntryBatchAction('setup-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save machine setups')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a machine setup row')
       const savedCount = Object.keys(currentEdits).length
@@ -274,8 +272,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -359,8 +357,8 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
         std_efficiency_factor: BREAKER_DRAWING_FORMULA_FALLBACK.stdEfficiencyFactor,
         delivery: BREAKER_DRAWING_FORMULA_FALLBACK.delivery
       })
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -380,17 +378,20 @@ const BreakerDrawingMachineSetupTab = forwardRef(function BreakerDrawingMachineS
 
     setIsSaving(true)
     try {
-      const removePromises = selectedRows.map(machineId => 
-        removeBreakerDrawingMachineAction(machineId, headerId)
+      const batchResult = await runBreakerDrawingEntryBatchAction(
+        'machine-remove',
+        selectedRows.map(id => ({ id })),
+        { headerId }
       )
-      const results = await Promise.all(removePromises)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to remove machines')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')

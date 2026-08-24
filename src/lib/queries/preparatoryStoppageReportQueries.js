@@ -86,13 +86,15 @@ async function getDepartmentStoppageData(
 
   // Get all production details for these headers
   const headerIds = headers.map(h => h.id)
+  const detailSelect = { id: true, header_id: true }
+  if (tablePrefix !== 'comber') detailSelect.run_time = true
   const details = await prisma[`${tablePrefix}_production_detail`].findMany({
     where: {
       header_id: {
         in: headerIds
       }
     },
-    select: { id: true, header_id: true }
+    select: detailSelect
   })
 
   if (details.length === 0) {
@@ -162,9 +164,9 @@ async function getDepartmentStoppageData(
     if (!header) return
     const shiftKey = `shift_${header.shift}`
     if (!shiftTimeTracker[shiftKey]) {
-      shiftTimeTracker[shiftKey] = { count: 0, timePerMachine: shiftTimeMap[header.shift] || 510 }
+      shiftTimeTracker[shiftKey] = { totalTime: 0 }
     }
-    shiftTimeTracker[shiftKey].count++
+    shiftTimeTracker[shiftKey].totalTime += Number(detail.run_time ?? shiftTimeMap[header.shift] ?? 510) || 0
   })
 
   stoppages.forEach(stoppage => {
@@ -233,7 +235,7 @@ function aggregateStoppageData(records, shiftTimeTracker) {
   Object.keys(shiftTimeTracker).forEach(key => {
     const shiftNum = key.replace('shift_', '')
     const tracker = shiftTimeTracker[key]
-    totalShiftTimes[`shift${shiftNum}`] = tracker.count * tracker.timePerMachine
+    totalShiftTimes[`shift${shiftNum}`] = tracker.totalTime
   })
 
   records.forEach(record => {
@@ -302,9 +304,7 @@ function calculatePercentages(aggregated) {
       const shift3Pct = data.shift3.shiftTime > 0 
         ? (data.shift3.time / data.shift3.shiftTime) * 100 
         : 0
-      const totalPct = data.total.shiftTime > 0 
-        ? (data.total.time / data.total.shiftTime) * 100 
-        : 0
+      const totalPct = (shift1Pct + shift2Pct + shift3Pct) / 3
 
       result[category].reasons.push({
         reason,

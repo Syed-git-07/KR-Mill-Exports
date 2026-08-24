@@ -17,6 +17,8 @@ import {
 import { machineAvailableOnDateWhere, machineLookupWhere } from '../machineLifecycle'
 import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
 
+const DEFAULT_SPINNING_EFFICIENCY_FACTOR = 0.95
+
 const isProvided = value => value !== null && value !== undefined && value !== ''
 
 function toFiniteNumber(value, fallback = 0) {
@@ -384,8 +386,9 @@ export async function getSpinningProductionDetails(headerId) {
     
     const setupMap = {}
     setups?.forEach(s => {
-      setupMap[s.machine_id] = s
-      setupMap[`${s.machine_id}:${s.run_sequence || 1}`] = s
+      const runSequence = Number(s.run_sequence || 1)
+      setupMap[`${s.machine_id}:${runSequence}`] = s
+      if (!setupMap[s.machine_id] || runSequence === 1) setupMap[s.machine_id] = s
     })
     
     const stoppageMap = {}
@@ -990,8 +993,9 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
     })
     const setupMap = {}
     setups?.forEach(s => {
-      setupMap[`${s.machine_id}:${s.run_sequence || 1}`] = s
-      if (!setupMap[s.machine_id] || Number(s.run_sequence || 1) === 1) setupMap[s.machine_id] = s
+      const runSequence = Number(s.run_sequence || 1)
+      setupMap[`${s.machine_id}:${runSequence}`] = s
+      if (!setupMap[s.machine_id] || runSequence === 1) setupMap[s.machine_id] = s
     })
 
     // Get machines for fallback spindle counts (all, no filter — historical)
@@ -1113,8 +1117,9 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
     })
     const setupMap = {}
     setups?.forEach(s => {
-      setupMap[`${s.machine_id}:${s.run_sequence || 1}`] = s
-      if (!setupMap[s.machine_id] || Number(s.run_sequence || 1) === 1) setupMap[s.machine_id] = s
+      const runSequence = Number(s.run_sequence || 1)
+      setupMap[`${s.machine_id}:${runSequence}`] = s
+      if (!setupMap[s.machine_id] || runSequence === 1) setupMap[s.machine_id] = s
     })
 
     // Get all production details with their exact historical Machine row.
@@ -1350,7 +1355,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
             ),
             session_no: 1,
             run_time: targetShiftTime,
-            efficiency: 0.95,
+            efficiency: DEFAULT_SPINNING_EFFICIENCY_FACTOR,
             conversion_factor: 2.20456
           }
         })
@@ -1364,7 +1369,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
           allocated_spindles: firstProvidedNumber([machine.allocated_spindles], 1104),
           session_no: 1,
           run_time: targetShiftTime,
-          efficiency: 0.95,
+          efficiency: DEFAULT_SPINNING_EFFICIENCY_FACTOR,
           conversion_factor: 2.20456
         }))
     

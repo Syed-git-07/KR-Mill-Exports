@@ -72,7 +72,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     setupTargetMap.set(`${setup.machine_id}:${setup.shift}`, Number(setup.target_effi) || 0)
   })
 
-  // Get machine information (machine_no, no_of_drums for efficiency calculation)
+  // Get machine display information.
   const machines = await prisma.autoconer_machines.findMany({
     where: {
       id: {
@@ -127,24 +127,9 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
 
         const targetEfficiency = setupTargetMap.get(`${detail.machine_id}:${header.shift}`) || 0
         
-        // Calculate prodn_effi on the fly if it's 0.00 or not set (backward compatibility)
-        let shiftEffi = parseFloat(detail.prodn_effi) || 0
-        
-        // If prodn_effi is 0, calculate it from work_time, run_time, and idle_drum
-        if (shiftEffi === 0 && detail.work_time && detail.run_time) {
-          const totalDrums = machine.no_of_drums || 0
-          const idleDrum = detail.idle_drum || 0
-          const workTime = detail.work_time || 0
-          const runTime = detail.run_time || 510
-          
-          // Calculate drum efficiency
-          const idleDrumPercent = totalDrums > 0 ? (idleDrum / totalDrums) * 100 : 0
-          const drumEfficiency = 100 - idleDrumPercent
-          
-          // Calculate production efficiency: (work_time / run_time) × drum_efficiency
-          shiftEffi = runTime > 0 ? (workTime / runTime) * drumEfficiency : 0
-          shiftEffi = parseFloat(shiftEffi.toFixed(2))
-        }
+        // Production efficiency is the manual value stored on this entry row.
+        // An explicit zero is valid and must not be replaced by another formula.
+        const shiftEffi = parseFloat(detail.prodn_effi) || 0
 
         // Only include if an entry-level target is set.
         if (targetEfficiency > 0) {

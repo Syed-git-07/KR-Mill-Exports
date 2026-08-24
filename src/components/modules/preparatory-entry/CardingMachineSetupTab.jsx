@@ -37,11 +37,9 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { CARDING_FORMULA_FALLBACK } from '@/lib/cardingFormulaFallback'
 import {
-  getCardingMachineSetupsAction,
-  updateMachineSetupAction,
+  getCardingEntryTabDataAction,
+  runCardingEntryBatchAction,
   addCardingMachineAction,
-  removeCardingMachineAction,
-  getCountOptionsAction,
   lookupCardingMachineByNoAction
 } from '@/app/actions/carding-entry'
 
@@ -188,10 +186,14 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     setIsLoading(true)
     try {
       const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
-      const [setupsResult, countsResult] = await Promise.all([
-        getCardingMachineSetupsAction(formattedDate, shift),
-        getCountOptionsAction()
-      ])
+      const result = await getCardingEntryTabDataAction('setup', {
+        entryDate: formattedDate,
+        shift
+      })
+      if (!result.success) throw new Error(result.error || 'Failed to load Carding setup data')
+      const { setupsResult, countsResult } = result.data
+      if (!setupsResult.success) throw new Error(setupsResult.error || 'Failed to load machine setups')
+      if (!countsResult.success) throw new Error(countsResult.error || 'Failed to load count options')
       
       const setups = setupsResult.success ? setupsResult.data : []
       const counts = countsResult.success ? countsResult.data : []
@@ -327,14 +329,16 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     setIsSaving(true)
     try {
       const formattedDate = typeof entryDate === 'string' ? entryDate : format(entryDate, 'yyyy-MM-dd')
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updates = Object.entries(currentEdits).map(([rowId, changes]) => {
         // Drafts are keyed by the exact dated setup UUID. Save that row
         // directly instead of converting it to a machine ID and rediscovering
         // the setup by date/shift on the server.
-        return updateMachineSetupAction(rowId, changes, formattedDate, shift)
+        return { id: rowId, updates: changes, entryDate: formattedDate, shift }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runCardingEntryBatchAction('setup-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save Carding machine setups')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Carding machine setup row')
       const savedCount = Object.keys(currentEdits).length
@@ -344,8 +348,8 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -433,8 +437,8 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           hank_constant: CARDING_FORMULA_FALLBACK.hankConstant,
           std_efficiency_factor: CARDING_FORMULA_FALLBACK.stdEfficiencyFactor
         })
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData()
       } else {
         throw new Error(result.error || 'Failed to add machine')
       }
@@ -457,15 +461,20 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const promises = selectedRows.map(id => removeCardingMachineAction(id, headerId))
-      const results = await Promise.all(promises)
+      const batchResult = await runCardingEntryBatchAction(
+        'machine-remove',
+        selectedRows.map(id => ({ id })),
+        { headerId }
+      )
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to remove Carding machines')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')

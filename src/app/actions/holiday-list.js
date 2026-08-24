@@ -5,7 +5,6 @@ import { requireUser } from '@/lib/security/auth'
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
-import { getPayrollCompanyId } from '@/lib/payroll/config'
 import {
   getCompanies,
   getHolidayLists,
@@ -35,13 +34,9 @@ export async function getCompaniesAction() {
 export async function getHolidayListsAction() {
   await requireUser()
   try {
-    const data = await getHolidayLists(getPayrollCompanyId())
+    const data = await getHolidayLists()
     return { success: true, data: serializeData(data) }
   } catch (error) {
-    const message = String(error?.message || '').toLowerCase()
-    if (message.includes("doesn't exist") || message.includes('does not exist') || message.includes('er_no_such_table') || message.includes('holiday_lists')) {
-      return { success: true, data: [] }
-    }
     return { success: false, error: safeActionError(error) }
   }
 }
@@ -49,7 +44,7 @@ export async function getHolidayListsAction() {
 export async function searchHolidayListsAction(field, condition, value) {
   await requireUser()
   try {
-    const data = await searchHolidayLists(field, condition, value, getPayrollCompanyId())
+    const data = await searchHolidayLists(field, condition, value)
     return { success: true, data: serializeData(data || []) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -59,7 +54,7 @@ export async function searchHolidayListsAction(field, condition, value) {
 export async function createHolidayListAction(listData) {
   await requireUser()
   try {
-    const data = await createHolidayList({ ...listData, companyId: getPayrollCompanyId() })
+    const data = await createHolidayList(listData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -69,7 +64,7 @@ export async function createHolidayListAction(listData) {
 export async function updateHolidayListAction(id, listData) {
   await requireUser()
   try {
-    const data = await updateHolidayList(id, { ...listData, companyId: getPayrollCompanyId() })
+    const data = await updateHolidayList(id, listData)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

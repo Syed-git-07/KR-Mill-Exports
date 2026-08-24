@@ -9,6 +9,11 @@ import * as queries from '@/lib/queries/comberEntryQueries'
 import { lookupComberMachineByNo } from '@/lib/queries/comberMachineQueries'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -96,7 +101,7 @@ export async function updateComberProductionHeaderAction(id, updates) {
 export async function getComberProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getComberProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getComberProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -269,7 +274,7 @@ export async function lookupComberMachineByNoAction(machineNo, entryDate = null)
 export async function getComberProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getComberProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getComberProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -15,7 +15,7 @@ export const FINAL_REPORT_GROUPS = [
     reports: [
       { key: 'autoconer-abstract', title: 'Abstract', href: '/reports/autoconer/abstract' },
       { key: 'autoconer-count-production', title: 'Count Wise Production', href: '/reports/autoconer/count-wise-production' },
-      { key: 'autoconer-efficiency', title: 'Efficiency', href: '/reports/autoconer/efficiency' },
+      { key: 'autoconer-efficiency', title: 'Machine Production Grid', href: '/reports/autoconer/efficiency' },
       { key: 'autoconer-low-efficiency', title: 'Low Efficiency', href: '/reports/autoconer/low-efficiency' },
       { key: 'autoconer-particular-sider', title: 'Particular Sider', href: '/reports/autoconer/particular-sider' },
       { key: 'autoconer-shift-production', title: 'Shift Wise Production', href: '/reports/final/autoconer-shift-production' },

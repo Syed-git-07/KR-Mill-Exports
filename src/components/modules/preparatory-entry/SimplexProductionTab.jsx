@@ -9,9 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 import { 
-  getSimplexProductionWithSetupAction,
-  getSimplexMachineSetupsAction,
-  updateSimplexProductionDetailAction
+  getSimplexEntryTabDataAction,
+  runSimplexEntryBatchAction
 } from '@/app/actions/simplexEntryActions'
 import { calculateSimplexProductionValues } from '@/lib/utils/simplexCalculations'
 import { NumberInput } from '@/components/ui/number-input'
@@ -200,10 +199,9 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
     
     setIsLoading(true)
     try {
-      const [detailsResult, setupsResult] = await Promise.all([
-        getSimplexProductionWithSetupAction(headerId),
-        getSimplexMachineSetupsAction(headerId)
-      ])
+      const result = await getSimplexEntryTabDataAction('production', { headerId })
+      if (!result.success) throw new Error(result.error || 'Failed to load Simplex production data')
+      const { detailsResult, setupsResult } = result.data
       
       const setupMap = {}
       if (setupsResult.success) {
@@ -279,7 +277,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
     setIsSaving(true)
     try {
-      for (const row of rowsToSave) {
+      const updates = rowsToSave.map(row => {
         const changes = findDraftByKeys(currentEdits, row.id) || {}
         const setup = mergeSetupDraft(
           machineSetups[row.machine_id],
@@ -311,26 +309,30 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
           stoppageTime
         })
 
-        const result = await updateSimplexProductionDetailAction(row.id, {
-          employee_name: effectiveRow.employee_name,
-          payroll_employee_id: effectiveRow.payroll_employee_id,
-          prodn_mixing: setup?.prodn_mixing ?? effectiveRow.prodn_mixing,
-          run_hrs: effectiveRow.run_hrs,
-          run_min: calculated.run_min,
-          run_time: totalTime,
-          idle_spindles: effectiveRow.idle_spindles,
-          waste: effectiveRow.waste,
-          act_prodn: calculated.act_prodn,
-          waste_percent: calculated.waste_percent,
-          act_effi_percent: calculated.act_effi_percent,
-          uti_percent: calculated.uti_percent,
-          std_hrs: calculated.std_hrs,
-          work_time: calculated.work_time
-        })
-        if (!result?.success) {
-          throw new Error(result?.error || `Failed to update simplex production row ${row.id}`)
+        return {
+          id: row.id,
+          updates: {
+            employee_name: effectiveRow.employee_name,
+            payroll_employee_id: effectiveRow.payroll_employee_id,
+            prodn_mixing: setup?.prodn_mixing ?? effectiveRow.prodn_mixing,
+            run_hrs: effectiveRow.run_hrs,
+            run_min: calculated.run_min,
+            run_time: totalTime,
+            idle_spindles: effectiveRow.idle_spindles,
+            waste: effectiveRow.waste,
+            act_prodn: calculated.act_prodn,
+            waste_percent: calculated.waste_percent,
+            act_effi_percent: calculated.act_effi_percent,
+            uti_percent: calculated.uti_percent,
+            std_hrs: calculated.std_hrs,
+            work_time: calculated.work_time
+          }
         }
-      }
+      })
+      const batchResult = await runSimplexEntryBatchAction('production-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save production data')
+      const failed = (batchResult.data || []).find(result => !result?.success)
+      if (failed) throw new Error(failed.error || 'Failed to save a Simplex production row')
 
       if (!suppressSuccessToast) {
         toast.success(`${rowsToSave.length} row(s) saved successfully`)
@@ -338,8 +340,8 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       setEditedRows({})
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: rowsToSave.length }
     } catch (error) {

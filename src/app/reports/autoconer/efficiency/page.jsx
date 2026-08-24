@@ -21,8 +21,8 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
 /**
- * Autoconer Efficiency Report Page
- * Displays efficiency grid with machine groups as columns and positions as rows
+ * Autoconer Production Report Page
+ * Displays actual production by machine group and position.
  */
 export default function AutoconerEfficiencyReportPage() {
   const [selectedDate, setSelectedDate] = useState(new Date())
@@ -115,7 +115,7 @@ export default function AutoconerEfficiencyReportPage() {
           for (let groupNum = 1; groupNum <= 13; groupNum++) {
             const group = shift.groups.find(g => g.groupNumber === groupNum)
             const machine = group?.machines[pos]
-            row.push(machine ? machine.efficiency.toFixed(2) : '')
+            row.push(machine ? machine.production.toFixed(2) : '')
           }
           bodyRows.push(row)
         }
@@ -157,7 +157,7 @@ export default function AutoconerEfficiencyReportPage() {
       const signatoriesText = 'AM(P)          GM          MD'
       doc.text(signatoriesText, pageWidth / 2, yPos, { align: 'center' })
 
-      const filename = `Autoconer_Efficiency_${format(new Date(reportData.date), 'dd-MM-yyyy')}.pdf`
+      const filename = `Autoconer_Production_${format(new Date(reportData.date), 'dd-MM-yyyy')}.pdf`
       doc.save(filename)
       toast.success('PDF downloaded successfully')
     } catch (error) {
@@ -174,9 +174,9 @@ export default function AutoconerEfficiencyReportPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-2xl">Autoconer Efficiency Report</CardTitle>
+                <CardTitle className="text-2xl">Autoconer Production Report</CardTitle>
                 <p className="text-green-100 mt-2">
-                  Production efficiency grid showing all machines across shifts
+                  Actual production grid showing all machines across shifts
                 </p>
               </div>
               <Link href="/reports">
@@ -305,7 +305,7 @@ export default function AutoconerEfficiencyReportPage() {
                               key={groupIdx} 
                               className="border border-gray-300 px-2 py-1 text-center"
                             >
-                              {machine ? machine.efficiency.toFixed(2) : ''}
+                              {machine ? machine.production.toFixed(2) : ''}
                             </td>
                           )
                         })}
