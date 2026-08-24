@@ -1,6 +1,5 @@
 'use server'
 
-import { prisma } from '@/lib/prisma'
 import { requireUser } from '@/lib/security/auth'
 import { safeActionError } from '@/lib/security/errors'
 import { buildFinalReport } from '@/lib/reports/finalReportQueries'
@@ -11,46 +10,22 @@ function reportDate(value) {
   return new Date(`${value}T00:00:00.000Z`)
 }
 
-export async function generateFinalReportAction(reportKey, from, to, employeeName = '') {
+export async function generateFinalReportAction(reportKey, from, to, employeeId = null) {
   await requireUser()
   try {
     const config = getFinalReportConfig(reportKey)
     if (!config) return { success: false, error: 'Unknown report type' }
-    if (config.requiresEmployee && !employeeName.trim()) return { success: false, error: 'Select a sider to generate this report' }
+    const payrollEmployeeId = employeeId == null || employeeId === '' ? null : Number(employeeId)
+    if (config.requiresEmployee && (!Number.isSafeInteger(payrollEmployeeId) || payrollEmployeeId <= 0)) {
+      return { success: false, error: 'Select a payroll employee to generate this report' }
+    }
     const fromDate = reportDate(from)
     const toDate = reportDate(to)
     if (fromDate > toDate) return { success: false, error: 'From date cannot be after To date' }
-    const report = await buildFinalReport(reportKey, fromDate, toDate, employeeName.trim())
+    const report = await buildFinalReport(reportKey, fromDate, toDate, payrollEmployeeId)
     return { success: true, data: report }
   } catch (error) {
     console.error(`Failed to generate ${reportKey}:`, error)
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function listFinalReportEmployeesAction(reportKey) {
-  await requireUser()
-  try {
-    if (reportKey === 'preparatory-particular-sider') {
-      const employees = await prisma.$queryRaw`
-        SELECT
-          e.firstName AS name,
-          e.biometricEnrollmentId AS code,
-          d.departmentname AS department
-        FROM payroll.employees e
-        JOIN payroll.departments d ON d.id = e.departmentId
-        ORDER BY e.firstName ASC
-      `
-      return { success: true, data: employees.map(employee => ({ name: employee.name || '', code: employee.code ? String(employee.code) : '', department: employee.department || '' })) }
-    }
-
-    const employees = await prisma.employee_master.findMany({
-      where: { is_active: true },
-      select: { emp_name: true, emp_code: true, department: true },
-      orderBy: { emp_name: 'asc' }
-    })
-    return { success: true, data: employees.map(employee => ({ name: employee.emp_name, code: employee.emp_code || '', department: employee.department || '' })) }
-  } catch (error) {
     return { success: false, error: safeActionError(error) }
   }
 }

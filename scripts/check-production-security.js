@@ -12,24 +12,34 @@ function fail(message) {
   process.exitCode = 1
 }
 
-function checkDatabaseUrl() {
-  const value = process.env.DATABASE_URL
+function checkDatabaseUrl(name) {
+  const value = process.env[name]
   if (!value) {
-    fail('DATABASE_URL is required.')
-    return
+    fail(`${name} is required.`)
+    return null
   }
 
   try {
     const url = new URL(value)
-    if (url.protocol !== 'mysql:') fail('DATABASE_URL must use MySQL.')
+    if (url.protocol !== 'mysql:') fail(`${name} must use MySQL.`)
     if (!url.username || !url.password) {
-      fail('DATABASE_URL must contain dedicated database credentials.')
+      fail(`${name} must contain dedicated database credentials.`)
     }
     if (decodeURIComponent(url.username).toLowerCase() === 'root') {
-      fail('The application must not connect to MySQL as root. Use a least-privilege service account.')
+      fail(`${name} must not connect to MySQL as root. Use a least-privilege service account.`)
     }
+    if (!url.pathname || url.pathname === '/') fail(`${name} must include a database name.`)
+    return url
   } catch {
-    fail('DATABASE_URL is not a valid MySQL connection URL.')
+    fail(`${name} is not a valid MySQL connection URL.`)
+    return null
+  }
+}
+
+function checkPayrollCompanyId() {
+  const value = Number(process.env.PAYROLL_COMPANY_ID)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    fail('PAYROLL_COMPANY_ID must be a positive integer.')
   }
 }
 
@@ -59,7 +69,18 @@ function checkTrustedOrigins() {
   }
 }
 
-checkDatabaseUrl()
+const productionUrl = checkDatabaseUrl('DATABASE_URL')
+const payrollUrl = checkDatabaseUrl('PAYROLL_DATABASE_URL')
+checkPayrollCompanyId()
+
+if (productionUrl && payrollUrl) {
+  const productionTarget = `${productionUrl.hostname}:${productionUrl.port || '3306'}${productionUrl.pathname}`.toLowerCase()
+  const payrollTarget = `${payrollUrl.hostname}:${payrollUrl.port || '3306'}${payrollUrl.pathname}`.toLowerCase()
+  if (productionTarget === payrollTarget) {
+    fail('DATABASE_URL and PAYROLL_DATABASE_URL must target different databases.')
+  }
+}
+
 checkTrustedOrigins()
 
 if (!process.exitCode) {

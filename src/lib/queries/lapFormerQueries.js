@@ -14,6 +14,7 @@ import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '.
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 import { compareMachineNumbers } from '../machineNumberSort';
 
@@ -577,8 +578,15 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
 // Update production detail
 export async function updateLapFormerDetail(id, updates) {
   await assertEntryDetailUnlocked('lapFormer', id);
+  const current = await prisma.lap_former_production_detail.findUnique({
+    where: { id },
+    select: { employee_name: true, payroll_employee_id: true }
+  });
+  const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+    { nameField: 'employee_name', idField: 'payroll_employee_id' }
+  ]);
   // Remove any fields that shouldn't be updated
-  const cleanUpdates = sanitizeProductionDetailUpdate(updates);
+  const cleanUpdates = sanitizeProductionDetailUpdate(prepared);
   
   try {
     const data = await prisma.lap_former_production_detail.update({
@@ -594,16 +602,7 @@ export async function updateLapFormerDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateLapFormerDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('lapFormer', id)));
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.lap_former_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  );
-
-  const results = await Promise.all(promises);
-  return results;
+  return Promise.all(updates.map(({ id, ...data }) => updateLapFormerDetail(id, data)));
 }
 
 // ============================================

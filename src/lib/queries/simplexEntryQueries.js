@@ -5,6 +5,7 @@ import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { machineLookupWhere } from '../machineLifecycle'
 
@@ -488,9 +489,16 @@ export async function addMissingSimplexProductionDetails(headerId) {
 export async function updateSimplexProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('simplex', id)
   try {
+    const current = await prisma.simplex_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
     const data = await prisma.simplex_production_detail.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(prepared)
     })
     return data
   } catch (error) {
@@ -500,16 +508,7 @@ export async function updateSimplexProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateSimplexProductionDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('simplex', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.simplex_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateSimplexProductionDetail(id, data)))
 }
 
 // ============================================
@@ -1242,51 +1241,6 @@ export async function getStoppageDetails() {
   }
 }
 
-// Get all employees for dropdown/search
-export async function getSimplexEmployees() {
-  try {
-    const data = await prisma.employee_master.findMany({
-      where: { is_active: true },
-      select: {
-        id: true,
-        emp_name: true,
-        emp_code: true
-      },
-      orderBy: {
-        emp_name: 'asc'
-      }
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
-}
-
-// Search employees by name
-export async function searchSimplexEmployees(searchTerm) {
-  try {
-    const data = await prisma.employee_master.findMany({
-      where: {
-        is_active: true,
-        emp_name: {
-          contains: searchTerm
-        }
-      },
-      select: {
-        id: true,
-        emp_name: true,
-        emp_code: true
-      },
-      orderBy: {
-        emp_name: 'asc'
-      },
-      take: 20
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
-}
 // ============================================
 // SIMPLEX PRODUCTION CALCULATION
 // ============================================
@@ -1625,6 +1579,7 @@ export async function copySimplexFromPreviousDate(targetDate, targetShift, targe
       where: { id: targetDetail.id },
       data: {
         employee_name: sourceData.employee_name,
+        payroll_employee_id: sourceData.payroll_employee_id,
         prodn_mixing: sourceData.prodn_mixing,
         run_hrs: sourceData.run_hrs,
         run_min: sourceData.run_min,

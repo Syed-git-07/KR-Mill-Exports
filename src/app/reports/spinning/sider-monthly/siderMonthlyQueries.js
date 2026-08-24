@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { requireUser } from '@/lib/security/auth'
 import { format } from 'date-fns'
+import { getPayrollEmployeesByIds } from '@/lib/payroll/employees'
 
 /**
  * Fetch sider monthly report data
@@ -16,8 +17,7 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       SELECT 
         sm.machine_no as frame_no,
         sm.id as machine_id,
-        COALESCE(GROUP_CONCAT(DISTINCT NULLIF(spd.sider1_name, '') ORDER BY spd.sider1_name SEPARATOR ', '), 'NIL') as sider1_name,
-        MIN(em.doj) as doj,
+        GROUP_CONCAT(DISTINCT spd.sider1_payroll_employee_id ORDER BY spd.sider1_payroll_employee_id SEPARATOR ',') as sider1_employee_ids,
         sph.shift,
         SUM(spd.act_prodn) as total_production,
         SUM(spd.waste) as total_waste,
@@ -26,11 +26,14 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       FROM spinning_production_detail spd
       INNER JOIN spinning_production_header sph ON spd.header_id = sph.id
       INNER JOIN spinning_machines sm ON spd.machine_id = sm.id
-      LEFT JOIN employee_master em ON spd.sider1_name = em.emp_name
       WHERE sph.entry_date BETWEEN ${format(fromDate, 'yyyy-MM-dd')} AND ${format(toDate, 'yyyy-MM-dd')}
       GROUP BY sm.id, sm.machine_no, sm.sort_order, sph.shift
       ORDER BY sm.sort_order, sm.machine_no, sph.shift
     `
+
+    const employeeIds = productionData.flatMap(row => String(row.sider1_employee_ids || '').split(',').map(Number).filter(Boolean))
+    const employees = await getPayrollEmployeesByIds(employeeIds)
+    const employeeById = new Map(employees.map(employee => [Number(employee.id), employee]))
 
     // Transform data into a structured format
     const frameMap = new Map()
@@ -53,13 +56,18 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       const shift = row.shift
 
       if (frame.shifts[shift]) {
-        frame.shifts[shift].siderName = row.sider1_name || 'NIL'
+        const shiftEmployees = String(row.sider1_employee_ids || '')
+          .split(',')
+          .map(id => employeeById.get(Number(id)))
+          .filter(Boolean)
+        frame.shifts[shift].siderName = shiftEmployees.map(employee => employee.emp_name).join(', ') || 'NIL'
         frame.shifts[shift].production = parseFloat(row.total_production || 0)
         frame.shifts[shift].waste = parseFloat(row.total_waste || 0)
         frame.shifts[shift].wastePercent = parseFloat(row.avg_waste_percent || 0)
         // Format DOJ as dd-MMM-yy (e.g., "02-Sep-24")
-        if (row.doj) {
-          const dojDate = new Date(row.doj)
+        const joiningDates = shiftEmployees.map(employee => employee.doj).filter(Boolean).map(value => new Date(value))
+        if (joiningDates.length) {
+          const dojDate = new Date(Math.min(...joiningDates.map(date => date.getTime())))
           const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
           const day = String(dojDate.getDate()).padStart(2, '0')
           const month = months[dojDate.getMonth()]

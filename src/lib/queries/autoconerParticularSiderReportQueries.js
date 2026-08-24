@@ -1,18 +1,20 @@
 import { prisma } from '../prisma'
+import { getPayrollEmployeeById } from '../payroll/employees'
 
 /**
  * Generate Autoconer Particular Sider Report
  * Shows individual sider performance across date range
  * 
- * @param {string} empName - Employee name to filter by
+ * @param {number} employeeId - Payroll employee primary key
  * @param {Date} fromDate - Start date for report period
  * @param {Date} toDate - End date for report period
  * @returns {Promise<Object>} Report data with employee info and daily performance
  */
-export async function generateAutoconerParticularSiderReport(empName, fromDate, toDate) {
+export async function generateAutoconerParticularSiderReport(employeeId, fromDate, toDate) {
   try {
-    if (!empName) {
-      throw new Error('Employee name is required')
+    const payrollEmployeeId = Number(employeeId)
+    if (!Number.isSafeInteger(payrollEmployeeId) || payrollEmployeeId <= 0) {
+      throw new Error('A payroll employee is required')
     }
 
     if (!fromDate || !toDate) {
@@ -29,19 +31,10 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
     }
 
     // Get employee identity details directly from payroll.
-    const employeeRows = await prisma.$queryRaw`
-      SELECT
-        firstName AS emp_name,
-        CAST(biometricEnrollmentId AS CHAR) AS emp_code,
-        dateOfJoining AS doj
-      FROM payroll.employees
-      WHERE firstName = ${empName}
-      LIMIT 1
-    `
-    const employeeData = employeeRows[0]
+    const employeeData = await getPayrollEmployeeById(payrollEmployeeId)
 
     if (!employeeData) {
-      throw new Error(`Employee "${empName}" not found`)
+      throw new Error('Employee not found in the configured payroll company')
     }
 
     // Get all production details for this employee in the date range
@@ -62,7 +55,7 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
       FROM autoconer_production_detail apd
       JOIN autoconer_production_header aph ON apd.header_id = aph.id
       JOIN autoconer_machines am ON apd.machine_id = am.id
-      WHERE apd.emp_name = ${empName}
+      WHERE apd.payroll_employee_id = ${payrollEmployeeId}
         AND aph.entry_date >= ${from}
         AND aph.entry_date <= ${to}
       ORDER BY aph.entry_date ASC, aph.shift ASC, am.machine_no ASC
@@ -71,7 +64,7 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
     if (!productionDetails || productionDetails.length === 0) {
       return {
         success: false,
-        message: `No production data found for ${empName} between ${from.toLocaleDateString()} and ${to.toLocaleDateString()}`
+        message: `No production data found for ${employeeData.emp_name} between ${from.toLocaleDateString()} and ${to.toLocaleDateString()}`
       }
     }
 

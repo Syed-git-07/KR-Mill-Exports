@@ -24,9 +24,24 @@ SHA-256 digests.
   origins are comma-separated.
 - Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before building. This value
   is embedded into the production bundle and changing it requires a rebuild.
-- Grant the `DATABASE_URL` account only the application permissions it needs,
-  plus read-only `SELECT` access to `payroll.employees` and
-  `payroll.departments`. Never use the MySQL root account.
+- Configure `DATABASE_URL` for the KR production database and
+  `PAYROLL_DATABASE_URL` for the central payroll database. They may use
+  different hosts and must use dedicated, least-privilege service accounts.
+- Grant the `DATABASE_URL` account access only to KR production tables.
+- Grant the `PAYROLL_DATABASE_URL` account `SELECT` on `employees`,
+  `departments`, `companies`, `holiday_lists`, and `holidays`. If this
+  deployment is authorized to manage holidays, grant narrowly scoped
+  `INSERT`, `UPDATE`, and `DELETE` only on `holiday_lists` and `holidays`.
+  Never use the MySQL root account.
+- Set `PAYROLL_COMPANY_ID` to the active payroll company owned by this KR
+  production deployment. Employee searches and holiday checks are scoped to it.
+- Back up the KR database before applying
+  `prisma/migrations/20260824_payroll_employee_identity/migration.sql`. The
+  migration removes the obsolete local `employee_master` table. After applying
+  the migration, run `npm run payroll:backfill` in dry-run mode, then use
+  `npm run payroll:backfill -- --apply` only after reviewing ambiguous and
+  unmatched counts. Finish with `npm run payroll:verify` to verify every schema
+  column, index, and stored payroll-company ID.
 - Restrict the application and database ports with the server firewall.
 
 ## 2. Install and prepare

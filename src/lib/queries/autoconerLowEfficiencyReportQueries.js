@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { getPayrollEmployeesByIds } from '../payroll/employees'
 
 /**
  * Autoconer Low Efficiency Report Queries
@@ -46,6 +47,9 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
       shifts: []
     }
   }
+
+  const payrollEmployees = await getPayrollEmployeesByIds(details.map(detail => detail.payroll_employee_id))
+  const employeeById = new Map(payrollEmployees.map(employee => [Number(employee.id), employee]))
 
   // Efficiency targets are entry snapshots. Reading the current Count Master here
   // would retroactively change historical reports after a master edit.
@@ -146,7 +150,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         if (targetEfficiency > 0) {
           return {
             machine_no: machine.machine_no,
-            sider_name: detail.emp_name || 'NIL',
+            sider_name: employeeById.get(Number(detail.payroll_employee_id))?.emp_name || 'NIL',
             count: detail.count_name || '',
             act_effi: targetEfficiency,
             shift_effi: shiftEffi,  // Shift Effi % (actual efficiency percentage)

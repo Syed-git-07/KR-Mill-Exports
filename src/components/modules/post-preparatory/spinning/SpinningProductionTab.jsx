@@ -317,7 +317,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 
   // Handle sider name change (text field)
   // When sider1 changes and sider2 is still empty, auto-fill sider2 with the same value
-  const handleTextChange = (rowId, field, value) => {
+  const handleEmployeeChange = (rowId, field, value, employee) => {
     const currentRow = productionData.find(r => r.id === rowId)
     const currentSider1 = (currentRow?.sider1_name || '').trim()
     const currentSider2 = (currentRow?.sider2_name || '').trim()
@@ -326,13 +326,16 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const autoFillSider2 = field === 'sider1_name' && currentRow && (
       currentSider2 === '' || currentSider2.toLowerCase() === currentSider1.toLowerCase()
     )
+    const idField = field === 'sider1_name' ? 'sider1_payroll_employee_id' : 'sider2_payroll_employee_id'
+    const payrollEmployeeId = employee?.payroll_employee_id ?? null
 
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
         [field]: value,
-        ...(autoFillSider2 ? { sider2_name: value } : {})
+        [idField]: payrollEmployeeId,
+        ...(autoFillSider2 ? { sider2_name: value, sider2_payroll_employee_id: payrollEmployeeId } : {})
       }
     }))
 
@@ -341,7 +344,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         return {
           ...row,
           [field]: value,
-          ...(autoFillSider2 ? { sider2_name: value } : {})
+          [idField]: payrollEmployeeId,
+          ...(autoFillSider2 ? { sider2_name: value, sider2_payroll_employee_id: payrollEmployeeId } : {})
         }
       }
       return row
@@ -405,7 +409,9 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           exp_gps: calculated.exp_gps,
           work_time: calculated.work_time,
           sider1_name: edits.sider1_name ?? row.sider1_name,
-          sider2_name: edits.sider2_name ?? row.sider2_name
+          sider2_name: edits.sider2_name ?? row.sider2_name,
+          sider1_payroll_employee_id: Object.hasOwn(edits, 'sider1_payroll_employee_id') ? edits.sider1_payroll_employee_id : row.sider1_payroll_employee_id,
+          sider2_payroll_employee_id: Object.hasOwn(edits, 'sider2_payroll_employee_id') ? edits.sider2_payroll_employee_id : row.sider2_payroll_employee_id
         }
       })
 
@@ -522,7 +528,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.sider1_name || ''}
-                        onChange={(value) => handleTextChange(row.id, 'sider1_name', value)}
+                        employeeId={row.sider1_payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, 'sider1_name', value, employee)}
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight
@@ -535,7 +542,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.sider2_name || ''}
-                        onChange={(value) => handleTextChange(row.id, 'sider2_name', value)}
+                        employeeId={row.sider2_payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, 'sider2_name', value, employee)}
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight

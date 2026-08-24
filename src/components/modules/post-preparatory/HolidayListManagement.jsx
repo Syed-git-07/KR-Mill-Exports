@@ -27,7 +27,6 @@ import {
 } from '@/app/actions/holiday-list'
 
 export default function HolidayListManagement() {
-  const DEFAULT_COMPANY_ID = '1'
   const [holidayLists, setHolidayLists] = useState([])
   const [isListModalOpen, setIsListModalOpen] = useState(false)
   const [isEditingList, setIsEditingList] = useState(false)
@@ -43,12 +42,12 @@ export default function HolidayListManagement() {
   const [isSubmittingHoliday, setIsSubmittingHoliday] = useState(false)
 
   useEffect(() => {
-    loadHolidayLists(DEFAULT_COMPANY_ID)
+    loadHolidayLists()
   }, [])
 
-  const loadHolidayLists = async (companyId) => {
+  const loadHolidayLists = async () => {
     try {
-      const result = await getHolidayListsAction(companyId)
+      const result = await getHolidayListsAction()
       if (result.success) {
         setHolidayLists(result.data || [])
       } else {
@@ -61,10 +60,10 @@ export default function HolidayListManagement() {
 
   const handleSearch = async (field, condition, value) => {
     if (!value || !value.toString().trim()) {
-      return loadHolidayLists(DEFAULT_COMPANY_ID)
+      return loadHolidayLists()
     }
     try {
-      const result = await searchHolidayListsAction(field, condition, value, DEFAULT_COMPANY_ID)
+      const result = await searchHolidayListsAction(field, condition, value)
       if (result.success) {
         setHolidayLists(result.data || [])
         toast.success(`Found ${result.data?.length ?? 0} record(s)`)
@@ -77,7 +76,7 @@ export default function HolidayListManagement() {
   }
 
   const handleShowAll = () => {
-    loadHolidayLists(DEFAULT_COMPANY_ID)
+    loadHolidayLists()
   }
 
   const handleAddList = () => {
@@ -108,7 +107,7 @@ export default function HolidayListManagement() {
         setSelectedHolidayList(null)
         setSelectedRowId(null)
         setIsListModalOpen(false)
-        loadHolidayLists(DEFAULT_COMPANY_ID)
+        loadHolidayLists()
       } else {
         toast.error('Delete failed: ' + result.error)
       }
@@ -121,7 +120,6 @@ export default function HolidayListManagement() {
     setIsSubmittingList(true)
     try {
       const payload = {
-        companyId: 1,
         name: values.name.trim(),
         startDate: values.startDate,
         endDate: values.endDate,
@@ -148,7 +146,7 @@ export default function HolidayListManagement() {
         setSelectedHolidayList(null)
         setIsEditingList(false)
         setSelectedRowId(null)
-        loadHolidayLists(DEFAULT_COMPANY_ID)
+        loadHolidayLists()
       } else {
         toast.error('Save failed: ' + result.error)
       }

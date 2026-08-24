@@ -326,17 +326,18 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
   }
 
   // Handle employee name change
-  const handleEmployeeChange = (rowId, value) => {
+  const handleEmployeeChange = (rowId, value, employee) => {
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
-        employee_name: value
+        employee_name: value,
+        payroll_employee_id: employee?.payroll_employee_id ?? null
       }
     }))
 
     setProductionData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, employee_name: value } : row
+      row.id === rowId ? { ...row, employee_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } : row
     ))
   }
 
@@ -530,7 +531,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
                   <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="emp_name">
                     <EmployeeAutocomplete
                       value={row.employee_name || ''}
-                      onChange={(value) => handleEmployeeChange(row.id, value)}
+                      employeeId={row.payroll_employee_id}
+                      onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                       onEnterNavigation={() => focusNextRow(index, 'emp_name')}
                       placeholder="Type employee name..."
                       cleanCell

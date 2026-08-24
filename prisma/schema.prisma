@@ -82,6 +82,7 @@ model autoconer_production_detail {
   header_id                   String                      @db.Char(36)
   machine_id                  String                      @db.Char(36)
   emp_name                    String?                     @db.VarChar(100)
+  payroll_employee_id         Int?
   count_name                  String?                     @db.VarChar(100)
   count_id                    String?                     @db.Char(36)
   act_prodn                   Decimal?                    @default(0.00) @db.Decimal(10, 2)
@@ -107,6 +108,7 @@ model autoconer_production_detail {
   @@index([header_id, machine_id], map: "idx_autoconer_detail_header_machine")
   @@index([count_id], map: "fk_ac_detail_count")
   @@index([machine_id], map: "fk_ac_detail_machine")
+  @@index([payroll_employee_id], map: "idx_autoconer_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -190,6 +192,7 @@ model breaker_drawing_production_detail {
   header_id                         String                            @db.Char(36)
   machine_id                        String                            @db.Char(36)
   employee_name                     String?                           @db.VarChar(100)
+  payroll_employee_id               Int?
   prodn_mixing                      String?                           @db.VarChar(100)
   act_hank                          Decimal?                          @default(0.00) @db.Decimal(10, 2)
   act_prodn                         Decimal?                          @default(0.00) @db.Decimal(10, 2)
@@ -214,6 +217,7 @@ model breaker_drawing_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_breaker_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_breaker_detail_header_machine")
   @@index([machine_id], map: "fk_breaker_detail_machine")
+  @@index([payroll_employee_id], map: "idx_breaker_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -323,6 +327,7 @@ model carding_production_detail {
   header_id                 String                    @db.Char(36)
   machine_id                String                    @db.Char(36)
   employee_name             String?                   @db.VarChar(100)
+  payroll_employee_id       Int?
   count_mixing              String?                   @db.VarChar(100)
   act_hank                  Decimal?                  @default(0.00) @db.Decimal(10, 2)
   act_prodn                 Decimal?                  @default(0.00) @db.Decimal(10, 2)
@@ -347,6 +352,7 @@ model carding_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_carding_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_carding_detail_header_machine")
   @@index([machine_id], map: "fk_card_detail_machine")
+  @@index([payroll_employee_id], map: "idx_carding_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -458,6 +464,7 @@ model comber_production_detail {
   header_id                String                   @db.Char(36)
   machine_id               String                   @db.Char(36)
   employee_name            String?                  @db.VarChar(100)
+  payroll_employee_id      Int?
   prodn_mixing             String?                  @db.VarChar(100)
   act_hank                 Decimal?                 @default(0.00) @db.Decimal(10, 2)
   run_hrs                  Decimal?                 @default(0.00) @db.Decimal(5, 2)
@@ -483,6 +490,7 @@ model comber_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_comber_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_comber_detail_header_machine")
   @@index([machine_id], map: "fk_comber_detail_machine")
+  @@index([payroll_employee_id], map: "idx_comber_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -634,6 +642,7 @@ model finisher_drawing_production_detail {
   header_id                          String                             @db.Char(36)
   machine_id                         String                             @db.Char(36)
   employee_name                      String?                            @db.VarChar(100)
+  payroll_employee_id                Int?
   prodn_mixing                       String?                            @db.VarChar(100)
   act_hank                           Decimal?                           @default(0.00) @db.Decimal(10, 2)
   act_prodn                          Decimal?                           @default(0.00) @db.Decimal(10, 2)
@@ -658,6 +667,7 @@ model finisher_drawing_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_finisher_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_finisher_detail_header_machine")
   @@index([machine_id], map: "fk_finisher_detail_machine")
+  @@index([payroll_employee_id], map: "idx_finisher_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -794,6 +804,7 @@ model lap_former_production_detail {
   header_id                    String                       @db.Char(36)
   machine_id                   String                       @db.Char(36)
   employee_name                String?                      @db.VarChar(100)
+  payroll_employee_id          Int?
   prodn_mixing                 String?                      @db.VarChar(100)
   act_hank                     Decimal?                     @default(0.00) @db.Decimal(10, 2)
   act_prodn                    Decimal?                     @default(0.00) @db.Decimal(10, 2)
@@ -818,6 +829,7 @@ model lap_former_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_lap_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_lap_former_detail_header_machine")
   @@index([machine_id], map: "fk_lap_detail_machine")
+  @@index([payroll_employee_id], map: "idx_lap_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -930,6 +942,7 @@ model simplex_production_detail {
   header_id                 String                    @db.Char(36)
   machine_id                String                    @db.Char(36)
   employee_name             String?                   @db.VarChar(100)
+  payroll_employee_id       Int?
   prodn_mixing              String?                   @db.VarChar(50)
   run_hrs                   Decimal?                  @db.Decimal(5, 2)
   run_min                   Int?
@@ -954,6 +967,7 @@ model simplex_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_simplex_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_simplex_detail_header_machine")
   @@index([machine_id], map: "fk_simplex_detail_machine")
+  @@index([payroll_employee_id], map: "idx_simplex_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1129,6 +1143,8 @@ model spinning_production_detail {
   updated_at                 DateTime?                  @default(now()) @db.DateTime(0)
   sider1_name                String?                    @db.VarChar(100)
   sider2_name                String?                    @db.VarChar(100)
+  sider1_payroll_employee_id Int?
+  sider2_payroll_employee_id Int?
   work_time                  Int?                       @default(500)
   run_time                   Int?                       @default(510)
   spinning_production_header spinning_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_spinning_detail_header")
@@ -1138,6 +1154,8 @@ model spinning_production_detail {
   @@unique([header_id, machine_id, run_sequence], name: "uq_spinning_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_spinning_detail_header_machine")
   @@index([machine_id], map: "fk_spinning_detail_machine")
+  @@index([sider1_payroll_employee_id], map: "idx_spinning_detail_sider1_payroll_employee")
+  @@index([sider2_payroll_employee_id], map: "idx_spinning_detail_sider2_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1281,22 +1299,6 @@ model supervisors {
   departments                                                                                      departments?                         @relation(fields: [department_id], references: [id], onDelete: Restrict, map: "fk_supervisor_department")
 
   @@index([department_id], map: "fk_supervisor_department")
-}
-
-model employee_master {
-  id          String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  emp_name    String    @unique(map: "emp_name") @db.VarChar(100)
-  emp_code    String?   @db.VarChar(50)
-  doj         DateTime? @db.Date
-  department  String?   @db.VarChar(100)
-  designation String?   @db.VarChar(100)
-  is_active   Boolean?  @default(true)
-  created_at  DateTime? @default(now()) @db.DateTime(0)
-  updated_at  DateTime? @default(now()) @updatedAt @db.DateTime(0)
-
-  @@index([emp_name], map: "idx_emp_name")
-  @@index([is_active], map: "idx_is_active")
-  @@index([emp_name, is_active], map: "idx_emp_name_active")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

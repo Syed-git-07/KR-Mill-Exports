@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Download, FileText, Printer, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { generateFinalReportAction, listFinalReportEmployeesAction } from '@/app/actions/final-reports'
+import { generateFinalReportAction } from '@/app/actions/final-reports'
 import { createFinalReportPdf } from '@/lib/reports/pdfLayout'
+import EmployeeAutocomplete from '@/components/ui/employee-autocomplete'
 
 function localDate() {
   const date = new Date()
@@ -38,21 +39,14 @@ export default function FinalReportClient({ reportKey, config }) {
   const [fromDate, setFromDate] = useState(today)
   const [toDate, setToDate] = useState(today)
   const [employeeName, setEmployeeName] = useState('')
-  const [employees, setEmployees] = useState([])
+  const [employeeId, setEmployeeId] = useState(null)
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!config.requiresEmployee) return
-    listFinalReportEmployeesAction(reportKey).then(result => {
-      if (result.success) setEmployees(result.data)
-    })
-  }, [config.requiresEmployee, reportKey])
 
   async function generate() {
     setLoading(true)
     try {
-      const result = await generateFinalReportAction(reportKey, fromDate, toDate, employeeName)
+      const result = await generateFinalReportAction(reportKey, fromDate, toDate, employeeId)
       if (!result.success) {
         setReport(null)
         toast.error(result.error || 'Unable to generate report')
@@ -84,8 +78,8 @@ export default function FinalReportClient({ reportKey, config }) {
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid gap-1 text-xs font-medium text-slate-600">From Date<input className="h-9 rounded-md border px-3 text-sm text-slate-900" type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-medium text-slate-600">To Date<input className="h-9 rounded-md border px-3 text-sm text-slate-900" type="date" value={toDate} onChange={event => setToDate(event.target.value)} /></label>
-          {config.requiresEmployee && <label className="grid min-w-64 flex-1 gap-1 text-xs font-medium text-slate-600">Sider<input list="report-employees" className="h-9 rounded-md border px-3 text-sm text-slate-900" value={employeeName} onChange={event => setEmployeeName(event.target.value)} placeholder="Type or select employee" /><datalist id="report-employees">{employees.map(employee => <option key={`${employee.code}-${employee.name}`} value={employee.name}>{employee.code ? `${employee.code} - ` : ''}{employee.department}</option>)}</datalist></label>}
-          <Button onClick={generate} disabled={loading || !fromDate || !toDate || (config.requiresEmployee && !employeeName.trim())} className="h-9 bg-slate-900 hover:bg-slate-800"><Search className="mr-2 h-4 w-4" />{loading ? 'Generating...' : 'Generate'}</Button>
+          {config.requiresEmployee && <label className="grid min-w-64 flex-1 gap-1 text-xs font-medium text-slate-600">Sider<EmployeeAutocomplete value={employeeName} employeeId={employeeId} onChange={(name, employee) => { setEmployeeName(name); setEmployeeId(employee?.payroll_employee_id ?? null) }} placeholder="Search and select payroll employee" /></label>}
+          <Button onClick={generate} disabled={loading || !fromDate || !toDate || (config.requiresEmployee && !employeeId)} className="h-9 bg-slate-900 hover:bg-slate-800"><Search className="mr-2 h-4 w-4" />{loading ? 'Generating...' : 'Generate'}</Button>
         </div>
       </section>
 

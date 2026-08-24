@@ -7,6 +7,7 @@ import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '.
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 
 // ============================================
@@ -418,8 +419,15 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
 // Update production detail
 export async function updateBreakerDrawingDetail(id, updates) {
   await assertEntryDetailUnlocked('breakerDrawing', id);
+  const current = await prisma.breaker_drawing_production_detail.findUnique({
+    where: { id },
+    select: { employee_name: true, payroll_employee_id: true }
+  });
+  const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+    { nameField: 'employee_name', idField: 'payroll_employee_id' }
+  ]);
   // Remove any fields that shouldn't be updated (like speed from calculations)
-  const cleanUpdates = sanitizeProductionDetailUpdate(updates);
+  const cleanUpdates = sanitizeProductionDetailUpdate(prepared);
   
   try {
     const data = await prisma.breaker_drawing_production_detail.update({
@@ -435,16 +443,7 @@ export async function updateBreakerDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateBreakerDrawingDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('breakerDrawing', id)));
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.breaker_drawing_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  );
-
-  const results = await Promise.all(promises);
-  return results;
+  return Promise.all(updates.map(({ id, ...data }) => updateBreakerDrawingDetail(id, data)));
 }
 
 // ============================================

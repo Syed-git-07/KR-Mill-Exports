@@ -9,7 +9,7 @@ Requirements:
 
 - Node.js 20.9 or newer
 - MySQL 8
-- A configured `DATABASE_URL`
+- Configured `DATABASE_URL`, `PAYROLL_DATABASE_URL`, and `PAYROLL_COMPANY_ID`
 
 ```powershell
 npm ci
@@ -19,6 +19,25 @@ npm run dev
 
 Copy `.env.example` to `.env.local` and provide local values. Environment files
 are excluded from Git.
+
+`DATABASE_URL` owns KR production data. `PAYROLL_DATABASE_URL` is an independent,
+server-only connection to the central payroll database used for employee and
+holiday data. Keeping both URLs separate allows payroll to move or be renamed
+without changing application code.
+
+Employee identity in production entries is stored as the payroll employee
+primary key. After deploying `20260824_payroll_employee_identity`, run a dry
+backfill and review the counts before applying it:
+
+```powershell
+npm run payroll:backfill
+npm run payroll:backfill -- --apply
+npm run payroll:verify
+```
+
+Only names that identify exactly one employee are backfilled. Ambiguous and
+unmatched historical rows remain unresolved until an operator selects the
+correct payroll employee; the script never guesses.
 
 ## Authentication and logging
 

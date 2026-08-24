@@ -27,13 +27,14 @@ import autoTable from 'jspdf-autotable'
  */
 export default function AutoconerParticularSiderReportPage() {
   const [empName, setEmpName] = useState('')
+  const [employeeId, setEmployeeId] = useState(null)
   const [fromDate, setFromDate] = useState(new Date())
   const [toDate, setToDate] = useState(new Date())
   const [reportData, setReportData] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
 
   const handleGenerateReport = async () => {
-    if (!empName) {
+    if (!employeeId) {
       toast.error('Please select an employee')
       return
     }
@@ -50,7 +51,7 @@ export default function AutoconerParticularSiderReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generateAutoconerParticularSiderReportAction(empName, fromDate, toDate)
+      const result = await generateAutoconerParticularSiderReportAction(employeeId, fromDate, toDate)
       
       if (!result.success) {
         toast.error(result.message || 'Failed to generate report')
@@ -249,7 +250,11 @@ export default function AutoconerParticularSiderReportPage() {
               <label className="text-sm font-medium">Select Employee</label>
               <EmployeeAutocomplete
                 value={empName}
-                onChange={setEmpName}
+                employeeId={employeeId}
+                onChange={(name, employee) => {
+                  setEmpName(name)
+                  setEmployeeId(employee?.payroll_employee_id ?? null)
+                }}
                 placeholder="Type employee name..."
               />
             </div>
@@ -313,7 +318,7 @@ export default function AutoconerParticularSiderReportPage() {
             {/* Generate Button */}
             <Button 
               onClick={handleGenerateReport}
-              disabled={isLoading || !empName || !fromDate || !toDate}
+              disabled={isLoading || !employeeId || !fromDate || !toDate}
               className="bg-green-600 hover:bg-green-700"
             >
               <FileText className="mr-2 h-4 w-4" />

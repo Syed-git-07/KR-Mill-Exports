@@ -15,6 +15,7 @@ import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildAutoconerCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
 import { machineAvailableOnDateWhere, machineLookupWhere } from '../machineLifecycle'
@@ -458,11 +459,18 @@ export async function getAutoconerProductionDetails(headerId) {
 export async function updateAutoconerProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('autoconer', id)
   try {
+    const current = await prisma.autoconer_production_detail.findUnique({
+      where: { id },
+      select: { emp_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'emp_name', idField: 'payroll_employee_id' }
+    ])
     // Note: Front-end now calculates all values using calculateAutoconerProductionValues()
     // Backend simply saves the data (like carding module)
     const data = await prisma.autoconer_production_detail.update({
       where: { id },
-      data: sanitizeProductionDetailUpdate(updates)
+      data: sanitizeProductionDetailUpdate(prepared)
     })
     return data
   } catch (error) {
@@ -1254,6 +1262,7 @@ export async function copyAutoconerFromPreviousDate(targetDate, targetShift, tar
         where: { id: targetDetail.id },
         data: {
           emp_name: sourceData.emp_name,
+          payroll_employee_id: sourceData.payroll_employee_id,
           count_id: sourceData.count_id,
           count_name: sourceData.count_name,
           act_prodn: sourceData.act_prodn,

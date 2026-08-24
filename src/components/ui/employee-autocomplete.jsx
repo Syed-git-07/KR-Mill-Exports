@@ -9,12 +9,13 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 
 /**
  * Employee Autocomplete Component
- * Provides typeahead/autocomplete functionality for employee name selection.
- * Click on an option → highlights only (does not confirm).
- * Press Enter → confirms highlighted option and moves to next row.
+ * Provides typeahead/autocomplete functionality for employee selection.
+ * Clicking an option or pressing Enter on the highlighted option selects its
+ * payroll ID. Typed text alone is never treated as an employee identity.
  */
 export default function EmployeeAutocomplete({ 
   value = '', 
+  employeeId = null,
   onChange, 
   placeholder = "Type employee name...",
   className = "",
@@ -80,10 +81,11 @@ export default function EmployeeAutocomplete({
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }
   }, [searchTerm, open])
 
-  const applySelection = (employeeName) => {
-    const finalName = employeeName ?? searchTerm ?? ''
+  const applySelection = (employee) => {
+    if (!employee) return
+    const finalName = employee.emp_name || ''
     setSearchTerm(finalName)
-    onChange(finalName)
+    onChange(finalName, employee)
     setOpen(false)
     setHighlightedIndex(-1)
   }
@@ -91,10 +93,7 @@ export default function EmployeeAutocomplete({
   // Confirm the currently highlighted employee
   const confirmHighlighted = () => {
     if (highlightedIndex >= 0 && highlightedIndex < employees.length) {
-      applySelection(employees[highlightedIndex].emp_name)
-    } else {
-      // Nothing highlighted — commit typed value and navigate
-      applySelection(searchTerm)
+      applySelection(employees[highlightedIndex])
     }
   }
 
@@ -130,7 +129,7 @@ export default function EmployeeAutocomplete({
               onChange={(e) => {
                 const nextValue = e.target.value
                 setSearchTerm(nextValue)
-                onChange(nextValue)
+                onChange(nextValue, null)
                 setHighlightedIndex(-1)
                 setOpen(nextValue.trim().length > 0)
               }}
@@ -142,12 +141,21 @@ export default function EmployeeAutocomplete({
               disabled={disabled}
               className={cn(
                 "h-full",
+                employeeId != null && "pr-20",
                 cleanCell && "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
                 editingHighlight && "focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100",
                 className
               )}
               autoComplete="off"
             />
+            {employeeId != null && (
+              <span
+                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600"
+                aria-label={`Payroll employee ID ${employeeId}`}
+              >
+                Payroll #{employeeId}
+              </span>
+            )}
           </div>
         </PopoverAnchor>
 
@@ -175,7 +183,7 @@ export default function EmployeeAutocomplete({
           {!isLoading && employees.length === 0 && (
             <div className="text-center py-6">
               <p className="text-sm text-gray-500">No employees found</p>
-              <p className="text-xs text-gray-400 mt-1">Type to search or add new name</p>
+              <p className="text-xs text-gray-400 mt-1">A payroll employee must be selected</p>
             </div>
           )}
 
@@ -186,7 +194,7 @@ export default function EmployeeAutocomplete({
                   key={emp.id}
                   ref={highlightedIndex === index ? highlightedRef : null}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => applySelection(emp.emp_name)}
+                  onClick={() => applySelection(emp)}
                   className={cn(
                     "px-3 py-2 cursor-pointer flex items-start select-none",
                     highlightedIndex === index
@@ -197,7 +205,7 @@ export default function EmployeeAutocomplete({
                   <Check
                     className={cn(
                       "mr-2 h-4 w-4 mt-0.5 shrink-0",
-                      searchTerm === emp.emp_name
+                      employeeId != null && String(employeeId) === String(emp.payroll_employee_id)
                         ? highlightedIndex === index ? "opacity-100 text-white" : "opacity-100 text-blue-600"
                         : "opacity-0"
                     )}
@@ -205,10 +213,15 @@ export default function EmployeeAutocomplete({
                   <div className="flex-1 min-w-0">
                     <div className="grid grid-cols-[1fr_auto] items-center gap-3 min-w-0">
                       <span className="font-medium text-sm truncate">{emp.emp_name}</span>
-                      <span className="text-sm font-bold tabular-nums text-white">
+                      <span className={cn("text-sm font-bold tabular-nums", highlightedIndex === index ? "text-white" : "text-slate-700")}>
                         {emp.emp_code || ''}
                       </span>
                     </div>
+                    {(emp.middle_name || emp.last_name) && (
+                      <div className={cn("text-xs truncate", highlightedIndex === index ? "text-blue-100" : "text-gray-500")}>
+                        {[emp.middle_name, emp.last_name].filter(Boolean).join(' ')}
+                      </div>
+                    )}
                     {emp.department && (
                       <div className={cn("text-xs truncate", highlightedIndex === index ? "text-blue-100" : "text-gray-500")}>
                         {emp.department}
@@ -221,7 +234,7 @@ export default function EmployeeAutocomplete({
           )}
 
             <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-              Keep typing to filter, then click a name or press Enter to select it.
+              Search first, middle, last name, or token; then select a payroll employee.
             </div>
           </div>
         </PopoverContent>

@@ -284,26 +284,6 @@ export async function getStoppageDetailsAction() {
   }
 }
 
-export async function getSimplexEmployeesAction() {
-  await requireUser()
-  try {
-    const data = await queries.getSimplexEmployees()
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function searchSimplexEmployeesAction(searchTerm) {
-  await requireUser()
-  try {
-    const data = await queries.searchSimplexEmployees(searchTerm)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
 // ============================================
 // CALCULATION HELPERS (exposed as actions)
 // ============================================

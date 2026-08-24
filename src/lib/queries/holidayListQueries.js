@@ -1,19 +1,20 @@
 import { Prisma } from '@prisma/client'
-import { prisma } from '../prisma'
+import { payrollDb as prisma } from '../payroll/client'
+import { getPayrollCompanyId, getPayrollDatabaseName } from '../payroll/config'
 
 async function findTableSchema(tableName) {
-  return ['holiday_lists', 'holidays'].includes(tableName) ? 'payroll' : null
+  return ['holiday_lists', 'holidays'].includes(tableName) ? getPayrollDatabaseName() : null
 }
 
 async function findTableSchemas(tableName) {
-  return ['holiday_lists', 'holidays'].includes(tableName) ? ['payroll'] : []
+  return ['holiday_lists', 'holidays'].includes(tableName) ? [getPayrollDatabaseName()] : []
 }
 
 let holidayTablesSchemaPromise
 
 async function findHolidayTablesSchema() {
   if (!holidayTablesSchemaPromise) {
-    holidayTablesSchemaPromise = Promise.resolve('payroll')
+    holidayTablesSchemaPromise = Promise.resolve(getPayrollDatabaseName())
   }
 
   return holidayTablesSchemaPromise
@@ -63,10 +64,11 @@ function isMissingTableError(error) {
 
 export async function getCompanies() {
   try {
+    const companyId = getPayrollCompanyId()
     const companies = await prisma.$queryRaw`
       SELECT id, name
       FROM companies
-      WHERE status = 'Active'
+      WHERE status = 'Active' AND id = ${companyId}
       ORDER BY name ASC
     `
     return companies
@@ -76,9 +78,10 @@ export async function getCompanies() {
         // Try to locate holiday_lists in any accessible schema and query it explicitly
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
+          const companyId = getPayrollCompanyId()
           const table = qualifiedTable(schemaName, 'holiday_lists')
           const fallback = await prisma.$queryRaw(
-            Prisma.sql`SELECT DISTINCT companyId AS id, CAST(companyId AS CHAR) AS name FROM ${table} ORDER BY companyId ASC`
+            Prisma.sql`SELECT DISTINCT companyId AS id, CAST(companyId AS CHAR) AS name FROM ${table} WHERE companyId = ${companyId} ORDER BY companyId ASC`
           )
           return fallback || []
         }
@@ -97,7 +100,7 @@ export async function getHolidayLists(companyId) {
     const where = companyId ? Prisma.sql`WHERE companyId = ${companyId}` : Prisma.empty
     const lists = await prisma.$queryRaw`
       SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt
-      FROM payroll.holiday_lists
+      FROM holiday_lists
       ${where}
       ORDER BY startDate DESC, id DESC
     `
@@ -156,7 +159,7 @@ export async function searchHolidayLists(field, condition, value, companyId) {
     const where = clauses.length > 0 ? Prisma.sql`WHERE ${Prisma.join(clauses, ' AND ')}` : Prisma.empty
     const lists = await prisma.$queryRaw`
       SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt
-      FROM payroll.holiday_lists
+      FROM holiday_lists
       ${where}
       ORDER BY startDate DESC, id DESC
     `
@@ -213,10 +216,11 @@ export async function searchHolidayLists(field, condition, value, companyId) {
 
 export async function getHolidayListById(id) {
   try {
+    const companyId = getPayrollCompanyId()
     const [list] = await prisma.$queryRaw`
       SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt
-      FROM payroll.holiday_lists
-      WHERE id = ${id}
+      FROM holiday_lists
+      WHERE id = ${id} AND companyId = ${companyId}
       LIMIT 1
     `
     return list
@@ -225,9 +229,10 @@ export async function getHolidayListById(id) {
       try {
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
+          const companyId = getPayrollCompanyId()
           const table = qualifiedTable(schemaName, 'holiday_lists')
           const [list] = await prisma.$queryRaw(
-            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} LIMIT 1`
+            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} AND companyId = ${companyId} LIMIT 1`
           )
           return list
         }
@@ -245,7 +250,7 @@ export async function checkHolidayListNameUnique(name, companyId, excludeId = nu
     const clause = excludeId ? Prisma.sql`AND id != ${excludeId}` : Prisma.empty
     const [existing] = await prisma.$queryRaw`
       SELECT id
-      FROM payroll.holiday_lists
+      FROM holiday_lists
       WHERE name = ${name} AND companyId = ${companyId}
       ${clause}
       LIMIT 1
@@ -283,7 +288,7 @@ export async function checkHolidayListOverlap(startDate, endDate, companyId, exc
     // SQL date-format and timezone comparison issues.
     const rows = await prisma.$queryRaw`
       SELECT id, startDate, endDate
-      FROM payroll.holiday_lists
+      FROM holiday_lists
       WHERE companyId = ${companyId}
         AND status = 'Active'
       ${clause}
@@ -351,17 +356,19 @@ export async function createHolidayList(payload) {
       }
     }
 
-    await prisma.$executeRaw`
-      INSERT INTO payroll.holiday_lists (name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt)
-      VALUES (${payload.name}, ${sDate}, ${eDate}, ${JSON.stringify(payload.weekOffs)}, ${payload.status}, ${payload.companyId}, NOW(), NOW())
-    `
-    const [created] = await prisma.$queryRaw`
-      SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt
-      FROM payroll.holiday_lists
-      WHERE id = LAST_INSERT_ID()
-      LIMIT 1
-    `
-    return created
+    return prisma.$transaction(async tx => {
+      await tx.$executeRaw`
+        INSERT INTO holiday_lists (name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt)
+        VALUES (${payload.name}, ${sDate}, ${eDate}, ${JSON.stringify(payload.weekOffs)}, ${payload.status}, ${payload.companyId}, NOW(), NOW())
+      `
+      const [created] = await tx.$queryRaw`
+        SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt
+        FROM holiday_lists
+        WHERE id = LAST_INSERT_ID()
+        LIMIT 1
+      `
+      return created
+    })
   } catch (error) {
     if (isMissingTableError(error)) {
       try {
@@ -416,15 +423,16 @@ export async function updateHolidayList(id, payload) {
       }
     }
 
-    await prisma.$executeRaw`
-      UPDATE payroll.holiday_lists
+    const affectedRows = await prisma.$executeRaw`
+      UPDATE holiday_lists
       SET name = ${payload.name}, startDate = ${sDate}, endDate = ${eDate}, weekOffs = ${JSON.stringify(payload.weekOffs)}, status = ${payload.status}, companyId = ${payload.companyId}, updatedAt = NOW()
-      WHERE id = ${id}
+      WHERE id = ${id} AND companyId = ${payload.companyId}
     `
+    if (!affectedRows) throw new Error('Holiday list not found for the configured payroll company.')
     const [updated] = await prisma.$queryRaw`
       SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt
-      FROM payroll.holiday_lists
-      WHERE id = ${id}
+      FROM holiday_lists
+      WHERE id = ${id} AND companyId = ${payload.companyId}
       LIMIT 1
     `
     return updated
@@ -434,11 +442,12 @@ export async function updateHolidayList(id, payload) {
         const schemaName = await findTableSchema('holiday_lists')
         if (schemaName) {
           const table = qualifiedTable(schemaName, 'holiday_lists')
-          await prisma.$executeRaw(
-            Prisma.sql`UPDATE ${table} SET name = ${payload.name}, startDate = ${sDate}, endDate = ${eDate}, weekOffs = ${JSON.stringify(payload.weekOffs)}, status = ${payload.status}, companyId = ${Number(payload.companyId)}, updatedAt = NOW() WHERE id = ${Number(id)}`
+          const affectedRows = await prisma.$executeRaw(
+            Prisma.sql`UPDATE ${table} SET name = ${payload.name}, startDate = ${sDate}, endDate = ${eDate}, weekOffs = ${JSON.stringify(payload.weekOffs)}, status = ${payload.status}, companyId = ${Number(payload.companyId)}, updatedAt = NOW() WHERE id = ${Number(id)} AND companyId = ${Number(payload.companyId)}`
           )
+          if (!affectedRows) throw new Error('Holiday list not found for the configured payroll company.')
           const [updated] = await prisma.$queryRaw(
-            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} LIMIT 1`
+            Prisma.sql`SELECT id, name, startDate, endDate, weekOffs, status, companyId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} AND companyId = ${Number(payload.companyId)} LIMIT 1`
           )
           return updated
         }
@@ -455,7 +464,7 @@ export async function hasHolidaysForList(id) {
   try {
     const [result] = await prisma.$queryRaw`
       SELECT COUNT(*) as count
-      FROM payroll.holidays
+      FROM holidays
       WHERE holidayListId = ${id}
     `
     return result?.count > 0
@@ -481,13 +490,17 @@ export async function hasHolidaysForList(id) {
 
 export async function deleteHolidayList(id) {
   try {
+    const companyId = getPayrollCompanyId()
+    const list = await getHolidayListById(id)
+    if (!list) throw new Error('Holiday list not found for the configured payroll company.')
     if (await hasHolidaysForList(id)) {
       throw new Error('This holiday list contains holidays and cannot be deleted until all holidays are removed.')
     }
-    await prisma.$executeRaw`
-      DELETE FROM payroll.holiday_lists
-      WHERE id = ${id}
+    const affectedRows = await prisma.$executeRaw`
+      DELETE FROM holiday_lists
+      WHERE id = ${id} AND companyId = ${companyId}
     `
+    if (!affectedRows) throw new Error('Holiday list not found for the configured payroll company.')
     return true
   } catch (error) {
     if (isMissingTableError(error)) {
@@ -498,9 +511,10 @@ export async function deleteHolidayList(id) {
             throw new Error('This holiday list contains holidays and cannot be deleted until all holidays are removed.')
           }
           const table = qualifiedTable(schemaName, 'holiday_lists')
-          await prisma.$executeRaw(
-            Prisma.sql`DELETE FROM ${table} WHERE id = ${Number(id)}`
+          const affectedRows = await prisma.$executeRaw(
+            Prisma.sql`DELETE FROM ${table} WHERE id = ${Number(id)} AND companyId = ${getPayrollCompanyId()}`
           )
+          if (!affectedRows) throw new Error('Holiday list not found for the configured payroll company.')
           return true
         }
         return []
@@ -514,11 +528,13 @@ export async function deleteHolidayList(id) {
 
 export async function getHolidaysByListId(holidayListId) {
   try {
+    const companyId = getPayrollCompanyId()
     const holidays = await prisma.$queryRaw`
-      SELECT id, date, description, type, holidayListId, createdAt, updatedAt
-      FROM payroll.holidays
-      WHERE holidayListId = ${holidayListId}
-      ORDER BY date ASC
+      SELECT h.id, h.date, h.description, h.type, h.holidayListId, h.createdAt, h.updatedAt
+      FROM holidays h
+      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      WHERE h.holidayListId = ${holidayListId} AND hl.companyId = ${companyId}
+      ORDER BY h.date ASC
     `
     return holidays
   } catch (error) {
@@ -526,9 +542,11 @@ export async function getHolidaysByListId(holidayListId) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
+          const companyId = getPayrollCompanyId()
           const table = qualifiedTable(schemaName, 'holidays')
+          const listsTable = qualifiedTable(schemaName, 'holiday_lists')
           const holidays = await prisma.$queryRaw(
-            Prisma.sql`SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM ${table} WHERE holidayListId = ${Number(holidayListId)} ORDER BY date ASC`
+            Prisma.sql`SELECT h.id, h.date, h.description, h.type, h.holidayListId, h.createdAt, h.updatedAt FROM ${table} h INNER JOIN ${listsTable} hl ON hl.id = h.holidayListId WHERE h.holidayListId = ${Number(holidayListId)} AND hl.companyId = ${companyId} ORDER BY h.date ASC`
           )
           return holidays || []
         }
@@ -546,7 +564,7 @@ export async function checkHolidayDuplicate(date, holidayListId, excludeId = nul
     const clause = excludeId ? Prisma.sql`AND id != ${excludeId}` : Prisma.empty
     const [existing] = await prisma.$queryRaw`
       SELECT id
-      FROM payroll.holidays
+      FROM holidays
       WHERE date = ${date} AND holidayListId = ${holidayListId}
       ${clause}
       LIMIT 1
@@ -575,17 +593,21 @@ export async function checkHolidayDuplicate(date, holidayListId, excludeId = nul
 
 export async function createHoliday(payload) {
   try {
-    await prisma.$executeRaw`
-      INSERT INTO payroll.holidays (date, description, type, holidayListId, createdAt, updatedAt)
-      VALUES (${payload.date}, ${payload.description}, 'Holiday', ${payload.holidayListId}, NOW(), NOW())
-    `
-    const [created] = await prisma.$queryRaw`
-      SELECT id, date, description, type, holidayListId, createdAt, updatedAt
-      FROM payroll.holidays
-      WHERE id = LAST_INSERT_ID()
-      LIMIT 1
-    `
-    return created
+    const list = await getHolidayListById(payload.holidayListId)
+    if (!list) throw new Error('Holiday list not found for the configured payroll company.')
+    return prisma.$transaction(async tx => {
+      await tx.$executeRaw`
+        INSERT INTO holidays (date, description, type, holidayListId, createdAt, updatedAt)
+        VALUES (${payload.date}, ${payload.description}, 'Holiday', ${payload.holidayListId}, NOW(), NOW())
+      `
+      const [created] = await tx.$queryRaw`
+        SELECT id, date, description, type, holidayListId, createdAt, updatedAt
+        FROM holidays
+        WHERE id = LAST_INSERT_ID()
+        LIMIT 1
+      `
+      return created
+    })
   } catch (error) {
     if (isMissingTableError(error)) {
       // Try to find the holidays table in any schema and insert there
@@ -615,15 +637,19 @@ export async function createHoliday(payload) {
 
 export async function updateHoliday(id, payload) {
   try {
-    await prisma.$executeRaw`
-      UPDATE payroll.holidays
-      SET date = ${payload.date}, description = ${payload.description}, updatedAt = NOW()
-      WHERE id = ${id}
+    const companyId = getPayrollCompanyId()
+    const affectedRows = await prisma.$executeRaw`
+      UPDATE holidays h
+      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      SET h.date = ${payload.date}, h.description = ${payload.description}, h.updatedAt = NOW()
+      WHERE h.id = ${id} AND hl.companyId = ${companyId}
     `
+    if (!affectedRows) throw new Error('Holiday not found for the configured payroll company.')
     const [updated] = await prisma.$queryRaw`
-      SELECT id, date, description, type, holidayListId, createdAt, updatedAt
-      FROM payroll.holidays
-      WHERE id = ${id}
+      SELECT h.id, h.date, h.description, h.type, h.holidayListId, h.createdAt, h.updatedAt
+      FROM holidays h
+      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      WHERE h.id = ${id} AND hl.companyId = ${companyId}
       LIMIT 1
     `
     return updated
@@ -632,12 +658,15 @@ export async function updateHoliday(id, payload) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
+          const companyId = getPayrollCompanyId()
           const table = qualifiedTable(schemaName, 'holidays')
-          await prisma.$executeRaw(
-            Prisma.sql`UPDATE ${table} SET date = ${payload.date}, description = ${payload.description}, updatedAt = NOW() WHERE id = ${Number(id)}`
+          const listsTable = qualifiedTable(schemaName, 'holiday_lists')
+          const affectedRows = await prisma.$executeRaw(
+            Prisma.sql`UPDATE ${table} h INNER JOIN ${listsTable} hl ON hl.id = h.holidayListId SET h.date = ${payload.date}, h.description = ${payload.description}, h.updatedAt = NOW() WHERE h.id = ${Number(id)} AND hl.companyId = ${companyId}`
           )
+          if (!affectedRows) throw new Error('Holiday not found for the configured payroll company.')
           const [updated] = await prisma.$queryRaw(
-            Prisma.sql`SELECT id, date, description, type, holidayListId, createdAt, updatedAt FROM ${table} WHERE id = ${Number(id)} LIMIT 1`
+            Prisma.sql`SELECT h.id, h.date, h.description, h.type, h.holidayListId, h.createdAt, h.updatedAt FROM ${table} h INNER JOIN ${listsTable} hl ON hl.id = h.holidayListId WHERE h.id = ${Number(id)} AND hl.companyId = ${companyId} LIMIT 1`
           )
           return updated
         }
@@ -652,20 +681,26 @@ export async function updateHoliday(id, payload) {
 
 export async function deleteHoliday(id) {
   try {
-    await prisma.$executeRaw`
-      DELETE FROM payroll.holidays
-      WHERE id = ${id}
+    const companyId = getPayrollCompanyId()
+    const affectedRows = await prisma.$executeRaw`
+      DELETE h FROM holidays h
+      INNER JOIN holiday_lists hl ON hl.id = h.holidayListId
+      WHERE h.id = ${id} AND hl.companyId = ${companyId}
     `
+    if (!affectedRows) throw new Error('Holiday not found for the configured payroll company.')
     return true
   } catch (error) {
     if (isMissingTableError(error)) {
       try {
         const schemaName = await findTableSchema('holidays')
         if (schemaName) {
+          const companyId = getPayrollCompanyId()
           const table = qualifiedTable(schemaName, 'holidays')
-          await prisma.$executeRaw(
-            Prisma.sql`DELETE FROM ${table} WHERE id = ${Number(id)}`
+          const listsTable = qualifiedTable(schemaName, 'holiday_lists')
+          const affectedRows = await prisma.$executeRaw(
+            Prisma.sql`DELETE h FROM ${table} h INNER JOIN ${listsTable} hl ON hl.id = h.holidayListId WHERE h.id = ${Number(id)} AND hl.companyId = ${companyId}`
           )
+          if (!affectedRows) throw new Error('Holiday not found for the configured payroll company.')
           return true
         }
         throw new Error('Holiday deletion is unavailable because the holidays table is missing.')
@@ -681,6 +716,7 @@ export async function isHoliday(dateString) {
   try {
     const schemaName = await findHolidayTablesSchema()
     if (!schemaName) return null
+    const companyId = getPayrollCompanyId()
 
     const sql = Prisma.sql`
       SELECT h.id, h.description, h.type
@@ -689,6 +725,7 @@ export async function isHoliday(dateString) {
         ON hl.id = h.holidayListId
       WHERE h.date = ${normalizeDateForSQL(dateString)}
         AND hl.status = 'Active'
+        AND hl.companyId = ${companyId}
         AND h.date BETWEEN hl.startDate AND hl.endDate
       LIMIT 1
     `
@@ -704,6 +741,7 @@ export async function getAllHolidayDates() {
   try {
     const schemaName = await findHolidayTablesSchema()
     if (!schemaName) return []
+    const companyId = getPayrollCompanyId()
 
     const sql = Prisma.sql`
       SELECT h.date
@@ -711,6 +749,7 @@ export async function getAllHolidayDates() {
       INNER JOIN ${Prisma.raw(`${quoteIdentifier(schemaName)}.${quoteIdentifier('holiday_lists')}`)} hl
         ON hl.id = h.holidayListId
       WHERE hl.status = 'Active'
+        AND hl.companyId = ${companyId}
         AND h.date BETWEEN hl.startDate AND hl.endDate
     `
     const holidays = await prisma.$queryRaw(sql)

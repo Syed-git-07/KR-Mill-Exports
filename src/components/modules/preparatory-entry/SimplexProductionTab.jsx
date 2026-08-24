@@ -246,11 +246,11 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
   }
 
   // Handle employee name change
-  const handleEmployeeChange = (rowId, value) => {
-    setEditedRows(prev => ({ ...prev, [rowId]: { ...(prev[rowId] || {}), employee_name: value } }))
+  const handleEmployeeChange = (rowId, value, employee) => {
+    setEditedRows(prev => ({ ...prev, [rowId]: { ...(prev[rowId] || {}), employee_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } }))
 
     setProductionData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, employee_name: value } : row
+      row.id === rowId ? { ...row, employee_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } : row
     ))
   }
 
@@ -313,6 +313,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
 
         const result = await updateSimplexProductionDetailAction(row.id, {
           employee_name: effectiveRow.employee_name,
+          payroll_employee_id: effectiveRow.payroll_employee_id,
           prodn_mixing: setup?.prodn_mixing ?? effectiveRow.prodn_mixing,
           run_hrs: effectiveRow.run_hrs,
           run_min: calculated.run_min,
@@ -446,7 +447,8 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.employee_name || ''}
-                        onChange={(value) => handleEmployeeChange(row.id, value)}
+                        employeeId={row.payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                         cleanCell
                         editingHighlight
                         className="h-9 rounded-none text-sm w-full min-w-35"

@@ -409,19 +409,20 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
   }
 
   // Handle employee name change
-  const handleEmployeeChange = (rowId, value) => {
+  const handleEmployeeChange = (rowId, value, employee) => {
     const previousDrafts = editedRowsRef.current || {}
     const nextDrafts = {
       ...previousDrafts,
       [rowId]: {
         ...(previousDrafts[rowId] || {}),
-        employee_name: value
+        employee_name: value,
+        payroll_employee_id: employee?.payroll_employee_id ?? null
       }
     }
     setEditedRows(nextDrafts)
 
     setProductionData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, employee_name: value } : row
+      row.id === rowId ? { ...row, employee_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } : row
     ))
   }
 
@@ -508,6 +509,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
         
         return updateFinisherDrawingDetailAction(rowId, {
           employee_name: changes.employee_name ?? row.employee_name,
+          payroll_employee_id: Object.hasOwn(changes, 'payroll_employee_id') ? changes.payroll_employee_id : row.payroll_employee_id,
           prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
           act_hank: actHank,
           act_prodn: roundedActProdn,
@@ -633,7 +635,8 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
                   <td className="border border-gray-300 px-0 py-0">
                     <EmployeeAutocomplete
                       value={row.employee_name || ''}
-                      onChange={(value) => handleEmployeeChange(row.id, value)}
+                      employeeId={row.payroll_employee_id}
+                      onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                       placeholder="Type employee name..."
                       cleanCell
                       editingHighlight

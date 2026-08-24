@@ -11,6 +11,7 @@ import { resolveProductionTime } from '../productionFormulaMath'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 
 // ============================================
@@ -417,9 +418,16 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
 export async function updateComberProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('comber', id)
   try {
+    const current = await prisma.comber_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
     const data = await prisma.comber_production_detail.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(prepared)
     })
     return data
   } catch (error) {
@@ -429,16 +437,7 @@ export async function updateComberProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateComberProductionDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('comber', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.comber_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateComberProductionDetail(id, data)))
 }
 
 // ============================================
@@ -1436,6 +1435,7 @@ export async function copyComberFromPreviousDate(targetDate, targetShift, target
         where: { id: targetDetail.id },
         data: {
           employee_name: sourceDetail.employee_name,
+          payroll_employee_id: sourceDetail.payroll_employee_id,
           prodn_mixing: sourceDetail.prodn_mixing,
           act_hank: sourceDetail.act_hank,
           run_hrs: sourceDetail.run_hrs,

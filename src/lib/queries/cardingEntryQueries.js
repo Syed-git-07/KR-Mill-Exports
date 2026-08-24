@@ -6,6 +6,7 @@ import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { machineLookupWhere } from '../machineLifecycle'
 import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
@@ -554,7 +555,14 @@ export async function updateProductionDetail(id, updates) {
     // Client already recalculates correctly based on full state.
     // We just take the explicitly saved cleanUpdates directly to avoid
     // overwriting accurate UI values with missing/stale server context.
-    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
+    const current = await prisma.carding_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
+    const cleanUpdates = sanitizeProductionDetailUpdate(prepared)
 
     const data = await prisma.carding_production_detail.update({
       where: { id },
@@ -568,16 +576,7 @@ export async function updateProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateProductionDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('carding', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.carding_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateProductionDetail(id, data)))
 }
 
 // ============================================

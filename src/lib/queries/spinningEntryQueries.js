@@ -5,6 +5,7 @@ import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildSpinningCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
 import {
@@ -636,10 +637,27 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
 }
 
 // Update production detail
+async function prepareSpinningEmployeeUpdate(id, updates) {
+  const current = await prisma.spinning_production_detail.findUnique({
+    where: { id },
+    select: {
+      sider1_name: true,
+      sider1_payroll_employee_id: true,
+      sider2_name: true,
+      sider2_payroll_employee_id: true
+    }
+  })
+  return preparePayrollEmployeeUpdate(updates, current, [
+    { nameField: 'sider1_name', idField: 'sider1_payroll_employee_id' },
+    { nameField: 'sider2_name', idField: 'sider2_payroll_employee_id' }
+  ])
+}
+
 export async function updateSpinningProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('spinning', id)
   try {
-    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
+    const prepared = await prepareSpinningEmployeeUpdate(id, updates)
+    const cleanUpdates = sanitizeProductionDetailUpdate(prepared)
     const data = await prisma.spinning_production_detail.update({
       where: { id },
       data: {
@@ -658,8 +676,13 @@ export async function batchUpdateSpinningProductionDetails(updates) {
   await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('spinning', id)))
   try {
     const updatedAt = new Date()
-    return await prisma.$transaction(updates.map((update) => {
-      const { id, ...data } = update
+    const preparedUpdates = await Promise.all(updates.map(async update => ({
+      id: update.id,
+      data: await prepareSpinningEmployeeUpdate(update.id, Object.fromEntries(
+        Object.entries(update).filter(([field]) => field !== 'id')
+      ))
+    })))
+    return await prisma.$transaction(preparedUpdates.map(({ id, data }) => {
       return prisma.spinning_production_detail.update({
         where: { id },
         data: {

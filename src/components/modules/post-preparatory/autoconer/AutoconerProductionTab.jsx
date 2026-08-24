@@ -246,17 +246,18 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   }
 
   // Handle employee name change
-  const handleEmployeeChange = (rowId, value) => {
+  const handleEmployeeChange = (rowId, value, employee) => {
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
-        emp_name: value
+        emp_name: value,
+        payroll_employee_id: employee?.payroll_employee_id ?? null
       }
     }))
 
     setProductionData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, emp_name: value } : row
+      row.id === rowId ? { ...row, emp_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } : row
     ))
   }
 
@@ -478,7 +479,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.emp_name || ''}
-                        onChange={(value) => handleEmployeeChange(row.id, value)}
+                        employeeId={row.payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight

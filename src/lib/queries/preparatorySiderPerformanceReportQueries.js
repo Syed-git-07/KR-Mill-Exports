@@ -1,5 +1,5 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
+import { getPayrollEmployeesByIds } from '../payroll/employees'
 
 /**
  * Department configurations for sider performance report
@@ -51,12 +51,13 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
       header_id: {
         in: headerIds
       },
-      employee_name: {
+      payroll_employee_id: {
         not: null
       }
     },
     select: {
       employee_name: true,
+      payroll_employee_id: true,
       act_prodn: true,
       [effiField]: true,
       uti_percent: true,
@@ -68,27 +69,20 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     return []
   }
 
-  const employeeNames = [...new Set(details.map(detail => detail.employee_name).filter(Boolean))]
-  const employeeMasters = await prisma.$queryRaw`
-    SELECT
-      firstName AS emp_name,
-      CAST(biometricEnrollmentId AS CHAR) AS emp_code,
-      dateOfJoining AS doj
-    FROM payroll.employees
-    WHERE firstName IN (${Prisma.join(employeeNames)})
-  `
-  const masterByName = new Map(employeeMasters.map(employee => [employee.emp_name.trim().toLowerCase(), employee]))
+  const employeeIds = [...new Set(details.map(detail => detail.payroll_employee_id).filter(Boolean))]
+  const employeeMasters = await getPayrollEmployeesByIds(employeeIds)
+  const masterById = new Map(employeeMasters.map(employee => [Number(employee.id), employee]))
 
   // Aggregate by employee
   const employeeMap = {}
 
   details.forEach(detail => {
-    const empName = detail.employee_name
-    if (!empName) return
+    const employeeId = Number(detail.payroll_employee_id)
+    if (!masterById.has(employeeId)) return
 
-    if (!employeeMap[empName]) {
-      employeeMap[empName] = {
-        name: empName,
+    if (!employeeMap[employeeId]) {
+      employeeMap[employeeId] = {
+        employeeId,
         totalProduction: 0,
         totalEfficiency: 0,
         totalUtilization: 0,
@@ -103,18 +97,18 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     const utilization = parseFloat(detail.uti_percent || 0)
     const wastePercent = parseFloat(detail.waste_percent || 0)
 
-    employeeMap[empName].totalProduction += production
-    employeeMap[empName].totalEfficiency += efficiency
-    employeeMap[empName].totalUtilization += utilization
-    employeeMap[empName].totalWastePercent += wastePercent
-    employeeMap[empName].metricWeight += production
-    employeeMap[empName].recordCount++
+    employeeMap[employeeId].totalProduction += production
+    employeeMap[employeeId].totalEfficiency += efficiency
+    employeeMap[employeeId].totalUtilization += utilization
+    employeeMap[employeeId].totalWastePercent += wastePercent
+    employeeMap[employeeId].metricWeight += production
+    employeeMap[employeeId].recordCount++
   })
 
   // The stored row percentages are authoritative. Weight them by production
   // for a range report so a very small run does not distort a sider's result.
   details.forEach(detail => {
-    const emp = employeeMap[detail.employee_name]
+    const emp = employeeMap[Number(detail.payroll_employee_id)]
     if (!emp) return
     const production = Number(detail.act_prodn) || 0
     emp.weightedEfficiency = (emp.weightedEfficiency || 0) + (Number(detail[effiField]) || 0) * production
@@ -123,7 +117,7 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
   })
 
   const employees = Object.values(employeeMap).flatMap(emp => {
-    const master = masterByName.get(emp.name.trim().toLowerCase())
+    const master = masterById.get(emp.employeeId)
     if (!master) return []
     const average = (weighted, fallback) => emp.metricWeight > 0
       ? weighted / emp.metricWeight
