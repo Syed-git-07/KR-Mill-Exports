@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { getProductionSupervisorDisplayMap } from './productionSupervisorQueries'
 
 /**
  * Generate the Autoconer Production Report grid.
@@ -42,17 +43,17 @@ export async function generateAutoconerEfficiencyReport(selectedDate) {
     const supervisorData = await prisma.$queryRaw`
       SELECT 
         aph.shift,
-        s.supervisor_name
+        aph.supervisor_id
       FROM autoconer_production_header aph
-      LEFT JOIN supervisors s ON aph.supervisor_id = s.id
       WHERE aph.entry_date = ${date}
       ORDER BY aph.shift
     `
 
     // Create supervisor map
+    const supervisorNames = await getProductionSupervisorDisplayMap(supervisorData.map(row => row.supervisor_id))
     const supervisorMap = {}
     supervisorData.forEach(s => {
-      supervisorMap[s.shift] = s.supervisor_name || 'N/A'
+      supervisorMap[s.shift] = supervisorNames.get(s.supervisor_id) || 'N/A'
     })
 
     // Group data by shift

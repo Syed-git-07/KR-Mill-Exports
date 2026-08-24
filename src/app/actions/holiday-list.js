@@ -1,10 +1,11 @@
 'use server'
 
-import { requireUser } from '@/lib/security/auth'
+import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
 
 import { serializeData } from '@/lib/serialize'
+import { executeAuditedHolidayMutation } from '@/lib/security/holidayAudit'
 import {
   getCompanies,
   getHolidayLists,
@@ -52,9 +53,11 @@ export async function searchHolidayListsAction(field, condition, value) {
 }
 
 export async function createHolidayListAction(listData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await createHolidayList(listData)
+    const data = await executeAuditedHolidayMutation({
+      user, action: 'CREATE', resource: 'payroll.holiday-list', changes: listData
+    }, () => createHolidayList(listData))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -62,9 +65,11 @@ export async function createHolidayListAction(listData) {
 }
 
 export async function updateHolidayListAction(id, listData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await updateHolidayList(id, listData)
+    const data = await executeAuditedHolidayMutation({
+      user, action: 'UPDATE', resource: 'payroll.holiday-list', targetId: id, changes: listData
+    }, () => updateHolidayList(id, listData))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -72,9 +77,11 @@ export async function updateHolidayListAction(id, listData) {
 }
 
 export async function deleteHolidayListAction(id) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await deleteHolidayList(id)
+    const data = await executeAuditedHolidayMutation({
+      user, action: 'DELETE', resource: 'payroll.holiday-list', targetId: id
+    }, () => deleteHolidayList(id))
     return { success: true, data }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -92,9 +99,11 @@ export async function getHolidaysByListIdAction(holidayListId) {
 }
 
 export async function createHolidayAction(holidayData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await createHoliday(holidayData)
+    const data = await executeAuditedHolidayMutation({
+      user, action: 'CREATE', resource: 'payroll.holiday', changes: holidayData
+    }, () => createHoliday(holidayData))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -102,9 +111,11 @@ export async function createHolidayAction(holidayData) {
 }
 
 export async function updateHolidayAction(id, holidayData) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await updateHoliday(id, holidayData)
+    const data = await executeAuditedHolidayMutation({
+      user, action: 'UPDATE', resource: 'payroll.holiday', targetId: id, changes: holidayData
+    }, () => updateHoliday(id, holidayData))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -112,9 +123,11 @@ export async function updateHolidayAction(id, holidayData) {
 }
 
 export async function deleteHolidayAction(id) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const data = await deleteHoliday(id)
+    const data = await executeAuditedHolidayMutation({
+      user, action: 'DELETE', resource: 'payroll.holiday', targetId: id
+    }, () => deleteHoliday(id))
     return { success: true, data }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -142,9 +155,15 @@ export async function getAllHolidayDatesAction() {
 }
 
 export async function bulkCreateHolidaysAction(holidayListId, records) {
-  await requireUser()
+  const user = await requireRole('ADMIN')
   try {
-    const insertedCount = await bulkCreateHolidays(holidayListId, records)
+    const insertedCount = await executeAuditedHolidayMutation({
+      user,
+      action: 'BULK_CREATE',
+      resource: 'payroll.holiday',
+      targetId: holidayListId,
+      changes: { submittedCount: Array.isArray(records) ? records.length : 0 }
+    }, () => bulkCreateHolidays(holidayListId, records))
     return { success: true, count: insertedCount }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -109,9 +109,10 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const allocatedSpindles = setup.allocated_spindles != null && setup.allocated_spindles !== ''
       ? Number(setup.allocated_spindles)
       : (row.machine?.allocated_spindles ?? 1104)
-    // The production detail owns the exact count-run duration. The setup is a
-    // fallback only for legacy rows that pre-date per-run detail snapshots.
-    const rowRunTime = row.run_time ?? setup.run_time ?? effectiveTotalTime
+    // Use the effective setup first so an unsaved count-run duration draft is
+    // reflected in the dependent production calculation during Update All.
+    // The production-detail snapshot remains the fallback for legacy rows.
+    const rowRunTime = setup.run_time ?? row.run_time ?? effectiveTotalTime
 
     // Get values needed for Exp GPS calculation (from machine setup, sourced from spinning_counts master)
     const speed = parseInt(setup.speed) || 0

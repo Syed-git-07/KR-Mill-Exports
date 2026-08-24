@@ -1281,6 +1281,7 @@ model supervisors {
   created_at                                                                                       DateTime?                            @default(now()) @db.DateTime(0)
   updated_at                                                                                       DateTime?                            @default(now()) @db.DateTime(0)
   code                                                                                             Int                                  @default(1)
+  payroll_employee_id                                                                              Int?
   autoconer_production_header                                                                      autoconer_production_header[]
   breaker_drawing_production_header_breaker_drawing_production_header_maisitry_idTosupervisors     breaker_drawing_production_header[]  @relation("breaker_drawing_production_header_maisitry_idTosupervisors")
   breaker_drawing_production_header_breaker_drawing_production_header_supervisor_idTosupervisors   breaker_drawing_production_header[]  @relation("breaker_drawing_production_header_supervisor_idTosupervisors")
@@ -1299,6 +1300,7 @@ model supervisors {
   departments                                                                                      departments?                         @relation(fields: [department_id], references: [id], onDelete: Restrict, map: "fk_supervisor_department")
 
   @@index([department_id], map: "fk_supervisor_department")
+  @@index([payroll_employee_id], map: "idx_supervisors_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

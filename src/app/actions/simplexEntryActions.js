@@ -347,31 +347,6 @@ export async function removeSimplexMachineAction(machineId, headerId) {
   }
 }
 
-// ============================================
-// COPY PREVIOUS DATA ACTIONS
-// ============================================
-
-export async function getSimplexAvailableDatesAction(beforeDate, shift, limit = 30) {
-  await requireUser()
-  try {
-    const data = await queries.getSimplexAvailableDates(beforeDate, shift, limit)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function copySimplexFromPreviousDateAction(...args) {
-  await requireUser()
-  void args
-  return { success: false, error: 'Simplex speed is fixed and cannot be copied.' }
-}
-
-export async function copySimplexFromYesterdayAction(...args) {
-  await requireUser()
-  void args
-  return { success: false, error: 'Simplex speed is fixed and cannot be copied.' }
-}
 
 export async function getSimplexEntryTabDataAction(tab, context = {}) {
   await requireUser()

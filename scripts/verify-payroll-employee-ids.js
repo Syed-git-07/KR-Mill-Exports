@@ -14,7 +14,8 @@ const SOURCES = [
   { table: 'lap_former_production_detail', name: 'employee_name', column: 'payroll_employee_id', index: 'idx_lap_detail_payroll_employee' },
   { table: 'simplex_production_detail', name: 'employee_name', column: 'payroll_employee_id', index: 'idx_simplex_detail_payroll_employee' },
   { table: 'spinning_production_detail', name: 'sider1_name', column: 'sider1_payroll_employee_id', index: 'idx_spinning_detail_sider1_payroll_employee' },
-  { table: 'spinning_production_detail', name: 'sider2_name', column: 'sider2_payroll_employee_id', index: 'idx_spinning_detail_sider2_payroll_employee' }
+  { table: 'spinning_production_detail', name: 'sider2_name', column: 'sider2_payroll_employee_id', index: 'idx_spinning_detail_sider2_payroll_employee' },
+  { table: 'supervisors', name: 'supervisor_name', column: 'payroll_employee_id', index: 'idx_supervisors_payroll_employee', activeOnly: true }
 ]
 
 function required(name) {
@@ -51,15 +52,37 @@ async function main() {
     ])
 
     const storedIds = new Set()
+    const activeRequiredIds = new Set()
     const fieldStats = []
     const missingColumns = []
     const missingIndexes = []
+    const unresolvedCurrentEntries = []
 
     for (const source of SOURCES) {
       const table = identifier(source.table)
       const nameColumn = identifier(source.name)
       const idColumn = identifier(source.column)
-      const [columnRows, indexRows, countRows, idRows] = await Promise.all([
+      const headerTableName = source.table.endsWith('_production_detail')
+        ? source.table.replace(/_detail$/, '_header')
+        : null
+      const latestEntryPromise = headerTableName
+        ? production.$queryRaw(Prisma.sql`
+            SELECT COUNT(*) AS unresolved_current_rows
+            FROM ${table} d
+            INNER JOIN ${identifier(headerTableName)} h ON h.id = d.header_id
+            WHERE h.id = (
+              SELECT h2.id
+              FROM ${identifier(headerTableName)} h2
+              WHERE EXISTS (SELECT 1 FROM ${table} d2 WHERE d2.header_id = h2.id)
+              ORDER BY h2.entry_date DESC, h2.shift DESC
+              LIMIT 1
+            )
+              AND d.${idColumn} IS NULL
+              AND d.${nameColumn} IS NOT NULL
+              AND TRIM(d.${nameColumn}) <> ''
+          `)
+        : Promise.resolve([{ unresolved_current_rows: 0 }])
+      const [columnRows, indexRows, countRows, idRows, latestRows] = await Promise.all([
         production.$queryRaw`
           SELECT COUNT(*) AS column_count
           FROM information_schema.columns
@@ -86,7 +109,8 @@ async function main() {
           SELECT DISTINCT ${idColumn} AS payroll_employee_id
           FROM ${table}
           WHERE ${idColumn} IS NOT NULL
-        `)
+        `),
+        latestEntryPromise
       ])
 
       if (Number(columnRows[0].column_count) !== 1) {
@@ -95,21 +119,29 @@ async function main() {
       if (Number(indexRows[0].index_count) !== 1) {
         missingIndexes.push(source.index)
       }
-      for (const row of idRows) storedIds.add(Number(row.payroll_employee_id))
+      for (const row of idRows) {
+        storedIds.add(Number(row.payroll_employee_id))
+        if (source.activeOnly) activeRequiredIds.add(Number(row.payroll_employee_id))
+      }
 
+      const unresolvedCurrentRows = Number(latestRows[0].unresolved_current_rows || 0)
+      if (unresolvedCurrentRows) unresolvedCurrentEntries.push(`${source.table}.${source.name}: ${unresolvedCurrentRows}`)
       fieldStats.push({
         field: `${source.table}.${source.column}`,
         totalRows: Number(countRows[0].total_rows),
         linkedRows: Number(countRows[0].linked_rows || 0),
-        unresolvedNamedRows: Number(countRows[0].unresolved_named_rows || 0)
+        unresolvedNamedRows: Number(countRows[0].unresolved_named_rows || 0),
+        unresolvedCurrentRows
       })
     }
 
     const companyEmployees = await payroll.$queryRaw`
-      SELECT id FROM employees WHERE companyId = ${companyId}
+      SELECT id, status FROM employees WHERE companyId = ${companyId}
     `
     const validIds = new Set(companyEmployees.map(employee => Number(employee.id)))
+    const activeIds = new Set(companyEmployees.filter(employee => employee.status === 'Active').map(employee => Number(employee.id)))
     const invalidStoredIds = [...storedIds].filter(id => !validIds.has(id)).sort((a, b) => a - b)
+    const inactiveSupervisorIds = [...activeRequiredIds].filter(id => !activeIds.has(id)).sort((a, b) => a - b)
     const employeeMasterPresent = Number(localMasterRows[0].table_count) !== 0
 
     console.log(`Production database: ${productionDatabaseRows[0].database_name}`)
@@ -123,6 +155,12 @@ async function main() {
     if (missingIndexes.length) problems.push(`Missing identity indexes: ${missingIndexes.join(', ')}`)
     if (invalidStoredIds.length) {
       problems.push(`Stored IDs outside payroll company ${companyId}: ${invalidStoredIds.join(', ')}`)
+    }
+    if (inactiveSupervisorIds.length) {
+      problems.push(`Supervisor assignments linked to inactive payroll employees: ${inactiveSupervisorIds.join(', ')}`)
+    }
+    if (unresolvedCurrentEntries.length) {
+      problems.push(`Current production entries contain names without payroll IDs: ${unresolvedCurrentEntries.join(', ')}`)
     }
 
     if (problems.length) {

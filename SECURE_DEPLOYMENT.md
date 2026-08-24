@@ -29,10 +29,13 @@ SHA-256 digests.
   different hosts and must use dedicated, least-privilege service accounts.
 - Grant the `DATABASE_URL` account access only to KR production tables.
 - Grant the `PAYROLL_DATABASE_URL` account `SELECT` on `employees`,
-  `departments`, `companies`, `holiday_lists`, and `holidays`. If this
-  deployment is authorized to manage holidays, grant narrowly scoped
-  `INSERT`, `UPDATE`, and `DELETE` only on `holiday_lists` and `holidays`.
-  Never use the MySQL root account.
+  `departments`, `companies`, `holiday_lists`, and `holidays`. Keep
+  `PAYROLL_HOLIDAY_WRITER=PAYROLL` and do not grant write access when the payroll
+  application owns holidays. If KR Production is formally designated as the
+  sole holiday writer, set `PAYROLL_HOLIDAY_WRITER=KR_PRODUCTION` and grant
+  narrowly scoped `INSERT`, `UPDATE`, and `DELETE` only on `holiday_lists` and
+  `holidays`. Never allow both applications to write the same holiday data, and
+  never use the MySQL root account.
 - Set `PAYROLL_COMPANY_ID` to the active payroll company owned by this KR
   production deployment. Employee searches and holiday checks are scoped to it.
 - Back up the KR database before applying
@@ -41,7 +44,15 @@ SHA-256 digests.
   the migration, run `npm run payroll:backfill` in dry-run mode, then use
   `npm run payroll:backfill -- --apply` only after reviewing ambiguous and
   unmatched counts. Finish with `npm run payroll:verify` to verify every schema
-  column, index, and stored payroll-company ID.
+  column, index, and stored payroll-company ID, then run
+  `npm run payroll:reconcile` to prove that employee identity buckets preserve
+  production and waste totals.
+- If both databases are schemas on the same MySQL 8 server and the migration is
+  being performed through MySQL Workbench, run the complete
+  `scripts/sql/finalproduction_payroll_identity_cleanup.sql` file after checking
+  its `@payroll_company_id`. Do not use that cross-schema Workbench script when
+  payroll is hosted on a different MySQL server; use the environment-driven npm
+  backfill commands instead.
 - Restrict the application and database ports with the server firewall.
 
 ## 2. Install and prepare

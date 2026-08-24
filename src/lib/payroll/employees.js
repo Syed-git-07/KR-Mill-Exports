@@ -1,30 +1,9 @@
 import { Prisma } from '@prisma/client'
 import { payrollDb } from './client'
 import { getPayrollCompanyId } from './config'
+import { formatPayrollEmployeeName, toPayrollEmployeeResponse } from './employeeContract'
 
-function cleanNamePart(value) {
-  const part = String(value ?? '').trim().replace(/\s+/g, ' ')
-  return part && part !== '-' ? part : ''
-}
-
-export function formatPayrollEmployeeName(employee) {
-  if (!employee) return ''
-
-  const usesCamelCaseFields = ['firstName', 'middleName', 'lastName']
-    .some(field => Object.hasOwn(employee, field))
-  const parts = usesCamelCaseFields
-    ? [employee.firstName, employee.middleName, employee.lastName]
-    : [employee.emp_name, employee.middle_name, employee.last_name]
-
-  return parts.map(cleanNamePart).filter(Boolean).join(' ')
-}
-
-function withCanonicalEmployeeName(employee) {
-  return {
-    ...employee,
-    emp_name: formatPayrollEmployeeName(employee)
-  }
-}
+export { formatPayrollEmployeeName, toPayrollEmployeeResponse } from './employeeContract'
 
 export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(50, Number(limit))) : 10
@@ -36,6 +15,7 @@ export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
         OR NULLIF(TRIM(e.middleName), '-') LIKE ${`%${term}%`}
         OR NULLIF(TRIM(e.lastName), '-') LIKE ${`%${term}%`}
         OR CONCAT_WS(' ', e.firstName, NULLIF(TRIM(e.middleName), '-'), NULLIF(TRIM(e.lastName), '-')) LIKE ${`%${term}%`}
+        OR e.employeeCode LIKE ${`${term}%`}
         OR e.biometricEnrollmentId LIKE ${`${term}%`}
       )`
     : Prisma.empty
@@ -43,22 +23,25 @@ export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
   const employees = await payrollDb.$queryRaw`
     SELECT
       e.id,
-      e.firstName,
-      NULLIF(TRIM(e.middleName), '-') AS middleName,
-      NULLIF(TRIM(e.lastName), '-') AS lastName,
-      e.biometricEnrollmentId,
-      d.departmentname
+      e.firstName AS first_name,
+      NULLIF(TRIM(e.middleName), '-') AS middle_name,
+      NULLIF(TRIM(e.lastName), '-') AS last_name,
+      CAST(e.employeeCode AS CHAR) AS employee_code,
+      CAST(e.biometricEnrollmentId AS CHAR) AS token_no,
+      e.dateOfJoining AS doj,
+      d.departmentname AS department,
+      e.status
     FROM employees e
     LEFT JOIN departments d ON d.id = e.departmentId
     WHERE e.companyId = ${companyId}
       AND e.status = 'Active'
     ${nameClause}
     ORDER BY e.firstName ASC, e.middleName ASC, e.lastName ASC,
-      e.biometricEnrollmentId ASC, e.id ASC
+      e.employeeCode ASC, e.biometricEnrollmentId ASC, e.id ASC
     LIMIT ${safeLimit}
   `
 
-  return (employees || []).map(withCanonicalEmployeeName)
+  return (employees || []).map(toPayrollEmployeeResponse)
 }
 
 export async function getPayrollEmployeesByIds(ids) {
@@ -69,19 +52,21 @@ export async function getPayrollEmployeesByIds(ids) {
   const employees = await payrollDb.$queryRaw`
     SELECT
       e.id,
-      e.firstName AS emp_name,
+      e.firstName AS first_name,
       NULLIF(TRIM(e.middleName), '-') AS middle_name,
       NULLIF(TRIM(e.lastName), '-') AS last_name,
-      CAST(e.biometricEnrollmentId AS CHAR) AS emp_code,
+      CAST(e.employeeCode AS CHAR) AS employee_code,
+      CAST(e.biometricEnrollmentId AS CHAR) AS token_no,
       e.dateOfJoining AS doj,
-      d.departmentname AS department
+      d.departmentname AS department,
+      e.status
     FROM employees e
     LEFT JOIN departments d ON d.id = e.departmentId
     WHERE e.companyId = ${companyId}
       AND e.id IN (${Prisma.join(uniqueIds)})
   `
 
-  return (employees || []).map(withCanonicalEmployeeName)
+  return (employees || []).map(toPayrollEmployeeResponse)
 }
 
 async function findPayrollEmployeeById(id, { activeOnly }) {
@@ -93,12 +78,14 @@ async function findPayrollEmployeeById(id, { activeOnly }) {
   const rows = await payrollDb.$queryRaw`
     SELECT
       e.id,
-      e.firstName AS emp_name,
+      e.firstName AS first_name,
       NULLIF(TRIM(e.middleName), '-') AS middle_name,
       NULLIF(TRIM(e.lastName), '-') AS last_name,
-      CAST(e.biometricEnrollmentId AS CHAR) AS emp_code,
+      CAST(e.employeeCode AS CHAR) AS employee_code,
+      CAST(e.biometricEnrollmentId AS CHAR) AS token_no,
       e.dateOfJoining AS doj,
-      d.departmentname AS department
+      d.departmentname AS department,
+      e.status
     FROM employees e
     LEFT JOIN departments d ON d.id = e.departmentId
     WHERE e.companyId = ${companyId}
@@ -107,7 +94,7 @@ async function findPayrollEmployeeById(id, { activeOnly }) {
     LIMIT 1
   `
 
-  return rows[0] ? withCanonicalEmployeeName(rows[0]) : null
+  return rows[0] ? toPayrollEmployeeResponse(rows[0]) : null
 }
 
 export function findActivePayrollEmployeeById(id) {
@@ -127,7 +114,10 @@ export async function hydratePayrollEmployeeNames(rows, bindings) {
     const hydrated = { ...record }
     for (const { nameField, idField } of bindings || []) {
       const employee = employeeById.get(Number(record?.[idField]))
-      hydrated[nameField] = employee?.emp_name || ''
+      const snapshotName = String(record?.[nameField] || '').trim()
+      // Keep the production snapshot stable. Payroll fills only an absent
+      // snapshot; it must not rewrite history when a current name changes.
+      hydrated[nameField] = snapshotName || employee?.emp_name || ''
     }
     return hydrated
   })

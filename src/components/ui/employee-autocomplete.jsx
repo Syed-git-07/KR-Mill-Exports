@@ -7,6 +7,11 @@ import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 
+function employeeReference(employee) {
+  return [...new Set([employee?.token_no || employee?.emp_code, employee?.employee_code].filter(Boolean))]
+    .join(' / ')
+}
+
 /**
  * Employee Autocomplete Component
  * Provides typeahead/autocomplete functionality for employee selection.
@@ -33,6 +38,7 @@ export default function EmployeeAutocomplete({
   const debounceTimer = useRef(null)
   const requestSeqRef = useRef(0)
   const highlightedRef = useRef(null)
+  const hasUnselectedText = employeeId == null && searchTerm.trim().length > 0
 
   // Update searchTerm when value prop changes (external sync)
   useEffect(() => {
@@ -141,7 +147,7 @@ export default function EmployeeAutocomplete({
               disabled={disabled}
               className={cn(
                 "h-full",
-                employeeId != null && "pr-20",
+                (employeeId != null || hasUnselectedText) && "pr-24",
                 cleanCell && "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
                 editingHighlight && "focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100",
                 className
@@ -154,6 +160,14 @@ export default function EmployeeAutocomplete({
                 aria-label={`Payroll employee ID ${employeeId}`}
               >
                 ID {employeeId}
+              </span>
+            )}
+            {hasUnselectedText && (
+              <span
+                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                aria-label="Employee text is not linked to a payroll employee"
+              >
+                NOT SELECTED
               </span>
             )}
           </div>
@@ -214,7 +228,7 @@ export default function EmployeeAutocomplete({
                     <div className="grid grid-cols-[1fr_auto] items-center gap-3 min-w-0">
                       <span className="font-medium text-sm truncate">{emp.emp_name}</span>
                       <span className={cn("text-sm font-bold tabular-nums", highlightedIndex === index ? "text-white" : "text-slate-700")}>
-                        {emp.emp_code || ''}
+                        {employeeReference(emp)}
                       </span>
                     </div>
                     {emp.department && (
@@ -229,7 +243,7 @@ export default function EmployeeAutocomplete({
           )}
 
             <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-              Search first, middle, last name, or token; then select a payroll employee.
+              Search first, middle, last or full name, employee code, or biometric token; then select a payroll employee.
             </div>
           </div>
         </PopoverContent>

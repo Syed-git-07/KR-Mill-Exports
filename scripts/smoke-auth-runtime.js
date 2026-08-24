@@ -98,6 +98,7 @@ async function main() {
     "/holiday-list/",
     "/account/security/",
     "/admin/security-logs/",
+    "/admin/payroll-mapping/",
   ];
   for (const route of protectedRoutes) {
     const response = await fetch(appUrl(route), { redirect: "manual" });
@@ -176,7 +177,7 @@ async function main() {
     assert.match(await response.text(), /data-app-auth-header/);
   }
 
-  for (const route of ["/account/security/", "/admin/security-logs/"]) {
+  for (const route of ["/account/security/", "/admin/security-logs/", "/admin/payroll-mapping/"]) {
     const response = await fetch(appUrl(route), {
       headers: authenticatedHeaders,
     });

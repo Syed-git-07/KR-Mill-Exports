@@ -1,5 +1,7 @@
 import { prisma } from '../prisma'
 import { getPayrollEmployeesByIds } from '../payroll/employees'
+import { resolveHistoricalEmployeeIdentity } from '../payroll/historicalEmployeeIdentity'
+import { getProductionSupervisorDisplayMap } from './productionSupervisorQueries'
 
 /**
  * Autoconer Low Efficiency Report Queries
@@ -95,23 +97,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     .map(h => h.supervisor_id)
     .filter(id => id !== null)
 
-  // Get supervisor information
-  let supervisors = []
-  if (supervisorIds.length > 0) {
-    supervisors = await prisma.supervisors.findMany({
-      where: {
-        id: {
-          in: supervisorIds
-        }
-      }
-    })
-  }
-
-  // Create supervisor lookup map
-  const supervisorMap = {}
-  supervisors.forEach(s => {
-    supervisorMap[s.id] = s.supervisor_name
-  })
+  const supervisorMap = await getProductionSupervisorDisplayMap(supervisorIds)
 
   // Process data by shift
   const shiftData = []
@@ -126,6 +112,12 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         if (!machine) return null
 
         const targetEfficiency = setupTargetMap.get(`${detail.machine_id}:${header.shift}`) || 0
+        const identity = resolveHistoricalEmployeeIdentity({
+          payrollEmployeeId: detail.payroll_employee_id,
+          snapshotName: detail.emp_name,
+          employee: employeeById.get(Number(detail.payroll_employee_id)) || null,
+          assignmentKey: `autoconer:${detail.id}`
+        })
         
         // Production efficiency is the manual value stored on this entry row.
         // An explicit zero is valid and must not be replaced by another formula.
@@ -135,7 +127,8 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         if (targetEfficiency > 0) {
           return {
             machine_no: machine.machine_no,
-            sider_name: employeeById.get(Number(detail.payroll_employee_id))?.emp_name || 'NIL',
+            sider_name: identity.displayName,
+            identity_status: identity.identityStatus,
             count: detail.count_name || '',
             act_effi: targetEfficiency,
             shift_effi: shiftEffi,  // Shift Effi % (actual efficiency percentage)
@@ -154,7 +147,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     if (lowEfficiencyMachines.length > 0) {
       shiftData.push({
         shift: header.shift,
-        supervisor_name: supervisorMap[header.supervisor_id] || 'Not Assigned',
+        supervisor_name: supervisorMap.get(header.supervisor_id) || 'Not Assigned',
         machines: lowEfficiencyMachines
       })
     }

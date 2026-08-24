@@ -17,10 +17,24 @@ export async function preparePayrollEmployeeUpdate(updates, current, bindings) {
     const nextName = String(touchesName ? prepared[nameField] || '' : current?.[nameField] || '').trim()
     const rawId = touchesId ? prepared[idField] : current?.[idField]
     const nextId = rawId === null || rawId === undefined || rawId === '' ? null : Number(rawId)
+    const currentName = String(current?.[nameField] || '').trim()
+    const currentId = current?.[idField] == null || current?.[idField] === ''
+      ? null
+      : Number(current[idField])
 
     if (nextId === null) {
       if (!nextName) {
         prepared[nameField] = null
+        prepared[idField] = null
+        continue
+      }
+
+      // Historical rows can be edited without forcing an identity change. An
+      // unresolved snapshot is retained only when both its name and missing ID
+      // are exactly unchanged; new or modified text still requires Payroll.
+      const retainsUnchangedLegacySnapshot = currentId === null && currentName && nextName === currentName
+      if (retainsUnchangedLegacySnapshot) {
+        prepared[nameField] = currentName
         prepared[idField] = null
         continue
       }
@@ -32,7 +46,7 @@ export async function preparePayrollEmployeeUpdate(updates, current, bindings) {
       throw new Error('Invalid payroll employee ID.')
     }
 
-    const isUnchangedEmployee = Number(current?.[idField]) === nextId
+    const isUnchangedEmployee = currentId === nextId
     const employee = isUnchangedEmployee
       ? await getPayrollEmployeeById(nextId)
       : await findActivePayrollEmployeeById(nextId)

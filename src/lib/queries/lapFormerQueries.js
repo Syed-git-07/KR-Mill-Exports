@@ -15,6 +15,7 @@ import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 import { compareMachineNumbers } from '../machineNumberSort';
 
@@ -247,6 +248,7 @@ export async function getOrCreateLapFormerHeader(date, shift, supervisorId, mais
   if (existing) return existing;
 
   const totalTime = await getLapFormerShiftTime(shift);
+  await validateProductionSupervisorIds(supervisorId, maisitryId);
 
   // Create new header
   try {
@@ -270,6 +272,7 @@ export async function getOrCreateLapFormerHeader(date, shift, supervisorId, mais
 export async function updateLapFormerHeader(id, updates) {
   await assertEntryHeaderUnlocked('lapFormer', id);
   updates = sanitizeEntryHeaderUpdate(updates);
+  await validateProductionSupervisorUpdate(updates);
   const data = await prisma.lap_former_production_header.update({
     where: { id },
     data: updates
@@ -1287,11 +1290,7 @@ export async function getLapFormerStoppageReasons() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  const data = await prisma.supervisors.findMany({
-    where: { is_active: true },
-    orderBy: { supervisor_name: 'asc' }
-  });
-  return data;
+  return getActiveProductionSupervisors();
 }
 
 // ============================================

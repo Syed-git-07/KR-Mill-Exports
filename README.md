@@ -25,6 +25,13 @@ server-only connection to the central payroll database used for employee and
 holiday data. Keeping both URLs separate allows payroll to move or be renamed
 without changing application code.
 
+Payroll is the default authoritative writer for shared holiday data. Keep
+`PAYROLL_HOLIDAY_WRITER=PAYROLL` when holidays are maintained in the payroll
+application; KR Production then has read-only holiday access. Set it to
+`KR_PRODUCTION` only after designating this application as the sole holiday
+writer for the configured company. In that mode, only KR administrators can
+mutate holiday lists and every mutation is audited.
+
 Employee identity in production entries is stored as the payroll employee
 primary key. After deploying `20260824_payroll_employee_identity`, run a dry
 backfill and review the counts before applying it:
@@ -33,11 +40,26 @@ backfill and review the counts before applying it:
 npm run payroll:backfill
 npm run payroll:backfill -- --apply
 npm run payroll:verify
+npm run payroll:reconcile
 ```
+
+For the sample installation where `finalproduction` and `payroll` are schemas
+on the same MySQL 8 server, the equivalent idempotent MySQL Workbench cleanup is
+`scripts/sql/finalproduction_payroll_identity_cleanup.sql`. Review its
+`@payroll_company_id` value, open the complete file in Workbench, and execute
+all statements. It writes only to `finalproduction` and prints verification
+result sets at the end.
 
 Only names that identify exactly one employee are backfilled. Ambiguous and
 unmatched historical rows remain unresolved until an operator selects the
-correct payroll employee; the script never guesses.
+correct payroll employee on `/admin/payroll-mapping`; the script never guesses.
+Legacy supervisor/maisitry roles are mapped from Supervisor Master. Only active,
+unambiguous supervisor matches are eligible for automatic backfill.
+
+Weekly-off days configured on the active payroll holiday list are treated as
+holidays by entry calendars and block creation of new production entries. Leave
+allocation and employee leave balances are owned by payroll and are outside the
+KR Production application boundary.
 
 ## Authentication and logging
 

@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { payrollDb } from '../payroll/client'
-import { getPayrollCompanyId } from '../payroll/config'
+import { assertKrProductionHolidayWriter, getPayrollCompanyId } from '../payroll/config'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
@@ -41,12 +41,14 @@ function normalizeWeekOffs(value) {
 function normalizeHolidayListPayload(payload) {
   const name = String(payload?.name || '').trim()
   if (!name) throw new Error('List Name is required.')
+  if (name.length > 255) throw new Error('List Name cannot exceed 255 characters.')
 
   const startDate = normalizeDateForSQL(payload?.startDate)
   const endDate = normalizeDateForSQL(payload?.endDate)
   if (startDate > endDate) throw new Error('Start Date must be less than or equal to End Date.')
 
-  const status = payload?.status === 'Inactive' ? 'Inactive' : 'Active'
+  const status = String(payload?.status || '')
+  if (!['Active', 'Inactive'].includes(status)) throw new Error('Status must be Active or Inactive.')
   return {
     name,
     startDate,
@@ -164,6 +166,7 @@ export async function checkHolidayListOverlap(startDate, endDate, _companyId, ex
 }
 
 export async function createHolidayList(payload) {
+  assertKrProductionHolidayWriter()
   const values = normalizeHolidayListPayload(payload)
   if (!await checkHolidayListNameUnique(values.name, values.companyId)) {
     throw new Error('List Name must be unique for the configured payroll company.')
@@ -188,6 +191,7 @@ export async function createHolidayList(payload) {
 }
 
 export async function updateHolidayList(id, payload) {
+  assertKrProductionHolidayWriter()
   const listId = positiveId(id, 'Holiday list ID')
   const current = await getHolidayListById(listId)
   if (!current) throw new Error('Holiday list not found for the configured payroll company.')
@@ -232,6 +236,7 @@ export async function hasHolidaysForList(id) {
 }
 
 export async function deleteHolidayList(id) {
+  assertKrProductionHolidayWriter()
   const listId = positiveId(id, 'Holiday list ID')
   const companyId = getPayrollCompanyId()
   if (!await getHolidayListById(listId)) throw new Error('Holiday list not found for the configured payroll company.')
@@ -288,6 +293,7 @@ function validateHolidayDateWithinList(date, list) {
 }
 
 export async function createHoliday(payload) {
+  assertKrProductionHolidayWriter()
   const listId = positiveId(payload?.holidayListId, 'Holiday list ID')
   const list = await getHolidayListById(listId)
   if (!list) throw new Error('Holiday list not found for the configured payroll company.')
@@ -295,6 +301,7 @@ export async function createHoliday(payload) {
   const date = validateHolidayDateWithinList(payload?.date, list)
   const description = String(payload?.description || '').trim()
   if (!description) throw new Error('Holiday description is required.')
+  if (description.length > 255) throw new Error('Holiday description cannot exceed 255 characters.')
   if (!await checkHolidayDuplicate(date, listId)) throw new Error('A holiday already exists for this date in the selected list.')
 
   return payrollDb.$transaction(async tx => {
@@ -326,6 +333,7 @@ async function getHolidayById(id) {
 }
 
 export async function updateHoliday(id, payload) {
+  assertKrProductionHolidayWriter()
   const holidayId = positiveId(id, 'Holiday ID')
   const current = await getHolidayById(holidayId)
   if (!current) throw new Error('Holiday not found for the configured payroll company.')
@@ -339,6 +347,7 @@ export async function updateHoliday(id, payload) {
   const date = validateHolidayDateWithinList(payload?.date, list)
   const description = String(payload?.description || '').trim()
   if (!description) throw new Error('Holiday description is required.')
+  if (description.length > 255) throw new Error('Holiday description cannot exceed 255 characters.')
   if (!await checkHolidayDuplicate(date, current.holidayListId, holidayId)) {
     throw new Error('A holiday already exists for this date in the selected list.')
   }
@@ -355,6 +364,7 @@ export async function updateHoliday(id, payload) {
 }
 
 export async function deleteHoliday(id) {
+  assertKrProductionHolidayWriter()
   const holidayId = positiveId(id, 'Holiday ID')
   const companyId = getPayrollCompanyId()
   const affectedRows = await payrollDb.$executeRaw`
@@ -423,25 +433,34 @@ export async function getAllHolidayDates() {
 }
 
 export async function bulkCreateHolidays(holidayListId, records) {
+  assertKrProductionHolidayWriter()
   const listId = positiveId(holidayListId, 'Holiday list ID')
   const list = await getHolidayListById(listId)
   if (!list) throw new Error('Holiday list not found for the configured payroll company.')
+
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error('At least one holiday row is required.')
+  }
+  if (records.length > 2000) throw new Error('A maximum of 2,000 holidays can be imported at once.')
 
   const existing = await getHolidaysByListId(listId)
   const seenDates = new Set(existing.map(holiday => normalizeDateForSQL(holiday.date)))
   const listStart = normalizeDateForSQL(list.startDate)
   const listEnd = normalizeDateForSQL(list.endDate)
   const validRecords = []
-  for (const record of Array.isArray(records) ? records : []) {
+  for (const [index, record] of records.entries()) {
     const description = String(record?.description || '').trim()
-    if (!record?.date || !description) continue
+    if (!record?.date || !description) throw new Error(`Holiday row ${index + 1} requires a date and description.`)
+    if (description.length > 255) throw new Error(`Holiday row ${index + 1} description exceeds 255 characters.`)
     const date = normalizeDateForSQL(record.date)
-    if (date < listStart || date > listEnd || seenDates.has(date)) continue
+    if (date < listStart || date > listEnd) {
+      throw new Error(`Holiday row ${index + 1} is outside the selected holiday list period.`)
+    }
+    if (seenDates.has(date)) throw new Error(`Holiday row ${index + 1} duplicates ${date}.`)
     seenDates.add(date)
     validRecords.push({ date, description })
   }
 
-  if (!validRecords.length) return 0
   await payrollDb.$transaction(async tx => {
     for (const record of validRecords) {
       await tx.$executeRaw`

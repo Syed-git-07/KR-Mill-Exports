@@ -43,6 +43,13 @@ function checkPayrollCompanyId() {
   }
 }
 
+function checkPayrollHolidayWriter() {
+  const value = String(process.env.PAYROLL_HOLIDAY_WRITER || '').trim().toUpperCase()
+  if (!['PAYROLL', 'KR_PRODUCTION'].includes(value)) {
+    fail('PAYROLL_HOLIDAY_WRITER must explicitly be PAYROLL or KR_PRODUCTION.')
+  }
+}
+
 function checkTrustedOrigins() {
   const values = (process.env.AUTH_TRUSTED_ORIGINS || '')
     .split(',')
@@ -72,6 +79,7 @@ function checkTrustedOrigins() {
 const productionUrl = checkDatabaseUrl('DATABASE_URL')
 const payrollUrl = checkDatabaseUrl('PAYROLL_DATABASE_URL')
 checkPayrollCompanyId()
+checkPayrollHolidayWriter()
 
 if (productionUrl && payrollUrl) {
   const productionTarget = `${productionUrl.hostname}:${productionUrl.port || '3306'}${productionUrl.pathname}`.toLowerCase()

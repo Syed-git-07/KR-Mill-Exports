@@ -26,7 +26,7 @@ import {
   deleteHolidayAction,
 } from '@/app/actions/holiday-list'
 
-export default function HolidayListManagement() {
+export default function HolidayListManagement({ canManageHolidays = false }) {
   const [holidayLists, setHolidayLists] = useState([])
   const [isListModalOpen, setIsListModalOpen] = useState(false)
   const [isEditingList, setIsEditingList] = useState(false)
@@ -264,12 +264,16 @@ export default function HolidayListManagement() {
           <Button variant="outline" size="sm" className="gap-2" onClick={() => handleManageHolidays(item)}>
             <CalendarDays className="h-4 w-4" /> Manage
           </Button>
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => handleEditList(item)}>
-            <Pencil className="h-4 w-4" /> Edit
-          </Button>
-          <Button variant="outline" size="sm" className="gap-2 border-red-600 text-red-600 hover:bg-red-50" onClick={() => handleDeleteList(item)}>
-            <Trash2 className="h-4 w-4" /> Delete
-          </Button>
+          {canManageHolidays && (
+            <>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => handleEditList(item)}>
+                <Pencil className="h-4 w-4" /> Edit
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2 border-red-600 text-red-600 hover:bg-red-50" onClick={() => handleDeleteList(item)}>
+                <Trash2 className="h-4 w-4" /> Delete
+              </Button>
+            </>
+          )}
         </div>
       ),
       statusDisplay: (
@@ -278,14 +282,14 @@ export default function HolidayListManagement() {
         </span>
       ),
     })),
-    [holidayLists]
+    [holidayLists, canManageHolidays]
   )
 
   const holidayColumns = [
     { key: 'date', label: 'Date', width: '140px' },
     { key: 'day', label: 'Day', width: '90px' },
     { key: 'description', label: 'Description', width: 'auto' },
-    { key: 'actions', label: 'Actions', width: '260px' },
+    ...(canManageHolidays ? [{ key: 'actions', label: 'Actions', width: '260px' }] : []),
   ]
 
   const holidayRows = useMemo(
@@ -294,17 +298,19 @@ export default function HolidayListManagement() {
       date: item.date ? format(new Date(item.date), 'yyyy-MM-dd') : '',
       day: item.date ? format(new Date(item.date), 'EEE') : '',
       actions: (
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => handleEditHoliday(item)}>
-            <Pencil className="h-4 w-4" /> Edit
-          </Button>
-          <Button variant="outline" size="sm" className="gap-2 border-red-600 text-red-600 hover:bg-red-50" onClick={() => handleDeleteHoliday(item)}>
-            <Trash2 className="h-4 w-4" /> Delete
-          </Button>
-        </div>
+        canManageHolidays ? (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => handleEditHoliday(item)}>
+              <Pencil className="h-4 w-4" /> Edit
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2 border-red-600 text-red-600 hover:bg-red-50" onClick={() => handleDeleteHoliday(item)}>
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          </div>
+        ) : null
       ),
     })),
-    [holidays]
+    [holidays, canManageHolidays]
   )
 
   const listColumns = [
@@ -313,7 +319,7 @@ export default function HolidayListManagement() {
     { key: 'startDate', label: 'Start Date', width: '130px' },
     { key: 'endDate', label: 'End Date', width: '130px' },
     { key: 'statusDisplay', label: 'Status', width: '110px' },
-    { key: 'actions', label: 'Actions', width: '360px' },
+    { key: 'actions', label: 'Actions', width: canManageHolidays ? '360px' : '140px' },
   ]
 
   return (
@@ -323,12 +329,20 @@ export default function HolidayListManagement() {
           <h1 className="text-2xl font-bold text-blue-600">Holiday List Management</h1>
         </div>
 
-        <div className="flex flex-wrap gap-3 sm:items-center">
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-2" onClick={handleAddList}>
-            <Plus className="h-4 w-4" /> Add Holiday List
-          </Button>
-        </div>
+        {canManageHolidays && (
+          <div className="flex flex-wrap gap-3 sm:items-center">
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-2" onClick={handleAddList}>
+              <Plus className="h-4 w-4" /> Add Holiday List
+            </Button>
+          </div>
+        )}
       </div>
+
+      {!canManageHolidays && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Read-only: Payroll is the configured authoritative holiday writer. Weekly offs and holidays shown here still control production-entry dates.
+        </div>
+      )}
 
       <div>
         <SearchFilter
@@ -396,14 +410,16 @@ export default function HolidayListManagement() {
                 <CalendarDays className="h-4 w-4" />
                 <span>Holiday list holidays</span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-2" onClick={handleAddHoliday}>
-                  <PlusCircle className="h-4 w-4" /> Add Holiday
-                </Button>
-                <Button variant="outline" className="gap-2" onClick={() => setIsImportModalOpen(true)}>
-                  <Download className="h-4 w-4" /> Import Holidays
-                </Button>
-              </div>
+              {canManageHolidays && (
+                <div className="flex flex-wrap gap-2">
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-2" onClick={handleAddHoliday}>
+                    <PlusCircle className="h-4 w-4" /> Add Holiday
+                  </Button>
+                  <Button variant="outline" className="gap-2" onClick={() => setIsImportModalOpen(true)}>
+                    <Download className="h-4 w-4" /> Import Holidays
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">

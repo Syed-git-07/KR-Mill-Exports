@@ -120,7 +120,11 @@ test("every exported application Server Action performs its own authentication c
   assert.ok(actionFiles.length > 0);
   for (const file of actionFiles) {
     const source = await readFile(file, "utf8");
-    assert.match(source, /import \{[^}]*requireUser[^}]*\} from ["']@\/lib\/security\/auth["']/);
+    assert.match(
+      source,
+      /import \{[^}]*(?:requireUser|requireRole)[^}]*\} from ["']@\/lib\/security\/auth["']/,
+      `${file} does not import an authentication or role guard`,
+    );
     assert.doesNotMatch(
       source,
       /^export async function .*\{\r?\n(?!\s+(?:const user = )?await require(?:User|Role)\()/gm,

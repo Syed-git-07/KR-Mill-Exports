@@ -6,6 +6,7 @@ import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPrevio
 import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildSpinningCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
 import {
@@ -279,6 +280,7 @@ export async function getSpinningProductionByDateShift(date, shift) {
 
 // Create new production header
 export async function createSpinningProductionHeader(headerData) {
+  await validateProductionSupervisorIds(headerData?.supervisor_id, headerData?.maisitry_id)
   try {
     const data = await prisma.spinning_production_header.create({
       data: headerData
@@ -293,6 +295,7 @@ export async function createSpinningProductionHeader(headerData) {
 export async function updateSpinningProductionHeader(id, updates) {
   await assertEntryHeaderUnlocked('spinning', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.spinning_production_header.update({
       where: { id },
@@ -2116,42 +2119,13 @@ export async function searchSpinningStoppageReasons(searchTerm = '', limit = 20)
 
 // Get supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      select: {
-        id: true,
-        supervisor_name: true
-      },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // Get maisitries
 export async function getMaisitries() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      select: {
-        id: true,
-        supervisor_name: true
-      },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return (data || []).map(item => ({
-      id: item.id,
-      supervisor_name: item.supervisor_name,
-      maisitry_name: item.supervisor_name
-    }))
-  } catch (error) {
-    throw error
-  }
+  const data = await getActiveProductionSupervisors()
+  return data.map(item => ({ ...item, maisitry_name: item.supervisor_name }))
 }
 
 // Get previous dates in the same shift that contain setup speeds.

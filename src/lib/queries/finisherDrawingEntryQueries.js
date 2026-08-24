@@ -12,6 +12,7 @@ import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtil
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 import { machineLookupWhere } from '../machineLifecycle';
 
@@ -210,6 +211,7 @@ export async function getOrCreateFinisherDrawingHeader(date, shift, supervisorId
   // Get shift-specific time
   const shiftConfig = await getFinisherDrawingShiftConfig(shift)
   const totalTime = shiftConfig.shiftTime
+  await validateProductionSupervisorIds(supervisorId, maisitryId)
 
   // Create new header using raw SQL to avoid timezone issues
   try {
@@ -232,6 +234,7 @@ export async function getOrCreateFinisherDrawingHeader(date, shift, supervisorId
 export async function updateFinisherDrawingHeader(id, updates) {
   await assertEntryHeaderUnlocked('finisherDrawing', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.finisher_drawing_production_header.update({
       where: { id },
@@ -1520,17 +1523,7 @@ export async function getStoppageDetails() {
 
 // Get supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      where: { is_active: true },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // Get mixing options

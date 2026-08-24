@@ -31,6 +31,14 @@ const nullableInteger = (maximum = 2147483647) => z.preprocess(
   ])
 )
 
+const nullablePositiveInteger = (maximum = 2147483647) => z.preprocess(
+  emptyToNull,
+  z.union([
+    z.coerce.number().int('A whole number is required').positive('A valid selection is required').max(maximum),
+    z.null()
+  ])
+)
+
 const nullableUuid = z.preprocess(
   emptyToNull,
   z.union([z.string().uuid('A valid selection is required'), z.null()])
@@ -66,12 +74,17 @@ export const departmentCreateSchema = z.object({
 export const departmentUpdateSchema = departmentCreateSchema.partial()
 
 export const supervisorCreateSchema = z.object({
-  supervisor_name: trimmedString(2, 255),
+  payroll_employee_id: z.coerce.number().int('A payroll employee must be selected').positive('A payroll employee must be selected'),
   department_id: nullableUuid,
   code: nullableInteger().optional(),
   is_active: z.boolean().optional()
 }).strict()
-export const supervisorUpdateSchema = supervisorCreateSchema.partial()
+export const supervisorUpdateSchema = z.object({
+  payroll_employee_id: nullablePositiveInteger().optional(),
+  department_id: nullableUuid.optional(),
+  code: nullableInteger().optional(),
+  is_active: z.boolean().optional()
+}).strict().refine(data => Object.keys(data).length > 0, 'At least one field is required')
 
 export const stoppageHeadCreateSchema = z.object({
   code: nullableInteger().optional(),

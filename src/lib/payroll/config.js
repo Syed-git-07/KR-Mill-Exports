@@ -35,3 +35,21 @@ export function getPayrollCompanyId() {
 
   return companyId
 }
+
+export function getPayrollHolidayWriter() {
+  const writer = String(process.env.PAYROLL_HOLIDAY_WRITER || 'PAYROLL').trim().toUpperCase()
+  if (!['PAYROLL', 'KR_PRODUCTION'].includes(writer)) {
+    throw new Error('PAYROLL_HOLIDAY_WRITER must be PAYROLL or KR_PRODUCTION.')
+  }
+  return writer
+}
+
+export function canKrProductionWritePayrollHolidays() {
+  return getPayrollHolidayWriter() === 'KR_PRODUCTION'
+}
+
+export function assertKrProductionHolidayWriter() {
+  if (!canKrProductionWritePayrollHolidays()) {
+    throw new Error('Holiday data is read-only here because Payroll is the configured authoritative writer.')
+  }
+}

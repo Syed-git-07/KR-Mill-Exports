@@ -30,7 +30,8 @@ test('critical report calculations use the corrected production rules', async ()
   assert.match(lowEfficiency, /filter\(item => item\?\.is_low_efficiency\)/)
   assert.match(particularSider, /Number\(detail\.prodn_effi\)/)
   assert.match(finalReports, /function spinningGps\(rows\)/)
-  assert.match(finalReports, /new Set\(\[row\.sider1Id, row\.sider2Id\]/)
+  assert.match(finalReports, /function siderShares\(record\)/)
+  assert.match(finalReports, /identity\?\.identityStatus !== 'UNASSIGNED'/)
   assert.match(spinningStoppage, /shift === 3 \? 420 : 510/)
   assert.match(waste, /getUpToDateRange\(toDate\)/)
 })
@@ -82,4 +83,16 @@ test('final report boundary normalizes and validates both report dates', async (
   assert.match(finalReports, /reportDate\(toDate, 'To date'\)/)
   assert.match(finalReports, /normalizedFrom > normalizedTo/)
   assert.match(finalReports, /return builder\(normalizedFrom, normalizedTo, employeeId\)/)
+})
+
+test('payroll report reconciliation accounts for mapped, unresolved and unassigned totals', async () => {
+  const [script, packageJson] = await Promise.all([
+    source('scripts/reconcile-payroll-report-totals.js'),
+    source('package.json')
+  ])
+  assert.match(packageJson, /"payroll:reconcile"/)
+  assert.match(script, /assigned_production/)
+  assert.match(script, /unassigned_production/)
+  assert.match(script, /productionDelta/)
+  assert.match(script, /Report identity reconciliation passed/)
 })

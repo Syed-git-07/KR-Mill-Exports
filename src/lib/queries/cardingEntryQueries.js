@@ -7,6 +7,7 @@ import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPrevio
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { machineLookupWhere } from '../machineLifecycle'
 import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
@@ -109,6 +110,7 @@ export async function getOrCreateProductionHeader(date, shift, supervisorId, mai
 
   // Get shift-specific total time from configuration
   const shiftTime = await getCardingShiftTime(shift)
+  await validateProductionSupervisorIds(supervisorId, maisitryId)
 
   // Create new header
   try {
@@ -133,6 +135,7 @@ export async function getOrCreateProductionHeader(date, shift, supervisorId, mai
 export async function updateProductionHeader(id, updates) {
   await assertEntryHeaderUnlocked('carding', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.carding_production_header.update({
       where: { id },
@@ -1399,20 +1402,7 @@ export async function getStoppageDetails() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      select: {
-        id: true,
-        supervisor_name: true
-      },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // ============================================

@@ -15,7 +15,8 @@ const SOURCES = [
   { table: 'lap_former_production_detail', name: 'employee_name', id: 'payroll_employee_id' },
   { table: 'simplex_production_detail', name: 'employee_name', id: 'payroll_employee_id' },
   { table: 'spinning_production_detail', name: 'sider1_name', id: 'sider1_payroll_employee_id' },
-  { table: 'spinning_production_detail', name: 'sider2_name', id: 'sider2_payroll_employee_id' }
+  { table: 'spinning_production_detail', name: 'sider2_name', id: 'sider2_payroll_employee_id' },
+  { table: 'supervisors', name: 'supervisor_name', id: 'payroll_employee_id', activeOnly: true }
 ]
 
 function required(name) {
@@ -68,16 +69,22 @@ async function main() {
 
   try {
     const employees = await payroll.$queryRaw`
-      SELECT id, firstName, middleName, lastName
+      SELECT id, firstName, middleName, lastName, status
       FROM employees
       WHERE companyId = ${companyId}
     `
     const idsByName = new Map()
+    const activeIdsByName = new Map()
     for (const employee of employees) {
       for (const variant of employeeNameVariants(employee)) {
         const ids = idsByName.get(variant) || new Set()
         ids.add(Number(employee.id))
         idsByName.set(variant, ids)
+        if (employee.status === 'Active') {
+          const activeIds = activeIdsByName.get(variant) || new Set()
+          activeIds.add(Number(employee.id))
+          activeIdsByName.set(variant, activeIds)
+        }
       }
     }
 
@@ -98,7 +105,7 @@ async function main() {
       let unmatched = 0
 
       for (const row of rows) {
-        const ids = idsByName.get(normalizedName(row.employee_name))
+        const ids = (source.activeOnly ? activeIdsByName : idsByName).get(normalizedName(row.employee_name))
         if (!ids) {
           unmatched++
         } else if (ids.size !== 1) {

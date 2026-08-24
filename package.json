@@ -21,6 +21,7 @@
     "integrity:masters:check": "node scripts/master-integrity-report.js --summary --check",
     "payroll:backfill": "node scripts/backfill-payroll-employee-ids.js",
     "payroll:verify": "node scripts/verify-payroll-employee-ids.js",
+    "payroll:reconcile": "node scripts/reconcile-payroll-report-totals.js",
     "repair:master-duplicates": "node scripts/repair-master-duplicates.js",
     "repair:master-orphans": "node scripts/repair-master-orphans.js"
   },

@@ -8,6 +8,7 @@ import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 
 // ============================================
@@ -93,6 +94,7 @@ export async function getOrCreateBreakerDrawingHeader(date, shift, supervisorId,
 
   // Get shift configuration for total_time from database
   const shiftConfig = await getBreakerDrawingShiftConfiguration(shift);
+  await validateProductionSupervisorIds(supervisorId, maisitryId);
 
   // Create new header
   try {
@@ -116,6 +118,7 @@ export async function getOrCreateBreakerDrawingHeader(date, shift, supervisorId,
 export async function updateBreakerDrawingHeader(id, updates) {
   await assertEntryHeaderUnlocked('breakerDrawing', id);
   updates = sanitizeEntryHeaderUpdate(updates);
+  await validateProductionSupervisorUpdate(updates);
   const data = await prisma.breaker_drawing_production_header.update({
     where: { id },
     data: updates
@@ -1026,11 +1029,7 @@ export async function getBreakerDrawingStoppageReasons() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  const data = await prisma.supervisors.findMany({
-    where: { is_active: true },
-    orderBy: { supervisor_name: 'asc' }
-  });
-  return data;
+  return getActiveProductionSupervisors();
 }
 
 // ============================================

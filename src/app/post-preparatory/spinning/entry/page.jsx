@@ -623,7 +623,7 @@ function SpinningEntryContent() {
                 <SelectContent>
                   {supervisors.map(sup => (
                     <SelectItem key={sup.id} value={sup.id}>
-                      {sup.supervisor_name}
+                      {sup.supervisor_label || sup.supervisor_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -640,7 +640,7 @@ function SpinningEntryContent() {
                 <SelectContent>
                   {maisitries.map(mai => (
                     <SelectItem key={mai.id} value={mai.id}>
-                      {mai.maisitry_name}
+                      {mai.supervisor_label || mai.maisitry_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
