@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
 
 /**
@@ -67,6 +68,17 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     return []
   }
 
+  const employeeNames = [...new Set(details.map(detail => detail.employee_name).filter(Boolean))]
+  const employeeMasters = await prisma.$queryRaw`
+    SELECT
+      firstName AS emp_name,
+      CAST(biometricEnrollmentId AS CHAR) AS emp_code,
+      dateOfJoining AS doj
+    FROM payroll.employees
+    WHERE firstName IN (${Prisma.join(employeeNames)})
+  `
+  const masterByName = new Map(employeeMasters.map(employee => [employee.emp_name.trim().toLowerCase(), employee]))
+
   // Aggregate by employee
   const employeeMap = {}
 
@@ -81,6 +93,7 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
         totalEfficiency: 0,
         totalUtilization: 0,
         totalWastePercent: 0,
+        metricWeight: 0,
         recordCount: 0
       }
     }
@@ -94,17 +107,37 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     employeeMap[empName].totalEfficiency += efficiency
     employeeMap[empName].totalUtilization += utilization
     employeeMap[empName].totalWastePercent += wastePercent
+    employeeMap[empName].metricWeight += production
     employeeMap[empName].recordCount++
   })
 
-  // Convert to array and calculate averages
-  const employees = Object.values(employeeMap).map(emp => ({
-    name: emp.name,
-    productionKgs: parseFloat(emp.totalProduction.toFixed(2)),
-    efficiencyPercent: emp.recordCount > 0 ? parseFloat((emp.totalEfficiency / emp.recordCount).toFixed(2)) : 0,
-    utilizationPercent: emp.recordCount > 0 ? parseFloat((emp.totalUtilization / emp.recordCount).toFixed(2)) : 0,
-    wastePercent: emp.recordCount > 0 ? parseFloat((emp.totalWastePercent / emp.recordCount).toFixed(2)) : 0
-  }))
+  // The stored row percentages are authoritative. Weight them by production
+  // for a range report so a very small run does not distort a sider's result.
+  details.forEach(detail => {
+    const emp = employeeMap[detail.employee_name]
+    if (!emp) return
+    const production = Number(detail.act_prodn) || 0
+    emp.weightedEfficiency = (emp.weightedEfficiency || 0) + (Number(detail[effiField]) || 0) * production
+    emp.weightedUtilization = (emp.weightedUtilization || 0) + (Number(detail.uti_percent) || 0) * production
+    emp.weightedWaste = (emp.weightedWaste || 0) + (Number(detail.waste_percent) || 0) * production
+  })
+
+  const employees = Object.values(employeeMap).flatMap(emp => {
+    const master = masterByName.get(emp.name.trim().toLowerCase())
+    if (!master) return []
+    const average = (weighted, fallback) => emp.metricWeight > 0
+      ? weighted / emp.metricWeight
+      : (emp.recordCount > 0 ? fallback / emp.recordCount : 0)
+    return [{
+      name: master.emp_name,
+      tokenNo: master.emp_code || '-',
+      doj: master.doj ? master.doj.toISOString() : null,
+      productionKgs: parseFloat(emp.totalProduction.toFixed(2)),
+      efficiencyPercent: parseFloat(average(emp.weightedEfficiency, emp.totalEfficiency).toFixed(2)),
+      utilizationPercent: parseFloat(average(emp.weightedUtilization, emp.totalUtilization).toFixed(2)),
+      wastePercent: parseFloat(average(emp.weightedWaste, emp.totalWastePercent).toFixed(2))
+    }]
+  })
 
   // Sort by production descending
   employees.sort((a, b) => b.productionKgs - a.productionKgs)

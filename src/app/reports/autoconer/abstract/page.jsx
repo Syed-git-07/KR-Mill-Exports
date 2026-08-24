@@ -118,7 +118,7 @@ export default function AutoconerAbstractReport() {
       body: shiftTableBody,
       theme: 'grid',
       styles:     { fontSize: 8, halign: 'center', cellPadding: 2 },
-      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      headStyles: { fillColor: [235, 237, 240], textColor: [24, 32, 42], fontStyle: 'bold', fontSize: 8 },
       columnStyles: {
         0: { halign: 'left', cellWidth: 16 },
         1: { cellWidth: 22 }, 2: { cellWidth: 16 }, 3: { cellWidth: 18 }, 4: { cellWidth: 18 },
@@ -158,7 +158,7 @@ export default function AutoconerAbstractReport() {
       theme: 'grid',
       styles:     { fontSize: 8, halign: 'right', cellPadding: 2 },
       headStyles: {
-        fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8,
+        fillColor: [235, 237, 240], textColor: [24, 32, 42], fontStyle: 'bold', fontSize: 8,
         halign: 'center',
       },
       columnStyles: { 0: { halign: 'left' } },
@@ -189,7 +189,7 @@ export default function AutoconerAbstractReport() {
       theme: 'grid',
       styles:     { fontSize: 8, halign: 'right', cellPadding: 2 },
       headStyles: {
-        fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8,
+        fillColor: [235, 237, 240], textColor: [24, 32, 42], fontStyle: 'bold', fontSize: 8,
         halign: 'center',
       },
       columnStyles: { 0: { halign: 'left' } },
@@ -254,6 +254,7 @@ export default function AutoconerAbstractReport() {
                     mode="single"
                     selected={selectedDate}
                     onSelect={(d) => d && setSelectedDate(d)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -302,7 +303,7 @@ export default function AutoconerAbstractReport() {
                 </div>
                 <table className="min-w-full border-collapse border border-gray-300 text-sm">
                   <thead>
-                    <tr className="bg-blue-600 text-white text-xs">
+                    <tr className="bg-slate-100 text-slate-900 text-xs">
                       <th className="border border-gray-300 px-3 py-2 text-left" rowSpan={2}>SHIFT</th>
                       <th className="border border-gray-300 px-3 py-2 text-center" colSpan={4}>As on Date</th>
                       <th className="border border-gray-300 px-3 py-2 text-center" colSpan={4}>Upto Date</th>
@@ -360,7 +361,7 @@ export default function AutoconerAbstractReport() {
                     </div>
                     <table className="w-full border-collapse border border-gray-300 text-sm">
                       <thead>
-                        <tr className="bg-blue-600 text-white">
+                        <tr className="bg-slate-100 text-slate-900">
                           <th className="border border-gray-300 px-3 py-2 text-left">CountName</th>
                           <th className="border border-gray-300 px-3 py-2 text-right">Prodnkgs</th>
                           <th className="border border-gray-300 px-3 py-2 text-right">Effi</th>
@@ -390,7 +391,7 @@ export default function AutoconerAbstractReport() {
                     </div>
                     <table className="w-full border-collapse border border-gray-300 text-sm">
                       <thead>
-                        <tr className="bg-blue-600 text-white">
+                        <tr className="bg-slate-100 text-slate-900">
                           <th className="border border-gray-300 px-3 py-2 text-left">CountName</th>
                           <th className="border border-gray-300 px-3 py-2 text-right">UProdnkgs</th>
                           <th className="border border-gray-300 px-3 py-2 text-right">UEffi</th>

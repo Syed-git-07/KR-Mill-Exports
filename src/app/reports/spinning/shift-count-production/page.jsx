@@ -127,8 +127,8 @@ export default function SpinningShiftCountProductionReport() {
           valign: 'middle'
         },
         headStyles: {
-          fillColor: [147, 51, 234], // purple-600
-          textColor: 255,
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center'
         },
@@ -239,6 +239,7 @@ export default function SpinningShiftCountProductionReport() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(date) => date && setFromDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -259,6 +260,7 @@ export default function SpinningShiftCountProductionReport() {
                     mode="single"
                     selected={toDate}
                     onSelect={(date) => date && setToDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -292,7 +294,7 @@ export default function SpinningShiftCountProductionReport() {
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse border border-gray-300">
                 <thead>
-                  <tr className="bg-purple-600 text-white">
+                  <tr className="bg-slate-100 text-slate-900">
                     <th className="border border-gray-300 px-4 py-2">Date</th>
                     <th className="border border-gray-300 px-4 py-2">Shift</th>
                     {reportData.uniqueCounts.map((count, index) => (

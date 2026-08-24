@@ -115,9 +115,8 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
   headers.forEach(header => {
     const shiftDetails = details.filter(d => d.header_id === header.id)
 
-    // Get all machines with efficiency data (both above and below target)
-    // Color coding: Red if below target, Green if above target
-    const allMachines = shiftDetails
+    // Use the dated target snapshot and include only machines below target.
+    const lowEfficiencyMachines = shiftDetails
       .map(detail => {
         const machine = machineMap[detail.machine_id]
         if (!machine) return null
@@ -157,17 +156,17 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         }
         return null
       })
-      .filter(item => item !== null)
+      .filter(item => item?.is_low_efficiency)
       .sort((a, b) => {
         // Sort by machine number (natural sort to handle AC1-1, AC1-2, AC10-1 correctly)
         return a.machine_no.localeCompare(b.machine_no, undefined, { numeric: true })
       })
 
-    if (allMachines.length > 0) {
+    if (lowEfficiencyMachines.length > 0) {
       shiftData.push({
         shift: header.shift,
         supervisor_name: supervisorMap[header.supervisor_id] || 'Not Assigned',
-        machines: allMachines
+        machines: lowEfficiencyMachines
       })
     }
   })

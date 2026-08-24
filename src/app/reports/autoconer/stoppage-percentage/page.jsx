@@ -162,8 +162,8 @@ export default function AutoconerStoppagePercentageReport() {
           valign: 'middle',
         },
         headStyles: {
-          fillColor: [37, 99, 235],   // blue-600
-          textColor: 255,
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center',
         },
@@ -254,6 +254,7 @@ export default function AutoconerStoppagePercentageReport() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(d) => d && setFromDate(d)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -275,6 +276,7 @@ export default function AutoconerStoppagePercentageReport() {
                     mode="single"
                     selected={toDate}
                     onSelect={(d) => d && setToDate(d)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -321,7 +323,7 @@ export default function AutoconerStoppagePercentageReport() {
 
               <table className="min-w-full border-collapse border border-gray-300 text-sm">
                 <thead>
-                  <tr className="bg-blue-600 text-white">
+                  <tr className="bg-slate-100 text-slate-900">
                     <th className="border border-gray-300 px-2 py-2 text-center w-12">SL No</th>
                     <th className="border border-gray-300 px-2 py-2 text-center w-16"></th>
                     <th className="border border-gray-300 px-3 py-2 text-left">Reasons</th>

@@ -622,7 +622,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     </td>
                     {/* Util % (Calculated) */}
                     <td className="border border-gray-300 px-2 py-1 text-right font-medium tabular-nums whitespace-nowrap text-indigo-600">
-                      {row.uti_percent != null ? Number(row.uti_percent).toFixed(2) : '0.00'}
+                      {row.uti_percent != null ? Number(row.uti_percent).toFixed(3) : '0.000'}
                     </td>
                     {/* Run Time (from shift config - updates when shift changes) */}
                     <td className="border border-gray-300 px-2 py-1 text-right font-medium text-blue-600 bg-blue-50 tabular-nums whitespace-nowrap">

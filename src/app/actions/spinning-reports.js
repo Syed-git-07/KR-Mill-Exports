@@ -20,16 +20,18 @@ function normalizeDate(dateString) {
  * @param {string} selectedDate - Date in YYYY-MM-DD format
  * @returns {Promise<Object>} Report data with stoppage details by category
  */
-export async function generateSpinningStoppageReportAction(selectedDate) {
+export async function generateSpinningStoppageReportAction(selectedDate, selectedToDate = selectedDate) {
   await requireUser()
   try {
     const normalizedDate = normalizeDate(selectedDate)
+    const normalizedToDate = normalizeDate(selectedToDate)
     
-    const reportData = await generateSpinningStoppageReport(normalizedDate)
+    const reportData = await generateSpinningStoppageReport(normalizedDate, normalizedToDate)
     
     // Convert dates to ISO strings for JSON serialization
     if (reportData.success && reportData.date) {
       reportData.date = new Date(reportData.date).toISOString()
+      reportData.toDate = new Date(reportData.toDate || reportData.date).toISOString()
     }
     
     return reportData

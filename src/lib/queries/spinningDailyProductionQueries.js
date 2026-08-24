@@ -44,9 +44,11 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
         h.shift,
         m.machine_no,
         m.sort_order,
+        d.count_name,
         d.exp_gps,
         d.gps as achieved_gps,
         d.act_prodn,
+        d.waste as waste_kg,
         d.waste_percent,
         COALESCE(se.total_stoppage_time, d.total_stoppage_mins, 0) as total_stoppage_mins
       FROM spinning_production_header h
@@ -67,16 +69,18 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
         machineMap.set(machineNo, {
           machineNo: machineNo,
           sortOrder: row.sort_order || 0,
+          counts: new Set(),
           shifts: {
-            1: { expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 },
-            2: { expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 },
-            3: { expGps: 0, achievedGps: 0, production: 0, waste: 0, stoppage: 0 }
+            1: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0 },
+            2: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0 },
+            3: { expGps: 0, achievedGps: 0, production: 0, waste: 0, wasteKg: 0, stoppage: 0 }
           }
         })
       }
       
       const machine = machineMap.get(machineNo)
       const shift = row.shift
+      if (row.count_name) machine.counts.add(row.count_name)
       
       if (shift >= 1 && shift <= 3) {
         machine.shifts[shift] = {
@@ -84,6 +88,7 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
           achievedGps: row.achieved_gps !== null ? parseFloat(row.achieved_gps) : 0,
           production: row.act_prodn !== null ? parseFloat(row.act_prodn) : 0,
           waste: row.waste_percent !== null ? parseFloat(row.waste_percent) : 0,
+          wasteKg: row.waste_kg !== null ? parseFloat(row.waste_kg) : 0,
           stoppage: row.total_stoppage_mins !== null ? parseInt(row.total_stoppage_mins) : 0
         }
       }
@@ -105,17 +110,19 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
       // Calculate totals for this machine
       const totalProduction = shift1.production + shift2.production + shift3.production
       
-      // Calculate average waste (average of all 3 shifts, treating 0 as 0)
-      const avgWaste = (shift1.waste + shift2.waste + shift3.waste) / 3
+      const totalWasteKg = shift1.wasteKg + shift2.wasteKg + shift3.wasteKg
+      const avgWaste = totalProduction > 0 ? (totalWasteKg / totalProduction) * 100 : 0
 
       // Total stoppage minutes
       const totalStoppage = shift1.stoppage + shift2.stoppage + shift3.stoppage
 
       // Calculate average achieved GPS (average of all 3 shifts)
-      const avgAchievedGps = (shift1.achievedGps + shift2.achievedGps + shift3.achievedGps) / 3
+      const achievedValues = [shift1.achievedGps, shift2.achievedGps, shift3.achievedGps].filter(value => value > 0)
+      const avgAchievedGps = achievedValues.length ? achievedValues.reduce((sum, value) => sum + value, 0) / achievedValues.length : 0
 
       machineData.push({
         machineNo: machine.machineNo,
+        countName: [...machine.counts].join(', ') || 'UNSPECIFIED',
         sortOrder: machine.sortOrder,
         // Expected GPS
         expGpsShift1: shift1.expGps,
@@ -152,6 +159,8 @@ export async function fetchSpinningDailyProductionReport(reportDate) {
 
     // Sort by sort_order and machine_no
     machineData.sort((a, b) => {
+      const countCompare = a.countName.localeCompare(b.countName, undefined, { numeric: true })
+      if (countCompare !== 0) return countCompare
       if (a.sortOrder !== b.sortOrder) {
         return a.sortOrder - b.sortOrder
       }

@@ -254,6 +254,7 @@ export default function SiderMonthlyReport() {
                     mode="single"
                     selected={fromDate}
                     onSelect={setFromDate}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -275,6 +276,7 @@ export default function SiderMonthlyReport() {
                     mode="single"
                     selected={toDate}
                     onSelect={setToDate}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>

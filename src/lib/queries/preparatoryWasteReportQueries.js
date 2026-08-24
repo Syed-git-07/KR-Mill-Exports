@@ -84,7 +84,7 @@ async function getDepartmentWasteData(departmentCode, fromDate, toDate) {
 }
 
 /**
- * Get "Up to" date range (from start of month to day before selected date)
+ * Get the inclusive month-to-date range ending on the selected date.
  */
 function getUpToDateRange(selectedDate) {
   const date = new Date(selectedDate)
@@ -92,18 +92,16 @@ function getUpToDateRange(selectedDate) {
   // Start of month in UTC
   const startOfMonth = new Date(Date.UTC(date.getFullYear(), date.getMonth(), 1, 0, 0, 0))
   
-  // Day before selected date in UTC
-  const dayBefore = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate() - 1, 23, 59, 59))
+  const selectedDayEnd = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59))
   
-  return { from: startOfMonth, to: dayBefore }
+  return { from: startOfMonth, to: selectedDayEnd }
 }
 
 /**
  * Generate Preparatory Waste Abstract Report
  */
 export async function generatePreparatoryWasteReport(fromDate, toDate) {
-  // Calculate "Up to" date range (from start of month to day before fromDate)
-  const upToRange = getUpToDateRange(fromDate)
+  const upToRange = getUpToDateRange(toDate)
 
   const reportData = {
     period: {

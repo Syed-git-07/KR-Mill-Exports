@@ -14,6 +14,18 @@ import { generatePreparatoryWasteReportAction } from '@/app/actions/preparatory-
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+function WasteRow({ department, total = false }) {
+  return (
+    <tr className={total ? 'bg-gray-100 font-bold' : ''}>
+      <td className="border border-gray-300 px-3 py-2 print:border-black">{department.department}</td>
+      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{department.wasteKgs.toFixed(2)}</td>
+      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{department.wastePercent.toFixed(2)}</td>
+      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{department.wasteKgsUpto.toFixed(2)}</td>
+      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{department.wastePercentUpto.toFixed(2)}</td>
+    </tr>
+  )
+}
+
 /**
  * Preparatory Waste Abstract Report Page
  * Displays waste analysis by department with "Up to" and "Period" columns
@@ -84,34 +96,28 @@ export default function PreparatoryWasteReportPage() {
       doc.text(periodText, pageWidth / 2, yPosition, { align: 'center' })
       yPosition += 10
 
-      // Preparatory Section
-      doc.setFontSize(12)
-      doc.setFont('helvetica', 'bold')
-      doc.text('PREPARATORY', 14, yPosition)
-      yPosition += 5
-
-      // Preparatory table data
-      const prepData = reportData.preparatory.map(dept => [
-        dept.department,
-        dept.wasteKgsUpto.toFixed(2),
-        dept.wastePercentUpto.toFixed(2),
-        dept.wasteKgs.toFixed(2),
-        dept.wastePercent.toFixed(2)
+      const prepRows = reportData.preparatory.map(dept => [
+        dept.department, dept.wasteKgs.toFixed(2), dept.wastePercent.toFixed(2),
+        dept.wasteKgsUpto.toFixed(2), dept.wastePercentUpto.toFixed(2)
       ])
-
-      // Add preparatory total
-      prepData.push([
-        'TOTAL',
-        reportData.preparatoryTotal.wasteKgsUpto.toFixed(2),
-        reportData.preparatoryTotal.wastePercentUpto.toFixed(2),
-        reportData.preparatoryTotal.wasteKgs.toFixed(2),
-        reportData.preparatoryTotal.wastePercent.toFixed(2)
-      ])
+      const tableData = [
+        ...prepRows,
+        [
+          'TOTAL', reportData.preparatoryTotal.wasteKgs.toFixed(2),
+          reportData.preparatoryTotal.wastePercent.toFixed(2),
+          reportData.preparatoryTotal.wasteKgsUpto.toFixed(2),
+          reportData.preparatoryTotal.wastePercentUpto.toFixed(2)
+        ],
+        ...reportData.postPreparatory.map(dept => [
+          dept.department, dept.wasteKgs.toFixed(2), dept.wastePercent.toFixed(2),
+          dept.wasteKgsUpto.toFixed(2), dept.wastePercentUpto.toFixed(2)
+        ])
+      ]
 
       autoTable(doc, {
         startY: yPosition,
-        head: [['Department', 'Waste Kgs (Up to)', 'Waste % (Up to)', 'Waste Kgs', 'Waste %']],
-        body: prepData,
+        head: [['Department', 'Waste Kgs', 'Waste %', 'Up To Waste Kgs', 'Up To Waste %']],
+        body: tableData,
         theme: 'grid',
         headStyles: {
           fillColor: [220, 220, 220],
@@ -130,89 +136,12 @@ export default function PreparatoryWasteReportPage() {
           fontSize: 9
         },
         margin: { left: 14, right: 14 },
-        didParseCell: function(data) {
-          if (data.row.index === prepData.length - 1) {
+        didParseCell(data) {
+          if (data.row.index === prepRows.length) {
             data.cell.styles.fontStyle = 'bold'
             data.cell.styles.fillColor = [240, 240, 240]
           }
         }
-      })
-
-      yPosition = doc.lastAutoTable.finalY + 10
-
-      // Post Preparatory Section
-      doc.setFontSize(12)
-      doc.setFont('helvetica', 'bold')
-      doc.text('POST PREPARATORY', 14, yPosition)
-      yPosition += 5
-
-      // Post preparatory table data
-      const postPrepData = reportData.postPreparatory.map(dept => [
-        dept.department,
-        dept.wasteKgsUpto.toFixed(2),
-        dept.wastePercentUpto.toFixed(2),
-        dept.wasteKgs.toFixed(2),
-        dept.wastePercent.toFixed(2)
-      ])
-
-      autoTable(doc, {
-        startY: yPosition,
-        head: [['Department', 'Waste Kgs (Up to)', 'Waste % (Up to)', 'Waste Kgs', 'Waste %']],
-        body: postPrepData,
-        theme: 'grid',
-        headStyles: {
-          fillColor: [220, 220, 220],
-          textColor: [0, 0, 0],
-          fontStyle: 'bold',
-          halign: 'center'
-        },
-        columnStyles: {
-          0: { halign: 'left', cellWidth: 60 },
-          1: { halign: 'right', cellWidth: 30 },
-          2: { halign: 'right', cellWidth: 30 },
-          3: { halign: 'right', cellWidth: 30 },
-          4: { halign: 'right', cellWidth: 30 }
-        },
-        bodyStyles: {
-          fontSize: 9
-        },
-        margin: { left: 14, right: 14 }
-      })
-
-      yPosition = doc.lastAutoTable.finalY + 10
-
-      // Grand Total
-      const grandTotalData = [[
-        'GRAND TOTAL',
-        reportData.grandTotal.wasteKgsUpto.toFixed(2),
-        reportData.grandTotal.wastePercentUpto.toFixed(2),
-        reportData.grandTotal.wasteKgs.toFixed(2),
-        reportData.grandTotal.wastePercent.toFixed(2)
-      ]]
-
-      autoTable(doc, {
-        startY: yPosition,
-        head: [['', 'Waste Kgs (Up to)', 'Waste % (Up to)', 'Waste Kgs', 'Waste %']],
-        body: grandTotalData,
-        theme: 'grid',
-        headStyles: {
-          fillColor: [220, 220, 220],
-          textColor: [0, 0, 0],
-          fontStyle: 'bold',
-          halign: 'center'
-        },
-        columnStyles: {
-          0: { halign: 'left', cellWidth: 60, fontStyle: 'bold' },
-          1: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
-          2: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
-          3: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
-          4: { halign: 'right', cellWidth: 30, fontStyle: 'bold' }
-        },
-        bodyStyles: {
-          fontSize: 9,
-          fillColor: [250, 250, 250]
-        },
-        margin: { left: 14, right: 14 }
       })
 
       yPosition = doc.lastAutoTable.finalY + 15
@@ -298,6 +227,7 @@ export default function PreparatoryWasteReportPage() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(date) => date && setFromDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -325,6 +255,7 @@ export default function PreparatoryWasteReportPage() {
                     mode="single"
                     selected={toDate}
                     onSelect={(date) => date && setToDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -383,88 +314,27 @@ export default function PreparatoryWasteReportPage() {
                 </p>
               </div>
 
-              {/* PREPARATORY Section */}
-              <div>
-                <h3 className="text-lg font-bold uppercase mb-3 text-blue-700">PREPARATORY</h3>
+              <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="bg-gray-100 print:bg-gray-200">
                       <th className="border border-gray-300 px-3 py-2 text-left print:border-black">Department</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste Kgs<br/>(Up to)</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste %<br/>(Up to)</th>
                       <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste Kgs</th>
                       <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste %</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Up To Waste Kgs</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Up To Waste %</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {reportData.preparatory.map((dept, idx) => (
-                      <tr key={idx}>
-                        <td className="border border-gray-300 px-3 py-2 print:border-black">{dept.department}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wasteKgsUpto.toFixed(2)}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wastePercentUpto.toFixed(2)}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wasteKgs.toFixed(2)}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wastePercent.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                    {/* Preparatory Total */}
-                    <tr className="bg-blue-50 font-bold print:bg-gray-100">
-                      <td className="border border-gray-300 px-3 py-2 print:border-black">TOTAL</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.preparatoryTotal.wasteKgsUpto.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.preparatoryTotal.wastePercentUpto.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.preparatoryTotal.wasteKgs.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.preparatoryTotal.wastePercent.toFixed(2)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* POST PREPARATORY Section */}
-              <div>
-                <h3 className="text-lg font-bold uppercase mb-3 text-purple-700">POST PREPARATORY</h3>
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-gray-100 print:bg-gray-200">
-                      <th className="border border-gray-300 px-3 py-2 text-left print:border-black">Department</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste Kgs<br/>(Up to)</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste %<br/>(Up to)</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste Kgs</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reportData.postPreparatory.map((dept, idx) => (
-                      <tr key={idx}>
-                        <td className="border border-gray-300 px-3 py-2 print:border-black">{dept.department}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wasteKgsUpto.toFixed(2)}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wastePercentUpto.toFixed(2)}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wasteKgs.toFixed(2)}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{dept.wastePercent.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* GRAND TOTAL */}
-              <div>
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-gray-100 print:bg-gray-200">
-                      <th className="border border-gray-300 px-3 py-2 text-left print:border-black"></th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste Kgs<br/>(Up to)</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste %<br/>(Up to)</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste Kgs</th>
-                      <th className="border border-gray-300 px-3 py-2 text-right print:border-black">Waste %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="bg-yellow-50 font-bold text-base print:bg-gray-200">
-                      <td className="border border-gray-300 px-3 py-2 print:border-black">GRAND TOTAL</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.grandTotal.wasteKgsUpto.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.grandTotal.wastePercentUpto.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.grandTotal.wasteKgs.toFixed(2)}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-right print:border-black">{reportData.grandTotal.wastePercent.toFixed(2)}</td>
-                    </tr>
+                    {reportData.preparatory.map((dept) => <WasteRow key={dept.department} department={dept} />)}
+                    <WasteRow department={{
+                      department: 'TOTAL',
+                      wasteKgs: reportData.preparatoryTotal.wasteKgs,
+                      wastePercent: reportData.preparatoryTotal.wastePercent,
+                      wasteKgsUpto: reportData.preparatoryTotal.wasteKgsUpto,
+                      wastePercentUpto: reportData.preparatoryTotal.wastePercentUpto
+                    }} total />
+                    {reportData.postPreparatory.map((dept) => <WasteRow key={dept.department} department={dept} />)}
                   </tbody>
                 </table>
               </div>

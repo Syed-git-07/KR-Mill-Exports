@@ -1667,12 +1667,14 @@ export function calculateAutoconerProductionValues(actProdn, wasteKg, idleDrum, 
   // Calculate Production Efficiency (UTI %) = (Work Time / Run Time) × Drum Efficiency
   const prodnEffi = runTime > 0 ? (workTime / runTime) * drumEfficiency : 0
 
-  // Calculate Util % = (Work Time / Total Time) × 100
-  const utiPercent = runTime > 0 ? (workTime / runTime) * 100 : 0
+  // UTI % = (effective run time / total shift time) × (1 - idle drums / total drums) × 100
+  const utiPercent = runTime > 0
+    ? (workTime / runTime) * (1 - (totalDrums > 0 ? effectiveIdleDrum / totalDrums : 0)) * 100
+    : 0
 
   return {
     waste_percent: wastePercent === null ? null : Math.round(wastePercent * 100) / 100,
-    uti_percent: Math.round(utiPercent * 100) / 100,
+    uti_percent: Math.round(utiPercent * 1000) / 1000,
     prodn_effi: Math.round(prodnEffi * 100) / 100,
     work_time: workTime,
     run_time: runTime,

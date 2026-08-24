@@ -25,20 +25,20 @@ import autoTable from 'jspdf-autotable'
  * Displays stopped spindles and percentages by category and shift
  */
 export default function SpinningStoppageReportPage() {
-  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [fromDate, setFromDate] = useState(new Date())
+  const [toDate, setToDate] = useState(new Date())
   const [reportData, setReportData] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
 
   const handleGenerateReport = async () => {
-    if (!selectedDate) {
-      toast.error('Please select a date')
+    if (!fromDate || !toDate || fromDate > toDate) {
+      toast.error('Select a valid From and To date')
       return
     }
 
     setIsLoading(true)
     try {
-      const formattedDate = format(selectedDate, 'yyyy-MM-dd')
-      const data = await generateSpinningStoppageReportAction(formattedDate)
+      const data = await generateSpinningStoppageReportAction(format(fromDate, 'yyyy-MM-dd'), format(toDate, 'yyyy-MM-dd'))
       
       if (!data.success) {
         toast.error(data.message || 'No data found for the selected date')
@@ -83,7 +83,7 @@ export default function SpinningStoppageReportPage() {
 
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      doc.text(`Date: ${format(new Date(reportData.date), 'dd-MM-yyyy')}`, pageWidth / 2, yPos, { align: 'center' })
+      doc.text(`From ${format(new Date(reportData.date), 'dd-MM-yyyy')} To ${format(new Date(reportData.toDate || reportData.date), 'dd-MM-yyyy')}`, pageWidth / 2, yPos, { align: 'center' })
       yPos += 10
 
       // Build table data
@@ -159,8 +159,8 @@ export default function SpinningStoppageReportPage() {
         body: tableData,
         theme: 'grid',
         headStyles: {
-          fillColor: [124, 58, 237], // purple-600
-          textColor: 255,
+          fillColor: [235, 237, 240],
+          textColor: [24, 32, 42],
           fontStyle: 'bold',
           halign: 'center'
         },
@@ -199,7 +199,7 @@ export default function SpinningStoppageReportPage() {
       yPos += 5
       doc.text('AM(P)          GM          MD', pageWidth / 2, yPos, { align: 'center' })
 
-      const filename = `Spinning_Stoppage_${format(new Date(reportData.date), 'dd-MM-yyyy')}.pdf`
+      const filename = `Spinning_Stoppage_${format(new Date(reportData.date), 'dd-MM-yyyy')}_to_${format(new Date(reportData.toDate || reportData.date), 'dd-MM-yyyy')}.pdf`
       doc.save(filename)
       toast.success('PDF downloaded successfully')
     } catch (error) {
@@ -241,27 +241,43 @@ export default function SpinningStoppageReportPage() {
           <div className="flex flex-wrap items-end gap-4">
             {/* Date Picker */}
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Select Date</label>
+              <label className="text-sm font-medium">From Date</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
                       'w-50 justify-start text-left font-normal',
-                      !selectedDate && 'text-muted-foreground'
+                      !fromDate && 'text-muted-foreground'
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, 'dd-MMM-yyyy') : <span>Pick a date</span>}
+                    {fromDate ? format(fromDate, 'dd-MMM-yyyy') : <span>Pick a date</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
-                    selected={selectedDate}
-                    onSelect={(date) => date && setSelectedDate(date)}
+                    selected={fromDate}
+                    onSelect={(date) => date && setFromDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">To Date</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn('w-50 justify-start text-left font-normal', !toDate && 'text-muted-foreground')}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {toDate ? format(toDate, 'dd-MMM-yyyy') : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={toDate} onSelect={(date) => date && setToDate(date)} captionLayout="dropdown" initialFocus />
                 </PopoverContent>
               </Popover>
             </div>
@@ -269,7 +285,7 @@ export default function SpinningStoppageReportPage() {
             {/* Generate Button */}
             <Button 
               onClick={handleGenerateReport}
-              disabled={isLoading || !selectedDate}
+              disabled={isLoading || !fromDate || !toDate || fromDate > toDate}
               className="bg-purple-600 hover:bg-purple-700"
             >
               <FileText className="mr-2 h-4 w-4" />
@@ -300,14 +316,14 @@ export default function SpinningStoppageReportPage() {
           <div className="text-center mb-6 pb-4 border-b print:border-black">
             <h1 className="text-2xl font-bold mb-1">Kayaar Exports Private Limited</h1>
             <h2 className="text-xl font-semibold mb-2">Spinning Stoppage Percentage Report</h2>
-            <p className="text-sm font-medium">Date: {format(new Date(reportData.date), 'dd-MM-yyyy')}</p>
+            <p className="text-sm font-medium">From {format(new Date(reportData.date), 'dd-MM-yyyy')} To {format(new Date(reportData.toDate || reportData.date), 'dd-MM-yyyy')}</p>
           </div>
 
           {/* Detailed Stoppage Table */}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse border border-gray-300 text-sm">
               <thead>
-                <tr className="bg-purple-600 text-white">
+                <tr className="bg-slate-100 text-slate-900">
                   <th className="border border-gray-300 px-2 py-2 w-16" rowSpan="2">SL No</th>
                   <th className="border border-gray-300 px-3 py-2 text-left" rowSpan="2">Reasons</th>
                   <th className="border border-gray-300 px-2 py-2" colSpan="2">I Shift</th>
@@ -315,7 +331,7 @@ export default function SpinningStoppageReportPage() {
                   <th className="border border-gray-300 px-2 py-2" colSpan="2">III Shift</th>
                   <th className="border border-gray-300 px-2 py-2" colSpan="2">Total</th>
                 </tr>
-                <tr className="bg-purple-600 text-white">
+                <tr className="bg-slate-100 text-slate-900">
                   <th className="border border-gray-300 px-2 py-1 text-xs">Spl</th>
                   <th className="border border-gray-300 px-2 py-1 text-xs">%</th>
                   <th className="border border-gray-300 px-2 py-1 text-xs">Spl</th>

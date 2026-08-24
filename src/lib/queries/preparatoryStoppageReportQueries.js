@@ -155,6 +155,18 @@ async function getDepartmentStoppageData(
   // Track unique shift times (to avoid counting same machine multiple times)
   const shiftTimeTracker = {}
 
+  // Every production detail contributes to available machine time, including
+  // details that correctly have no stoppage-entry row.
+  details.forEach(detail => {
+    const header = headerMap[detail.header_id]
+    if (!header) return
+    const shiftKey = `shift_${header.shift}`
+    if (!shiftTimeTracker[shiftKey]) {
+      shiftTimeTracker[shiftKey] = { count: 0, timePerMachine: shiftTimeMap[header.shift] || 510 }
+    }
+    shiftTimeTracker[shiftKey].count++
+  })
+
   stoppages.forEach(stoppage => {
     const detail = detailMap[stoppage.production_detail_id]
     if (!detail) return
@@ -163,18 +175,6 @@ async function getDepartmentStoppageData(
     if (!header) return
 
     const shift = header.shift
-    const shiftTime = shiftTimeMap[shift] || 510
-    
-    // Track shift time only once per production detail
-    const shiftKey = `shift_${shift}`
-    if (!shiftTimeTracker[shiftKey]) {
-      shiftTimeTracker[shiftKey] = { count: 0, timePerMachine: shiftTime }
-    }
-    if (!shiftTimeTracker[shiftKey][detail.id]) {
-      shiftTimeTracker[shiftKey][detail.id] = true
-      shiftTimeTracker[shiftKey].count++
-    }
-
     // Process each of the 4 stoppage slots
     for (let i = 1; i <= 4; i++) {
       const stoppageId = stoppage[`stoppage${i}_id`]
@@ -379,15 +379,21 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
       const percentages = calculatePercentages(aggregated)
 
       // Calculate department net total
-      let deptNetTotal = 0
+      const netTotals = { shift1: 0, shift2: 0, shift3: 0, total: 0 }
       Object.values(percentages).forEach(categoryData => {
-        deptNetTotal += categoryData.categoryTotal.total
+        netTotals.shift1 += categoryData.categoryTotal.shift1
+        netTotals.shift2 += categoryData.categoryTotal.shift2
+        netTotals.shift3 += categoryData.categoryTotal.shift3
+        netTotals.total += categoryData.categoryTotal.total
       })
 
       report.departments[dept.name] = {
         code: dept.code,
         categories: percentages,
-        netTotal: parseFloat(deptNetTotal.toFixed(2))
+        netTotal: parseFloat(netTotals.total.toFixed(2)),
+        netTotals: Object.fromEntries(
+          Object.entries(netTotals).map(([key, value]) => [key, parseFloat(value.toFixed(2))])
+        )
       }
     } catch(error) {
       console.error(`Error processing ${dept.name}:`, error)
@@ -395,6 +401,7 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
         code: dept.code,
         categories: {},
         netTotal: 0,
+        netTotals: { shift1: 0, shift2: 0, shift3: 0, total: 0 },
         error: 'This department could not be included in the report.'
       }
     }

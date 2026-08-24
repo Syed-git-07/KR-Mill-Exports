@@ -182,12 +182,24 @@ export default function PreparatoryStoppageReportPage() {
           yPosition = doc.lastAutoTable.finalY + 6
         })
 
-        // Department Net Total
-        doc.setFontSize(11)
-        doc.setFont('helvetica', 'bold')
-        const netTotalText = `${deptName.toUpperCase()} NET TOTAL: ${deptData.netTotal.toFixed(2)}`
-        doc.text(netTotalText, pageWidth - 14, yPosition, { align: 'right' })
-        yPosition += 10
+        const net = deptData.netTotals || { shift1: 0, shift2: 0, shift3: 0, total: deptData.netTotal }
+        autoTable(doc, {
+          startY: yPosition,
+          body: [[
+            '', `${deptName.toUpperCase()} NET TOTAL`,
+            net.shift1.toFixed(2), net.shift2.toFixed(2),
+            net.shift3.toFixed(2), net.total.toFixed(2)
+          ]],
+          theme: 'grid',
+          styles: { fontSize: 9, fontStyle: 'bold', cellPadding: 1.5 },
+          columnStyles: {
+            0: { cellWidth: 15 }, 1: { cellWidth: 70 },
+            2: { halign: 'right', cellWidth: 20 }, 3: { halign: 'right', cellWidth: 20 },
+            4: { halign: 'right', cellWidth: 20 }, 5: { halign: 'right', cellWidth: 20 }
+          },
+          margin: { left: 14, right: 14 }
+        })
+        yPosition = doc.lastAutoTable.finalY + 8
       })
 
       // Signatories
@@ -271,6 +283,7 @@ export default function PreparatoryStoppageReportPage() {
                     mode="single"
                     selected={fromDate}
                     onSelect={(date) => date && setFromDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -298,6 +311,7 @@ export default function PreparatoryStoppageReportPage() {
                     mode="single"
                     selected={toDate}
                     onSelect={(date) => date && setToDate(date)}
+                    captionLayout="dropdown"
                     initialFocus
                   />
                 </PopoverContent>
@@ -432,9 +446,15 @@ export default function PreparatoryStoppageReportPage() {
                   })}
 
                   {/* Department Net Total */}
-                  <div className="text-right font-bold text-lg">
-                    <strong>{deptName.toUpperCase()} NET TOTAL:</strong> {deptData.netTotal.toFixed(2)}
-                  </div>
+                  <table className="ml-auto border-collapse text-sm font-bold">
+                    <tbody><tr className="bg-gray-100">
+                      <td className="border border-gray-300 px-3 py-2">{deptName.toUpperCase()} NET TOTAL</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">{(deptData.netTotals?.shift1 || 0).toFixed(2)}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">{(deptData.netTotals?.shift2 || 0).toFixed(2)}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">{(deptData.netTotals?.shift3 || 0).toFixed(2)}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">{(deptData.netTotals?.total ?? deptData.netTotal).toFixed(2)}</td>
+                    </tr></tbody>
+                  </table>
                 </div>
               ))}
 
