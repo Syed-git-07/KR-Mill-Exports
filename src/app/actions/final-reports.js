@@ -28,9 +28,22 @@ export async function generateFinalReportAction(reportKey, from, to, employeeNam
   }
 }
 
-export async function listFinalReportEmployeesAction() {
+export async function listFinalReportEmployeesAction(reportKey) {
   await requireUser()
   try {
+    if (reportKey === 'preparatory-particular-sider') {
+      const employees = await prisma.$queryRaw`
+        SELECT
+          e.firstName AS name,
+          e.biometricEnrollmentId AS code,
+          d.departmentname AS department
+        FROM payroll.employees e
+        JOIN payroll.departments d ON d.id = e.departmentId
+        ORDER BY e.firstName ASC
+      `
+      return { success: true, data: employees.map(employee => ({ name: employee.name || '', code: employee.code ? String(employee.code) : '', department: employee.department || '' })) }
+    }
+
     const employees = await prisma.employee_master.findMany({
       where: { is_active: true },
       select: { emp_name: true, emp_code: true, department: true },

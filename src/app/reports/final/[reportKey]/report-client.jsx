@@ -44,10 +44,10 @@ export default function FinalReportClient({ reportKey, config }) {
 
   useEffect(() => {
     if (!config.requiresEmployee) return
-    listFinalReportEmployeesAction().then(result => {
+    listFinalReportEmployeesAction(reportKey).then(result => {
       if (result.success) setEmployees(result.data)
     })
-  }, [config.requiresEmployee])
+  }, [config.requiresEmployee, reportKey])
 
   async function generate() {
     setLoading(true)

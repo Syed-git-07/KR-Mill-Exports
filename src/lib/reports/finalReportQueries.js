@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { generatePreparatoryStoppageReport } from '@/lib/queries/preparatoryStoppageReportQueries'
 import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageReportQueries'
@@ -222,12 +223,26 @@ async function preparatoryAbstract(fromDate, toDate) {
   return report
 }
 
+async function payrollEmployeeMap(names) {
+  const uniqueNames = [...new Set(names.filter(Boolean))]
+  if (!uniqueNames.length) return new Map()
+  const employees = await prisma.$queryRaw`
+    SELECT
+      firstName AS emp_name,
+      CAST(biometricEnrollmentId AS CHAR) AS emp_code,
+      dateOfJoining AS doj
+    FROM payroll.employees
+    WHERE firstName IN (${Prisma.join(uniqueNames)})
+  `
+  return new Map(employees.map(employee => [employee.emp_name.trim().toLowerCase(), employee]))
+}
+
 async function preparatoryParticularSider(fromDate, toDate, employeeName) {
   const report = baseReport('Preparatory Particular Sider Report', fromDate, toDate)
   const records = (await getPreparatoryRecords(fromDate, toDate)).filter(row => row.employeeName.toLowerCase() === employeeName.trim().toLowerCase())
-  const masters = await employeeMasterMap([employeeName])
-  const employee = masters.get(employeeName) || [...masters.values()][0]
-  report.meta.push(['Sider', employeeName || '-'], ['Token No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
+  const masters = await payrollEmployeeMap([employeeName])
+  const employee = masters.get(employeeName.trim().toLowerCase())
+  report.meta.push(['Sider', employee?.emp_name || '-'], ['Token No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
   report.tables.push({
     columns: ['SL No', 'Date', 'Department', 'Shift', 'Effi %', 'UTTI %', 'Waste %'],
     rows: records.map((row, index) => [index + 1, displayDate(row.date), row.department, row.shift, fixed(row.efficiency), fixed(row.utilization), fixed(row.wastePercent)]),

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
 
 /**
@@ -68,11 +69,15 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
   }
 
   const employeeNames = [...new Set(details.map(detail => detail.employee_name).filter(Boolean))]
-  const employeeMasters = await prisma.employee_master.findMany({
-    where: { emp_name: { in: employeeNames } },
-    select: { emp_name: true, emp_code: true, doj: true }
-  })
-  const masterByName = new Map(employeeMasters.map(employee => [employee.emp_name, employee]))
+  const employeeMasters = await prisma.$queryRaw`
+    SELECT
+      firstName AS emp_name,
+      CAST(biometricEnrollmentId AS CHAR) AS emp_code,
+      dateOfJoining AS doj
+    FROM payroll.employees
+    WHERE firstName IN (${Prisma.join(employeeNames)})
+  `
+  const masterByName = new Map(employeeMasters.map(employee => [employee.emp_name.trim().toLowerCase(), employee]))
 
   // Aggregate by employee
   const employeeMap = {}
@@ -117,20 +122,21 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     emp.weightedWaste = (emp.weightedWaste || 0) + (Number(detail.waste_percent) || 0) * production
   })
 
-  const employees = Object.values(employeeMap).map(emp => {
-    const master = masterByName.get(emp.name)
+  const employees = Object.values(employeeMap).flatMap(emp => {
+    const master = masterByName.get(emp.name.trim().toLowerCase())
+    if (!master) return []
     const average = (weighted, fallback) => emp.metricWeight > 0
       ? weighted / emp.metricWeight
       : (emp.recordCount > 0 ? fallback / emp.recordCount : 0)
-    return {
-      name: emp.name,
-      tokenNo: master?.emp_code || '-',
-      doj: master?.doj ? master.doj.toISOString() : null,
+    return [{
+      name: master.emp_name,
+      tokenNo: master.emp_code || '-',
+      doj: master.doj ? master.doj.toISOString() : null,
       productionKgs: parseFloat(emp.totalProduction.toFixed(2)),
       efficiencyPercent: parseFloat(average(emp.weightedEfficiency, emp.totalEfficiency).toFixed(2)),
       utilizationPercent: parseFloat(average(emp.weightedUtilization, emp.totalUtilization).toFixed(2)),
       wastePercent: parseFloat(average(emp.weightedWaste, emp.totalWastePercent).toFixed(2))
-    }
+    }]
   })
 
   // Sort by production descending
