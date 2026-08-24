@@ -15,6 +15,15 @@ const PREPARATORY_DEPARTMENTS = [
 
 const n = value => Number(value) || 0
 const fixed = (value, digits = 2) => n(value).toFixed(digits)
+const reportDate = (value, label) => {
+  const date = value instanceof Date
+    ? new Date(value.getTime())
+    : /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
+      ? new Date(`${value}T00:00:00.000Z`)
+      : new Date(value)
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} must be a valid date`)
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+}
 const dateKey = value => {
   const date = new Date(value)
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
@@ -537,5 +546,8 @@ const REPORT_BUILDERS = {
 export async function buildFinalReport(reportKey, fromDate, toDate, employeeId = null) {
   const builder = REPORT_BUILDERS[reportKey]
   if (!builder) throw new Error('Unknown report type')
-  return builder(fromDate, toDate, employeeId)
+  const normalizedFrom = reportDate(fromDate, 'From date')
+  const normalizedTo = reportDate(toDate, 'To date')
+  if (normalizedFrom > normalizedTo) throw new Error('From date cannot be after To date')
+  return builder(normalizedFrom, normalizedTo, employeeId)
 }

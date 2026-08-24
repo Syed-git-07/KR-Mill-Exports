@@ -65,3 +65,21 @@ test('spinning and autoconer reports retain every count run and aggregate stored
   assert.doesNotMatch(autoconerGrid, /apd\.prodn_effi/)
   assert.match(spinningStoppage, /setup\?\.allocated_spindles \?\? machine\.allocated_spindles/)
 })
+
+test('sider monthly authentication stays at the Server Action boundary', async () => {
+  const [action, query] = await Promise.all([
+    source('src/app/reports/spinning/sider-monthly/actions.js'),
+    source('src/app/reports/spinning/sider-monthly/siderMonthlyQueries.js')
+  ])
+
+  assert.match(action, /await requireUser\(\)/)
+  assert.doesNotMatch(query, /use server|requireUser/)
+})
+
+test('final report boundary normalizes and validates both report dates', async () => {
+  const finalReports = await source('src/lib/reports/finalReportQueries.js')
+  assert.match(finalReports, /reportDate\(fromDate, 'From date'\)/)
+  assert.match(finalReports, /reportDate\(toDate, 'To date'\)/)
+  assert.match(finalReports, /normalizedFrom > normalizedTo/)
+  assert.match(finalReports, /return builder\(normalizedFrom, normalizedTo, employeeId\)/)
+})

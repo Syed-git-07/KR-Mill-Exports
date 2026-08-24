@@ -142,6 +142,40 @@ async function main() {
   const authenticatedModuleHtml = await authenticatedModule.text();
   assert.match(authenticatedModuleHtml, /data-app-auth-header/);
 
+  const authenticatedReportRoutes = [
+    "/reports/",
+    "/reports/autoconer/abstract/",
+    "/reports/autoconer/count-wise-production/",
+    "/reports/autoconer/efficiency/",
+    "/reports/autoconer/low-efficiency/",
+    "/reports/autoconer/particular-sider/",
+    "/reports/autoconer/stoppage-percentage/",
+    "/reports/preparatory/sider-performance/",
+    "/reports/preparatory/stoppage-percentage/",
+    "/reports/preparatory/waste-abstract/",
+    "/reports/spinning/daily-production/",
+    "/reports/spinning/machine-wise-production/",
+    "/reports/spinning/production-abstract/",
+    "/reports/spinning/shift-count-production/",
+    "/reports/spinning/sider-monthly/",
+    "/reports/spinning/stoppage-percentage/",
+    "/reports/final/preparatory-abstract/",
+    "/reports/final/preparatory-particular-sider/",
+    "/reports/final/preparatory-shift-production/",
+    "/reports/final/autoconer-shift-production/",
+    "/reports/final/autoconer-sider-monthly/",
+    "/reports/final/spinning-count-gps/",
+    "/reports/final/spinning-sider-wise/",
+    "/reports/final/spinning-daily-shift/",
+    "/reports/final/spinning-particular-sider/",
+    "/reports/final/spinning-stoppage-abstract/",
+  ];
+  for (const route of authenticatedReportRoutes) {
+    const response = await fetch(appUrl(route), { headers: authenticatedHeaders });
+    assert.equal(response.status, 200, `${route} must render for an authenticated user`);
+    assert.match(await response.text(), /data-app-auth-header/);
+  }
+
   for (const route of ["/account/security/", "/admin/security-logs/"]) {
     const response = await fetch(appUrl(route), {
       headers: authenticatedHeaders,
@@ -188,6 +222,7 @@ async function main() {
         "protected report asset",
         "all module routes require login",
         "compact navbar on every authenticated page and none on login",
+        "all authenticated report routes render",
         "revoked session redirects back to login",
         "forged session rejection",
         "cross-origin POST rejection",

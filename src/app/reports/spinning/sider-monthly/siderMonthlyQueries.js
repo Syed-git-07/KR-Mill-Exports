@@ -1,7 +1,4 @@
-'use server'
-
 import { prisma } from '@/lib/prisma'
-import { requireUser } from '@/lib/security/auth'
 import { format } from 'date-fns'
 import { getPayrollEmployeesByIds } from '@/lib/payroll/employees'
 
@@ -10,7 +7,6 @@ import { getPayrollEmployeesByIds } from '@/lib/payroll/employees'
  * Groups by frame (machine), shift and calculates waste metrics
  */
 export async function fetchSiderMonthlyData(fromDate, toDate) {
-  await requireUser()
   try {
     // Get all production details with sider information for the date range
     const productionData = await prisma.$queryRaw`
