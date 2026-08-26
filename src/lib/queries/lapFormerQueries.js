@@ -435,7 +435,7 @@ export async function initializeLapFormerDetails(headerId) {
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,
       work_time: defaultWorkTime,
@@ -539,7 +539,7 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,
       work_time: defaultWorkTime,
@@ -828,7 +828,8 @@ export async function applyLapFormerFullStoppage(headerId, stoppageId, stoppageT
       totalTime,
       newTotalStoppage,
       setup,
-      machineSpeed
+      machineSpeed,
+      prodDetail.waste
     );
 
     const recalculatedFields = {
@@ -1011,7 +1012,8 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
         totalTime,
         newTotalStoppage,
         setup,
-        machineSpeed  // Pass machine speed explicitly
+        machineSpeed,  // Pass machine speed explicitly
+        prodDetail.waste
       );
 
       const recalculatedFields = {
@@ -1103,7 +1105,7 @@ export async function getLapFormerMachineSetups(headerId = null) {
     };
     newMachineSetupDefaultsMap[m.id] = {
       speed: 90, hank_constant: 0.0082, std_efficiency_factor: 0.85,
-      default_waste: 0.85, std_prodn: 2810.35, shift_time: 510,
+      default_waste: null, std_prodn: 2810.35, shift_time: 510,
       default_stoppage: 0, divisor_constant: 1693, delivery: 1
     };
   });
@@ -1308,9 +1310,9 @@ export async function getSupervisors() {
 //
 // KEY DIFFERENCE: Lap Former uses Hank = 0.0082 (not 0.14 like Breaker Drawing)
 
-export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null) {
+export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = 0) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(setup, machineSpeed);
-  const waste = setup?.default_waste ?? null;
+  const waste = Number.isFinite(Number(currentWaste)) ? Number(currentWaste) : 0;
 
   // Constant = 1 / 2.20456 / Hank
   const constst = getLapFormerActProdnConstant({ hank_constant: hankConstant });

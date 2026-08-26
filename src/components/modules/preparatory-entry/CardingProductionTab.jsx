@@ -135,7 +135,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         actProdn,
         effectiveTotalTime,
         stoppageTime,
-        setup
+        setup,
+        waste
       )
 
       const finalExpProdn = toNumber(calculated.exp_prodn)
@@ -232,7 +233,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
         actProdn,
         effectiveTotalTime,
         stoppageTime,
-        setup
+        setup,
+        waste
       )
 
       const finalExpProdn = toNumber(calculated.exp_prodn)
@@ -290,7 +292,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
             actProdn,
             effectiveTotalTime,
             stoppageTime,
-            setup
+            setup,
+            waste
           )
           const expProdn = calculated.exp_prodn
           const runTime = calculated.run_time
@@ -400,7 +403,8 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
           actProdn,
           effectiveTotalTime,
           stoppageTime,
-          setup
+          setup,
+          toNumber(changes.waste ?? row.waste)
         )
 
         const wasteValue = toNumber(changes.waste ?? row.waste)

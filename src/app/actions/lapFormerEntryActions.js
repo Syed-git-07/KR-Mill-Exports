@@ -326,10 +326,10 @@ export async function getLapFormerAvailableDatesAction(currentDate, shift) {
 // CALCULATION ACTIONS
 // ============================================
 
-export async function calculateLapFormerValuesAction(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null) {
+export async function calculateLapFormerValuesAction(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = 0) {
   await requireUser()
   try {
-    const data = queries.calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed)
+    const data = queries.calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed, currentWaste)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

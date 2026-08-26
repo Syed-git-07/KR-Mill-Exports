@@ -232,7 +232,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
         count_id: setup.count_id || null,
         session_no: setup.session_no || 1,
         prodn_effi: 0,
-        waste_kg: null,
+        waste_kg: 0,
         waste_percent: null,
         run_time: totalTime,               // Shift-specific runtime
         work_time: defaultWorkTime,        // Runtime - stoppage
@@ -330,7 +330,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
         count_id: setup.count_id || null,
         session_no: setup.session_no || 1,
         prodn_effi: 0,
-        waste_kg: null,
+        waste_kg: 0,
         waste_percent: null,
         run_time: totalTime,
         work_time: defaultWorkTime,

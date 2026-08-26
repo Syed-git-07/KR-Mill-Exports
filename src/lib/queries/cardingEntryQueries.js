@@ -380,7 +380,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
       const countMixing = setup.prodn_mixing ?? machine.prodn_mixing ?? '64COMBED GOLD'
       const employeeName = null
       const sessionNo = 1
-      const wasteVal = setup.default_waste ?? null
+      const wasteVal = 0
 
       const fallbackStdProdn = calculateCardingStdProdn(setup, totalTime)
       return {
@@ -497,7 +497,7 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
       const countMixing = setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD'
       const employeeName = null
       const sessionNo = 1
-      const wasteVal = setup.default_waste ?? null
+      const wasteVal = 0
 
       const fallbackStdProdn = calculateCardingStdProdn(setup, totalTime)
       return {
@@ -1154,7 +1154,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         speed: m.speed ?? 130.00,
         hank_constant: m.hank_constant ?? 0.1300,
         std_efficiency_factor: stdEffi,
-        default_waste: 0.3400,
+        default_waste: null,
         std_prodn: Math.round(fallbackStdProdn * 100) / 100,
         shift_time: targetShiftTime,
         default_stoppage: 0,
@@ -1442,9 +1442,9 @@ export async function copyCardingFromPreviousDate(targetDate, targetShift, targe
 // STEP-3: Exp Prodn = Std Prodn × WorkTime / TotalTime
 // STEP-4: Effi% = ActProdn / ExpProdn × 100
 // STEP-5: UTI% = WorkTime / TotalTime × 100
-export function calculateProductionValues(actHank, actProdn, totalTime, stoppageTime, setup) {
+export function calculateProductionValues(actHank, actProdn, totalTime, stoppageTime, setup, currentWaste = 0) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant } = resolveCardingFormulaInputs(setup)
-  const wasteValue = setup?.default_waste ?? 0
+  const wasteValue = Number.isFinite(Number(currentWaste)) ? Number(currentWaste) : 0
 
   // WorkTime = TotalTime - StoppageTime (this is the actual run time)
   
@@ -1473,7 +1473,7 @@ export function calculateProductionValues(actHank, actProdn, totalTime, stoppage
     exp_prodn: metrics.expectedProduction,
     effi_percent: metrics.efficiencyPercent,
     uti_percent: metrics.utilizationPercent,
-    waste: setup?.default_waste ?? null,
+    waste: wasteValue,
     waste_percent: metrics.wastePercent,
     run_time: metrics.totalTime,
     work_time: metrics.workTime,

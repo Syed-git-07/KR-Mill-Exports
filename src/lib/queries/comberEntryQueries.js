@@ -375,7 +375,7 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
         act_hank: 0,
         run_hrs: 0,
         run_min: 0,
-        waste: setup.default_waste ?? null,
+        waste: 0,
         act_prodn: 0,
         waste_percent: 0,
         act_effi_percent: 0,
@@ -864,7 +864,7 @@ export async function getComberMachineSetups(headerId = null) {
       newMachineSetupDefaultsMap[m.id] = {
         prodn_mixing: m.prodn_mixing, session_no: 1, cc_time: 0,
         sl_hank: slHank, mc_effi: m.mc_effi ?? COMBER_FORMULA_FALLBACK.mcEffiFactor,
-        shift_time: 510, default_waste: 0.96,
+        shift_time: 510, default_waste: null,
         constant: calculateComberConstantFromSlHank(slHank), speed: m.speed ?? 350
       };
     });
@@ -1248,12 +1248,12 @@ export async function syncNewMachinesToComberHeader(headerId, shift = null) {
         data: {
           header_id: headerId,
           machine_id: machine.id,
-          employee_name: '',
+          employee_name: null,
           prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
           act_hank: 0,
           run_hrs: 0,
           run_min: 0,
-          waste: setup.default_waste ?? null,
+          waste: 0,
           act_prodn: 0,
           waste_percent: 0,
           act_effi_percent: 0,

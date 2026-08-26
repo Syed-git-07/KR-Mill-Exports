@@ -292,7 +292,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       totalTime,
       totalStoppageTime,
       setup,
-      machineSpeed
+      machineSpeed,
+      effectiveProductionDetail.waste
     )
 
     return {
@@ -482,7 +483,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
           totalTime,
           newTotalStoppage,
           setup,
-          machineSpeed  // Pass machine speed explicitly (source of truth)
+          machineSpeed,  // Pass machine speed explicitly (source of truth)
+          prodDetail.waste
         )
 
         // Update only stoppage-dependent calculated fields; preserve production quantity and waste fields.

@@ -322,7 +322,7 @@ export async function initializeSimplexProductionDetails(headerId) {
         run_hrs: 0,
         run_min: 0,
         idle_spindles: 0,
-        waste: setup.default_waste ?? null,
+        waste: 0,
         act_prodn: 0,
         waste_percent: 0,
         act_effi_percent: 0,
@@ -442,7 +442,7 @@ export async function addMissingSimplexProductionDetails(headerId) {
         run_hrs: 0,
         run_min: 0,
         idle_spindles: 0,
-        waste: setup.default_waste ?? null,
+        waste: 0,
         act_prodn: 0,
         waste_percent: 0,
         act_effi_percent: 0,
@@ -997,7 +997,7 @@ export async function getSimplexMachineSetups(headerId = null) {
         prodn_mixing: m.prodn_mixing, session_no: 1, cc_time: 0,
         sl_hank: 1.4, mc_effi: m.mc_effi ?? 92, tpi: m.tpi ?? 1.73,
         spindles: m.no_of_spindles ?? 140, shift_time: 510,
-        default_waste: 0.9, speed: m.speed ?? 960
+        default_waste: null, speed: m.speed ?? 960
       };
     });
     const setups = await getOrCreateDateScopedSetups({

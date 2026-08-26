@@ -276,7 +276,7 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,  // Run time = Shift time
       work_time: defaultWorkTime,
@@ -381,7 +381,7 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,  // Run time = Shift time
       work_time: defaultWorkTime,
@@ -861,7 +861,7 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     };
     newMachineSetupDefaultsMap[m.id] = {
       speed: 750, hank_constant: 0.14, std_efficiency_factor: 0.85,
-      default_waste: 0.85, std_prodn: 1371.72, shift_time: 510,
+      default_waste: null, std_prodn: 1371.72, shift_time: 510,
       default_stoppage: 0, divisor_constant: 1693, delivery: 1
     };
   });
@@ -1048,7 +1048,7 @@ export async function getSupervisors() {
 // NOTE: Speed is sourced from drawing_breaker_machines table (NOT hardcoded)
 // The setup.speed should be pre-merged from machine.speed before calling this function
 
-export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = null) {
+export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = 0) {
   const toNumber = (value, fallback = 0) => {
     if (value === null || value === undefined) return fallback;
     if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
@@ -1061,7 +1061,7 @@ export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stop
   };
 
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(setup, machineSpeed);
-  const wasteValue = toNumber(currentWaste ?? setup?.default_waste, 0);
+  const wasteValue = toNumber(currentWaste, 0);
   const safeTotalTime = toNumber(totalTime, 0);
   const safeStoppageTime = toNumber(stoppageTime, 0);
   const safeActHank = toNumber(actHank, 0);
@@ -1098,7 +1098,7 @@ export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stop
     exp_prodn: metrics.expectedProduction,
     effi_percent: metrics.efficiencyPercent,
     uti_percent: metrics.utilizationPercent,
-    waste: currentWaste ?? setup?.default_waste ?? null,
+    waste: wasteValue,
     waste_percent: metrics.wastePercent,
     run_time: metrics.totalTime,
     work_time: metrics.workTime,

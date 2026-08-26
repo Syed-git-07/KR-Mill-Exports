@@ -110,6 +110,16 @@ DELETE FROM lap_former_machine_setup WHERE entry_date <> '1970-01-01';
 DELETE FROM simplex_machine_setup WHERE entry_date <> '1970-01-01';
 DELETE FROM spinning_machine_setup WHERE entry_date <> '1970-01-01';
 
+-- Waste is actual operator-entered production data. Clear legacy baseline
+-- setup hints so a fresh sample cannot display or inherit the old 0.34/0.85/
+-- 0.90/0.96 values. Production initialization also enforces actual waste = 0.
+UPDATE breaker_drawing_machine_setup SET default_waste = NULL;
+UPDATE carding_machine_setup SET default_waste = NULL;
+UPDATE comber_machine_setup SET default_waste = NULL;
+UPDATE finisher_drawing_machine_setup SET default_waste = NULL;
+UPDATE lap_former_machine_setup SET default_waste = NULL;
+UPDATE simplex_machine_setup SET default_waste = NULL;
+
 -- PREDICTED AFTER RESET: all four values must be zero inside the transaction.
 SELECT
   (SELECT COUNT(*) FROM autoconer_production_header) +

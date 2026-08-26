@@ -66,6 +66,13 @@ npm run user:create -- --username admin --name "System Administrator" --role ADM
 npm run build
 ```
 
+Use committed migrations for every shared or existing database. Do not run
+`npx prisma db push`: it bypasses migration history and can treat recovery-only
+tables as removable schema drift. The `20260826_actual_waste_zero_defaults`
+migration changes only database defaults; it deliberately does not rewrite
+historical waste values. Reset disposable sample entries separately when a clean
+zero-waste starting point is required.
+
 If this is the first secured release going onto an existing KR Production
 database that has no `_prisma_migrations` table, `migrate deploy` will stop with
 `P3005` to protect the existing schema. For this one initial upgrade only, apply

@@ -476,7 +476,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           totalTime,
           stoppageTime,
           setup,
-          machineSpeed
+          machineSpeed,
+          waste
         )
 
         calculated.waste = waste
