@@ -8,9 +8,8 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
 import {
-  getLapFormerProductionWithSetupAction,
-  updateLapFormerDetailAction,
-  getLapFormerMachineSetupsAction
+  getLapFormerEntryTabDataAction,
+  runLapFormerEntryBatchAction,
 } from '@/app/actions/lapFormerEntryActions'
 import { calculateLapFormerValues } from '@/lib/queries/lapFormerQueries'
 import {
@@ -248,10 +247,9 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
     
     setIsLoading(true)
     try {
-      const [detailsResult, setupsResult] = await Promise.all([
-        getLapFormerProductionWithSetupAction(headerId),
-        getLapFormerMachineSetupsAction(headerId)
-      ])
+      const result = await getLapFormerEntryTabDataAction('production', { headerId })
+      if (!result.success) throw new Error(result.error || 'Failed to load Lap Former production data')
+      const { detailsResult, setupsResult } = result.data
       
       if (!detailsResult.success) {
         throw new Error(detailsResult.error)
@@ -399,17 +397,18 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
   }
 
   // Handle employee name change
-  const handleEmployeeChange = (rowId, value) => {
+  const handleEmployeeChange = (rowId, value, employee) => {
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
-        employee_name: value
+        employee_name: value,
+        payroll_employee_id: employee?.payroll_employee_id ?? null
       }
     }))
 
     setProductionData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, employee_name: value } : row
+      row.id === rowId ? { ...row, employee_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } : row
     ))
   }
 
@@ -455,7 +454,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = rowsToSave.map((row) => {
+      const updates = rowsToSave.map((row) => {
         const changes = findSharedDraftByKeys(currentEdits, row.id) || {}
         const stoppageTime = getEffectiveStoppageTotal(row, effectiveStoppageDrafts)
         const setup = mergeSetupDraft(
@@ -477,7 +476,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
           totalTime,
           stoppageTime,
           setup,
-          machineSpeed
+          machineSpeed,
+          waste
         )
 
         calculated.waste = waste
@@ -485,18 +485,24 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
 
         const wastePercent = actProdn > 0 ? Math.round((waste / actProdn) * 100 * 100) / 100 : 0
 
-        return updateLapFormerDetailAction(row.id, {
-          ...calculated,
-          employee_name: changes.employee_name ?? row.employee_name,
-          prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
-          act_hank: actHank,
-          act_prodn: actProdn,
-          waste,
-          waste_percent: wastePercent
-        })
+        return {
+          id: row.id,
+          updates: {
+            ...calculated,
+            employee_name: changes.employee_name ?? row.employee_name,
+            payroll_employee_id: Object.hasOwn(changes, 'payroll_employee_id') ? changes.payroll_employee_id : row.payroll_employee_id,
+            prodn_mixing: setup?.prodn_mixing ?? changes.prodn_mixing ?? row.prodn_mixing,
+            act_hank: actHank,
+            act_prodn: actProdn,
+            waste,
+            waste_percent: wastePercent
+          }
+        }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runLapFormerEntryBatchAction('production-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save production data')
+      const results = batchResult.data || []
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) {
         throw new Error('Some updates failed')
@@ -509,8 +515,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -603,7 +609,8 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
                   <td className="border border-gray-300 px-0 py-0">
                     <EmployeeAutocomplete
                       value={row.employee_name || ''}
-                      onChange={(value) => handleEmployeeChange(row.id, value)}
+                      employeeId={row.payroll_employee_id}
+                      onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                       placeholder="Type employee name..."
                       cleanCell
                       editingHighlight

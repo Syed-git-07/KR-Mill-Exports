@@ -9,6 +9,11 @@ import * as queries from '@/lib/queries/comberEntryQueries'
 import { lookupComberMachineByNo } from '@/lib/queries/comberMachineQueries'
 import { resolveComberShiftFallbackTime } from '@/lib/comberShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -96,7 +101,7 @@ export async function updateComberProductionHeaderAction(id, updates) {
 export async function getComberProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getComberProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getComberProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -269,7 +274,7 @@ export async function lookupComberMachineByNoAction(machineNo, entryDate = null)
 export async function getComberProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getComberProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getComberProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -318,25 +323,6 @@ export async function getSupervisorsAction() {
   }
 }
 
-// ============================================
-// COPY FROM PREVIOUS DATE ACTIONS
-// ============================================
-
-export async function getComberAvailablePreviousDatesAction(beforeDate, shift, limit = 30) {
-  await requireUser()
-  try {
-    const data = await queries.getComberAvailableDates(beforeDate, shift, limit)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function copyComberFromPreviousDateAction(...args) {
-  await requireUser()
-  void args
-  return { success: false, error: 'Comber speed is fixed and cannot be copied.' }
-}
 
 export async function getComberEntryTabDataAction(tab, context = {}) {
   await requireUser()

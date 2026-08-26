@@ -47,6 +47,7 @@ const {
 } = await importSourceModule('../src/lib/queries/dateScopedMachineSetup.js')
 const {
   calculateSpinningExpectedGps,
+  calculateSpinningEntryMetrics,
   calculateSpinningLossEfficiency,
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
@@ -274,6 +275,40 @@ test('spinning formulas keep entry efficiency separate from production loss effi
 
   assert.equal(Math.round(first * 1000) / 1000, 94.792)
   assert.equal(Math.round(second * 1000) / 1000, 76.786)
+})
+
+test('spinning entry metrics use the exact count-run duration', () => {
+  const metrics = calculateSpinningEntryMetrics({
+    actHank: 100,
+    waste: 2,
+    stoppageMins: 30,
+    runTime: 120,
+    allocatedSpindles: 1104,
+    shift: 1,
+    actCount: 62,
+    lossEfficiency: 0.99,
+    expectedGps: 90
+  })
+
+  assert.equal(metrics.work_time, 90)
+  assert.equal(metrics._totalSpindles, 1173)
+  assert.ok(metrics.worked_spindles < metrics._totalSpindles)
+  assert.ok(metrics.act_prodn > 0)
+
+  const fullyStopped = calculateSpinningEntryMetrics({
+    actHank: 100,
+    waste: 2,
+    stoppageMins: 150,
+    runTime: 120,
+    allocatedSpindles: 1104,
+    shift: 1,
+    actCount: 62,
+    lossEfficiency: 0.99,
+    expectedGps: 90
+  })
+  assert.equal(fullyStopped.work_time, 0)
+  assert.equal(fullyStopped.worked_spindles, 0)
+  assert.equal(fullyStopped.gps, 0)
 })
 
 test('explicit zero master values are never replaced by formula defaults', () => {

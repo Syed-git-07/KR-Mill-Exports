@@ -6,6 +6,8 @@ import { calculateTimeAdjustedProductionMetrics } from '../productionFormulaMath
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { machineLookupWhere } from '../machineLifecycle'
 import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
@@ -108,6 +110,7 @@ export async function getOrCreateProductionHeader(date, shift, supervisorId, mai
 
   // Get shift-specific total time from configuration
   const shiftTime = await getCardingShiftTime(shift)
+  await validateProductionSupervisorIds(supervisorId, maisitryId)
 
   // Create new header
   try {
@@ -132,6 +135,7 @@ export async function getOrCreateProductionHeader(date, shift, supervisorId, mai
 export async function updateProductionHeader(id, updates) {
   await assertEntryHeaderUnlocked('carding', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.carding_production_header.update({
       where: { id },
@@ -376,7 +380,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
       const countMixing = setup.prodn_mixing ?? machine.prodn_mixing ?? '64COMBED GOLD'
       const employeeName = null
       const sessionNo = 1
-      const wasteVal = setup.default_waste ?? null
+      const wasteVal = 0
 
       const fallbackStdProdn = calculateCardingStdProdn(setup, totalTime)
       return {
@@ -493,7 +497,7 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
       const countMixing = setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD'
       const employeeName = null
       const sessionNo = 1
-      const wasteVal = setup.default_waste ?? null
+      const wasteVal = 0
 
       const fallbackStdProdn = calculateCardingStdProdn(setup, totalTime)
       return {
@@ -554,7 +558,14 @@ export async function updateProductionDetail(id, updates) {
     // Client already recalculates correctly based on full state.
     // We just take the explicitly saved cleanUpdates directly to avoid
     // overwriting accurate UI values with missing/stale server context.
-    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
+    const current = await prisma.carding_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
+    const cleanUpdates = sanitizeProductionDetailUpdate(prepared)
 
     const data = await prisma.carding_production_detail.update({
       where: { id },
@@ -568,16 +579,7 @@ export async function updateProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateProductionDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('carding', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.carding_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateProductionDetail(id, data)))
 }
 
 // ============================================
@@ -1152,7 +1154,7 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
         speed: m.speed ?? 130.00,
         hank_constant: m.hank_constant ?? 0.1300,
         std_efficiency_factor: stdEffi,
-        default_waste: 0.3400,
+        default_waste: null,
         std_prodn: Math.round(fallbackStdProdn * 100) / 100,
         shift_time: targetShiftTime,
         default_stoppage: 0,
@@ -1400,20 +1402,7 @@ export async function getStoppageDetails() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      select: {
-        id: true,
-        supervisor_name: true
-      },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // ============================================
@@ -1453,9 +1442,9 @@ export async function copyCardingFromPreviousDate(targetDate, targetShift, targe
 // STEP-3: Exp Prodn = Std Prodn × WorkTime / TotalTime
 // STEP-4: Effi% = ActProdn / ExpProdn × 100
 // STEP-5: UTI% = WorkTime / TotalTime × 100
-export function calculateProductionValues(actHank, actProdn, totalTime, stoppageTime, setup) {
+export function calculateProductionValues(actHank, actProdn, totalTime, stoppageTime, setup, currentWaste = 0) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant } = resolveCardingFormulaInputs(setup)
-  const wasteValue = setup?.default_waste ?? 0
+  const wasteValue = Number.isFinite(Number(currentWaste)) ? Number(currentWaste) : 0
 
   // WorkTime = TotalTime - StoppageTime (this is the actual run time)
   
@@ -1484,7 +1473,7 @@ export function calculateProductionValues(actHank, actProdn, totalTime, stoppage
     exp_prodn: metrics.expectedProduction,
     effi_percent: metrics.efficiencyPercent,
     uti_percent: metrics.utilizationPercent,
-    waste: setup?.default_waste ?? null,
+    waste: wasteValue,
     waste_percent: metrics.wastePercent,
     run_time: metrics.totalTime,
     work_time: metrics.workTime,

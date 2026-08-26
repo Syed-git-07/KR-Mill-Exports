@@ -16,14 +16,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  getFinisherDrawingStoppageEntriesAction,
+  getFinisherDrawingEntryTabDataAction,
   getFinisherDrawingProductionDetailsAction,
-  updateFinisherDrawingStoppageEntryAction,
-  getFinisherDrawingStoppageReasonsAction,
-  getFinisherDrawingMachinesAction,
-  getFinisherDrawingMachineSetupsAction,
-  updateFinisherDrawingDetailAction,
-  syncFinisherDrawingNewMachinesToHeaderAction
+  runFinisherDrawingEntryBatchAction,
 } from '@/app/actions/finisher-drawing-entry'
 import { calculateFinisherDrawingValues } from '@/lib/queries/finisherDrawingEntryQueries'
 import {
@@ -306,15 +301,13 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      await syncFinisherDrawingNewMachinesToHeaderAction(headerId)
-
-      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
-        getFinisherDrawingStoppageEntriesAction(headerId),
-        getFinisherDrawingStoppageReasonsAction(),
-        getFinisherDrawingMachinesAction(),
-        getFinisherDrawingMachineSetupsAction(shift, headerId)
-      ])
+      const result = await getFinisherDrawingEntryTabDataAction('stoppage', { headerId, shift })
+      if (!result.success) throw new Error(result.error || 'Failed to load Finisher Drawing stoppage data')
+      const { stoppagesResult, reasonsResult, machineListResult, setupsResult } = result.data
+      if (!stoppagesResult.success) throw new Error(stoppagesResult.error || 'Failed to load stoppage entries')
+      if (!reasonsResult.success) throw new Error(reasonsResult.error || 'Failed to load stoppage reasons')
+      if (!machineListResult.success) throw new Error(machineListResult.error || 'Failed to load machines')
+      if (!setupsResult.success) throw new Error(setupsResult.error || 'Failed to load machine setups')
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
       const reasons = reasonsResult.success ? reasonsResult.data : []
@@ -500,12 +493,14 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateFinisherDrawingStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const stoppageResults = await Promise.all(updatePromises)
+      const stoppageBatch = await runFinisherDrawingEntryBatchAction('stoppage-update', stoppageUpdates)
+      if (!stoppageBatch.success) throw new Error(stoppageBatch.error || 'Failed to save stoppage data')
+      const stoppageResults = stoppageBatch.data || []
       const failedStoppage = stoppageResults.find(result => !result?.success)
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Finisher Drawing stoppage row')
@@ -519,7 +514,7 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
         latestDetailMap[detail.id] = detail
       })
 
-      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
+      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -556,10 +551,15 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
           : 0
         
         // Update production detail
-        return updateFinisherDrawingDetailAction(prodDetail.id, calculated)
-      })
-      
-      await Promise.all(productionUpdatePromises.filter(Boolean))
+        return { id: prodDetail.id, updates: calculated }
+      }).filter(Boolean)
+
+      if (productionUpdates.length > 0) {
+        const productionBatch = await runFinisherDrawingEntryBatchAction('production-update', productionUpdates)
+        if (!productionBatch.success) throw new Error(productionBatch.error || 'Failed to recalculate production data')
+        const failedProduction = (productionBatch.data || []).find(result => !result?.success)
+        if (failedProduction) throw new Error(failedProduction.error || 'Failed to recalculate a production row')
+      }
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -568,8 +568,8 @@ const FinisherDrawingStoppageTab = forwardRef(function FinisherDrawingStoppageTa
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

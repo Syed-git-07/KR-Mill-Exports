@@ -69,6 +69,9 @@ test('new Spinning Master machines start with an empty installed date', () => {
 
 test('run storage remains migration-compatible while Count Change is restricted in application code', () => {
   const schema = read('prisma/schema.prisma')
+  const uniqueDefinitions = schema.split(/\r?\n/).filter(line => line.includes('@@unique('))
+  assert.equal(uniqueDefinitions.length, 33)
+  assert.ok(uniqueDefinitions.every(line => line.includes('map:')), 'every Prisma unique must map its existing MySQL index name')
   assert.equal((schema.match(/@@unique\(\[entry_date, shift\], name: "uq_/g) || []).length, 8)
   assert.equal((schema.match(/@@unique\(\[header_id, machine_id, run_sequence\], name: "uq_/g) || []).length, 8)
   assert.equal((schema.match(/@@unique\(\[machine_id, entry_date, shift, run_sequence\], name: "idx_/g) || []).length, 8)
@@ -156,7 +159,7 @@ test('new entries reset operational values and historical Finisher setup visibil
 
   assert.doesNotMatch(carding, /getCardingInheritedMachineSetups/)
   assert.match(carding, /const sessionNo = 1/)
-  assert.match(carding, /const wasteVal = setup\.default_waste \?\? null/)
+  assert.match(carding, /const wasteVal = 0/)
   assert.match(finisher, /Historical entry grids use lifecycle state on the entry date/)
   assert.match(finisher, /deactivated_at: \{ gt: header\.entry_date \}/)
 })
@@ -185,6 +188,7 @@ test('Spinning count-run time and count stay distinct across all three tabs', ()
   assert.match(queries, /setupMap\[`\$\{s\.machine_id\}:\$\{runSequence\}`\] = s/)
   assert.match(production, /normalizedRow\.run_time \?\? effectiveSetup\?\.run_time/)
   assert.match(production, /calculateSpinningEntryMetrics\(\{/)
+  assert.match(production, /const rowRunTime = setup\.run_time \?\? row\.run_time \?\? effectiveTotalTime/)
   assert.match(production, /stoppageMins: updates\.total_stoppage_mins \?\? row\.total_stoppage_mins/)
   assert.match(production, /runTime: rowRunTime/)
   assert.match(production, /onMachineSetupFieldChange/)

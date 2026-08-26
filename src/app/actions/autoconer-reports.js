@@ -66,19 +66,19 @@ export async function getAutoconerDateRangeAction() {
 
 /**
  * Generate Autoconer Particular Sider Report
- * @param {string} empName - Employee name
+ * @param {number} employeeId - Payroll employee primary key
  * @param {Date} fromDate - Start date
  * @param {Date} toDate - End date  
  * @returns {Promise<Object>} Report data
  */
-export async function generateAutoconerParticularSiderReportAction(empName, fromDate, toDate) {
+export async function generateAutoconerParticularSiderReportAction(employeeId, fromDate, toDate) {
   await requireUser()
   try {
     const normalizedFromDate = normalizeDate(fromDate)
     const normalizedToDate = normalizeDate(toDate)
     
     const reportData = await generateAutoconerParticularSiderReport(
-      empName,
+      employeeId,
       normalizedFromDate,
       normalizedToDate
     )

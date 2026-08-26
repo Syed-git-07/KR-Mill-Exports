@@ -5,6 +5,8 @@ import { resolveSimplexShiftFallbackTime } from '../simplexFormulaFallback'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { machineLookupWhere } from '../machineLifecycle'
 
@@ -119,6 +121,7 @@ export async function getOrCreateSimplexProductionHeader(date, shift, supervisor
   // Create new header
   try {
     const shiftTime = await getSimplexShiftTime(shift)
+    await validateProductionSupervisorIds(supervisorId, maisitryId)
     const data = await prisma.simplex_production_header.create({
       data: {
         entry_date: new Date(date),
@@ -140,6 +143,7 @@ export async function getOrCreateSimplexProductionHeader(date, shift, supervisor
 export async function updateSimplexProductionHeader(id, updates) {
   await assertEntryHeaderUnlocked('simplex', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.simplex_production_header.update({
       where: { id },
@@ -318,7 +322,7 @@ export async function initializeSimplexProductionDetails(headerId) {
         run_hrs: 0,
         run_min: 0,
         idle_spindles: 0,
-        waste: setup.default_waste ?? null,
+        waste: 0,
         act_prodn: 0,
         waste_percent: 0,
         act_effi_percent: 0,
@@ -438,7 +442,7 @@ export async function addMissingSimplexProductionDetails(headerId) {
         run_hrs: 0,
         run_min: 0,
         idle_spindles: 0,
-        waste: setup.default_waste ?? null,
+        waste: 0,
         act_prodn: 0,
         waste_percent: 0,
         act_effi_percent: 0,
@@ -488,9 +492,16 @@ export async function addMissingSimplexProductionDetails(headerId) {
 export async function updateSimplexProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('simplex', id)
   try {
+    const current = await prisma.simplex_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
     const data = await prisma.simplex_production_detail.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(prepared)
     })
     return data
   } catch (error) {
@@ -500,16 +511,7 @@ export async function updateSimplexProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateSimplexProductionDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('simplex', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.simplex_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateSimplexProductionDetail(id, data)))
 }
 
 // ============================================
@@ -995,7 +997,7 @@ export async function getSimplexMachineSetups(headerId = null) {
         prodn_mixing: m.prodn_mixing, session_no: 1, cc_time: 0,
         sl_hank: 1.4, mc_effi: m.mc_effi ?? 92, tpi: m.tpi ?? 1.73,
         spindles: m.no_of_spindles ?? 140, shift_time: 510,
-        default_waste: 0.9, speed: m.speed ?? 960
+        default_waste: null, speed: m.speed ?? 960
       };
     });
     const setups = await getOrCreateDateScopedSetups({
@@ -1148,17 +1150,7 @@ export async function getSimplexStoppageReasons() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      where: { is_active: true },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // ============================================
@@ -1242,51 +1234,6 @@ export async function getStoppageDetails() {
   }
 }
 
-// Get all employees for dropdown/search
-export async function getSimplexEmployees() {
-  try {
-    const data = await prisma.employee_master.findMany({
-      where: { is_active: true },
-      select: {
-        id: true,
-        emp_name: true,
-        emp_code: true
-      },
-      orderBy: {
-        emp_name: 'asc'
-      }
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
-}
-
-// Search employees by name
-export async function searchSimplexEmployees(searchTerm) {
-  try {
-    const data = await prisma.employee_master.findMany({
-      where: {
-        is_active: true,
-        emp_name: {
-          contains: searchTerm
-        }
-      },
-      select: {
-        id: true,
-        emp_name: true,
-        emp_code: true
-      },
-      orderBy: {
-        emp_name: 'asc'
-      },
-      take: 20
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
-}
 // ============================================
 // SIMPLEX PRODUCTION CALCULATION
 // ============================================
@@ -1540,153 +1487,4 @@ export async function addSimplexEntryMachine(machineData) {
 
 export async function removeSimplexMachine(machineId, headerId) {
   return removeMachineFromEntrySnapshot('simplex', headerId, machineId)
-}
-
-// ============================================
-// COPY PREVIOUS DATA FUNCTIONALITY
-// ============================================
-
-// Get available previous dates that have production data
-export async function getSimplexAvailableDates(beforeDate, shift, limit = 30) {
-  const data = await prisma.simplex_production_header.findMany({
-    where: {
-      shift: parseInt(shift),
-      entry_date: { lt: new Date(beforeDate) }
-    },
-    select: { entry_date: true, shift: true },
-    orderBy: { entry_date: 'desc' },
-    take: limit
-  });
-  
-  return data || [];
-}
-
-// Copy data from a previous date
-export async function copySimplexFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
-  await assertEntryHeaderUnlocked('simplex', targetHeaderId)
-  // If no sourceDate provided, calculate yesterday's date
-  let previousDate = sourceDate;
-  if (!previousDate) {
-    const targetDateObj = new Date(targetDate);
-    const yesterdayDateObj = new Date(targetDateObj);
-    yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1);
-    previousDate = yesterdayDateObj.toISOString().split('T')[0];
-  }
-  
-  // Get source header
-  const sourceHeader = await getSimplexProductionByDateShift(previousDate, targetShift);
-  if (!sourceHeader) {
-    throw new Error(`No production data found for ${previousDate} shift ${targetShift}`);
-  }
-  
-  // Get source production details
-  const sourceDetails = await prisma.simplex_production_detail.findMany({
-    where: { header_id: sourceHeader.id }
-  });
-  
-  if (!sourceDetails || sourceDetails.length === 0) {
-    throw new Error(`No production details found for ${previousDate}`);
-  }
-  
-  // Get source stoppage entries
-  const sourceStoppages = await prisma.simplex_stoppage_entry.findMany({
-    where: {
-      production_detail_id: { in: sourceDetails.map(d => d.id) }
-    }
-  });
-  
-  // Get target's existing production details
-  const targetDetails = await prisma.simplex_production_detail.findMany({
-    where: { header_id: targetHeaderId }
-  });
-  
-  // Create a map of machine_id to source data
-  const sourceDataMap = {};
-  sourceDetails.forEach(d => {
-    sourceDataMap[d.machine_id] = d;
-  });
-  
-  const sourceStoppageMap = {};
-  sourceStoppages?.forEach(s => {
-    // Find which machine this stoppage belongs to
-    const detail = sourceDetails.find(d => d.id === s.production_detail_id);
-    if (detail) {
-      sourceStoppageMap[detail.machine_id] = s;
-    }
-  });
-  
-  // Update target details with source data
-  const updatePromises = targetDetails.map(async (targetDetail) => {
-    const sourceData = sourceDataMap[targetDetail.machine_id];
-    if (!sourceData) return null;
-    
-    // Copy production values
-    const data = await prisma.simplex_production_detail.update({
-      where: { id: targetDetail.id },
-      data: {
-        employee_name: sourceData.employee_name,
-        prodn_mixing: sourceData.prodn_mixing,
-        run_hrs: sourceData.run_hrs,
-        run_min: sourceData.run_min,
-        idle_spindles: sourceData.idle_spindles,
-        waste: sourceData.waste,
-        act_prodn: sourceData.act_prodn,
-        waste_percent: sourceData.waste_percent,
-        act_effi_percent: sourceData.act_effi_percent,
-        uti_percent: sourceData.uti_percent,
-        std_hrs: sourceData.std_hrs,
-        work_time: sourceData.work_time,
-        session_no: sourceData.session_no
-      }
-    });
-    return data;
-  });
-  
-  await Promise.all(updatePromises.filter(Boolean));
-  
-  // Update target stoppage entries
-  // First get target stoppage entries
-  const targetStoppages = await prisma.simplex_stoppage_entry.findMany({
-    where: {
-      production_detail_id: { in: targetDetails.map(d => d.id) }
-    }
-  });
-
-  const targetDetailById = {}
-  targetDetails.forEach(d => { targetDetailById[d.id] = d })
-  
-  const stoppageUpdatePromises = targetStoppages?.map(async (targetStoppage) => {
-    const machineId = targetDetailById[targetStoppage.production_detail_id]?.machine_id;
-    const sourceStoppage = sourceStoppageMap[machineId];
-    if (!sourceStoppage) return null;
-    
-    const data = await prisma.simplex_stoppage_entry.update({
-      where: { id: targetStoppage.id },
-      data: {
-        stoppage1_id: sourceStoppage.stoppage1_id,
-        stoppage1_time: sourceStoppage.stoppage1_time,
-        stoppage2_id: sourceStoppage.stoppage2_id,
-        stoppage2_time: sourceStoppage.stoppage2_time,
-        stoppage3_id: sourceStoppage.stoppage3_id,
-        stoppage3_time: sourceStoppage.stoppage3_time,
-        stoppage4_id: sourceStoppage.stoppage4_id,
-        stoppage4_time: sourceStoppage.stoppage4_time,
-        total_stoppage_time: sourceStoppage.total_stoppage_time
-      }
-    });
-    return data;
-  }) || [];
-  
-  await Promise.all(stoppageUpdatePromises.filter(Boolean));
-  
-  return {
-    success: true,
-    copiedFrom: previousDate,
-    machinesUpdated: targetDetails.length
-  };
-}
-
-// Backward compatibility wrapper
-export async function copySimplexFromYesterday(targetDate, targetShift, targetHeaderId) {
-  return copySimplexFromPreviousDate(targetDate, targetShift, targetHeaderId, null);
 }

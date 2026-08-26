@@ -1,4 +1,7 @@
 import { prisma } from '../prisma'
+import { getPayrollEmployeesByIds } from '../payroll/employees'
+import { resolveHistoricalEmployeeIdentity } from '../payroll/historicalEmployeeIdentity'
+import { getProductionSupervisorDisplayMap } from './productionSupervisorQueries'
 
 /**
  * Autoconer Low Efficiency Report Queries
@@ -47,6 +50,9 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     }
   }
 
+  const payrollEmployees = await getPayrollEmployeesByIds(details.map(detail => detail.payroll_employee_id))
+  const employeeById = new Map(payrollEmployees.map(employee => [Number(employee.id), employee]))
+
   // Efficiency targets are entry snapshots. Reading the current Count Master here
   // would retroactively change historical reports after a master edit.
   const machineIds = [...new Set(details.map(d => d.machine_id))]
@@ -68,7 +74,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     setupTargetMap.set(`${setup.machine_id}:${setup.shift}`, Number(setup.target_effi) || 0)
   })
 
-  // Get machine information (machine_no, no_of_drums for efficiency calculation)
+  // Get machine display information.
   const machines = await prisma.autoconer_machines.findMany({
     where: {
       id: {
@@ -91,23 +97,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     .map(h => h.supervisor_id)
     .filter(id => id !== null)
 
-  // Get supervisor information
-  let supervisors = []
-  if (supervisorIds.length > 0) {
-    supervisors = await prisma.supervisors.findMany({
-      where: {
-        id: {
-          in: supervisorIds
-        }
-      }
-    })
-  }
-
-  // Create supervisor lookup map
-  const supervisorMap = {}
-  supervisors.forEach(s => {
-    supervisorMap[s.id] = s.supervisor_name
-  })
+  const supervisorMap = await getProductionSupervisorDisplayMap(supervisorIds)
 
   // Process data by shift
   const shiftData = []
@@ -122,31 +112,23 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
         if (!machine) return null
 
         const targetEfficiency = setupTargetMap.get(`${detail.machine_id}:${header.shift}`) || 0
+        const identity = resolveHistoricalEmployeeIdentity({
+          payrollEmployeeId: detail.payroll_employee_id,
+          snapshotName: detail.emp_name,
+          employee: employeeById.get(Number(detail.payroll_employee_id)) || null,
+          assignmentKey: `autoconer:${detail.id}`
+        })
         
-        // Calculate prodn_effi on the fly if it's 0.00 or not set (backward compatibility)
-        let shiftEffi = parseFloat(detail.prodn_effi) || 0
-        
-        // If prodn_effi is 0, calculate it from work_time, run_time, and idle_drum
-        if (shiftEffi === 0 && detail.work_time && detail.run_time) {
-          const totalDrums = machine.no_of_drums || 0
-          const idleDrum = detail.idle_drum || 0
-          const workTime = detail.work_time || 0
-          const runTime = detail.run_time || 510
-          
-          // Calculate drum efficiency
-          const idleDrumPercent = totalDrums > 0 ? (idleDrum / totalDrums) * 100 : 0
-          const drumEfficiency = 100 - idleDrumPercent
-          
-          // Calculate production efficiency: (work_time / run_time) × drum_efficiency
-          shiftEffi = runTime > 0 ? (workTime / runTime) * drumEfficiency : 0
-          shiftEffi = parseFloat(shiftEffi.toFixed(2))
-        }
+        // Production efficiency is the manual value stored on this entry row.
+        // An explicit zero is valid and must not be replaced by another formula.
+        const shiftEffi = parseFloat(detail.prodn_effi) || 0
 
         // Only include if an entry-level target is set.
         if (targetEfficiency > 0) {
           return {
             machine_no: machine.machine_no,
-            sider_name: detail.emp_name || 'NIL',
+            sider_name: identity.displayName,
+            identity_status: identity.identityStatus,
             count: detail.count_name || '',
             act_effi: targetEfficiency,
             shift_effi: shiftEffi,  // Shift Effi % (actual efficiency percentage)
@@ -165,7 +147,7 @@ export async function generateAutoconerLowEfficiencyReport(selectedDate) {
     if (lowEfficiencyMachines.length > 0) {
       shiftData.push({
         shift: header.shift,
-        supervisor_name: supervisorMap[header.supervisor_id] || 'Not Assigned',
+        supervisor_name: supervisorMap.get(header.supervisor_id) || 'Not Assigned',
         machines: lowEfficiencyMachines
       })
     }

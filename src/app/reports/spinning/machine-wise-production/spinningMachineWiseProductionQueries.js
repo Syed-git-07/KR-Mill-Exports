@@ -55,8 +55,24 @@ async function getSpinningMachineWiseProductionReport(fromDate, toDate = null) {
         m.machine_no,
         m.sort_order,
         h.shift,
-        ROUND(AVG(d.exp_gps), 2) AS expected_gps,   -- Exp. G.P.S (Std.)
-        ROUND(AVG(d.gps),     2) AS achieved_gps    -- Ach. G.P.S (Act.)
+        ROUND(
+          CASE WHEN SUM(COALESCE(d.worked_spindles, 0)) > 0
+            THEN SUM(COALESCE(d.exp_gps, 0) * COALESCE(d.worked_spindles, 0))
+              / SUM(COALESCE(d.worked_spindles, 0))
+            ELSE AVG(COALESCE(d.exp_gps, 0))
+          END,
+          2
+        ) AS expected_gps,
+        ROUND(
+          CASE WHEN SUM(COALESCE(d.worked_spindles, 0)) > 0
+            THEN SUM(COALESCE(d.act_prodn, 0))
+              / SUM(COALESCE(d.worked_spindles, 0)) * 1000
+            ELSE 0
+          END,
+          2
+        ) AS achieved_gps,
+        SUM(COALESCE(d.act_prodn, 0)) AS production,
+        SUM(COALESCE(d.worked_spindles, 0)) AS worked_spindles
       FROM spinning_production_header h
       JOIN spinning_production_detail d ON d.header_id = h.id
       JOIN spinning_machines m           ON d.machine_id = m.id
@@ -73,6 +89,21 @@ async function getSpinningMachineWiseProductionReport(fromDate, toDate = null) {
       return {
         std: row && row.expected_gps  !== null ? parseFloat(row.expected_gps)  : 0,
         act: row && row.achieved_gps  !== null ? parseFloat(row.achieved_gps) : 0,
+        production: Number(row?.production) || 0,
+        workedSpindles: Number(row?.worked_spindles) || 0,
+      }
+    }
+
+    const combineGps = values => {
+      const workedSpindles = values.reduce((sum, value) => sum + value.workedSpindles, 0)
+      const production = values.reduce((sum, value) => sum + value.production, 0)
+      return {
+        std: workedSpindles > 0
+          ? values.reduce((sum, value) => sum + value.std * value.workedSpindles, 0) / workedSpindles
+          : 0,
+        act: workedSpindles > 0 ? production / workedSpindles * 1000 : 0,
+        production,
+        workedSpindles
       }
     }
 
@@ -81,8 +112,7 @@ async function getSpinningMachineWiseProductionReport(fromDate, toDate = null) {
       const s2 = getShiftData(machine.machine_no, 2)
       const s3 = getShiftData(machine.machine_no, 3)
 
-      // Total = (Ach S1 + Ach S2 + Ach S3) / 3
-      const total = parseFloat(((s1.act + s2.act + s3.act) / 3).toFixed(2))
+      const total = Number(combineGps([s1, s2, s3]).act.toFixed(2))
 
       return {
         machineNo:  machine.machine_no,
@@ -95,34 +125,25 @@ async function getSpinningMachineWiseProductionReport(fromDate, toDate = null) {
     })
 
     // ── Step 4: Calculate TOTAL row (column averages across all machines) ──
-    // Uses simple average over all machines including idle ones (which show 0.00)
-    const colAvg = (vals) => {
-      if (vals.length === 0) return 0
-      return parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2))
-    }
+    const totalShift1 = combineGps(machines.map(machine => machine.shift1))
+    const totalShift2 = combineGps(machines.map(machine => machine.shift2))
+    const totalShift3 = combineGps(machines.map(machine => machine.shift3))
+    const allShifts = combineGps([totalShift1, totalShift2, totalShift3])
 
     const totals = {
       shift1: {
-        std: colAvg(machines.map(m => m.shift1.std)),
-        act: colAvg(machines.map(m => m.shift1.act)),
+        std: Number(totalShift1.std.toFixed(2)),
+        act: Number(totalShift1.act.toFixed(2)),
       },
       shift2: {
-        std: colAvg(machines.map(m => m.shift2.std)),
-        act: colAvg(machines.map(m => m.shift2.act)),
+        std: Number(totalShift2.std.toFixed(2)),
+        act: Number(totalShift2.act.toFixed(2)),
       },
       shift3: {
-        std: colAvg(machines.map(m => m.shift3.std)),
-        act: colAvg(machines.map(m => m.shift3.act)),
+        std: Number(totalShift3.std.toFixed(2)),
+        act: Number(totalShift3.act.toFixed(2)),
       },
-      total: parseFloat(
-        (
-          (
-            colAvg(machines.map(m => m.shift1.act)) +
-            colAvg(machines.map(m => m.shift2.act)) +
-            colAvg(machines.map(m => m.shift3.act))
-          ) / 3
-        ).toFixed(2)
-      ),
+      total: Number(allShifts.act.toFixed(2)),
     }
 
     // ── Step 5: Return ─────────────────────────────────────────────────────

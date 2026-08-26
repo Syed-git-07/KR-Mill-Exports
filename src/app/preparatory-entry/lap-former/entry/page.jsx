@@ -549,7 +549,7 @@ function LapFormerEntryContent() {
                 <SelectContent>
                   {supervisors.map(sup => (
                     <SelectItem key={sup.id} value={sup.id}>
-                      {sup.supervisor_name}
+                      {sup.supervisor_label || sup.supervisor_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -567,7 +567,7 @@ function LapFormerEntryContent() {
                   <SelectItem value="nil">NIL</SelectItem>
                   {supervisors.map(sup => (
                     <SelectItem key={sup.id} value={sup.id}>
-                      {sup.supervisor_name}
+                      {sup.supervisor_label || sup.supervisor_name}
                     </SelectItem>
                   ))}
                 </SelectContent>

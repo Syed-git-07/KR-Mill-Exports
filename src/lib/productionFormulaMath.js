@@ -52,6 +52,48 @@ export function calculateSpinningExpectedGps({
   return (7.2 * safeSpeed / safeTpi / safeCount) * safeEfficiency
 }
 
+export function calculateSpinningEntryMetrics({
+  actHank,
+  waste,
+  stoppageMins,
+  runTime,
+  allocatedSpindles,
+  shift,
+  actCount,
+  lossEfficiency,
+  expectedGps,
+}) {
+  const time = resolveProductionTime(runTime, stoppageMins)
+  const safeAllocatedSpindles = Math.max(toFiniteNumber(allocatedSpindles), 0)
+  const multiplier = Number(shift) === 3 ? 7 : 8.5
+  const totalSpindles = Math.round((safeAllocatedSpindles / 8) * multiplier)
+  const safeActCount = Math.max(toFiniteNumber(actCount), 0)
+  const safeLossEfficiency = Math.max(toFiniteNumber(lossEfficiency), 0)
+  const constant = safeActCount > 0
+    ? (1 / 2.20456 / safeActCount) * totalSpindles * safeLossEfficiency
+    : 0
+  const actualProduction = Math.max(toFiniteNumber(actHank), 0) * constant
+  const wasteValue = Math.max(toFiniteNumber(waste), 0)
+  const wastePercent = actualProduction > 0 ? (wasteValue / actualProduction) * 100 : 0
+  const stoppedSpindles = time.totalTime > 0
+    ? (time.stoppageTime / time.totalTime) * totalSpindles
+    : 0
+  const workedSpindles = Math.max(totalSpindles - stoppedSpindles, 0)
+  const gps = workedSpindles > 0 ? (actualProduction / workedSpindles) * 1000 : 0
+
+  return {
+    act_prodn: roundProductionValue(actualProduction),
+    waste_percent: roundProductionValue(wastePercent),
+    stopped_spindles: roundProductionValue(stoppedSpindles),
+    worked_spindles: workedSpindles,
+    gps: roundProductionValue(gps),
+    exp_gps: roundProductionValue(expectedGps, 3),
+    work_time: time.workTime,
+    _constant: roundProductionValue(constant, 3),
+    _totalSpindles: totalSpindles,
+  }
+}
+
 /**
  * Shared workbook rules for Carding, Breaker Drawing, Finisher Drawing and
  * Lap Former:

@@ -1,5 +1,6 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
+import { getPayrollEmployeesByIds } from '../payroll/employees'
+import { resolveHistoricalEmployeeIdentity } from '../payroll/historicalEmployeeIdentity'
 
 /**
  * Department configurations for sider performance report
@@ -50,13 +51,12 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     where: {
       header_id: {
         in: headerIds
-      },
-      employee_name: {
-        not: null
       }
     },
     select: {
+      id: true,
       employee_name: true,
+      payroll_employee_id: true,
       act_prodn: true,
       [effiField]: true,
       uti_percent: true,
@@ -68,34 +68,34 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     return []
   }
 
-  const employeeNames = [...new Set(details.map(detail => detail.employee_name).filter(Boolean))]
-  const employeeMasters = await prisma.$queryRaw`
-    SELECT
-      firstName AS emp_name,
-      CAST(biometricEnrollmentId AS CHAR) AS emp_code,
-      dateOfJoining AS doj
-    FROM payroll.employees
-    WHERE firstName IN (${Prisma.join(employeeNames)})
-  `
-  const masterByName = new Map(employeeMasters.map(employee => [employee.emp_name.trim().toLowerCase(), employee]))
+  const employeeIds = [...new Set(details.map(detail => detail.payroll_employee_id).filter(Boolean))]
+  const employeeMasters = await getPayrollEmployeesByIds(employeeIds)
+  const masterById = new Map(employeeMasters.map(employee => [Number(employee.id), employee]))
 
-  // Aggregate by employee
-  const employeeMap = {}
+  // Mapped rows aggregate strictly by payroll employee ID. An unresolved
+  // historical assignment gets its own local detail key; names are never used
+  // as identity or silently collapsed together.
+  const employeeMap = new Map()
 
   details.forEach(detail => {
-    const empName = detail.employee_name
-    if (!empName) return
+    const employee = masterById.get(Number(detail.payroll_employee_id)) || null
+    const identity = resolveHistoricalEmployeeIdentity({
+      payrollEmployeeId: detail.payroll_employee_id,
+      snapshotName: detail.employee_name,
+      employee,
+      assignmentKey: `${tablePrefix}:${detail.id}`
+    })
 
-    if (!employeeMap[empName]) {
-      employeeMap[empName] = {
-        name: empName,
+    if (!employeeMap.has(identity.groupKey)) {
+      employeeMap.set(identity.groupKey, {
+        identity,
         totalProduction: 0,
         totalEfficiency: 0,
         totalUtilization: 0,
         totalWastePercent: 0,
         metricWeight: 0,
         recordCount: 0
-      }
+      })
     }
 
     const production = parseFloat(detail.act_prodn || 0)
@@ -103,40 +103,35 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     const utilization = parseFloat(detail.uti_percent || 0)
     const wastePercent = parseFloat(detail.waste_percent || 0)
 
-    employeeMap[empName].totalProduction += production
-    employeeMap[empName].totalEfficiency += efficiency
-    employeeMap[empName].totalUtilization += utilization
-    employeeMap[empName].totalWastePercent += wastePercent
-    employeeMap[empName].metricWeight += production
-    employeeMap[empName].recordCount++
-  })
-
-  // The stored row percentages are authoritative. Weight them by production
-  // for a range report so a very small run does not distort a sider's result.
-  details.forEach(detail => {
-    const emp = employeeMap[detail.employee_name]
-    if (!emp) return
-    const production = Number(detail.act_prodn) || 0
+    const emp = employeeMap.get(identity.groupKey)
+    emp.totalProduction += production
+    emp.totalEfficiency += efficiency
+    emp.totalUtilization += utilization
+    emp.totalWastePercent += wastePercent
+    emp.metricWeight += production
+    emp.recordCount++
     emp.weightedEfficiency = (emp.weightedEfficiency || 0) + (Number(detail[effiField]) || 0) * production
     emp.weightedUtilization = (emp.weightedUtilization || 0) + (Number(detail.uti_percent) || 0) * production
     emp.weightedWaste = (emp.weightedWaste || 0) + (Number(detail.waste_percent) || 0) * production
   })
 
-  const employees = Object.values(employeeMap).flatMap(emp => {
-    const master = masterByName.get(emp.name.trim().toLowerCase())
-    if (!master) return []
+  const employees = [...employeeMap.values()].map(emp => {
+    const master = emp.identity.employee
     const average = (weighted, fallback) => emp.metricWeight > 0
       ? weighted / emp.metricWeight
       : (emp.recordCount > 0 ? fallback / emp.recordCount : 0)
-    return [{
-      name: master.emp_name,
-      tokenNo: master.emp_code || '-',
-      doj: master.doj ? master.doj.toISOString() : null,
+    return {
+      payrollEmployeeId: emp.identity.payrollEmployeeId,
+      identityStatus: emp.identity.identityStatus,
+      name: emp.identity.displayName,
+      tokenNo: master?.token_no || master?.emp_code || (emp.identity.identityStatus === 'UNRESOLVED_LEGACY' ? 'UNMAPPED' : '-'),
+      employeeCode: master?.employee_code || '-',
+      doj: master?.doj ? new Date(master.doj).toISOString() : null,
       productionKgs: parseFloat(emp.totalProduction.toFixed(2)),
       efficiencyPercent: parseFloat(average(emp.weightedEfficiency, emp.totalEfficiency).toFixed(2)),
       utilizationPercent: parseFloat(average(emp.weightedUtilization, emp.totalUtilization).toFixed(2)),
       wastePercent: parseFloat(average(emp.weightedWaste, emp.totalWastePercent).toFixed(2))
-    }]
+    }
   })
 
   // Sort by production descending

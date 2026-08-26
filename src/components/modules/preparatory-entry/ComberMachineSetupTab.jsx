@@ -18,13 +18,9 @@ import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import EnterSelect from '@/components/ui/enter-select'
 import {
-  getComberMachineSetupsAction,
-  updateComberMachineSetupAction,
+  getComberEntryTabDataAction,
+  runComberEntryBatchAction,
   addComberMachineAction,
-  removeComberMachineAction,
-  getComberMachinesAction,
-  getComberCountOptionsAction,
-  getComberShiftConfigurationAction,
   lookupComberMachineByNoAction
 } from '@/app/actions/comber-entry'
 import { NumberInput } from '@/components/ui/number-input'
@@ -140,35 +136,16 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Load shift time from database when shift changes
-  useEffect(() => {
-    const loadShiftTime = async () => {
-      try {
-        const result = await getComberShiftConfigurationAction(shift)
-        if (result.success && result.data) {
-          setShiftTime(result.data.totalTime || resolveComberShiftFallbackTime(shift))
-        } else {
-          setShiftTime(resolveComberShiftFallbackTime(shift))
-        }
-      } catch (error) {
-        console.error('Error loading shift time:', error)
-        setShiftTime(resolveComberShiftFallbackTime(shift))
-      }
-    }
-    loadShiftTime()
-  }, [shift])
-
   // Load machine setups
   const loadData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [setupsResult, countsResult] = await Promise.all([
-        getComberMachineSetupsAction(headerId),
-        getComberCountOptionsAction()
-      ])
+      const result = await getComberEntryTabDataAction('setup', { headerId, shift })
+      if (!result.success) throw new Error(result.error || 'Failed to load Comber setup data')
+      const { setupsResult, countsResult, shiftConfigResult } = result.data
       
-      if (!setupsResult.success || !countsResult.success) {
-        throw new Error(setupsResult.error || countsResult.error)
+      if (!setupsResult.success || !countsResult.success || !shiftConfigResult.success) {
+        throw new Error(setupsResult.error || countsResult.error || shiftConfigResult.error)
       }
       
       const setups = setupsResult.data
@@ -183,15 +160,16 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       const mergedRows = mergeServerRowsWithDrafts(sortedSetups)
       setSetupData(mergedRows)
       setCountOptions(counts || [])
+      setShiftTime(shiftConfigResult.data?.totalTime || resolveComberShiftFallbackTime(shift))
     } catch (error) {
       console.error('Error loading machine setups:', error)
       toast.error('Failed to load machine setups')
     } finally {
       setIsLoading(false)
     }
-  }, [mergeServerRowsWithDrafts])
+  }, [headerId, shift, mergeServerRowsWithDrafts])
 
-  useServerDataLoader(loadData, [])
+  useServerDataLoader(loadData, [headerId, shift])
 
   // Handle input change
   const handleInputChange = (rowId, field, value) => {
@@ -236,11 +214,10 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) =>
-        updateComberMachineSetupAction(rowId, changes)
-      )
-
-      const results = await Promise.all(updatePromises)
+      const updates = Object.entries(currentEdits).map(([rowId, changes]) => ({ id: rowId, updates: changes }))
+      const batchResult = await runComberEntryBatchAction('setup-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save machine setups')
+      const results = batchResult.data || []
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       
@@ -251,8 +228,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -377,8 +354,8 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         mc_effi: COMBER_FORMULA_FALLBACK.mcEffiFactor,
         installed_date: ''
       })
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error adding machine:', error)
       toast.error(error.message || 'Failed to add machine')
@@ -398,15 +375,20 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
     setIsSaving(true)
     try {
-      const promises = selectedRows.map(id => removeComberMachineAction(id, headerId))
-      const results = await Promise.all(promises)
+      const batchResult = await runComberEntryBatchAction(
+        'machine-remove',
+        selectedRows.map(id => ({ id })),
+        { headerId }
+      )
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to remove machines')
+      const results = batchResult.data || []
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
       setShowRemoveDialog(false)
       setSelectedRows([])
-      await loadData()
-      onRefresh?.()
+      if (onRefresh) onRefresh()
+      else await loadData()
     } catch (error) {
       console.error('Error removing machines:', error)
       toast.error('Failed to remove machines')

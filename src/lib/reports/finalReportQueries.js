@@ -1,5 +1,7 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { getPayrollEmployeesByIds } from '@/lib/payroll/employees'
+import { resolveHistoricalEmployeeIdentity } from '@/lib/payroll/historicalEmployeeIdentity'
+import { getProductionSupervisorDisplayMap } from '@/lib/queries/productionSupervisorQueries'
 import { generatePreparatoryStoppageReport } from '@/lib/queries/preparatoryStoppageReportQueries'
 import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageReportQueries'
 import { getAutoconerStoppagePercentageReport } from '@/app/reports/autoconer/stoppage-percentage/autoconerStoppagePercentageQueries'
@@ -15,6 +17,15 @@ const PREPARATORY_DEPARTMENTS = [
 
 const n = value => Number(value) || 0
 const fixed = (value, digits = 2) => n(value).toFixed(digits)
+const reportDate = (value, label) => {
+  const date = value instanceof Date
+    ? new Date(value.getTime())
+    : /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
+      ? new Date(`${value}T00:00:00.000Z`)
+      : new Date(value)
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} must be a valid date`)
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+}
 const dateKey = value => {
   const date = new Date(value)
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
@@ -49,24 +60,13 @@ function baseReport(title, fromDate, toDate, orientation = 'portrait') {
   }
 }
 
-async function employeeMasterMap(names) {
-  const uniqueNames = [...new Set(names.filter(Boolean))]
-  if (!uniqueNames.length) return new Map()
-  const employees = await prisma.employee_master.findMany({
-    where: { emp_name: { in: uniqueNames } },
-    select: { emp_name: true, emp_code: true, doj: true, department: true }
-  })
-  return new Map(employees.map(employee => [employee.emp_name, employee]))
+async function payrollEmployeeMap(ids) {
+  const employees = await getPayrollEmployeesByIds(ids)
+  return new Map(employees.map(employee => [Number(employee.id), employee]))
 }
 
 async function supervisorMap(ids) {
-  const uniqueIds = [...new Set(ids.filter(Boolean))]
-  if (!uniqueIds.length) return new Map()
-  const supervisors = await prisma.supervisors.findMany({
-    where: { id: { in: uniqueIds } },
-    select: { id: true, supervisor_name: true }
-  })
-  return new Map(supervisors.map(supervisor => [supervisor.id, supervisor.supervisor_name]))
+  return getProductionSupervisorDisplayMap(ids)
 }
 
 async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = false } = {}) {
@@ -79,7 +79,7 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
     if (!headers.length) return []
 
     const select = {
-      header_id: true, machine_id: true, employee_name: true, run_sequence: true,
+      id: true, header_id: true, machine_id: true, employee_name: true, payroll_employee_id: true, run_sequence: true,
       act_prodn: true, uti_percent: true, waste: true, waste_percent: true,
       work_time: true, [department.effi]: true, [department.std]: true
     }
@@ -117,7 +117,9 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
         supervisorId: header.supervisor_id,
         machineNo: machine?.machine_no || '-',
         sortOrder: machine?.sort_order || 0,
-        employeeName: detail.employee_name || 'NIL',
+        detailId: detail.id,
+        employeeId: detail.payroll_employee_id,
+        employeeName: detail.employee_name || '',
         hank: includeSimplexHank && department.model === 'simplex'
           ? n(simplexSetupByKey.get(`${detail.machine_id}|${dateKey(header.entry_date)}|${header.shift}|${detail.run_sequence}`)?.sl_hank)
           : n(detail.act_hank),
@@ -133,12 +135,44 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
       }
     })
   }))
-  return departmentResults.flat()
+  const records = departmentResults.flat()
+  const employees = await payrollEmployeeMap(records.map(record => record.employeeId))
+  return records.map(record => {
+    const employee = employees.get(Number(record.employeeId)) || null
+    const identity = resolveHistoricalEmployeeIdentity({
+      payrollEmployeeId: record.employeeId,
+      snapshotName: record.employeeName,
+      employee,
+      assignmentKey: `${record.department}:${record.detailId}`
+    })
+    return {
+      ...record,
+      employee,
+      employeeIdentity: identity,
+      identityStatus: identity.identityStatus,
+      employeeName: identity.displayName
+    }
+  })
 }
 
 function weighted(rows, field) {
   const weight = rows.reduce((sum, row) => sum + row.production, 0)
   if (weight > 0) return rows.reduce((sum, row) => sum + row[field] * row.production, 0) / weight
+  return rows.length ? rows.reduce((sum, row) => sum + row[field], 0) / rows.length : 0
+}
+
+function spinningGps(rows) {
+  const workedSpindles = rows.reduce((sum, row) => sum + row.workedSpindles, 0)
+  return workedSpindles > 0
+    ? rows.reduce((sum, row) => sum + row.production, 0) / workedSpindles * 1000
+    : 0
+}
+
+function workedSpindleWeighted(rows, field) {
+  const workedSpindles = rows.reduce((sum, row) => sum + row.workedSpindles, 0)
+  if (workedSpindles > 0) {
+    return rows.reduce((sum, row) => sum + row[field] * row.workedSpindles, 0) / workedSpindles
+  }
   return rows.length ? rows.reduce((sum, row) => sum + row[field], 0) / rows.length : 0
 }
 
@@ -223,25 +257,12 @@ async function preparatoryAbstract(fromDate, toDate) {
   return report
 }
 
-async function payrollEmployeeMap(names) {
-  const uniqueNames = [...new Set(names.filter(Boolean))]
-  if (!uniqueNames.length) return new Map()
-  const employees = await prisma.$queryRaw`
-    SELECT
-      firstName AS emp_name,
-      CAST(biometricEnrollmentId AS CHAR) AS emp_code,
-      dateOfJoining AS doj
-    FROM payroll.employees
-    WHERE firstName IN (${Prisma.join(uniqueNames)})
-  `
-  return new Map(employees.map(employee => [employee.emp_name.trim().toLowerCase(), employee]))
-}
-
-async function preparatoryParticularSider(fromDate, toDate, employeeName) {
+async function preparatoryParticularSider(fromDate, toDate, employeeId) {
   const report = baseReport('Preparatory Particular Sider Report', fromDate, toDate)
-  const records = (await getPreparatoryRecords(fromDate, toDate)).filter(row => row.employeeName.toLowerCase() === employeeName.trim().toLowerCase())
-  const masters = await payrollEmployeeMap([employeeName])
-  const employee = masters.get(employeeName.trim().toLowerCase())
+  const payrollId = Number(employeeId)
+  const records = (await getPreparatoryRecords(fromDate, toDate)).filter(row => Number(row.employeeId) === payrollId)
+  const masters = await payrollEmployeeMap([payrollId])
+  const employee = masters.get(payrollId)
   report.meta.push(['Sider', employee?.emp_name || '-'], ['Token No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
   report.tables.push({
     columns: ['SL No', 'Date', 'Department', 'Shift', 'Effi %', 'UTTI %', 'Waste %'],
@@ -288,19 +309,30 @@ async function getAutoconerRecords(fromDate, toDate) {
   })
   const headerById = new Map(headers.map(header => [header.id, header]))
   const machineById = new Map(machines.map(machine => [machine.id, machine]))
+  const employees = await payrollEmployeeMap(details.map(detail => detail.payroll_employee_id))
   return details.map(detail => {
     const header = headerById.get(detail.header_id)
     const machine = machineById.get(detail.machine_id)
     const runTime = n(detail.run_time)
     return {
       date: header.entry_date, shift: header.shift, supervisorId: header.supervisor_id,
-      machineNo: machine?.machine_no || '-', employeeName: detail.emp_name || 'NIL',
+      detailId: detail.id, machineNo: machine?.machine_no || '-', employeeId: detail.payroll_employee_id,
+      employee: employees.get(Number(detail.payroll_employee_id)) || null,
+      employeeSnapshot: detail.emp_name || '',
       count: detail.count_name || '-', production: n(detail.act_prodn),
       drums: Math.max(0, n(machine?.no_of_drums) - n(detail.idle_drum)),
       efficiency: n(detail.prodn_effi),
       utilization: runTime > 0 ? n(detail.work_time) / runTime * 100 : 0,
       red: n(detail.red_light), stoppage: n(detail.total_stoppage_mins)
     }
+  }).map(record => {
+    const identity = resolveHistoricalEmployeeIdentity({
+      payrollEmployeeId: record.employeeId,
+      snapshotName: record.employeeSnapshot,
+      employee: record.employee,
+      assignmentKey: `autoconer:${record.detailId}`
+    })
+    return { ...record, employeeIdentity: identity, identityStatus: identity.identityStatus, employeeName: identity.displayName }
   })
 }
 
@@ -308,7 +340,6 @@ async function autoconerShiftProduction(fromDate, toDate) {
   const report = baseReport('Autoconer Shift Wise Production Report', fromDate, toDate, 'landscape')
   const records = await getAutoconerRecords(fromDate, toDate)
   const supervisors = await supervisorMap(records.map(row => row.supervisorId))
-  const masters = await employeeMasterMap(records.map(row => row.employeeName))
   const groups = new Map()
   for (const row of records) {
     const key = `${dateKey(row.date)}|${row.shift}|${row.count}`
@@ -321,7 +352,7 @@ async function autoconerShiftProduction(fromDate, toDate) {
       title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
       columns: ['SL No', 'MC No', 'Employee', 'DOJ', 'Drums', 'Prod Kgs', 'Effi %', 'UTTI %', 'RED', 'Stoppage'],
       rows: rows.sort((a, b) => a.machineNo.localeCompare(b.machineNo, undefined, { numeric: true })).map((row, index) => {
-        const employee = masters.get(row.employeeName)
+        const employee = row.employee
         return [index + 1, row.machineNo, row.employeeName, employee?.doj ? displayDate(employee.doj) : '-', fixed(row.drums, 0), fixed(row.production), fixed(row.efficiency), fixed(row.utilization), fixed(row.red), fixed(row.stoppage, 0)]
       }),
       footer: ['TOTAL', '', '', '', fixed(rows.reduce((s, r) => s + r.drums, 0), 0), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(weighted(rows, 'efficiency')), fixed(weighted(rows, 'utilization')), fixed(weighted(rows, 'red')), fixed(rows.reduce((s, r) => s + r.stoppage, 0), 0)]
@@ -333,17 +364,18 @@ async function autoconerShiftProduction(fromDate, toDate) {
 async function autoconerSiderMonthly(fromDate, toDate) {
   const report = baseReport('Sider Monthly Autoconer Production Report', fromDate, toDate, 'landscape')
   const records = await getAutoconerRecords(fromDate, toDate)
-  const masters = await employeeMasterMap(records.map(row => row.employeeName))
   const groups = new Map()
   for (const row of records) {
-    const key = `${row.employeeName}|${row.count}`
+    const key = `${row.employeeIdentity.groupKey}|${row.count}`
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(row)
   }
   const rows = [...groups.entries()].map(([key, items]) => {
-    const [name, count] = key.split('|')
-    const employee = masters.get(name)
-    return [employee?.emp_code || '-', name, employee?.doj ? displayDate(employee.doj) : '-', count, fixed(items.reduce((s, r) => s + r.production, 0)), fixed(weighted(items, 'efficiency')), fixed(weighted(items, 'red'))]
+    const count = key.slice(key.lastIndexOf('|') + 1)
+    const employee = items[0]?.employee
+    const snapshots = [...new Set(items.map(item => item.employeeName).filter(Boolean))]
+    const token = employee?.token_no || employee?.emp_code || (items[0]?.identityStatus === 'UNRESOLVED_LEGACY' ? 'UNMAPPED' : '-')
+    return [token, snapshots.join(' / ') || 'NIL', employee?.doj ? displayDate(employee.doj) : '-', count, fixed(items.reduce((s, r) => s + r.production, 0)), fixed(weighted(items, 'efficiency')), fixed(weighted(items, 'red'))]
   }).sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
   report.tables.push({ columns: ['Token No', 'Sider Name', 'DOJ', 'Count', 'Prod Kgs', 'EFF %', 'RED'], rows: rows.map((row, index) => [index + 1, ...row]), columnPrefix: 'S No' })
   // Keep the first column label explicit after adding the serial number.
@@ -370,19 +402,46 @@ async function getSpinningRecords(fromDate, toDate) {
   const headerById = new Map(headers.map(header => [header.id, header]))
   const machineById = new Map(machines.map(machine => [machine.id, machine]))
   const setupByKey = new Map(setups.map(setup => [`${setup.machine_id}|${dateKey(setup.entry_date)}|${setup.shift}|${setup.run_sequence}`, setup]))
+  const employees = await payrollEmployeeMap(details.flatMap(detail => [detail.sider1_payroll_employee_id, detail.sider2_payroll_employee_id]))
   return details.map(detail => {
     const header = headerById.get(detail.header_id)
     const machine = machineById.get(detail.machine_id)
     const setup = setupByKey.get(`${detail.machine_id}|${dateKey(header.entry_date)}|${header.shift}|${detail.run_sequence}`)
     return {
       date: header.entry_date, shift: header.shift, supervisorId: header.supervisor_id,
-      machineNo: machine?.machine_no || '-', sortOrder: machine?.sort_order || 0,
+      detailId: detail.id, machineNo: machine?.machine_no || '-', sortOrder: machine?.sort_order || 0,
       count: detail.count_name || 'UNSPECIFIED', hank: n(detail.act_hank), production: n(detail.act_prodn),
       waste: n(detail.waste), wastePercent: n(detail.waste_percent), gps: n(detail.gps), expGps: n(detail.exp_gps),
       workedSpindles: n(detail.worked_spindles), stoppedSpindles: n(detail.stopped_spindles),
-      allocatedSpindles: n(setup?.allocated_spindles) || n(machine?.allocated_spindles),
+      allocatedSpindles: n(setup?.allocated_spindles ?? machine?.allocated_spindles),
       conv40s: n(setup?.conv_40s_value), stoppage: n(detail.total_stoppage_mins),
-      sider1: detail.sider1_name || '', sider2: detail.sider2_name || '', remarks: detail.remarks || ''
+      sider1Id: detail.sider1_payroll_employee_id,
+      sider2Id: detail.sider2_payroll_employee_id,
+      sider1Snapshot: detail.sider1_name || '',
+      sider2Snapshot: detail.sider2_name || '',
+      sider1Employee: employees.get(Number(detail.sider1_payroll_employee_id)) || null,
+      sider2Employee: employees.get(Number(detail.sider2_payroll_employee_id)) || null,
+      remarks: detail.remarks || ''
+    }
+  }).map(record => {
+    const sider1Identity = resolveHistoricalEmployeeIdentity({
+      payrollEmployeeId: record.sider1Id,
+      snapshotName: record.sider1Snapshot,
+      employee: record.sider1Employee,
+      assignmentKey: `spinning:${record.detailId}:sider1`
+    })
+    const sider2Identity = resolveHistoricalEmployeeIdentity({
+      payrollEmployeeId: record.sider2Id,
+      snapshotName: record.sider2Snapshot,
+      employee: record.sider2Employee,
+      assignmentKey: `spinning:${record.detailId}:sider2`
+    })
+    return {
+      ...record,
+      sider1: sider1Identity.displayName,
+      sider2: sider2Identity.displayName,
+      sider1Identity,
+      sider2Identity
     }
   })
 }
@@ -407,17 +466,25 @@ async function spinningCountGps(fromDate, toDate) {
     report.tables.push({
       title: count,
       columns: ['Count', 'Frame', 'Production Kgs', 'Waste Kgs', 'Waste %', 'GPS'],
-      rows: frames.sort((a, b) => a.frame.localeCompare(b.frame, undefined, { numeric: true })).map(frame => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(weighted(frame.rows, 'gps'))]),
-      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(weighted(countRows, 'gps'))]
+      rows: frames.sort((a, b) => a.frame.localeCompare(b.frame, undefined, { numeric: true })).map(frame => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(spinningGps(frame.rows))]),
+      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(spinningGps(countRows))]
     })
   }
   return report
 }
 
 function siderShares(record) {
-  const names = [...new Set([record.sider1, record.sider2].filter(Boolean))]
-  if (!names.length) return []
-  return names.map(name => ({ name, production: record.production / names.length, waste: record.waste / names.length }))
+  const identities = new Map([record.sider1Identity, record.sider2Identity]
+    .filter(identity => identity?.identityStatus !== 'UNASSIGNED')
+    .map(identity => [identity.groupKey, identity]))
+  if (!identities.size) return []
+  return [...identities.values()].map(identity => ({
+    identity,
+    employeeId: identity.payrollEmployeeId,
+    employee: identity.employee,
+    production: record.production / identities.size,
+    waste: record.waste / identities.size
+  }))
 }
 
 async function spinningSiderWise(fromDate, toDate) {
@@ -426,15 +493,17 @@ async function spinningSiderWise(fromDate, toDate) {
   const map = new Map()
   for (const record of records) {
     for (const share of siderShares(record)) {
-      if (!map.has(share.name)) map.set(share.name, { production: 0, waste: 0 })
-      map.get(share.name).production += share.production
-      map.get(share.name).waste += share.waste
+      const key = share.identity.groupKey
+      if (!map.has(key)) map.set(key, { employee: share.employee, identity: share.identity, displayNames: new Set(), production: 0, waste: 0 })
+      map.get(key).displayNames.add(share.identity.displayName)
+      map.get(key).production += share.production
+      map.get(key).waste += share.waste
     }
   }
-  const masters = await employeeMasterMap([...map.keys()])
-  const rows = [...map.entries()].map(([name, values]) => {
-    const employee = masters.get(name)
-    return [employee?.emp_code || '-', name, employee?.doj ? displayDate(employee.doj) : '-', fixed(values.production), fixed(values.waste), fixed(values.production > 0 ? values.waste / values.production * 100 : 0)]
+  const rows = [...map.values()].map(values => {
+    const employee = values.employee
+    const token = employee?.token_no || employee?.emp_code || (values.identity.identityStatus === 'UNRESOLVED_LEGACY' ? 'UNMAPPED' : '-')
+    return [token, [...values.displayNames].join(' / ') || values.identity.displayName, employee?.doj ? displayDate(employee.doj) : '-', fixed(values.production), fixed(values.waste), fixed(values.production > 0 ? values.waste / values.production * 100 : 0)]
   }).sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
   report.tables.push({ columns: ['Ticket No', 'Employee Name', 'DOJ', 'Prod Kgs', 'Waste Kgs', 'Waste %'], rows })
   report.notes.push('When two siders are recorded on one frame, production and waste are shared equally so report totals are not duplicated.')
@@ -457,21 +526,21 @@ async function spinningDailyShift(fromDate, toDate) {
       title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
       columns: ['MC No', 'Hank', 'Worked Spl', 'Prod Kgs', 'GPS Std', 'GPS Act', 'Waste Kgs', 'Waste %', 'Gain / Loss', 'Stopped Spl', 'Stoppage Detail'],
       rows: rows.sort((a, b) => a.sortOrder - b.sortOrder || a.machineNo.localeCompare(b.machineNo, undefined, { numeric: true })).map(row => [row.machineNo, fixed(row.hank), fixed(row.workedSpindles), fixed(row.production), fixed(row.expGps), fixed(row.gps), fixed(row.waste), fixed(row.wastePercent), fixed(row.expGps - row.gps), fixed(row.stoppedSpindles), row.remarks || '-']),
-      footer: ['TOTAL', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.workedSpindles, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(weighted(rows, 'expGps')), fixed(weighted(rows, 'gps')), fixed(rows.reduce((s, r) => s + r.waste, 0)), fixed(rows.reduce((s, r) => s + r.waste, 0) / Math.max(rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(weighted(rows, 'expGps') - weighted(rows, 'gps')), fixed(rows.reduce((s, r) => s + r.stoppedSpindles, 0)), '']
+      footer: ['TOTAL', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.workedSpindles, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(workedSpindleWeighted(rows, 'expGps')), fixed(spinningGps(rows)), fixed(rows.reduce((s, r) => s + r.waste, 0)), fixed(rows.reduce((s, r) => s + r.waste, 0) / Math.max(rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(workedSpindleWeighted(rows, 'expGps') - spinningGps(rows)), fixed(rows.reduce((s, r) => s + r.stoppedSpindles, 0)), '']
     })
   }
   report.notes.push('Energy-unit and power-failure fields are not present in the current production or master schema, so no values are invented in this report.')
   return report
 }
 
-async function spinningParticularSider(fromDate, toDate, employeeName) {
+async function spinningParticularSider(fromDate, toDate, employeeId) {
   const report = baseReport('Spinning Particular Sider Report', fromDate, toDate)
-  const records = (await getSpinningRecords(fromDate, toDate)).filter(row => [row.sider1, row.sider2].some(name => name.toLowerCase() === employeeName.trim().toLowerCase()))
-  const masters = await employeeMasterMap([employeeName])
-  const employee = masters.get(employeeName) || [...masters.values()][0]
-  report.meta.push(['Sider', employeeName || '-'], ['Ticket No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
+  const payrollId = Number(employeeId)
+  const records = (await getSpinningRecords(fromDate, toDate)).filter(row => [row.sider1Id, row.sider2Id].some(id => Number(id) === payrollId))
+  const employee = (await payrollEmployeeMap([payrollId])).get(payrollId)
+  report.meta.push(['Sider', employee?.emp_name || '-'], ['Ticket No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
   const rows = records.map((row, index) => {
-    const divisor = [...new Set([row.sider1, row.sider2].filter(Boolean))].length || 1
+    const divisor = siderShares(row).length || 1
     return [index + 1, displayDate(row.date), row.shift, row.machineNo, fixed(row.production / divisor), fixed(row.waste / divisor), fixed(row.production > 0 ? row.waste / row.production * 100 : 0)]
   })
   report.tables.push({
@@ -518,8 +587,11 @@ const REPORT_BUILDERS = {
   'spinning-stoppage-abstract': spinningStoppageAbstract
 }
 
-export async function buildFinalReport(reportKey, fromDate, toDate, employeeName = '') {
+export async function buildFinalReport(reportKey, fromDate, toDate, employeeId = null) {
   const builder = REPORT_BUILDERS[reportKey]
   if (!builder) throw new Error('Unknown report type')
-  return builder(fromDate, toDate, employeeName)
+  const normalizedFrom = reportDate(fromDate, 'From date')
+  const normalizedTo = reportDate(toDate, 'To date')
+  if (normalizedFrom > normalizedTo) throw new Error('From date cannot be after To date')
+  return builder(normalizedFrom, normalizedTo, employeeId)
 }

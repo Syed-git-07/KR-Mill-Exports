@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
@@ -17,10 +17,8 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getAutoconerProductionDetailsAction,
+  getAutoconerEntryTabDataAction,
   batchUpdateAutoconerProductionDetailsAction,
-  getIdleReasonsAction,
-  syncNewMachinesToAutoconerHeaderAction
 } from '@/app/actions/autoconerEntryActions'
 import { calculateAutoconerProductionValues } from '@/lib/queries/autoconerEntryQueries'
 import {
@@ -104,17 +102,6 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     hasShownInitToast.current = false
   }, [headerId])
 
-  // Load idle reasons on mount
-  useEffect(() => {
-    const loadIdleReasons = async () => {
-      const result = await getIdleReasonsAction()
-      if (result.success) {
-        setIdleReasons(result.data)
-      }
-    }
-    loadIdleReasons()
-  }, [])
-
   const findSetupDraft = useCallback((row, drafts = setupDraftEdits) => {
     const machineId = row?.machine_id ?? row?.machine?.id
     if (!machineId) return null
@@ -175,18 +162,23 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     
     setIsLoading(true)
     try {
-      // First, sync any new machines that were added after this header was created
-      // This also initializes production details if header exists but has no details
-      const syncResult = await syncNewMachinesToAutoconerHeaderAction(headerId, shiftNo)
+      const tabResult = await getAutoconerEntryTabDataAction('production', {
+        headerId,
+        shift: shiftNo
+      })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { syncResult, detailsResult, idleReasonsResult } = tabResult.data
+
       if (syncResult.success && syncResult.data && syncResult.data.length > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.length} machine(s) for this shift`)
         hasShownInitToast.current = true
       }
 
-      const result = await getAutoconerProductionDetailsAction(headerId)
-      if (!result.success) throw new Error(result.error)
+      if (!detailsResult.success) throw new Error(detailsResult.error)
+      if (!idleReasonsResult.success) throw new Error(idleReasonsResult.error)
       
-      const details = result.data || []
+      const details = detailsResult.data || []
+      setIdleReasons(idleReasonsResult.data || [])
       setProductionData(mergeServerRowsWithDrafts(details))
     } catch (error) {
       console.error('Error loading production data:', error)
@@ -246,17 +238,18 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   }
 
   // Handle employee name change
-  const handleEmployeeChange = (rowId, value) => {
+  const handleEmployeeChange = (rowId, value, employee) => {
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
-        emp_name: value
+        emp_name: value,
+        payroll_employee_id: employee?.payroll_employee_id ?? null
       }
     }))
 
     setProductionData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, emp_name: value } : row
+      row.id === rowId ? { ...row, emp_name: value, payroll_employee_id: employee?.payroll_employee_id ?? null } : row
     ))
   }
 
@@ -367,8 +360,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData()
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData()
       }
       return { success: true, saved: savedCount }
     } catch (error) {
@@ -401,6 +394,20 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
     isSaving: () => isSaving,
     discardChanges
   }), [handleSave, isSaving, discardChanges])
+
+  const productionSummary = useMemo(() => {
+    const producedRows = productionData.filter(row => (parseFloat(row.act_prodn) || 0) > 0)
+    const totalProduction = productionData.reduce((sum, row) => sum + (parseFloat(row.act_prodn) || 0), 0)
+    const totalWaste = productionData.reduce((sum, row) => sum + (parseFloat(row.waste_kg) || 0), 0)
+    const efficiency = totalProduction > 0
+      ? producedRows.reduce((sum, row) => {
+          const production = parseFloat(row.act_prodn) || 0
+          return sum + (parseFloat(row.prodn_effi) || 0) * production
+        }, 0) / totalProduction
+      : 0
+
+    return { totalProduction, totalWaste, efficiency }
+  }, [productionData])
 
   if (isLoading) {
     return (
@@ -478,7 +485,8 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.emp_name || ''}
-                        onChange={(value) => handleEmployeeChange(row.id, value)}
+                        employeeId={row.payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight
@@ -655,15 +663,13 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
         </span>
         <div className="flex gap-4">
           <span>
-            Total Production: <strong>{productionData.reduce((sum, r) => sum + (parseFloat(r.act_prodn) || 0), 0).toFixed(2)} kg</strong>
+            Total Production: <strong>{productionSummary.totalProduction.toFixed(2)} kg</strong>
           </span>
           <span>
-            Total Waste: <strong>{productionData.reduce((sum, r) => sum + (parseFloat(r.waste_kg) || 0), 0).toFixed(4)} kg</strong>
+            Total Waste: <strong>{productionSummary.totalWaste.toFixed(4)} kg</strong>
           </span>
           <span>
-            Avg Effi: <strong>{productionData.length > 0 
-              ? (productionData.reduce((sum, r) => sum + (parseFloat(r.prodn_effi) || 0), 0) / productionData.filter(r => parseFloat(r.act_prodn) > 0).length || 0).toFixed(1) 
-              : '0.0'}%</strong>
+            Avg Effi: <strong>{productionSummary.efficiency.toFixed(1)}%</strong>
           </span>
         </div>
       </div>

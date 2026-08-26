@@ -4,35 +4,50 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getDepartmentsAction } from '@/app/actions/supervisor';
+import EmployeeAutocomplete from '@/components/ui/employee-autocomplete';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const supervisorSchema = z.object({
-  supervisor_name: z.string().min(2, 'Supervisor name must be at least 2 characters'),
+  payroll_employee_id: z.union([z.coerce.number().int().positive(), z.null()]),
   department_id: z.string().uuid('Please select a department').optional().nullable(),
+  is_active: z.boolean()
+}).superRefine((data, context) => {
+  if (data.is_active && !data.payroll_employee_id) {
+    context.addIssue({
+      code: 'custom',
+      path: ['payroll_employee_id'],
+      message: 'Select an employee from Payroll for an active role'
+    })
+  }
 });
 
 export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
   const [departments, setDepartments] = useState([]);
+  const [employeeName, setEmployeeName] = useState(
+    initialData?.payroll_name || initialData?.supervisor_name_snapshot || ''
+  );
 
   const {
-    register,
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitting }
+    formState: { errors }
   } = useForm({
     resolver: zodResolver(supervisorSchema),
-    defaultValues: initialData || {
-      supervisor_name: '',
-      department_id: ''
+    defaultValues: {
+      payroll_employee_id: initialData?.payroll_employee_id || null,
+      department_id: '',
+      is_active: initialData?.is_active ?? true
     }
   });
 
   const departmentId = watch('department_id');
+  const payrollEmployeeId = watch('payroll_employee_id');
+  const isActive = watch('is_active');
 
   useEffect(() => {
     loadDepartments();
@@ -40,8 +55,15 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
 
   useEffect(() => {
     if (initialData) {
-      setValue('supervisor_name', initialData.supervisor_name || '');
+      setEmployeeName(initialData.payroll_name || initialData.supervisor_name_snapshot || '');
+      setValue('payroll_employee_id', initialData.payroll_employee_id || null);
       setValue('department_id', initialData.department_id || '');
+      setValue('is_active', initialData.is_active ?? true);
+    } else {
+      setEmployeeName('');
+      setValue('payroll_employee_id', null);
+      setValue('department_id', '');
+      setValue('is_active', true);
     }
   }, [initialData, setValue]);
 
@@ -60,8 +82,9 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
 
   const onFormSubmit = async (data) => {
     const formattedData = {
-      supervisor_name: data.supervisor_name,
-      department_id: data.department_id || null
+      payroll_employee_id: data.payroll_employee_id,
+      department_id: data.department_id || null,
+      is_active: data.is_active
     };
     
     await onSubmit(formattedData);
@@ -83,18 +106,38 @@ export default function SupervisorForm({ initialData, onSubmit, isLoading }) {
         </div>
       )}
 
-      {/* Supervisor Name */}
+      {/* Payroll employee identity */}
       <div className="space-y-2">
-        <Label htmlFor="supervisor_name">Name *</Label>
-        <Input
-          id="supervisor_name"
-          {...register('supervisor_name')}
-          className={errors.supervisor_name ? 'border-red-500' : ''}
-          placeholder="Enter supervisor name"
+        <Label>Payroll Employee *</Label>
+        <EmployeeAutocomplete
+          value={employeeName}
+          employeeId={payrollEmployeeId}
+          onChange={(name, employee) => {
+            setEmployeeName(name)
+            setValue('payroll_employee_id', employee?.payroll_employee_id ?? null, {
+              shouldDirty: true,
+              shouldValidate: true
+            })
+          }}
+          placeholder="Search and select a payroll employee"
+          disabled={isLoading}
         />
-        {errors.supervisor_name && (
-          <p className="text-xs text-red-500">{errors.supervisor_name.message}</p>
+        {errors.payroll_employee_id && (
+          <p className="text-xs text-red-500">{errors.payroll_employee_id.message}</p>
         )}
+        <p className="text-xs text-muted-foreground">The local department is a production role; the person identity comes from Payroll.</p>
+      </div>
+
+      <div className="flex items-center gap-2 rounded-md border p-3">
+        <Checkbox
+          id="supervisor_is_active"
+          checked={isActive}
+          onCheckedChange={(checked) => setValue('is_active', checked === true, { shouldDirty: true, shouldValidate: true })}
+        />
+        <div>
+          <Label htmlFor="supervisor_is_active">Active production role</Label>
+          <p className="text-xs text-muted-foreground">Inactive roles remain available for historical reports but cannot be selected on new entries.</p>
+        </div>
       </div>
 
       {/* Department */}

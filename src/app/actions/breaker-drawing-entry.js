@@ -8,6 +8,11 @@ import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/breakerDrawingQueries'
 import { lookupDrawingBreakerMachineByNo } from '@/lib/queries/drawingBreakerQueries'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -73,7 +78,7 @@ export async function updateBreakerDrawingHeaderAction(id, updates) {
 export async function getBreakerDrawingProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getBreakerDrawingProductionDetails(headerId)
+    const data = await hydrateEmployeeNames(await queries.getBreakerDrawingProductionDetails(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -83,7 +88,7 @@ export async function getBreakerDrawingProductionDetailsAction(headerId) {
 export async function getBreakerDrawingProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getBreakerDrawingProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getBreakerDrawingProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

@@ -11,6 +11,8 @@ import { resolveProductionTime } from '../productionFormulaMath'
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 
 // ============================================
@@ -163,6 +165,7 @@ export async function getOrCreateComberProductionHeader(date, shift, supervisorI
   // Get shift-specific time from shift_config
   const shiftConfig = await getComberShiftConfiguration(shift)
   const totalTime = shiftConfig.totalTime
+  await validateProductionSupervisorIds(supervisorId, maisitryId)
 
   // Create new header using raw SQL to avoid timezone issues
   try {
@@ -185,6 +188,7 @@ export async function getOrCreateComberProductionHeader(date, shift, supervisorI
 export async function updateComberProductionHeader(id, updates) {
   await assertEntryHeaderUnlocked('comber', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.comber_production_header.update({
       where: { id },
@@ -371,7 +375,7 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
         act_hank: 0,
         run_hrs: 0,
         run_min: 0,
-        waste: setup.default_waste ?? null,
+        waste: 0,
         act_prodn: 0,
         waste_percent: 0,
         act_effi_percent: 0,
@@ -417,9 +421,16 @@ export async function initializeComberProductionDetails(headerId, totalTime = re
 export async function updateComberProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('comber', id)
   try {
+    const current = await prisma.comber_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
     const data = await prisma.comber_production_detail.update({
       where: { id },
-      data: updates
+      data: sanitizeProductionDetailUpdate(prepared)
     })
     return data
   } catch (error) {
@@ -429,16 +440,7 @@ export async function updateComberProductionDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateComberProductionDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('comber', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.comber_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateComberProductionDetail(id, data)))
 }
 
 // ============================================
@@ -862,7 +864,7 @@ export async function getComberMachineSetups(headerId = null) {
       newMachineSetupDefaultsMap[m.id] = {
         prodn_mixing: m.prodn_mixing, session_no: 1, cc_time: 0,
         sl_hank: slHank, mc_effi: m.mc_effi ?? COMBER_FORMULA_FALLBACK.mcEffiFactor,
-        shift_time: 510, default_waste: 0.96,
+        shift_time: 510, default_waste: null,
         constant: calculateComberConstantFromSlHank(slHank), speed: m.speed ?? 350
       };
     });
@@ -1246,12 +1248,12 @@ export async function syncNewMachinesToComberHeader(headerId, shift = null) {
         data: {
           header_id: headerId,
           machine_id: machine.id,
-          employee_name: '',
+          employee_name: null,
           prodn_mixing: setup.prodn_mixing || machine.prodn_mixing || '64COMBED GOLD',
           act_hank: 0,
           run_hrs: 0,
           run_min: 0,
-          waste: setup.default_waste ?? null,
+          waste: 0,
           act_prodn: 0,
           waste_percent: 0,
           act_effi_percent: 0,
@@ -1291,15 +1293,7 @@ export async function syncNewMachinesToComberHeader(headerId, shift = null) {
 
 // Get all supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      where: { is_active: true },
-      orderBy: { supervisor_name: 'asc' }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // ============================================
@@ -1325,197 +1319,6 @@ export async function getStoppageDetails() {
   }
 }
 
-// ============================================
-// COPY FROM PREVIOUS DATE
-// ============================================
-
-// Get available previous dates for copying
-export async function getComberAvailableDates(beforeDate, shift, limit = 30) {
-  try {
-    const dateObj = typeof beforeDate === 'string' ? new Date(beforeDate + 'T00:00:00') : beforeDate
-    
-    const data = await prisma.comber_production_header.findMany({
-      where: {
-        entry_date: { lt: dateObj },
-        shift: shift
-      },
-      select: {
-        entry_date: true,
-        shift: true
-      },
-      orderBy: {
-        entry_date: 'desc'
-      },
-      take: limit,
-      distinct: ['entry_date']
-    })
-    
-    return data
-  } catch (error) {
-    throw error
-  }
-}
-
-// Copy production data from previous date
-export async function copyComberFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate, sourceShift) {
-  await assertEntryHeaderUnlocked('comber', targetHeaderId)
-  try {
-    // Handle various date formats - ensure we get yyyy-mm-dd string
-    let sourceDateStr
-    if (typeof sourceDate === 'string') {
-      // Already a string, use as is (should be yyyy-mm-dd format)
-      sourceDateStr = sourceDate
-    } else if (sourceDate instanceof Date) {
-      // Convert Date object to yyyy-mm-dd string
-      const year = sourceDate.getFullYear()
-      const month = String(sourceDate.getMonth() + 1).padStart(2, '0')
-      const day = String(sourceDate.getDate()).padStart(2, '0')
-      sourceDateStr = `${year}-${month}-${day}`
-    } else {
-      throw new Error('Invalid source date format')
-    }
-    
-    // Query using DATE() function in raw SQL to avoid timezone issues
-    // This ensures we compare date-only values without timezone conversion
-    const sourceHeaders = await prisma.$queryRaw`
-      SELECT * FROM comber_production_header 
-      WHERE DATE(entry_date) = ${sourceDateStr} 
-      AND shift = ${sourceShift}
-      LIMIT 1
-    `
-    
-    const sourceHeader = sourceHeaders?.[0]
-    
-    if (!sourceHeader) {
-      throw new Error('Source date data not found')
-    }
-    
-    // Get source production details
-    const sourceDetails = await prisma.comber_production_detail.findMany({
-      where: { header_id: sourceHeader.id }
-    })
-    
-    if (!sourceDetails || sourceDetails.length === 0) {
-      throw new Error('No production data found for source date')
-    }
-    
-    // Get target production details
-    const targetDetails = await prisma.comber_production_detail.findMany({
-      where: { header_id: targetHeaderId }
-    })
-    
-    // Get source stoppage entries
-    const sourceStoppages = await prisma.comber_stoppage_entry.findMany({
-      where: {
-        production_detail_id: {
-          in: sourceDetails.map(d => d.id)
-        }
-      }
-    })
-    
-    // Create a map of machine_id to source data
-    const sourceDataMap = {}
-    sourceDetails.forEach(d => {
-      sourceDataMap[d.machine_id] = d
-    })
-    
-    const sourceStoppageMap = {}
-    sourceStoppages?.forEach(s => {
-      const detail = sourceDetails.find(d => d.id === s.production_detail_id)
-      if (detail) {
-        sourceStoppageMap[detail.machine_id] = s
-      }
-    })
-    
-    // Update target details with source data (excluding IDs and calculated fields)
-    const updatePromises = targetDetails.map(targetDetail => {
-      const sourceDetail = sourceDataMap[targetDetail.machine_id]
-      if (!sourceDetail) return null
-      
-      return prisma.comber_production_detail.update({
-        where: { id: targetDetail.id },
-        data: {
-          employee_name: sourceDetail.employee_name,
-          prodn_mixing: sourceDetail.prodn_mixing,
-          act_hank: sourceDetail.act_hank,
-          run_hrs: sourceDetail.run_hrs,
-          run_min: sourceDetail.run_min,
-          waste: sourceDetail.waste,
-          act_prodn: sourceDetail.act_prodn,
-          waste_percent: sourceDetail.waste_percent,
-          act_effi_percent: sourceDetail.act_effi_percent,
-          uti_percent: sourceDetail.uti_percent,
-          std_hrs: sourceDetail.std_hrs,
-          work_time: sourceDetail.work_time,
-          total_stoppage_mins: sourceDetail.total_stoppage_mins
-        }
-      })
-    }).filter(Boolean)
-    
-    await Promise.all(updatePromises)
-    
-    // Update target stoppage entries
-    const targetStoppages = await prisma.comber_stoppage_entry.findMany({
-      where: {
-        production_detail_id: {
-          in: targetDetails.map(d => d.id)
-        }
-      }
-    })
-    
-    const stoppageUpdatePromises = targetStoppages.map(async (targetStoppage) => {
-      // Find the target detail to get machine_id
-      const targetDetail = targetDetails.find(d => d.id === targetStoppage.production_detail_id)
-      if (!targetDetail) return null
-      
-      const sourceStoppage = sourceStoppageMap[targetDetail.machine_id]
-      if (!sourceStoppage) return null
-      
-      return prisma.comber_stoppage_entry.update({
-        where: { id: targetStoppage.id },
-        data: {
-          stoppage1_id: sourceStoppage.stoppage1_id,
-          stoppage1_time: sourceStoppage.stoppage1_time,
-          stoppage2_id: sourceStoppage.stoppage2_id,
-          stoppage2_time: sourceStoppage.stoppage2_time,
-          stoppage3_id: sourceStoppage.stoppage3_id,
-          stoppage3_time: sourceStoppage.stoppage3_time,
-          stoppage4_id: sourceStoppage.stoppage4_id,
-          stoppage4_time: sourceStoppage.stoppage4_time,
-          total_stoppage_time: sourceStoppage.total_stoppage_time,
-          is_full_stoppage: sourceStoppage.is_full_stoppage
-        }
-      })
-    }).filter(Boolean)
-    
-    await Promise.all(stoppageUpdatePromises)
-    
-    // After copying stoppages, update production_detail.total_stoppage_mins from stoppage_entry.total_stoppage_time
-    const syncPromises = targetStoppages.map(async (targetStoppage) => {
-      const targetDetail = targetDetails.find(d => d.id === targetStoppage.production_detail_id)
-      if (!targetDetail) return null
-      
-      const sourceStoppage = sourceStoppageMap[targetDetail.machine_id]
-      if (!sourceStoppage) return null
-      
-      return prisma.comber_production_detail.update({
-        where: { id: targetDetail.id },
-        data: {
-          total_stoppage_mins: sourceStoppage.total_stoppage_time || 0
-        }
-      })
-    }).filter(Boolean)
-    
-    await Promise.all(syncPromises)
-    
-    return {
-      copiedFrom: sourceDateStr,  // Already in yyyy-MM-dd format
-      machinesUpdated: updatePromises.length
-    }
-  } catch (error) {
-    throw error
-  }
-}
 
 // Get count options from spinning_counts table
 export async function getComberCountOptions() {

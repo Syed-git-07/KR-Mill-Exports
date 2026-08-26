@@ -41,7 +41,7 @@ model autoconer_machine_setup {
   spinning_counts    spinning_counts?   @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_ac_setup_count")
   autoconer_machines autoconer_machines @relation(fields: [machine_id], references: [id], map: "fk_ac_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_autoconer_machine_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_autoconer_machine_setup_date", map: "idx_autoconer_machine_setup_date")
   @@index([entry_date, shift], map: "idx_autoconer_setup_date_shift")
   @@index([count_id], map: "fk_ac_setup_count")
 }
@@ -82,6 +82,7 @@ model autoconer_production_detail {
   header_id                   String                      @db.Char(36)
   machine_id                  String                      @db.Char(36)
   emp_name                    String?                     @db.VarChar(100)
+  payroll_employee_id         Int?
   count_name                  String?                     @db.VarChar(100)
   count_id                    String?                     @db.Char(36)
   act_prodn                   Decimal?                    @default(0.00) @db.Decimal(10, 2)
@@ -89,7 +90,7 @@ model autoconer_production_detail {
   red_light                   Decimal?                    @default(0.00) @db.Decimal(5, 2)
   idle_drum                   Int?                        @default(0)
   idle_reason                 String?                     @db.Text
-  waste_kg                    Decimal?                    @db.Decimal(10, 4)
+  waste_kg                    Decimal?                    @default(0.0000) @db.Decimal(10, 4)
   waste_percent               Decimal?                    @db.Decimal(5, 2)
   total_stoppage_mins         Int?                        @default(0)
   work_time                   Int?                        @default(510)
@@ -103,10 +104,11 @@ model autoconer_production_detail {
   autoconer_machines          autoconer_machines          @relation(fields: [machine_id], references: [id], map: "fk_ac_detail_machine")
   autoconer_stoppage_entry    autoconer_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_autoconer_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_autoconer_detail_header_machine", map: "uq_autoconer_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_autoconer_detail_header_machine")
   @@index([count_id], map: "fk_ac_detail_count")
   @@index([machine_id], map: "fk_ac_detail_machine")
+  @@index([payroll_employee_id], map: "idx_autoconer_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -124,7 +126,7 @@ model autoconer_production_header {
   autoconer_production_detail autoconer_production_detail[]
   supervisors                 supervisors?                  @relation(fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_ac_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_autoconer_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_autoconer_header_date_shift", map: "uq_autoconer_header_date_shift")
   @@index([entry_date, shift], map: "idx_autoconer_header_date_shift")
   @@index([supervisor_id], map: "fk_ac_header_supervisor")
 }
@@ -151,7 +153,7 @@ model autoconer_stoppage_entry {
   stoppage_details_autoconer_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?           @relation("autoconer_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_ac_stop_code4")
   autoconer_production_detail                                              autoconer_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_ac_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_autoconer_stop_detail")
+  @@unique([production_detail_id], name: "uq_autoconer_stop_detail", map: "uq_autoconer_stop_detail")
   @@index([production_detail_id], map: "idx_autoconer_stoppage_detail")
   @@index([stoppage1_id], map: "fk_ac_stop_code1")
   @@index([stoppage2_id], map: "fk_ac_stop_code2")
@@ -166,7 +168,7 @@ model breaker_drawing_machine_setup {
   speed                    Int?                     @default(750)
   hank_constant            Decimal?                 @default(0.1400) @db.Decimal(10, 4)
   std_efficiency_factor    Decimal?                 @default(0.8500) @db.Decimal(5, 4)
-  default_waste            Decimal?                 @default(0.8500) @db.Decimal(10, 4)
+  default_waste            Decimal?                 @db.Decimal(10, 4)
   std_prodn                Decimal?                 @default(1371.72) @db.Decimal(10, 2)
   shift_time               Int?                     @default(510)
   default_stoppage         Int?                     @default(0)
@@ -180,7 +182,7 @@ model breaker_drawing_machine_setup {
   prodn_mixing             String?                  @db.VarChar(100)
   drawing_breaker_machines drawing_breaker_machines @relation(fields: [machine_id], references: [id], map: "fk_breaker_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_breaker_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_breaker_setup_date", map: "idx_breaker_setup_date")
   @@index([entry_date, shift], map: "idx_breaker_setup_date_shift")
 }
 
@@ -190,6 +192,7 @@ model breaker_drawing_production_detail {
   header_id                         String                            @db.Char(36)
   machine_id                        String                            @db.Char(36)
   employee_name                     String?                           @db.VarChar(100)
+  payroll_employee_id               Int?
   prodn_mixing                      String?                           @db.VarChar(100)
   act_hank                          Decimal?                          @default(0.00) @db.Decimal(10, 2)
   act_prodn                         Decimal?                          @default(0.00) @db.Decimal(10, 2)
@@ -197,7 +200,7 @@ model breaker_drawing_production_detail {
   exp_prodn                         Decimal?                          @default(0.00) @db.Decimal(10, 2)
   effi_percent                      Decimal?                          @default(0.00) @db.Decimal(10, 2)
   uti_percent                       Decimal?                          @default(0.00) @db.Decimal(10, 2)
-  waste                             Decimal?                          @default(0.8500) @db.Decimal(10, 4)
+  waste                             Decimal?                          @default(0.0000) @db.Decimal(10, 4)
   waste_percent                     Decimal?                          @default(0.0000) @db.Decimal(10, 4)
   run_time                          Int?                              @default(510)
   work_time                         Int?                              @default(510)
@@ -211,9 +214,10 @@ model breaker_drawing_production_detail {
   drawing_breaker_machines          drawing_breaker_machines          @relation(fields: [machine_id], references: [id], map: "fk_breaker_detail_machine")
   breaker_drawing_stoppage_entry    breaker_drawing_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_breaker_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_breaker_detail_header_machine", map: "uq_breaker_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_breaker_detail_header_machine")
   @@index([machine_id], map: "fk_breaker_detail_machine")
+  @@index([payroll_employee_id], map: "idx_breaker_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -233,7 +237,7 @@ model breaker_drawing_production_header {
   supervisors_breaker_drawing_production_header_maisitry_idTosupervisors   supervisors?                        @relation("breaker_drawing_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_breaker_header_maisitry")
   supervisors_breaker_drawing_production_header_supervisor_idTosupervisors supervisors?                        @relation("breaker_drawing_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_breaker_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_breaker_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_breaker_header_date_shift", map: "uq_breaker_header_date_shift")
   @@index([entry_date, shift], map: "idx_breaker_header_date_shift")
   @@index([maisitry_id], map: "fk_breaker_header_maisitry")
   @@index([supervisor_id], map: "fk_breaker_header_supervisor")
@@ -260,7 +264,7 @@ model breaker_drawing_stoppage_entry {
   stoppage_details_breaker_drawing_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?                 @relation("breaker_drawing_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_breaker_stop_code4")
   breaker_drawing_production_detail                                              breaker_drawing_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_breaker_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_breaker_stop_detail")
+  @@unique([production_detail_id], name: "uq_breaker_stop_detail", map: "uq_breaker_stop_detail")
   @@index([production_detail_id], map: "idx_breaker_stoppage_detail")
   @@index([stoppage1_id], map: "fk_breaker_stop_code1")
   @@index([stoppage2_id], map: "fk_breaker_stop_code2")
@@ -275,7 +279,7 @@ model carding_machine_setup {
   speed                 Decimal?         @default(130.00) @db.Decimal(10, 2)
   hank_constant         Decimal?         @default(0.1300) @db.Decimal(10, 4)
   std_efficiency_factor Decimal?         @default(0.9800) @db.Decimal(5, 4)
-  default_waste         Decimal?         @default(0.3400) @db.Decimal(10, 4)
+  default_waste         Decimal?         @db.Decimal(10, 4)
   std_prodn             Decimal?         @default(295.22) @db.Decimal(10, 2)
   shift_time            Int?             @default(510)
   default_stoppage      Int?             @default(135)
@@ -288,7 +292,7 @@ model carding_machine_setup {
   prodn_mixing          String?          @db.VarChar(100)
   carding_machines      carding_machines @relation(fields: [machine_id], references: [id], map: "fk_card_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_carding_machine_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_carding_machine_setup_date", map: "idx_carding_machine_setup_date")
   @@index([entry_date, shift], map: "idx_carding_setup_date_shift")
 }
 
@@ -323,6 +327,7 @@ model carding_production_detail {
   header_id                 String                    @db.Char(36)
   machine_id                String                    @db.Char(36)
   employee_name             String?                   @db.VarChar(100)
+  payroll_employee_id       Int?
   count_mixing              String?                   @db.VarChar(100)
   act_hank                  Decimal?                  @default(0.00) @db.Decimal(10, 2)
   act_prodn                 Decimal?                  @default(0.00) @db.Decimal(10, 2)
@@ -330,7 +335,7 @@ model carding_production_detail {
   exp_prodn                 Decimal?                  @default(0.00) @db.Decimal(10, 2)
   effi_percent              Decimal?                  @default(0.00) @db.Decimal(10, 2)
   uti_percent               Decimal?                  @default(0.00) @db.Decimal(10, 2)
-  waste                     Decimal?                  @default(0.3400) @db.Decimal(10, 4)
+  waste                     Decimal?                  @default(0.0000) @db.Decimal(10, 4)
   waste_percent             Decimal?                  @default(0.0000) @db.Decimal(10, 4)
   run_time                  Int?                      @default(375)
   work_time                 Int?                      @default(375)
@@ -344,9 +349,10 @@ model carding_production_detail {
   carding_machines          carding_machines          @relation(fields: [machine_id], references: [id], map: "fk_card_detail_machine")
   carding_stoppage_entry    carding_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_carding_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_carding_detail_header_machine", map: "uq_carding_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_carding_detail_header_machine")
   @@index([machine_id], map: "fk_card_detail_machine")
+  @@index([payroll_employee_id], map: "idx_carding_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -366,7 +372,7 @@ model carding_production_header {
   supervisors_carding_production_header_maisitry_idTosupervisors   supervisors?                @relation("carding_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_card_header_maisitry")
   supervisors_carding_production_header_supervisor_idTosupervisors supervisors?                @relation("carding_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_card_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_carding_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_carding_header_date_shift", map: "uq_carding_header_date_shift")
   @@index([entry_date, shift], map: "idx_carding_header_date_shift")
   @@index([maisitry_id], map: "fk_card_header_maisitry")
   @@index([supervisor_id], map: "fk_card_header_supervisor")
@@ -393,7 +399,7 @@ model carding_stoppage_entry {
   stoppage_details_carding_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?         @relation("carding_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_card_stop_code4")
   carding_production_detail                                              carding_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_card_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_carding_stop_detail")
+  @@unique([production_detail_id], name: "uq_carding_stop_detail", map: "uq_carding_stop_detail")
   @@index([production_detail_id], map: "idx_carding_stoppage_detail")
   @@index([stoppage1_id], map: "fk_card_stop_code1")
   @@index([stoppage2_id], map: "fk_card_stop_code2")
@@ -411,7 +417,7 @@ model comber_machine_setup {
   sl_hank         Decimal?        @default(0.1400) @db.Decimal(10, 4)
   mc_effi         Decimal?        @default(93.00) @db.Decimal(5, 2)
   shift_time      Int?            @default(510)
-  default_waste   Decimal?        @default(0.9600) @db.Decimal(10, 4)
+  default_waste   Decimal?        @db.Decimal(10, 4)
   constant        Decimal?        @default(3.2400) @db.Decimal(10, 4)
   created_at      DateTime?       @default(now()) @db.DateTime(0)
   updated_at      DateTime?       @default(now()) @db.DateTime(0)
@@ -422,7 +428,7 @@ model comber_machine_setup {
   is_included     Boolean         @default(true)
   comber_machines comber_machines @relation(fields: [machine_id], references: [id], map: "fk_comber_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_comber_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_comber_setup_date", map: "idx_comber_setup_date")
   @@index([entry_date, shift], map: "idx_comber_setup_date_shift")
 }
 
@@ -458,11 +464,12 @@ model comber_production_detail {
   header_id                String                   @db.Char(36)
   machine_id               String                   @db.Char(36)
   employee_name            String?                  @db.VarChar(100)
+  payroll_employee_id      Int?
   prodn_mixing             String?                  @db.VarChar(100)
   act_hank                 Decimal?                 @default(0.00) @db.Decimal(10, 2)
   run_hrs                  Decimal?                 @default(0.00) @db.Decimal(5, 2)
   run_min                  Int?                     @default(0)
-  waste                    Decimal?                 @default(0.9600) @db.Decimal(10, 4)
+  waste                    Decimal?                 @default(0.0000) @db.Decimal(10, 4)
   act_prodn                Decimal?                 @default(0.00) @db.Decimal(10, 2)
   waste_percent            Decimal?                 @default(0.0000) @db.Decimal(10, 4)
   act_effi_percent         Decimal?                 @default(0.00) @db.Decimal(10, 2)
@@ -480,9 +487,10 @@ model comber_production_detail {
   comber_machines          comber_machines          @relation(fields: [machine_id], references: [id], map: "fk_comber_detail_machine")
   comber_stoppage_entry    comber_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_comber_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_comber_detail_header_machine", map: "uq_comber_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_comber_detail_header_machine")
   @@index([machine_id], map: "fk_comber_detail_machine")
+  @@index([payroll_employee_id], map: "idx_comber_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -502,7 +510,7 @@ model comber_production_header {
   supervisors_comber_production_header_maisitry_idTosupervisors   supervisors?               @relation("comber_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_comber_header_maisitry")
   supervisors_comber_production_header_supervisor_idTosupervisors supervisors?               @relation("comber_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_comber_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_comber_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_comber_header_date_shift", map: "uq_comber_header_date_shift")
   @@index([entry_date, shift], map: "idx_comber_header_date_shift")
   @@index([maisitry_id], map: "fk_comber_header_maisitry")
   @@index([supervisor_id], map: "fk_comber_header_supervisor")
@@ -529,7 +537,7 @@ model comber_stoppage_entry {
   stoppage_details_comber_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?        @relation("comber_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_comber_stop_code4")
   comber_production_detail                                              comber_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_comber_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_comber_stop_detail")
+  @@unique([production_detail_id], name: "uq_comber_stop_detail", map: "uq_comber_stop_detail")
   @@index([production_detail_id], map: "idx_comber_stoppage_detail")
   @@index([stoppage1_id], map: "fk_comber_stop_code1")
   @@index([stoppage2_id], map: "fk_comber_stop_code2")
@@ -624,7 +632,7 @@ model finisher_drawing_machine_setup {
   is_included               Boolean                   @default(true)
   drawing_finisher_machines drawing_finisher_machines @relation(fields: [machine_id], references: [id], map: "fk_finisher_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_finisher_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_finisher_setup_date", map: "idx_finisher_setup_date")
   @@index([entry_date, shift], map: "idx_finisher_setup_date_shift")
 }
 
@@ -634,6 +642,7 @@ model finisher_drawing_production_detail {
   header_id                          String                             @db.Char(36)
   machine_id                         String                             @db.Char(36)
   employee_name                      String?                            @db.VarChar(100)
+  payroll_employee_id                Int?
   prodn_mixing                       String?                            @db.VarChar(100)
   act_hank                           Decimal?                           @default(0.00) @db.Decimal(10, 2)
   act_prodn                          Decimal?                           @default(0.00) @db.Decimal(10, 2)
@@ -641,7 +650,7 @@ model finisher_drawing_production_detail {
   exp_prodn                          Decimal?                           @default(0.00) @db.Decimal(10, 2)
   effi_percent                       Decimal?                           @default(0.00) @db.Decimal(10, 2)
   uti_percent                        Decimal?                           @default(0.00) @db.Decimal(10, 2)
-  waste                              Decimal?                           @db.Decimal(10, 4)
+  waste                              Decimal?                           @default(0.0000) @db.Decimal(10, 4)
   waste_percent                      Decimal?                           @default(0.0000) @db.Decimal(10, 4)
   run_time                           Int?                               @default(510)
   work_time                          Int?                               @default(510)
@@ -655,9 +664,10 @@ model finisher_drawing_production_detail {
   drawing_finisher_machines          drawing_finisher_machines          @relation(fields: [machine_id], references: [id], map: "fk_finisher_detail_machine")
   finisher_drawing_stoppage_entry    finisher_drawing_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_finisher_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_finisher_detail_header_machine", map: "uq_finisher_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_finisher_detail_header_machine")
   @@index([machine_id], map: "fk_finisher_detail_machine")
+  @@index([payroll_employee_id], map: "idx_finisher_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -677,7 +687,7 @@ model finisher_drawing_production_header {
   supervisors_finisher_drawing_production_header_maisitry_idTosupervisors   supervisors?                         @relation("finisher_drawing_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_finisher_header_maisitry")
   supervisors_finisher_drawing_production_header_supervisor_idTosupervisors supervisors?                         @relation("finisher_drawing_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_finisher_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_finisher_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_finisher_header_date_shift", map: "uq_finisher_header_date_shift")
   @@index([entry_date, shift], map: "idx_finisher_header_date_shift")
   @@index([maisitry_id], map: "fk_finisher_header_maisitry")
   @@index([supervisor_id], map: "fk_finisher_header_supervisor")
@@ -704,7 +714,7 @@ model finisher_drawing_stoppage_entry {
   stoppage_details_finisher_drawing_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?                  @relation("finisher_drawing_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_finisher_stop_code4")
   finisher_drawing_production_detail                                              finisher_drawing_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_finisher_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_finisher_stop_detail")
+  @@unique([production_detail_id], name: "uq_finisher_stop_detail", map: "uq_finisher_stop_detail")
   @@index([production_detail_id], map: "idx_finisher_stoppage_detail")
   @@index([stoppage1_id], map: "fk_finisher_stop_code1")
   @@index([stoppage2_id], map: "fk_finisher_stop_code2")
@@ -746,7 +756,7 @@ model lap_former_machine_setup {
   speed                 Int?                @default(90)
   hank_constant         Decimal?            @default(0.0082) @db.Decimal(10, 4)
   std_efficiency_factor Decimal?            @default(0.8500) @db.Decimal(5, 4)
-  default_waste         Decimal?            @default(0.8500) @db.Decimal(10, 4)
+  default_waste         Decimal?            @db.Decimal(10, 4)
   std_prodn             Decimal?            @default(2810.35) @db.Decimal(10, 2)
   shift_time            Int?                @default(510)
   default_stoppage      Int?                @default(0)
@@ -760,7 +770,7 @@ model lap_former_machine_setup {
   prodn_mixing          String?             @db.VarChar(100)
   lap_former_machines   lap_former_machines @relation(fields: [machine_id], references: [id], map: "fk_lap_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_lap_former_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_lap_former_setup_date", map: "idx_lap_former_setup_date")
   @@index([entry_date, shift], map: "idx_lap_former_setup_date_shift")
 }
 
@@ -794,6 +804,7 @@ model lap_former_production_detail {
   header_id                    String                       @db.Char(36)
   machine_id                   String                       @db.Char(36)
   employee_name                String?                      @db.VarChar(100)
+  payroll_employee_id          Int?
   prodn_mixing                 String?                      @db.VarChar(100)
   act_hank                     Decimal?                     @default(0.00) @db.Decimal(10, 2)
   act_prodn                    Decimal?                     @default(0.00) @db.Decimal(10, 2)
@@ -801,7 +812,7 @@ model lap_former_production_detail {
   exp_prodn                    Decimal?                     @default(0.00) @db.Decimal(10, 2)
   effi_percent                 Decimal?                     @default(0.00) @db.Decimal(10, 2)
   uti_percent                  Decimal?                     @default(0.00) @db.Decimal(10, 2)
-  waste                        Decimal?                     @default(0.8500) @db.Decimal(10, 4)
+  waste                        Decimal?                     @default(0.0000) @db.Decimal(10, 4)
   waste_percent                Decimal?                     @default(0.0000) @db.Decimal(10, 4)
   run_time                     Int?                         @default(510)
   work_time                    Int?                         @default(510)
@@ -815,9 +826,10 @@ model lap_former_production_detail {
   lap_former_machines          lap_former_machines          @relation(fields: [machine_id], references: [id], map: "fk_lap_detail_machine")
   lap_former_stoppage_entry    lap_former_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_lap_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_lap_detail_header_machine", map: "uq_lap_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_lap_former_detail_header_machine")
   @@index([machine_id], map: "fk_lap_detail_machine")
+  @@index([payroll_employee_id], map: "idx_lap_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -837,7 +849,7 @@ model lap_former_production_header {
   supervisors_lap_former_production_header_maisitry_idTosupervisors   supervisors?                   @relation("lap_former_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_lap_header_maisitry")
   supervisors_lap_former_production_header_supervisor_idTosupervisors supervisors?                   @relation("lap_former_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_lap_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_lap_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_lap_header_date_shift", map: "uq_lap_header_date_shift")
   @@index([entry_date, shift], map: "idx_lap_former_header_date_shift")
   @@index([maisitry_id], map: "fk_lap_header_maisitry")
   @@index([supervisor_id], map: "fk_lap_header_supervisor")
@@ -864,7 +876,7 @@ model lap_former_stoppage_entry {
   stoppage_details_lap_former_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?            @relation("lap_former_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_lap_stop_code4")
   lap_former_production_detail                                              lap_former_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_lap_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_lap_stop_detail")
+  @@unique([production_detail_id], name: "uq_lap_stop_detail", map: "uq_lap_stop_detail")
   @@index([production_detail_id], map: "idx_lap_former_stoppage_detail")
   @@index([stoppage1_id], map: "fk_lap_stop_code1")
   @@index([stoppage2_id], map: "fk_lap_stop_code2")
@@ -884,7 +896,7 @@ model simplex_machine_setup {
   tpi              Decimal?         @default(1.73) @db.Decimal(5, 2)
   spindles         Int?             @default(140)
   shift_time       Int?             @default(510)
-  default_waste    Decimal?         @default(0.9000) @db.Decimal(10, 4)
+  default_waste    Decimal?         @db.Decimal(10, 4)
   created_at       DateTime?        @default(now()) @db.DateTime(0)
   updated_at       DateTime?        @default(now()) @db.DateTime(0)
   entry_date       DateTime         @default(dbgenerated("'1970-01-01'")) @db.Date
@@ -893,7 +905,7 @@ model simplex_machine_setup {
   is_included      Boolean          @default(true)
   simplex_machines simplex_machines @relation(fields: [machine_id], references: [id], map: "fk_simplex_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_simplex_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_simplex_setup_date", map: "idx_simplex_setup_date")
   @@index([entry_date, shift], map: "idx_simplex_setup_date_shift")
 }
 
@@ -930,11 +942,12 @@ model simplex_production_detail {
   header_id                 String                    @db.Char(36)
   machine_id                String                    @db.Char(36)
   employee_name             String?                   @db.VarChar(100)
+  payroll_employee_id       Int?
   prodn_mixing              String?                   @db.VarChar(50)
   run_hrs                   Decimal?                  @db.Decimal(5, 2)
   run_min                   Int?
   idle_spindles             Int?                      @default(0)
-  waste                     Decimal?                  @default(0.9000) @db.Decimal(10, 4)
+  waste                     Decimal?                  @default(0.0000) @db.Decimal(10, 4)
   act_prodn                 Decimal?                  @db.Decimal(10, 2)
   waste_percent             Decimal?                  @db.Decimal(5, 2)
   act_effi_percent          Decimal?                  @db.Decimal(5, 2)
@@ -951,9 +964,10 @@ model simplex_production_detail {
   simplex_machines          simplex_machines          @relation(fields: [machine_id], references: [id], map: "fk_simplex_detail_machine")
   simplex_stoppage_entry    simplex_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_simplex_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_simplex_detail_header_machine", map: "uq_simplex_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_simplex_detail_header_machine")
   @@index([machine_id], map: "fk_simplex_detail_machine")
+  @@index([payroll_employee_id], map: "idx_simplex_detail_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -973,7 +987,7 @@ model simplex_production_header {
   supervisors_simplex_production_header_maisitry_idTosupervisors   supervisors?                @relation("simplex_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_simplex_header_maisitry")
   supervisors_simplex_production_header_supervisor_idTosupervisors supervisors?                @relation("simplex_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_simplex_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_simplex_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_simplex_header_date_shift", map: "uq_simplex_header_date_shift")
   @@index([entry_date, shift], map: "idx_simplex_header_date_shift")
   @@index([maisitry_id], map: "fk_simplex_header_maisitry")
   @@index([supervisor_id], map: "fk_simplex_header_supervisor")
@@ -999,7 +1013,7 @@ model simplex_stoppage_entry {
   stoppage_details_simplex_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?         @relation("simplex_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_simplex_stop_code4")
   simplex_production_detail                                              simplex_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_simplex_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_simplex_stop_detail")
+  @@unique([production_detail_id], name: "uq_simplex_stop_detail", map: "uq_simplex_stop_detail")
   @@index([production_detail_id], map: "idx_simplex_stoppage_detail")
   @@index([stoppage1_id], map: "fk_simplex_stop_code1")
   @@index([stoppage2_id], map: "fk_simplex_stop_code2")
@@ -1070,7 +1084,7 @@ model spinning_machine_setup {
   spinning_counts    spinning_counts?  @relation(fields: [count_id], references: [id], onDelete: Restrict, map: "fk_spinning_setup_count")
   spinning_machines  spinning_machines @relation(fields: [machine_id], references: [id], map: "fk_spinning_setup_machine")
 
-  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_spinning_machine_setup_date")
+  @@unique([machine_id, entry_date, shift, run_sequence], name: "idx_spinning_machine_setup_date", map: "idx_spinning_machine_setup_date")
   @@index([entry_date, shift], map: "idx_spinning_setup_date_shift")
   @@index([count_id], map: "fk_spinning_setup_count")
 }
@@ -1113,7 +1127,7 @@ model spinning_production_detail {
   count_name                 String?                    @db.VarChar(100)
   act_hank                   Decimal?                   @db.Decimal(10, 2)
   act_prodn                  Decimal?                   @db.Decimal(10, 2)
-  waste                      Decimal?                   @db.Decimal(10, 4)
+  waste                      Decimal?                   @default(0.0000) @db.Decimal(10, 4)
   waste_percent              Decimal?                   @db.Decimal(5, 2)
   gps                        Decimal?                   @db.Decimal(10, 2)
   worked_spindles            Decimal?                   @db.Decimal(10, 2)
@@ -1129,15 +1143,19 @@ model spinning_production_detail {
   updated_at                 DateTime?                  @default(now()) @db.DateTime(0)
   sider1_name                String?                    @db.VarChar(100)
   sider2_name                String?                    @db.VarChar(100)
+  sider1_payroll_employee_id Int?
+  sider2_payroll_employee_id Int?
   work_time                  Int?                       @default(500)
   run_time                   Int?                       @default(510)
   spinning_production_header spinning_production_header @relation(fields: [header_id], references: [id], onDelete: Cascade, map: "fk_spinning_detail_header")
   spinning_machines          spinning_machines          @relation(fields: [machine_id], references: [id], map: "fk_spinning_detail_machine")
   spinning_stoppage_entry    spinning_stoppage_entry[]
 
-  @@unique([header_id, machine_id, run_sequence], name: "uq_spinning_detail_header_machine")
+  @@unique([header_id, machine_id, run_sequence], name: "uq_spinning_detail_header_machine", map: "uq_spinning_detail_header_machine")
   @@index([header_id, machine_id], map: "idx_spinning_detail_header_machine")
   @@index([machine_id], map: "fk_spinning_detail_machine")
+  @@index([sider1_payroll_employee_id], map: "idx_spinning_detail_sider1_payroll_employee")
+  @@index([sider2_payroll_employee_id], map: "idx_spinning_detail_sider2_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1157,7 +1175,7 @@ model spinning_production_header {
   supervisors_spinning_production_header_maisitry_idTosupervisors   supervisors?                 @relation("spinning_production_header_maisitry_idTosupervisors", fields: [maisitry_id], references: [id], onDelete: Restrict, map: "fk_spinning_header_maisitry")
   supervisors_spinning_production_header_supervisor_idTosupervisors supervisors?                 @relation("spinning_production_header_supervisor_idTosupervisors", fields: [supervisor_id], references: [id], onDelete: Restrict, map: "fk_spinning_header_supervisor")
 
-  @@unique([entry_date, shift], name: "uq_spinning_header_date_shift")
+  @@unique([entry_date, shift], name: "uq_spinning_header_date_shift", map: "uq_spinning_header_date_shift")
   @@index([entry_date, shift], map: "idx_spinning_header_date_shift")
   @@index([maisitry_id], map: "fk_spinning_header_maisitry")
   @@index([supervisor_id], map: "fk_spinning_header_supervisor")
@@ -1185,7 +1203,7 @@ model spinning_stoppage_entry {
   stoppage_details_spinning_stoppage_entry_stoppage4_idTostoppage_details stoppage_details?          @relation("spinning_stoppage_entry_stoppage4_idTostoppage_details", fields: [stoppage4_id], references: [id], onDelete: Restrict, map: "fk_spinning_stop_code4")
   spinning_production_detail                                              spinning_production_detail @relation(fields: [production_detail_id], references: [id], onDelete: Cascade, map: "fk_spinning_stop_detail")
 
-  @@unique([production_detail_id], name: "uq_spinning_stop_detail")
+  @@unique([production_detail_id], name: "uq_spinning_stop_detail", map: "uq_spinning_stop_detail")
   @@index([production_detail_id], map: "idx_spinning_stoppage_detail")
   @@index([stoppage1_id], map: "fk_spinning_stop_code1")
   @@index([stoppage2_id], map: "fk_spinning_stop_code2")
@@ -1263,6 +1281,7 @@ model supervisors {
   created_at                                                                                       DateTime?                            @default(now()) @db.DateTime(0)
   updated_at                                                                                       DateTime?                            @default(now()) @db.DateTime(0)
   code                                                                                             Int                                  @default(1)
+  payroll_employee_id                                                                              Int?
   autoconer_production_header                                                                      autoconer_production_header[]
   breaker_drawing_production_header_breaker_drawing_production_header_maisitry_idTosupervisors     breaker_drawing_production_header[]  @relation("breaker_drawing_production_header_maisitry_idTosupervisors")
   breaker_drawing_production_header_breaker_drawing_production_header_supervisor_idTosupervisors   breaker_drawing_production_header[]  @relation("breaker_drawing_production_header_supervisor_idTosupervisors")
@@ -1281,22 +1300,7 @@ model supervisors {
   departments                                                                                      departments?                         @relation(fields: [department_id], references: [id], onDelete: Restrict, map: "fk_supervisor_department")
 
   @@index([department_id], map: "fk_supervisor_department")
-}
-
-model employee_master {
-  id          String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
-  emp_name    String    @unique(map: "emp_name") @db.VarChar(100)
-  emp_code    String?   @db.VarChar(50)
-  doj         DateTime? @db.Date
-  department  String?   @db.VarChar(100)
-  designation String?   @db.VarChar(100)
-  is_active   Boolean?  @default(true)
-  created_at  DateTime? @default(now()) @db.DateTime(0)
-  updated_at  DateTime? @default(now()) @updatedAt @db.DateTime(0)
-
-  @@index([emp_name], map: "idx_emp_name")
-  @@index([is_active], map: "idx_is_active")
-  @@index([emp_name, is_active], map: "idx_emp_name_active")
+  @@index([payroll_employee_id], map: "idx_supervisors_payroll_employee")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1404,4 +1408,17 @@ model login_attempts {
 
   @@index([username, attempted_at], map: "idx_login_attempts_username_time")
   @@index([ip_address, attempted_at], map: "idx_login_attempts_ip_time")
+}
+
+/// Persistent audit backup created by the payroll identity cleanup. Runtime
+/// production code does not query or mutate this recovery-only table.
+model legacy_employee_identity_backup {
+  source_key                   String   @db.VarChar(64)
+  detail_id                    String   @db.VarChar(191)
+  snapshot_name                String   @db.VarChar(512)
+  previous_payroll_employee_id Int?
+  backed_up_at                 DateTime @default(now()) @db.Timestamp(0)
+
+  @@id([source_key, detail_id])
+  @@ignore
 }

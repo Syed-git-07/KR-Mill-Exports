@@ -11,9 +11,8 @@ import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getSpinningProductionDetailsAction,
+  getSpinningEntryTabDataAction,
   batchUpdateSpinningProductionDetailsAction,
-  syncNewMachinesToSpinningHeaderAction,
   calculateSpinningProductionAction
 } from '@/app/actions/spinning-entry'
 import {
@@ -22,7 +21,7 @@ import {
   mergeSetupDraft,
   selectRowsForDependentCommit
 } from '@/lib/entryDraftSync'
-import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '@/lib/productionFormulaMath'
+import { calculateSpinningEntryMetrics, calculateSpinningExpectedGps, calculateSpinningLossEfficiency } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Production Entry Tab
@@ -110,11 +109,10 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const allocatedSpindles = setup.allocated_spindles != null && setup.allocated_spindles !== ''
       ? Number(setup.allocated_spindles)
       : (row.machine?.allocated_spindles ?? 1104)
-    const requestedStoppageMins = parseInt(updates.total_stoppage_mins ?? row.total_stoppage_mins) || 0
+    // Use the effective setup first so an unsaved count-run duration draft is
+    // reflected in the dependent production calculation during Update All.
+    // The production-detail snapshot remains the fallback for legacy rows.
     const rowRunTime = setup.run_time ?? row.run_time ?? effectiveTotalTime
-    const productionTime = resolveProductionTime(rowRunTime, requestedStoppageMins)
-    const stoppageMins = productionTime.stoppageTime
-    const runTime = productionTime.totalTime
 
     // Get values needed for Exp GPS calculation (from machine setup, sourced from spinning_counts master)
     const speed = parseInt(setup.speed) || 0
@@ -122,37 +120,11 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     // Use act_count from machine setup for Exp GPS calculation
     const count = actCount
 
-    // Calculate No of Spindles based on shift
-    // Shift 1 & 2: allocated / 8 * 8.5, Shift 3: allocated / 8 * 7
-    const multiplier = shiftNo === 3 ? 7 : 8.5
-    const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
-
     const lossEfficiency = calculateSpinningLossEfficiency({
       twCon: setup.tw_con,
       doffLoss: setup.doff_loss,
       cWastePercent: setup.c_waste_percent
     })
-    const constant = actCount > 0
-      ? (1 / 2.20456 / actCount) * totalSpindles * lossEfficiency
-      : 0
-
-    const actHank = parseFloat(updates.act_hank ?? row.act_hank) || 0
-    const actProdn = actHank * constant
-
-    const waste = parseFloat(updates.waste ?? row.waste) || 0
-
-    // Calculate waste percentage
-    const wastePercent = actProdn > 0 ? (waste / actProdn) * 100 : 0
-
-    // Calculate stopped and worked spindles
-    // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
-    const stoppedSpindles = runTime > 0 ? (stoppageMins / runTime) * totalSpindles : 0
-    // WORKED SPL = TOTAL SPL (No of Spindle) - STOPPED SPL
-    const workedSpindles = Math.max(totalSpindles - stoppedSpindles, 0)
-
-    // Calculate GPS = (ACL_Prod / Worked_Spl) × 1000
-    const gps = workedSpindles > 0 ? (actProdn / workedSpindles) * 1000 : 0
-
     // Calculate Expected GPS = 7.2 × Speed / TPI / Count × Effi
     const expGps = calculateSpinningExpectedGps({
       speed,
@@ -161,18 +133,17 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       efficiency: setup.efficiency ?? 0.95
     })
 
-    const result = {
-      act_prodn: Math.round(actProdn * 100) / 100,
-      waste_percent: Math.round(wastePercent * 100) / 100,
-      stopped_spindles: Math.round(stoppedSpindles * 100) / 100,
-      worked_spindles: workedSpindles,
-      gps: Math.round(gps * 100) / 100,
-      exp_gps: Math.round(expGps * 1000) / 1000,
-      work_time: runTime - stoppageMins,
-      _constant: Math.round(constant * 1000) / 1000,
-      _totalSpindles: totalSpindles
-    }
-    return result
+    return calculateSpinningEntryMetrics({
+      actHank: updates.act_hank ?? row.act_hank,
+      waste: updates.waste ?? row.waste,
+      stoppageMins: updates.total_stoppage_mins ?? row.total_stoppage_mins,
+      runTime: rowRunTime,
+      allocatedSpindles,
+      shift: shiftNo,
+      actCount,
+      lossEfficiency,
+      expectedGps: expGps
+    })
   }, [effectiveTotalTime, shiftNo])
 
   // Load production data
@@ -181,17 +152,21 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     
     setIsLoading(true)
     try {
-      // Sync any new machines
-      const syncResult = await syncNewMachinesToSpinningHeaderAction(headerId, shiftNo)
+      const tabResult = await getSpinningEntryTabDataAction('production', {
+        headerId,
+        shift: shiftNo
+      })
+      if (!tabResult.success) throw new Error(tabResult.error)
+      const { syncResult, detailsResult } = tabResult.data
+
       if (syncResult.success && syncResult.data?.added > 0 && !hasShownInitToast.current) {
         toast.info(`Initialized ${syncResult.data.added} machine(s) for this shift`)
         hasShownInitToast.current = true
       }
 
-      const result = await getSpinningProductionDetailsAction(headerId)
-      if (!result.success) throw new Error(result.error)
+      if (!detailsResult.success) throw new Error(detailsResult.error)
       
-      const details = result.data || []
+      const details = detailsResult.data || []
       
       // Recalculate values for each row
       const recalculatedDetails = details.map(row => {
@@ -317,7 +292,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 
   // Handle sider name change (text field)
   // When sider1 changes and sider2 is still empty, auto-fill sider2 with the same value
-  const handleTextChange = (rowId, field, value) => {
+  const handleEmployeeChange = (rowId, field, value, employee) => {
     const currentRow = productionData.find(r => r.id === rowId)
     const currentSider1 = (currentRow?.sider1_name || '').trim()
     const currentSider2 = (currentRow?.sider2_name || '').trim()
@@ -326,13 +301,16 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
     const autoFillSider2 = field === 'sider1_name' && currentRow && (
       currentSider2 === '' || currentSider2.toLowerCase() === currentSider1.toLowerCase()
     )
+    const idField = field === 'sider1_name' ? 'sider1_payroll_employee_id' : 'sider2_payroll_employee_id'
+    const payrollEmployeeId = employee?.payroll_employee_id ?? null
 
     setEditedRows(prev => ({
       ...prev,
       [rowId]: {
         ...prev[rowId],
         [field]: value,
-        ...(autoFillSider2 ? { sider2_name: value } : {})
+        [idField]: payrollEmployeeId,
+        ...(autoFillSider2 ? { sider2_name: value, sider2_payroll_employee_id: payrollEmployeeId } : {})
       }
     }))
 
@@ -341,7 +319,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         return {
           ...row,
           [field]: value,
-          ...(autoFillSider2 ? { sider2_name: value } : {})
+          [idField]: payrollEmployeeId,
+          ...(autoFillSider2 ? { sider2_name: value, sider2_payroll_employee_id: payrollEmployeeId } : {})
         }
       }
       return row
@@ -405,7 +384,9 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
           exp_gps: calculated.exp_gps,
           work_time: calculated.work_time,
           sider1_name: edits.sider1_name ?? row.sider1_name,
-          sider2_name: edits.sider2_name ?? row.sider2_name
+          sider2_name: edits.sider2_name ?? row.sider2_name,
+          sider1_payroll_employee_id: Object.hasOwn(edits, 'sider1_payroll_employee_id') ? edits.sider1_payroll_employee_id : row.sider1_payroll_employee_id,
+          sider2_payroll_employee_id: Object.hasOwn(edits, 'sider2_payroll_employee_id') ? edits.sider2_payroll_employee_id : row.sider2_payroll_employee_id
         }
       })
 
@@ -417,8 +398,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
         }
         setEditedRows({})
         if (!skipParentRefresh) {
-          await loadData()
-          onRefresh?.()
+          if (onRefresh) onRefresh()
+          else await loadData()
         }
         return { success: true, saved: updates.length }
       } else {
@@ -522,7 +503,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.sider1_name || ''}
-                        onChange={(value) => handleTextChange(row.id, 'sider1_name', value)}
+                        employeeId={row.sider1_payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, 'sider1_name', value, employee)}
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight
@@ -535,7 +517,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
                         value={row.sider2_name || ''}
-                        onChange={(value) => handleTextChange(row.id, 'sider2_name', value)}
+                        employeeId={row.sider2_payroll_employee_id}
+                        onChange={(value, employee) => handleEmployeeChange(row.id, 'sider2_name', value, employee)}
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight

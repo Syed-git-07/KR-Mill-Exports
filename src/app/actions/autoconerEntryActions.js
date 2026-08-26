@@ -8,6 +8,7 @@ import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/autoconerEntryQueries'
 import { resolveAutoconerShiftFallbackTime } from '@/lib/autoconerShiftFallback'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
 
 // ============================================
 // SHIFT CONFIG ACTIONS
@@ -82,7 +83,10 @@ export async function updateAutoconerProductionHeaderAction(id, updates) {
 export async function getAutoconerProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getAutoconerProductionDetails(headerId)
+    const rows = await queries.getAutoconerProductionDetails(headerId)
+    const data = await hydratePayrollEmployeeNames(rows, [
+      { nameField: 'emp_name', idField: 'payroll_employee_id' }
+    ])
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -292,25 +296,6 @@ export async function getIdleReasonsAction() {
   return { success: true, data: queries.getIdleReasons() }
 }
 
-// ============================================
-// COPY PREVIOUS DATA ACTIONS
-// ============================================
-
-export async function getAutoconerAvailableDatesAction(beforeDate, shift, limit = 30) {
-  await requireUser()
-  try {
-    const data = await queries.getAutoconerAvailablePreviousDates(beforeDate, shift, limit)
-    return { success: true, data: serializeData(data) }
-  } catch (error) {
-    return { success: false, error: safeActionError(error) }
-  }
-}
-
-export async function copyAutoconerFromPreviousDateAction(...args) {
-  await requireUser()
-  void args
-  return { success: false, error: 'Autoconer machine setup has no speed to copy.' }
-}
 
 export async function getAutoconerEntryTabDataAction(tab, context = {}) {
   await requireUser()

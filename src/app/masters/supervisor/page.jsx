@@ -35,6 +35,11 @@ export default function SupervisorMaster() {
   const columns = [
     { key: 'code', label: 'Code', width: '100px' },
     { key: 'supervisor_name', label: 'Name', width: 'auto' },
+    { key: 'payroll_employee_id', label: 'Payroll ID', width: '110px' },
+    { key: 'token_no', label: 'Token', width: '110px' },
+    { key: 'employee_code', label: 'Employee Code', width: '130px' },
+    { key: 'payroll_status', label: 'Payroll Status', width: '120px' },
+    { key: 'role_status', label: 'Role Status', width: '110px' },
     { key: 'department_name', label: 'Department', width: 'auto' }
   ];
 
@@ -50,7 +55,8 @@ export default function SupervisorMaster() {
       if (result.success) {
         const formattedData = result.data.map(supervisor => ({
           ...supervisor,
-          department_name: supervisor.dept_name || '-'
+          department_name: supervisor.dept_name || '-',
+          role_status: supervisor.is_active ? 'Active' : 'Inactive'
         }));
         
         setSupervisors(formattedData);
@@ -76,7 +82,8 @@ export default function SupervisorMaster() {
       if (result.success) {
         const formattedData = result.data.map(supervisor => ({
           ...supervisor,
-          department_name: supervisor.dept_name || '-'
+          department_name: supervisor.dept_name || '-',
+          role_status: supervisor.is_active ? 'Active' : 'Inactive'
         }));
         
         setSupervisors(formattedData);
@@ -207,7 +214,7 @@ export default function SupervisorMaster() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Supervisor Master</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">Manage supervisor information</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">Assign payroll employees to local supervisor and maisitry roles</p>
         </div>
         <div className={canManageMasters ? "flex flex-wrap gap-2" : "hidden"}>
           <Button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">

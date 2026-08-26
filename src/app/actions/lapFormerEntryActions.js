@@ -7,6 +7,11 @@ import { safeActionError } from '@/lib/security/errors'
 import { serializeData } from '@/lib/serialize'
 import * as queries from '@/lib/queries/lapFormerQueries'
 import { assertWorkingDate } from '@/lib/holidayValidation'
+import { hydratePayrollEmployeeNames } from '@/lib/payroll/employees'
+
+const hydrateEmployeeNames = rows => hydratePayrollEmployeeNames(rows, [
+  { nameField: 'employee_name', idField: 'payroll_employee_id' }
+])
 
 // ============================================
 // SHIFT CONFIGURATION ACTIONS
@@ -72,7 +77,7 @@ export async function updateLapFormerHeaderAction(id, updates) {
 export async function getLapFormerProductionDetailsAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getLapFormerProductionDetails(headerId)
+    const data = await hydrateEmployeeNames(await queries.getLapFormerProductionDetails(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -82,7 +87,7 @@ export async function getLapFormerProductionDetailsAction(headerId) {
 export async function getLapFormerProductionWithSetupAction(headerId) {
   await requireUser()
   try {
-    const data = await queries.getLapFormerProductionWithSetup(headerId)
+    const data = await hydrateEmployeeNames(await queries.getLapFormerProductionWithSetup(headerId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }
@@ -321,10 +326,10 @@ export async function getLapFormerAvailableDatesAction(currentDate, shift) {
 // CALCULATION ACTIONS
 // ============================================
 
-export async function calculateLapFormerValuesAction(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null) {
+export async function calculateLapFormerValuesAction(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = 0) {
   await requireUser()
   try {
-    const data = queries.calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed)
+    const data = queries.calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed, currentWaste)
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

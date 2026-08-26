@@ -95,7 +95,8 @@ async function getAutoconerStoppagePercentageReport(fromDate, toDate = null) {
       if (!header) return
       const shift = header.shift
       if (shift >= 1 && shift <= 3) {
-        totalRunTimePerShift[shift] += (d.run_time || 510)
+        const fallbackRunTime = shift === 3 ? 420 : 510
+        totalRunTimePerShift[shift] += Number(d.run_time ?? fallbackRunTime) || 0
       }
     })
 

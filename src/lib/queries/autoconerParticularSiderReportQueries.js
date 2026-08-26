@@ -1,58 +1,32 @@
 import { prisma } from '../prisma'
+import { getPayrollEmployeeById } from '../payroll/employees'
 
 /**
- * Generate Autoconer Particular Sider Report
- * Shows individual sider performance across date range
- * 
- * @param {string} empName - Employee name to filter by
- * @param {Date} fromDate - Start date for report period
- * @param {Date} toDate - End date for report period
- * @returns {Promise<Object>} Report data with employee info and daily performance
+ * Generate an Autoconer particular-sider report.
+ * Employee identity comes from payroll; production values come from the
+ * production entry snapshot selected by payroll employee ID.
  */
-export async function generateAutoconerParticularSiderReport(empName, fromDate, toDate) {
+export async function generateAutoconerParticularSiderReport(employeeId, fromDate, toDate) {
   try {
-    if (!empName) {
-      throw new Error('Employee name is required')
+    const payrollEmployeeId = Number(employeeId)
+    if (!Number.isSafeInteger(payrollEmployeeId) || payrollEmployeeId <= 0) {
+      throw new Error('A payroll employee is required')
     }
+    if (!fromDate || !toDate) throw new Error('From date and to date are required')
 
-    if (!fromDate || !toDate) {
-      throw new Error('From date and to date are required')
-    }
-
-    // Convert dates to ensure they're Date objects
     const from = new Date(fromDate)
     const to = new Date(toDate)
-
-    // Validate date range
-    if (from > to) {
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
       throw new Error('From date must be before or equal to to date')
     }
 
-    // Get employee master data
-    const employeeData = await prisma.employee_master.findFirst({
-      where: {
-        emp_name: empName,
-        is_active: true
-      },
-      select: {
-        emp_name: true,
-        emp_code: true,
-        doj: true,
-        department: true,
-        designation: true
-      }
-    })
+    const employeeData = await getPayrollEmployeeById(payrollEmployeeId)
+    if (!employeeData) throw new Error('Employee not found in the configured payroll company')
 
-    if (!employeeData) {
-      throw new Error(`Employee "${empName}" not found`)
-    }
-
-    // Get all production details for this employee in the date range
     const productionDetails = await prisma.$queryRaw`
-      SELECT 
+      SELECT
         aph.entry_date as date,
         aph.shift,
-        apd.emp_name,
         am.machine_no,
         am.no_of_drums as total_drums,
         apd.idle_drum,
@@ -60,120 +34,97 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
         apd.prodn_effi,
         apd.red_light,
         apd.work_time,
-        apd.run_time,
-        apd.total_stoppage_mins
+        apd.run_time
       FROM autoconer_production_detail apd
       JOIN autoconer_production_header aph ON apd.header_id = aph.id
       JOIN autoconer_machines am ON apd.machine_id = am.id
-      WHERE apd.emp_name = ${empName}
+      WHERE apd.payroll_employee_id = ${payrollEmployeeId}
         AND aph.entry_date >= ${from}
         AND aph.entry_date <= ${to}
       ORDER BY aph.entry_date ASC, aph.shift ASC, am.machine_no ASC
     `
 
-    if (!productionDetails || productionDetails.length === 0) {
+    if (!productionDetails?.length) {
       return {
         success: false,
-        message: `No production data found for ${empName} between ${from.toLocaleDateString()} and ${to.toLocaleDateString()}`
+        message: `No production data found for ${employeeData.emp_name} between ${from.toLocaleDateString()} and ${to.toLocaleDateString()}`
       }
     }
 
-    // Group by date and calculate daily totals
-    const dailyData = {}
-
-    productionDetails.forEach(detail => {
+    const dailyData = new Map()
+    for (const detail of productionDetails) {
       const dateKey = detail.date.toISOString().split('T')[0]
-      
-      if (!dailyData[dateKey]) {
-        dailyData[dateKey] = {
+      if (!dailyData.has(dateKey)) {
+        dailyData.set(dateKey, {
           date: detail.date,
           drums: 0,
           prod_kgs: 0,
           total_work_time: 0,
           total_run_time: 0,
-          total_idle_drums: 0,
-          total_drums_capacity: 0,
+          efficiency_weighted: 0,
+          efficiency_weight: 0,
+          efficiency_sum: 0,
           red_light: 0,
           machine_count: 0
-        }
+        })
       }
 
-      const drums = parseInt(detail.total_drums) || 0
-      const idleDrums = parseInt(detail.idle_drum) || 0
-      const workingDrums = drums - idleDrums
-      const actProdn = parseFloat(detail.act_prodn) || 0
-      const workTime = parseInt(detail.work_time) || 0
-      const runTime = parseInt(detail.run_time) || 510
-      const redLight = parseFloat(detail.red_light) || 0
+      const day = dailyData.get(dateKey)
+      const drums = Number(detail.total_drums) || 0
+      const idleDrums = Number(detail.idle_drum) || 0
+      const production = Number(detail.act_prodn) || 0
+      const efficiency = Number(detail.prodn_effi) || 0
+      const productionWeight = Math.max(production, 0)
 
-      dailyData[dateKey].drums += workingDrums
-      dailyData[dateKey].prod_kgs += actProdn
-      dailyData[dateKey].total_work_time += workTime
-      dailyData[dateKey].total_run_time += runTime
-      dailyData[dateKey].total_idle_drums += idleDrums
-      dailyData[dateKey].total_drums_capacity += drums
-      dailyData[dateKey].red_light += redLight
-      dailyData[dateKey].machine_count += 1
-    })
-
-    // Calculate efficiency % and utilization % for each day
-    const performanceData = Object.keys(dailyData)
-      .sort()
-      .map(dateKey => {
-        const day = dailyData[dateKey]
-        
-        // Calculate Efficiency %
-        // Effi % = (work_time / run_time) × drum_efficiency
-        // drum_efficiency = 100 - (idle_drums / total_drums × 100)
-        const drumEfficiency = day.total_drums_capacity > 0 
-          ? 100 - ((day.total_idle_drums / day.total_drums_capacity) * 100)
-          : 0
-        
-        const effi_percent = day.total_run_time > 0
-          ? (day.total_work_time / day.total_run_time) * drumEfficiency
-          : 0
-
-        // Calculate Utilization %
-        // UTI % = (work_time / run_time) × 100
-        const uti_percent = day.total_run_time > 0
-          ? (day.total_work_time / day.total_run_time) * 100
-          : 0
-
-        // Average red light across machines
-        const avg_red_light = day.machine_count > 0
-          ? day.red_light / day.machine_count
-          : 0
-
-        return {
-          date: day.date,
-          drum: day.drums,
-          prod_kgs: day.prod_kgs,
-          effi_percent: parseFloat(effi_percent.toFixed(2)),
-          uti_percent: parseFloat(uti_percent.toFixed(2)),
-          red_light: parseFloat(avg_red_light.toFixed(2))
-        }
-      })
-
-    // Calculate totals
-    const totals = {
-      drum: performanceData.reduce((sum, d) => sum + d.drum, 0),
-      prod_kgs: performanceData.reduce((sum, d) => sum + d.prod_kgs, 0),
-      effi_percent: 0,
-      uti_percent: 0,
-      red_light: 0
+      day.drums += Math.max(drums - idleDrums, 0)
+      day.prod_kgs += production
+      day.total_work_time += Math.max(Number(detail.work_time) || 0, 0)
+      day.total_run_time += Math.max(Number(detail.run_time) || 0, 0)
+      day.efficiency_weighted += efficiency * productionWeight
+      day.efficiency_weight += productionWeight
+      day.efficiency_sum += efficiency
+      day.red_light += Number(detail.red_light) || 0
+      day.machine_count += 1
     }
 
-    // Calculate weighted averages for totals
-    if (performanceData.length > 0) {
-      totals.effi_percent = parseFloat(
-        (performanceData.reduce((sum, d) => sum + d.effi_percent, 0) / performanceData.length).toFixed(2)
-      )
-      totals.uti_percent = parseFloat(
-        (performanceData.reduce((sum, d) => sum + d.uti_percent, 0) / performanceData.length).toFixed(2)
-      )
-      totals.red_light = parseFloat(
-        (performanceData.reduce((sum, d) => sum + d.red_light, 0) / performanceData.length).toFixed(2)
-      )
+    const performanceData = [...dailyData.values()].map(day => {
+      const efficiency = day.efficiency_weight > 0
+        ? day.efficiency_weighted / day.efficiency_weight
+        : day.machine_count > 0 ? day.efficiency_sum / day.machine_count : 0
+      const utilization = day.total_run_time > 0
+        ? day.total_work_time / day.total_run_time * 100
+        : 0
+
+      return {
+        date: day.date,
+        drum: day.drums,
+        prod_kgs: day.prod_kgs,
+        effi_percent: Number(efficiency.toFixed(2)),
+        uti_percent: Number(utilization.toFixed(2)),
+        red_light: Number((day.machine_count > 0 ? day.red_light / day.machine_count : 0).toFixed(2))
+      }
+    })
+
+    const allDays = [...dailyData.values()]
+    const totalProduction = allDays.reduce((sum, day) => sum + day.prod_kgs, 0)
+    const efficiencyWeight = allDays.reduce((sum, day) => sum + day.efficiency_weight, 0)
+    const machineCount = allDays.reduce((sum, day) => sum + day.machine_count, 0)
+    const totalRunTime = allDays.reduce((sum, day) => sum + day.total_run_time, 0)
+    const totalWorkTime = allDays.reduce((sum, day) => sum + day.total_work_time, 0)
+    const efficiency = efficiencyWeight > 0
+      ? allDays.reduce((sum, day) => sum + day.efficiency_weighted, 0) / efficiencyWeight
+      : machineCount > 0
+        ? allDays.reduce((sum, day) => sum + day.efficiency_sum, 0) / machineCount
+        : 0
+
+    const totals = {
+      drum: performanceData.reduce((sum, day) => sum + day.drum, 0),
+      prod_kgs: totalProduction,
+      effi_percent: Number(efficiency.toFixed(2)),
+      uti_percent: Number((totalRunTime > 0 ? totalWorkTime / totalRunTime * 100 : 0).toFixed(2)),
+      red_light: Number((machineCount > 0
+        ? allDays.reduce((sum, day) => sum + day.red_light, 0) / machineCount
+        : 0).toFixed(2))
     }
 
     return {
@@ -182,23 +133,15 @@ export async function generateAutoconerParticularSiderReport(empName, fromDate, 
         employee: {
           name: employeeData.emp_name,
           emp_code: employeeData.emp_code || 'N/A',
-          doj: employeeData.doj,
-          department: employeeData.department,
-          designation: employeeData.designation
+          doj: employeeData.doj
         },
-        period: {
-          from: from,
-          to: to
-        },
+        period: { from, to },
         performance: performanceData,
-        totals: totals
+        totals
       }
     }
   } catch (error) {
     console.error('Error generating autoconer particular sider report:', error)
-    return {
-      success: false,
-      message: 'The report could not be generated. Please try again.'
-    }
+    return { success: false, message: 'The report could not be generated. Please try again.' }
   }
 }

@@ -11,6 +11,8 @@ import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 import { machineLookupWhere } from '../machineLifecycle';
 
@@ -209,6 +211,7 @@ export async function getOrCreateFinisherDrawingHeader(date, shift, supervisorId
   // Get shift-specific time
   const shiftConfig = await getFinisherDrawingShiftConfig(shift)
   const totalTime = shiftConfig.shiftTime
+  await validateProductionSupervisorIds(supervisorId, maisitryId)
 
   // Create new header using raw SQL to avoid timezone issues
   try {
@@ -231,6 +234,7 @@ export async function getOrCreateFinisherDrawingHeader(date, shift, supervisorId
 export async function updateFinisherDrawingHeader(id, updates) {
   await assertEntryHeaderUnlocked('finisherDrawing', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.finisher_drawing_production_header.update({
       where: { id },
@@ -650,8 +654,15 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
 export async function updateFinisherDrawingDetail(id, updates) {
   await assertEntryDetailUnlocked('finisherDrawing', id)
   try {
+    const current = await prisma.finisher_drawing_production_detail.findUnique({
+      where: { id },
+      select: { employee_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'employee_name', idField: 'payroll_employee_id' }
+    ])
     // Remove any fields that shouldn't be updated
-    const cleanUpdates = sanitizeProductionDetailUpdate(updates)
+    const cleanUpdates = sanitizeProductionDetailUpdate(prepared)
     
     const data = await prisma.finisher_drawing_production_detail.update({
       where: { id },
@@ -666,16 +677,7 @@ export async function updateFinisherDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateFinisherDrawingDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('finisherDrawing', id)))
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.finisher_drawing_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  )
-
-  const results = await Promise.all(promises)
-  return results
+  return Promise.all(updates.map(({ id, ...data }) => updateFinisherDrawingDetail(id, data)))
 }
 
 // ============================================
@@ -1521,17 +1523,7 @@ export async function getStoppageDetails() {
 
 // Get supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      where: { is_active: true },
-      orderBy: {
-        supervisor_name: 'asc'
-      }
-    })
-    return data
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // Get mixing options

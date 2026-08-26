@@ -16,13 +16,8 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
-  getBreakerDrawingStoppageEntriesAction,
-  getBreakerDrawingStoppageReasonsAction,
-  updateStoppageEntryAction,
-  getBreakerDrawingMachinesAction,
-  getBreakerDrawingMachineSetupsAction,
-  updateBreakerDrawingDetailAction,
-  syncNewMachinesToBreakerDrawingHeaderAction
+  getBreakerDrawingEntryTabDataAction,
+  runBreakerDrawingEntryBatchAction,
 } from '@/app/actions/breaker-drawing-entry'
 import { calculateBreakerDrawingValues } from '@/lib/queries/breakerDrawingQueries'
 import { BREAKER_DRAWING_FORMULA_FALLBACK } from '@/lib/breakerDrawingFormulaFallback'
@@ -287,15 +282,9 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     
     setIsLoading(true)
     try {
-      // Sync any newly added machines to this header first
-      await syncNewMachinesToBreakerDrawingHeaderAction(headerId, shift)
-      
-      const [stoppagesRes, reasonsRes, machineListRes, setupsRes] = await Promise.all([
-        getBreakerDrawingStoppageEntriesAction(headerId),
-        getBreakerDrawingStoppageReasonsAction(),
-        getBreakerDrawingMachinesAction(),
-        getBreakerDrawingMachineSetupsAction(shift, headerId)
-      ])
+      const result = await getBreakerDrawingEntryTabDataAction('stoppage', { headerId, shift })
+      if (!result.success) throw new Error(result.error || 'Failed to load Breaker Drawing stoppage data')
+      const { stoppagesRes, reasonsRes, machineListRes, setupsRes } = result.data
       
       // Check for errors in responses
       if (!stoppagesRes?.success) {
@@ -516,19 +505,21 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
     setIsSaving(true)
     try {
       // First update stoppage entries
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const stoppageUpdates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const stoppageResults = await Promise.all(updatePromises)
+      const stoppageBatch = await runBreakerDrawingEntryBatchAction('stoppage-update', stoppageUpdates)
+      if (!stoppageBatch.success) throw new Error(stoppageBatch.error || 'Failed to save stoppage data')
+      const stoppageResults = stoppageBatch.data || []
       const failedStoppage = stoppageResults.find(result => !result?.success)
       if (failedStoppage) {
         throw new Error(failedStoppage.error || 'Failed to save a Breaker Drawing stoppage row')
       }
       
       // Now recalculate production details based on updated stoppages
-      const productionUpdatePromises = Object.keys(currentEdits).map(async (rowId) => {
+      const productionUpdates = Object.keys(currentEdits).map((rowId) => {
         const stoppageRow = stoppageData.find(s => s.id === rowId)
         if (!stoppageRow || !stoppageRow.production_detail) return null
         
@@ -567,10 +558,15 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
         }
         
         // Update production detail
-        return updateBreakerDrawingDetailAction(mergedProduction.id, payload)
-      })
-      
-      await Promise.all(productionUpdatePromises.filter(Boolean))
+        return { id: mergedProduction.id, updates: payload }
+      }).filter(Boolean)
+
+      if (productionUpdates.length > 0) {
+        const productionBatch = await runBreakerDrawingEntryBatchAction('production-update', productionUpdates)
+        if (!productionBatch.success) throw new Error(productionBatch.error || 'Failed to recalculate production data')
+        const failedProduction = (productionBatch.data || []).find(result => !result?.success)
+        if (failedProduction) throw new Error(failedProduction.error || 'Failed to recalculate a production row')
+      }
       
       const savedCount = Object.keys(currentEdits).length
       setEditedRows({})
@@ -579,8 +575,8 @@ const BreakerDrawingStoppageTab = forwardRef(function BreakerDrawingStoppageTab(
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {

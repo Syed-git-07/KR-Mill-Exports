@@ -7,6 +7,8 @@ import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '.
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 
 // ============================================
@@ -92,6 +94,7 @@ export async function getOrCreateBreakerDrawingHeader(date, shift, supervisorId,
 
   // Get shift configuration for total_time from database
   const shiftConfig = await getBreakerDrawingShiftConfiguration(shift);
+  await validateProductionSupervisorIds(supervisorId, maisitryId);
 
   // Create new header
   try {
@@ -115,6 +118,7 @@ export async function getOrCreateBreakerDrawingHeader(date, shift, supervisorId,
 export async function updateBreakerDrawingHeader(id, updates) {
   await assertEntryHeaderUnlocked('breakerDrawing', id);
   updates = sanitizeEntryHeaderUpdate(updates);
+  await validateProductionSupervisorUpdate(updates);
   const data = await prisma.breaker_drawing_production_header.update({
     where: { id },
     data: updates
@@ -272,7 +276,7 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,  // Run time = Shift time
       work_time: defaultWorkTime,
@@ -377,7 +381,7 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,  // Run time = Shift time
       work_time: defaultWorkTime,
@@ -418,8 +422,15 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
 // Update production detail
 export async function updateBreakerDrawingDetail(id, updates) {
   await assertEntryDetailUnlocked('breakerDrawing', id);
+  const current = await prisma.breaker_drawing_production_detail.findUnique({
+    where: { id },
+    select: { employee_name: true, payroll_employee_id: true }
+  });
+  const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+    { nameField: 'employee_name', idField: 'payroll_employee_id' }
+  ]);
   // Remove any fields that shouldn't be updated (like speed from calculations)
-  const cleanUpdates = sanitizeProductionDetailUpdate(updates);
+  const cleanUpdates = sanitizeProductionDetailUpdate(prepared);
   
   try {
     const data = await prisma.breaker_drawing_production_detail.update({
@@ -435,16 +446,7 @@ export async function updateBreakerDrawingDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateBreakerDrawingDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('breakerDrawing', id)));
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.breaker_drawing_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  );
-
-  const results = await Promise.all(promises);
-  return results;
+  return Promise.all(updates.map(({ id, ...data }) => updateBreakerDrawingDetail(id, data)));
 }
 
 // ============================================
@@ -859,7 +861,7 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     };
     newMachineSetupDefaultsMap[m.id] = {
       speed: 750, hank_constant: 0.14, std_efficiency_factor: 0.85,
-      default_waste: 0.85, std_prodn: 1371.72, shift_time: 510,
+      default_waste: null, std_prodn: 1371.72, shift_time: 510,
       default_stoppage: 0, divisor_constant: 1693, delivery: 1
     };
   });
@@ -1027,11 +1029,7 @@ export async function getBreakerDrawingStoppageReasons() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  const data = await prisma.supervisors.findMany({
-    where: { is_active: true },
-    orderBy: { supervisor_name: 'asc' }
-  });
-  return data;
+  return getActiveProductionSupervisors();
 }
 
 // ============================================
@@ -1050,7 +1048,7 @@ export async function getSupervisors() {
 // NOTE: Speed is sourced from drawing_breaker_machines table (NOT hardcoded)
 // The setup.speed should be pre-merged from machine.speed before calling this function
 
-export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = null) {
+export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = 0) {
   const toNumber = (value, fallback = 0) => {
     if (value === null || value === undefined) return fallback;
     if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
@@ -1063,7 +1061,7 @@ export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stop
   };
 
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveBreakerDrawingFormulaInputs(setup, machineSpeed);
-  const wasteValue = toNumber(currentWaste ?? setup?.default_waste, 0);
+  const wasteValue = toNumber(currentWaste, 0);
   const safeTotalTime = toNumber(totalTime, 0);
   const safeStoppageTime = toNumber(stoppageTime, 0);
   const safeActHank = toNumber(actHank, 0);
@@ -1100,7 +1098,7 @@ export function calculateBreakerDrawingValues(actHank, actProdn, totalTime, stop
     exp_prodn: metrics.expectedProduction,
     effi_percent: metrics.efficiencyPercent,
     uti_percent: metrics.utilizationPercent,
-    waste: currentWaste ?? setup?.default_waste ?? null,
+    waste: wasteValue,
     waste_percent: metrics.wastePercent,
     run_time: metrics.totalTime,
     work_time: metrics.workTime,

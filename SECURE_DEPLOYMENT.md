@@ -24,9 +24,35 @@ SHA-256 digests.
   origins are comma-separated.
 - Set `NEXT_PUBLIC_BASE_PATH="/kr-production-app"` before building. This value
   is embedded into the production bundle and changing it requires a rebuild.
-- Grant the `DATABASE_URL` account only the application permissions it needs,
-  plus read-only `SELECT` access to `payroll.employees` and
-  `payroll.departments`. Never use the MySQL root account.
+- Configure `DATABASE_URL` for the KR production database and
+  `PAYROLL_DATABASE_URL` for the central payroll database. They may use
+  different hosts and must use dedicated, least-privilege service accounts.
+- Grant the `DATABASE_URL` account access only to KR production tables.
+- Grant the `PAYROLL_DATABASE_URL` account `SELECT` on `employees`,
+  `departments`, `companies`, `holiday_lists`, and `holidays`. Keep
+  `PAYROLL_HOLIDAY_WRITER=PAYROLL` and do not grant write access when the payroll
+  application owns holidays. If KR Production is formally designated as the
+  sole holiday writer, set `PAYROLL_HOLIDAY_WRITER=KR_PRODUCTION` and grant
+  narrowly scoped `INSERT`, `UPDATE`, and `DELETE` only on `holiday_lists` and
+  `holidays`. Never allow both applications to write the same holiday data, and
+  never use the MySQL root account.
+- Set `PAYROLL_COMPANY_ID` to the active payroll company owned by this KR
+  production deployment. Employee searches and holiday checks are scoped to it.
+- Back up the KR database before applying
+  `prisma/migrations/20260824_payroll_employee_identity/migration.sql`. The
+  migration removes the obsolete local `employee_master` table. After applying
+  the migration, run `npm run payroll:backfill` in dry-run mode, then use
+  `npm run payroll:backfill -- --apply` only after reviewing ambiguous and
+  unmatched counts. Finish with `npm run payroll:verify` to verify every schema
+  column, index, and stored payroll-company ID, then run
+  `npm run payroll:reconcile` to prove that employee identity buckets preserve
+  production and waste totals.
+- If both databases are schemas on the same MySQL 8 server and the migration is
+  being performed through MySQL Workbench, run the complete
+  `scripts/sql/finalproduction_payroll_identity_cleanup.sql` file after checking
+  its `@payroll_company_id`. Do not use that cross-schema Workbench script when
+  payroll is hosted on a different MySQL server; use the environment-driven npm
+  backfill commands instead.
 - Restrict the application and database ports with the server firewall.
 
 ## 2. Install and prepare
@@ -39,6 +65,13 @@ npm run security:check
 npm run user:create -- --username admin --name "System Administrator" --role ADMIN
 npm run build
 ```
+
+Use committed migrations for every shared or existing database. Do not run
+`npx prisma db push`: it bypasses migration history and can treat recovery-only
+tables as removable schema drift. The `20260826_actual_waste_zero_defaults`
+migration changes only database defaults; it deliberately does not rewrite
+historical waste values. Reset disposable sample entries separately when a clean
+zero-waste starting point is required.
 
 If this is the first secured release going onto an existing KR Production
 database that has no `_prisma_migrations` table, `migrate deploy` will stop with

@@ -1,23 +1,19 @@
-'use server'
-
 import { prisma } from '@/lib/prisma'
-import { requireUser } from '@/lib/security/auth'
 import { format } from 'date-fns'
+import { getPayrollEmployeesByIds } from '@/lib/payroll/employees'
+import { resolveHistoricalEmployeeIdentity } from '@/lib/payroll/historicalEmployeeIdentity'
 
 /**
  * Fetch sider monthly report data
  * Groups by frame (machine), shift and calculates waste metrics
  */
 export async function fetchSiderMonthlyData(fromDate, toDate) {
-  await requireUser()
   try {
     // Get all production details with sider information for the date range
-    const productionData = await prisma.$queryRaw`
+    const [productionData, headers] = await Promise.all([prisma.$queryRaw`
       SELECT 
         sm.machine_no as frame_no,
         sm.id as machine_id,
-        COALESCE(GROUP_CONCAT(DISTINCT NULLIF(spd.sider1_name, '') ORDER BY spd.sider1_name SEPARATOR ', '), 'NIL') as sider1_name,
-        MIN(em.doj) as doj,
         sph.shift,
         SUM(spd.act_prodn) as total_production,
         SUM(spd.waste) as total_waste,
@@ -26,11 +22,57 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       FROM spinning_production_detail spd
       INNER JOIN spinning_production_header sph ON spd.header_id = sph.id
       INNER JOIN spinning_machines sm ON spd.machine_id = sm.id
-      LEFT JOIN employee_master em ON spd.sider1_name = em.emp_name
       WHERE sph.entry_date BETWEEN ${format(fromDate, 'yyyy-MM-dd')} AND ${format(toDate, 'yyyy-MM-dd')}
       GROUP BY sm.id, sm.machine_no, sm.sort_order, sph.shift
       ORDER BY sm.sort_order, sm.machine_no, sph.shift
-    `
+    `, prisma.spinning_production_header.findMany({
+      where: { entry_date: { gte: fromDate, lte: toDate } },
+      select: { id: true, shift: true }
+    })])
+
+    const identityDetails = headers.length
+      ? await prisma.spinning_production_detail.findMany({
+          where: { header_id: { in: headers.map(header => header.id) } },
+          select: {
+            id: true,
+            header_id: true,
+            machine_id: true,
+            sider1_name: true,
+            sider1_payroll_employee_id: true,
+            sider2_name: true,
+            sider2_payroll_employee_id: true
+          }
+        })
+      : []
+    const employeeIds = identityDetails.flatMap(detail => [
+      detail.sider1_payroll_employee_id,
+      detail.sider2_payroll_employee_id
+    ])
+    const employees = await getPayrollEmployeesByIds(employeeIds)
+    const employeeById = new Map(employees.map(employee => [Number(employee.id), employee]))
+    const headerById = new Map(headers.map(header => [header.id, header]))
+    const identitiesByMachineShift = new Map()
+
+    for (const detail of identityDetails) {
+      const shift = headerById.get(detail.header_id)?.shift
+      const key = `${detail.machine_id}|${shift}`
+      if (!identitiesByMachineShift.has(key)) identitiesByMachineShift.set(key, [])
+      const identities = [
+        resolveHistoricalEmployeeIdentity({
+          payrollEmployeeId: detail.sider1_payroll_employee_id,
+          snapshotName: detail.sider1_name,
+          employee: employeeById.get(Number(detail.sider1_payroll_employee_id)) || null,
+          assignmentKey: `spinning:${detail.id}:sider1`
+        }),
+        resolveHistoricalEmployeeIdentity({
+          payrollEmployeeId: detail.sider2_payroll_employee_id,
+          snapshotName: detail.sider2_name,
+          employee: employeeById.get(Number(detail.sider2_payroll_employee_id)) || null,
+          assignmentKey: `spinning:${detail.id}:sider2`
+        })
+      ].filter(identity => identity.identityStatus !== 'UNASSIGNED')
+      identitiesByMachineShift.get(key).push(...identities)
+    }
 
     // Transform data into a structured format
     const frameMap = new Map()
@@ -53,20 +95,36 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       const shift = row.shift
 
       if (frame.shifts[shift]) {
-        frame.shifts[shift].siderName = row.sider1_name || 'NIL'
+        const identityGroups = new Map()
+        for (const identity of identitiesByMachineShift.get(`${row.machine_id}|${shift}`) || []) {
+          if (!identityGroups.has(identity.groupKey)) {
+            identityGroups.set(identity.groupKey, { identity, names: new Set() })
+          }
+          identityGroups.get(identity.groupKey).names.add(identity.displayName)
+        }
+        const shiftIdentities = [...identityGroups.values()]
+        frame.shifts[shift].siderName = shiftIdentities
+          .flatMap(group => [...group.names])
+          .join(', ') || 'NIL'
         frame.shifts[shift].production = parseFloat(row.total_production || 0)
         frame.shifts[shift].waste = parseFloat(row.total_waste || 0)
         frame.shifts[shift].wastePercent = parseFloat(row.avg_waste_percent || 0)
         // Format DOJ as dd-MMM-yy (e.g., "02-Sep-24")
-        if (row.doj) {
-          const dojDate = new Date(row.doj)
+        const joiningDates = [...new Set(shiftIdentities
+          .map(group => group.identity.employee?.doj)
+          .filter(Boolean)
+          .map(value => new Date(value).toISOString()))]
+          .map(value => new Date(value))
+        if (joiningDates.length) {
           const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-          const day = String(dojDate.getDate()).padStart(2, '0')
-          const month = months[dojDate.getMonth()]
-          const year = String(dojDate.getFullYear()).slice(-2)
-          frame.shifts[shift].doj = `${day}-${month}-${year}`
+          frame.shifts[shift].doj = joiningDates.map(dojDate => {
+            const day = String(dojDate.getDate()).padStart(2, '0')
+            const month = months[dojDate.getMonth()]
+            const year = String(dojDate.getFullYear()).slice(-2)
+            return `${day}-${month}-${year}`
+          }).join(', ')
         } else {
-          frame.shifts[shift].doj = '01-Jan-00'
+          frame.shifts[shift].doj = null
         }
       }
     }
@@ -82,21 +140,12 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
     }
 
     reportData.forEach(frame => {
-      if (frame.shifts[1].waste > 0) {
-        totals.shift1.production += frame.shifts[1].production
-        totals.shift1.waste += frame.shifts[1].waste
-        totals.shift1.wastePercent += frame.shifts[1].wastePercent
-      }
-      if (frame.shifts[2].waste > 0) {
-        totals.shift2.production += frame.shifts[2].production
-        totals.shift2.waste += frame.shifts[2].waste
-        totals.shift2.wastePercent += frame.shifts[2].wastePercent
-      }
-      if (frame.shifts[3].waste > 0) {
-        totals.shift3.production += frame.shifts[3].production
-        totals.shift3.waste += frame.shifts[3].waste
-        totals.shift3.wastePercent += frame.shifts[3].wastePercent
-      }
+      totals.shift1.production += frame.shifts[1].production
+      totals.shift1.waste += frame.shifts[1].waste
+      totals.shift2.production += frame.shifts[2].production
+      totals.shift2.waste += frame.shifts[2].waste
+      totals.shift3.production += frame.shifts[3].production
+      totals.shift3.waste += frame.shifts[3].waste
     })
 
     // Totals use total waste / total production, matching the mill report.

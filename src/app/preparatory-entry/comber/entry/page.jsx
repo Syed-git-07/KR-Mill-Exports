@@ -418,7 +418,7 @@ function ComberEntryContent() {
                 <SelectContent>
                   {supervisors.map(sup => (
                     <SelectItem key={sup.id} value={sup.id}>
-                      {sup.supervisor_name}
+                      {sup.supervisor_label || sup.supervisor_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -436,7 +436,7 @@ function ComberEntryContent() {
                   <SelectItem value="nil">NIL</SelectItem>
                   {supervisors.map(sup => (
                     <SelectItem key={sup.id} value={sup.id}>
-                      {sup.supervisor_name}
+                      {sup.supervisor_label || sup.supervisor_name}
                     </SelectItem>
                   ))}
                 </SelectContent>

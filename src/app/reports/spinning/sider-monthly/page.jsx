@@ -81,17 +81,17 @@ export default function SiderMonthlyReport() {
           frame.frameNo,
           // Shift 1
           frame.shifts[1].siderName || 'NIL',
-          frame.shifts[1].doj || '01-Jan-00',
+          frame.shifts[1].doj || '-',
           frame.shifts[1].waste.toFixed(2),
           frame.shifts[1].wastePercent.toFixed(2),
           // Shift 2
           frame.shifts[2].siderName || 'NIL',
-          frame.shifts[2].doj || '01-Jan-00',
+          frame.shifts[2].doj || '-',
           frame.shifts[2].waste.toFixed(2),
           frame.shifts[2].wastePercent.toFixed(2),
           // Shift 3
           frame.shifts[3].siderName || 'NIL',
-          frame.shifts[3].doj || '01-Jan-00',
+          frame.shifts[3].doj || '-',
           frame.shifts[3].waste.toFixed(2),
           frame.shifts[3].wastePercent.toFixed(2)
         ]
@@ -356,19 +356,19 @@ export default function SiderMonthlyReport() {
                         
                         {/* Shift 1 */}
                         <TableCell className="border-r text-center">{frame.shifts[1].siderName || 'NIL'}</TableCell>
-                        <TableCell className="border-r text-center">{frame.shifts[1].doj || '01-Jan-00'}</TableCell>
+                        <TableCell className="border-r text-center">{frame.shifts[1].doj || '-'}</TableCell>
                         <TableCell className="border-r text-right">{frame.shifts[1].waste.toFixed(2)}</TableCell>
                         <TableCell className="border-r text-right">{frame.shifts[1].wastePercent.toFixed(2)}</TableCell>
                         
                         {/* Shift 2 */}
                         <TableCell className="border-r text-center">{frame.shifts[2].siderName || 'NIL'}</TableCell>
-                        <TableCell className="border-r text-center">{frame.shifts[2].doj || '01-Jan-00'}</TableCell>
+                        <TableCell className="border-r text-center">{frame.shifts[2].doj || '-'}</TableCell>
                         <TableCell className="border-r text-right">{frame.shifts[2].waste.toFixed(2)}</TableCell>
                         <TableCell className="border-r text-right">{frame.shifts[2].wastePercent.toFixed(2)}</TableCell>
                         
                         {/* Shift 3 */}
                         <TableCell className="border-r text-center">{frame.shifts[3].siderName || 'NIL'}</TableCell>
-                        <TableCell className="border-r text-center">{frame.shifts[3].doj || '01-Jan-00'}</TableCell>
+                        <TableCell className="border-r text-center">{frame.shifts[3].doj || '-'}</TableCell>
                         <TableCell className="border-r text-right">{frame.shifts[3].waste.toFixed(2)}</TableCell>
                         <TableCell className="text-right">{frame.shifts[3].wastePercent.toFixed(2)}</TableCell>
                       </TableRow>

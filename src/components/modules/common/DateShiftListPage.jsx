@@ -82,16 +82,19 @@ export default function DateShiftListPage({
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [isCheckingHoliday, setIsCheckingHoliday] = useState(false)
   const [holidaysList, setHolidaysList] = useState([])
+  const [holidayLoadError, setHolidayLoadError] = useState(null)
 
   const loadHolidayDates = useCallback(async () => {
     setIsCheckingHoliday(true)
+    setHolidayLoadError(null)
     try {
       const res = await getAllHolidayDatesAction()
-      if (res.success && res.data) {
-        setHolidaysList(res.data.map(d => ({ date: d })))
-      }
+      if (!res.success) throw new Error(res.error || 'Payroll holiday calendar is unavailable')
+      setHolidaysList((res.data || []).map(d => ({ date: d })))
     } catch (err) {
       console.error('Failed to load holiday dates:', err)
+      setHolidayLoadError(err.message || 'Payroll holiday calendar is unavailable')
+      toast.error('Payroll holiday calendar could not be verified. New entries are temporarily blocked.')
     } finally {
       setIsCheckingHoliday(false)
     }
@@ -684,7 +687,8 @@ export default function DateShiftListPage({
             </Button>
             <Button
               className="bg-blue-600 hover:bg-blue-700"
-              disabled={isCheckingHoliday}
+              disabled={isCheckingHoliday || !!holidayLoadError}
+              title={holidayLoadError || undefined}
               onClick={() => {
                 const formattedDate = format(newEntryDate, 'yyyy-MM-dd')
                 const exists = entries.some(e => e.entry_date === formattedDate && String(e.shift) === String(newEntryShift))
@@ -705,7 +709,7 @@ export default function DateShiftListPage({
                 }
               }}
             >
-              {isCheckingHoliday ? 'Loading...' : 'Enter Data'}
+              {isCheckingHoliday ? 'Loading...' : holidayLoadError ? 'Holiday Check Unavailable' : 'Enter Data'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -15,6 +15,8 @@ import { resolveAutoconerShiftFallbackTime } from '../autoconerShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation'
 import { buildAutoconerCountSnapshot, mergeCountSnapshotWithEntryEdits } from '../countMasterSnapshots'
 import { machineAvailableOnDateWhere, machineLookupWhere } from '../machineLifecycle'
@@ -106,6 +108,7 @@ export async function getAutoconerProductionByDateShift(date, shift) {
 
 // Create new production header
 export async function createAutoconerProductionHeader(headerData) {
+  await validateProductionSupervisorIds(headerData?.supervisor_id, headerData?.maisitry_id)
   try {
     const data = await prisma.autoconer_production_header.create({
       data: headerData
@@ -120,6 +123,7 @@ export async function createAutoconerProductionHeader(headerData) {
 export async function updateAutoconerProductionHeader(id, updates) {
   await assertEntryHeaderUnlocked('autoconer', id)
   updates = sanitizeEntryHeaderUpdate(updates)
+  await validateProductionSupervisorUpdate(updates)
   try {
     const data = await prisma.autoconer_production_header.update({
       where: { id },
@@ -228,7 +232,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
         count_id: setup.count_id || null,
         session_no: setup.session_no || 1,
         prodn_effi: 0,
-        waste_kg: null,
+        waste_kg: 0,
         waste_percent: null,
         run_time: totalTime,               // Shift-specific runtime
         work_time: defaultWorkTime,        // Runtime - stoppage
@@ -326,7 +330,7 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
         count_id: setup.count_id || null,
         session_no: setup.session_no || 1,
         prodn_effi: 0,
-        waste_kg: null,
+        waste_kg: 0,
         waste_percent: null,
         run_time: totalTime,
         work_time: defaultWorkTime,
@@ -458,11 +462,18 @@ export async function getAutoconerProductionDetails(headerId) {
 export async function updateAutoconerProductionDetail(id, updates) {
   await assertEntryDetailUnlocked('autoconer', id)
   try {
+    const current = await prisma.autoconer_production_detail.findUnique({
+      where: { id },
+      select: { emp_name: true, payroll_employee_id: true }
+    })
+    const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+      { nameField: 'emp_name', idField: 'payroll_employee_id' }
+    ])
     // Note: Front-end now calculates all values using calculateAutoconerProductionValues()
     // Backend simply saves the data (like carding module)
     const data = await prisma.autoconer_production_detail.update({
       where: { id },
-      data: sanitizeProductionDetailUpdate(updates)
+      data: sanitizeProductionDetailUpdate(prepared)
     })
     return data
   } catch (error) {
@@ -1161,177 +1172,12 @@ export async function getAutoconerSpinningCounts() {
 }
 
 // ============================================
-// COPY PREVIOUS DATA FUNCTIONALITY
-// ============================================
-
-// Get available previous dates that have production data
-export async function getAutoconerAvailablePreviousDates(beforeDate, shift, limit = 30) {
-  try {
-    const data = await prisma.autoconer_production_header.findMany({
-      where: {
-        shift,
-        entry_date: { lt: new Date(beforeDate) }
-      },
-      select: {
-        entry_date: true,
-        shift: true
-      },
-      orderBy: { entry_date: 'desc' },
-      take: limit
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
-}
-
-// Copy data from a previous date
-export async function copyAutoconerFromPreviousDate(targetDate, targetShift, targetHeaderId, sourceDate) {
-  await assertEntryHeaderUnlocked('autoconer', targetHeaderId)
-  try {
-    let previousDate = sourceDate
-    if (!previousDate) {
-      const targetDateObj = new Date(targetDate)
-      const yesterdayDateObj = new Date(targetDateObj)
-      yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1)
-      previousDate = yesterdayDateObj.toISOString().split('T')[0]
-    }
-
-    // Normalize the date to just the date portion (YYYY-MM-DD) to handle ISO string dates
-    const normalizedDate = previousDate.includes('T')
-      ? previousDate.split('T')[0]
-      : previousDate
-
-    // Get source header
-    const sourceHeader = await getAutoconerProductionByDateShift(normalizedDate, targetShift)
-    if (!sourceHeader) {
-      throw new Error(`No production data found for ${normalizedDate} shift ${targetShift}`)
-    }
-
-    // Get source production details
-    const sourceDetails = await prisma.autoconer_production_detail.findMany({
-      where: { header_id: sourceHeader.id }
-    })
-
-    if (!sourceDetails || sourceDetails.length === 0) {
-      throw new Error(`No production details found for ${normalizedDate}`)
-    }
-
-    // Get source stoppage entries
-    const sourceStoppages = await prisma.autoconer_stoppage_entry.findMany({
-      where: {
-        production_detail_id: { in: sourceDetails.map(d => d.id) }
-      }
-    })
-
-    // Get target production details
-    const targetDetails = await prisma.autoconer_production_detail.findMany({
-      where: { header_id: targetHeaderId }
-    })
-
-    // Create map of machine_id to source data
-    const sourceDataMap = {}
-    sourceDetails.forEach(d => {
-      sourceDataMap[d.machine_id] = d
-    })
-
-    const sourceStoppageMap = {}
-    sourceStoppages?.forEach(s => {
-      const detail = sourceDetails.find(d => d.id === s.production_detail_id)
-      if (detail) {
-        sourceStoppageMap[detail.machine_id] = s
-      }
-    })
-
-    // Update target details with source data (copy ALL production fields)
-    let machinesUpdated = 0
-    for (const targetDetail of targetDetails) {
-      const sourceData = sourceDataMap[targetDetail.machine_id]
-      if (!sourceData) continue
-
-      // Copy ALL production values
-      await prisma.autoconer_production_detail.update({
-        where: { id: targetDetail.id },
-        data: {
-          emp_name: sourceData.emp_name,
-          count_id: sourceData.count_id,
-          count_name: sourceData.count_name,
-          act_prodn: sourceData.act_prodn,
-          prodn_effi: sourceData.prodn_effi,
-          red_light: sourceData.red_light,
-          idle_drum: sourceData.idle_drum,
-          idle_reason: sourceData.idle_reason,
-          waste_kg: sourceData.waste_kg,
-          waste_percent: sourceData.waste_percent,
-          total_stoppage_mins: sourceData.total_stoppage_mins,
-          work_time: sourceData.work_time,
-          session_no: sourceData.session_no
-        }
-      })
-      machinesUpdated++
-    }
-
-    // Update target stoppage entries
-    const targetStoppages = await prisma.autoconer_stoppage_entry.findMany({
-      where: {
-        production_detail_id: { in: targetDetails.map(d => d.id) }
-      }
-    })
-
-    const targetDetailMachineMap = {}
-    targetDetails.forEach(d => {
-      targetDetailMachineMap[d.id] = d.machine_id
-    })
-
-    // Copy stoppage data
-    for (const targetStoppage of targetStoppages || []) {
-      const machineId = targetDetailMachineMap[targetStoppage.production_detail_id]
-      const sourceStoppage = sourceStoppageMap[machineId]
-      if (!sourceStoppage) continue
-
-      await prisma.autoconer_stoppage_entry.update({
-        where: { id: targetStoppage.id },
-        data: {
-          run_time: sourceStoppage.run_time,
-          stoppage1_id: sourceStoppage.stoppage1_id,
-          stoppage1_time: sourceStoppage.stoppage1_time,
-          stoppage2_id: sourceStoppage.stoppage2_id,
-          stoppage2_time: sourceStoppage.stoppage2_time,
-          stoppage3_id: sourceStoppage.stoppage3_id,
-          stoppage3_time: sourceStoppage.stoppage3_time,
-          stoppage4_id: sourceStoppage.stoppage4_id,
-          stoppage4_time: sourceStoppage.stoppage4_time,
-          total_stoppage_time: sourceStoppage.total_stoppage_time,
-          is_full_stoppage: sourceStoppage.is_full_stoppage
-        }
-      })
-    }
-
-    return {
-      success: true,
-      copiedFrom: normalizedDate,
-      machinesUpdated: machinesUpdated
-    }
-  } catch (error) {
-    throw error
-  }
-}
-
-// ============================================
 // ADDITIONAL HELPER FUNCTIONS
 // ============================================
 
 // Get supervisors
 export async function getSupervisors() {
-  try {
-    const data = await prisma.supervisors.findMany({
-      where: { is_active: true },
-      orderBy: { supervisor_name: 'asc' }
-    })
-    return data || []
-  } catch (error) {
-    throw error
-  }
+  return getActiveProductionSupervisors()
 }
 
 // Get stoppage details for autoconer department (with category from stoppage_heads)

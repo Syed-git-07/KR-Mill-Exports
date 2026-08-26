@@ -623,7 +623,7 @@ function SpinningEntryContent() {
                 <SelectContent>
                   {supervisors.map(sup => (
                     <SelectItem key={sup.id} value={sup.id}>
-                      {sup.supervisor_name}
+                      {sup.supervisor_label || sup.supervisor_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -640,7 +640,7 @@ function SpinningEntryContent() {
                 <SelectContent>
                   {maisitries.map(mai => (
                     <SelectItem key={mai.id} value={mai.id}>
-                      {mai.maisitry_name}
+                      {mai.supervisor_label || mai.maisitry_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -671,14 +671,14 @@ function SpinningEntryContent() {
                   disabled={isLoadingEfficiency}
                 >
                   {isLoadingEfficiency ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Percent className="h-4 w-4 mr-1" />}
-                  Set Efficiency
+                  <span>Set Efficiency</span>
                 </Button>
                 <Dialog open={efficiencyDialogOpen} onOpenChange={setEfficiencyDialogOpen}>
                   <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
                       <DialogTitle>Set Spinning Efficiency</DialogTitle>
                       <DialogDescription>
-                        Applies to every machine in {format(date, 'dd-MMM-yyyy')}, Shift {shift} only. Default is 95%.
+                        Applies to every machine in {format(date, 'dd-MMM-yyyy')}, Shift {shift} only. Other entries are unchanged. Default is 95%.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2 py-4">

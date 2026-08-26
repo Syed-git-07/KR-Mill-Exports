@@ -14,6 +14,8 @@ import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '.
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
+import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
+import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
 import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStoppageUpdate } from './entryUpdateValidation';
 import { compareMachineNumbers } from '../machineNumberSort';
 
@@ -246,6 +248,7 @@ export async function getOrCreateLapFormerHeader(date, shift, supervisorId, mais
   if (existing) return existing;
 
   const totalTime = await getLapFormerShiftTime(shift);
+  await validateProductionSupervisorIds(supervisorId, maisitryId);
 
   // Create new header
   try {
@@ -269,6 +272,7 @@ export async function getOrCreateLapFormerHeader(date, shift, supervisorId, mais
 export async function updateLapFormerHeader(id, updates) {
   await assertEntryHeaderUnlocked('lapFormer', id);
   updates = sanitizeEntryHeaderUpdate(updates);
+  await validateProductionSupervisorUpdate(updates);
   const data = await prisma.lap_former_production_header.update({
     where: { id },
     data: updates
@@ -431,7 +435,7 @@ export async function initializeLapFormerDetails(headerId) {
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,
       work_time: defaultWorkTime,
@@ -535,7 +539,7 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
       exp_prodn: Math.round(expProdn * 100) / 100,
       effi_percent: 0,
       uti_percent: Math.round((defaultWorkTime / totalTime) * 100 * 100) / 100,
-      waste: setup.default_waste ?? null,
+      waste: 0,
       waste_percent: 0,
       run_time: totalTime,
       work_time: defaultWorkTime,
@@ -577,8 +581,15 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
 // Update production detail
 export async function updateLapFormerDetail(id, updates) {
   await assertEntryDetailUnlocked('lapFormer', id);
+  const current = await prisma.lap_former_production_detail.findUnique({
+    where: { id },
+    select: { employee_name: true, payroll_employee_id: true }
+  });
+  const prepared = await preparePayrollEmployeeUpdate(updates, current, [
+    { nameField: 'employee_name', idField: 'payroll_employee_id' }
+  ]);
   // Remove any fields that shouldn't be updated
-  const cleanUpdates = sanitizeProductionDetailUpdate(updates);
+  const cleanUpdates = sanitizeProductionDetailUpdate(prepared);
   
   try {
     const data = await prisma.lap_former_production_detail.update({
@@ -594,16 +605,7 @@ export async function updateLapFormerDetail(id, updates) {
 
 // Bulk update production details
 export async function bulkUpdateLapFormerDetails(updates) {
-  await Promise.all(updates.map(({ id }) => assertEntryDetailUnlocked('lapFormer', id)));
-  const promises = updates.map(({ id, ...data }) =>
-    prisma.lap_former_production_detail.update({
-      where: { id },
-      data: sanitizeProductionDetailUpdate(data)
-    })
-  );
-
-  const results = await Promise.all(promises);
-  return results;
+  return Promise.all(updates.map(({ id, ...data }) => updateLapFormerDetail(id, data)));
 }
 
 // ============================================
@@ -826,7 +828,8 @@ export async function applyLapFormerFullStoppage(headerId, stoppageId, stoppageT
       totalTime,
       newTotalStoppage,
       setup,
-      machineSpeed
+      machineSpeed,
+      prodDetail.waste
     );
 
     const recalculatedFields = {
@@ -1009,7 +1012,8 @@ export async function applyLapFormerPartialStoppage(headerId, fromMachineNo, toM
         totalTime,
         newTotalStoppage,
         setup,
-        machineSpeed  // Pass machine speed explicitly
+        machineSpeed,  // Pass machine speed explicitly
+        prodDetail.waste
       );
 
       const recalculatedFields = {
@@ -1101,7 +1105,7 @@ export async function getLapFormerMachineSetups(headerId = null) {
     };
     newMachineSetupDefaultsMap[m.id] = {
       speed: 90, hank_constant: 0.0082, std_efficiency_factor: 0.85,
-      default_waste: 0.85, std_prodn: 2810.35, shift_time: 510,
+      default_waste: null, std_prodn: 2810.35, shift_time: 510,
       default_stoppage: 0, divisor_constant: 1693, delivery: 1
     };
   });
@@ -1288,11 +1292,7 @@ export async function getLapFormerStoppageReasons() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  const data = await prisma.supervisors.findMany({
-    where: { is_active: true },
-    orderBy: { supervisor_name: 'asc' }
-  });
-  return data;
+  return getActiveProductionSupervisors();
 }
 
 // ============================================
@@ -1310,9 +1310,9 @@ export async function getSupervisors() {
 //
 // KEY DIFFERENCE: Lap Former uses Hank = 0.0082 (not 0.14 like Breaker Drawing)
 
-export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null) {
+export function calculateLapFormerValues(actHank, actProdn, totalTime, stoppageTime, setup, machineSpeed = null, currentWaste = 0) {
   const { speed, hankConstant, stdEfficiencyFactor, divisorConstant, delivery } = resolveLapFormerFormulaInputs(setup, machineSpeed);
-  const waste = setup?.default_waste ?? null;
+  const waste = Number.isFinite(Number(currentWaste)) ? Number(currentWaste) : 0;
 
   // Constant = 1 / 2.20456 / Hank
   const constst = getLapFormerActProdnConstant({ hank_constant: hankConstant });

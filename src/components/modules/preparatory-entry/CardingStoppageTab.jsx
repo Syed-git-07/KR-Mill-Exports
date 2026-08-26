@@ -28,11 +28,8 @@ import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import { resolveCardingShiftFallbackTime } from '@/lib/cardingShiftFallback'
 import { resolveCardingFormulaInputs } from '@/lib/cardingFormulaFallback'
 import {
-  getCardingStoppageEntriesAction,
-  getCardingStoppageReasonsAction,
-  getCardingMachineSetupsAction,
-  updateStoppageEntryAction,
-  getCardingMachinesAction
+  getCardingEntryTabDataAction,
+  runCardingEntryBatchAction,
 } from '@/app/actions/carding-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
 
@@ -288,12 +285,17 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     
     setIsLoading(true)
     try {
-      const [stoppagesResult, reasonsResult, machineListResult, setupsResult] = await Promise.all([
-        getCardingStoppageEntriesAction(headerId),
-        getCardingStoppageReasonsAction(),
-        getCardingMachinesAction(),
-        getCardingMachineSetupsAction(entryDate, shift)
-      ])
+      const result = await getCardingEntryTabDataAction('stoppage', {
+        headerId,
+        entryDate,
+        shift
+      })
+      if (!result.success) throw new Error(result.error || 'Failed to load Carding stoppage data')
+      const { stoppagesResult, reasonsResult, machineListResult, setupsResult } = result.data
+      if (!stoppagesResult.success) throw new Error(stoppagesResult.error || 'Failed to load stoppage entries')
+      if (!reasonsResult.success) throw new Error(reasonsResult.error || 'Failed to load stoppage reasons')
+      if (!machineListResult.success) throw new Error(machineListResult.error || 'Failed to load machines')
+      if (!setupsResult.success) throw new Error(setupsResult.error || 'Failed to load machine setups')
       
       const stoppages = stoppagesResult.success ? stoppagesResult.data : []
       const reasons = reasonsResult.success ? reasonsResult.data : []
@@ -481,12 +483,14 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
 
     setIsSaving(true)
     try {
-      const updatePromises = Object.entries(currentEdits).map(([rowId, changes]) => {
+      const updates = Object.entries(currentEdits).map(([rowId, changes]) => {
         const { production_detail_id: _productionDetailId, stoppage_entry_id: _stoppageEntryId, ...persistedChanges } = changes
-        return updateStoppageEntryAction(rowId, persistedChanges)
+        return { id: rowId, updates: persistedChanges }
       })
 
-      const results = await Promise.all(updatePromises)
+      const batchResult = await runCardingEntryBatchAction('stoppage-update', updates)
+      if (!batchResult.success) throw new Error(batchResult.error || 'Failed to save Carding stoppage data')
+      const results = batchResult.data || []
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to save a Carding stoppage row')
       const savedCount = Object.keys(currentEdits).length
@@ -496,8 +500,8 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
       }
       
       if (!skipParentRefresh) {
-        await loadData({ force: true })
-        onRefresh?.()
+        if (onRefresh) onRefresh()
+        else await loadData({ force: true })
       }
       return { success: true, saved: savedCount }
     } catch (error) {
