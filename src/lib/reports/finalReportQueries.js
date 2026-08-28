@@ -652,20 +652,51 @@ async function spinningStoppageAbstract(fromDate, toDate) {
   const data = await generateSpinningStoppageReport(fromDate, toDate)
   if (!data.success) return { ...report, notes: [data.message], tables: [] }
   const shifts = [1, 2, 3]
+  const workedByShift = Object.fromEntries(shifts.map(shift => [shift, data.totalNoOfSpindlesPerShift[shift]]))
+  const stoppedByShift = Object.fromEntries(shifts.map(shift => [shift, data.grandTotal.shifts[shift].stoppedSpindles]))
+  const allottedByShift = Object.fromEntries(shifts.map(shift => [shift, workedByShift[shift] + stoppedByShift[shift]]))
+  const totalWorked = shifts.reduce((sum, shift) => sum + workedByShift[shift], 0)
+  const totalStopped = data.grandTotal.shifts.total.stoppedSpindles
+  const totalAllotted = totalWorked + totalStopped
+  const utilization = totalAllotted > 0 ? totalWorked / totalAllotted * 100 : 0
+  const stoppedPercent = totalAllotted > 0 ? totalStopped / totalAllotted * 100 : 0
+  const workedDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1
+
   report.tables.push({
-    title: 'Stoppage Category Abstract',
-    columns: ['SL No', 'Stoppage Head', 'I Shift Spl', 'I %', 'II Shift Spl', 'II %', 'III Shift Spl', 'III %', 'Total Spl', 'Total %'],
+    columns: ['SL No', 'SHIFT', 'Worked Spl', '%'],
+    rows: shifts.map(shift => [shift, shift, fixed(workedByShift[shift]), fixed(allottedByShift[shift] > 0 ? workedByShift[shift] / allottedByShift[shift] * 100 : 0)]),
+    footer: ['TOTAL', '', fixed(totalWorked), fixed(utilization)]
+  })
+  report.tables.push({
+    columns: ['Report Parameter', 'Value', 'Report Parameter', 'Value'],
+    rows: [
+      ['Allotted Spindles', fixed(totalAllotted), 'Shift', shifts.length],
+      ['Worked Days', workedDays, '', '']
+    ]
+  })
+  report.tables.push({
+    headerGroups: [
+      { label: 'SL No', span: 1 },
+      { label: 'Reasons', span: 1 },
+      { label: 'I Shift', span: 2 },
+      { label: 'II Shift', span: 2 },
+      { label: 'III Shift', span: 2 },
+      { label: 'Total', span: 2 }
+    ],
+    columns: ['', '', 'Spl', '%', 'Spl', '%', 'Spl', '%', 'Spl', '%'],
     rows: data.reportData.map((head, index) => [index + 1, head.headName, ...shifts.flatMap(shift => [fixed(head.shifts[shift].stoppedSpindles), fixed(head.shifts[shift].percentage)]), fixed(head.shifts.total.stoppedSpindles), fixed(head.shifts.total.percentage)]),
     footer: ['TOTAL', '', ...shifts.flatMap(shift => [fixed(data.grandTotal.shifts[shift].stoppedSpindles), fixed(data.grandTotal.shifts[shift].percentage)]), fixed(data.grandTotal.shifts.total.stoppedSpindles), fixed(data.grandTotal.shifts.total.percentage)]
   })
   report.tables.push({
-    title: 'Spindle Summary',
-    columns: ['Measure', 'I Shift', 'II Shift', 'III Shift', 'Total'],
+    title: 'Abstract',
+    columns: ['Measure', 'Value'],
     rows: [
-      ['Allotted / Worked Spindles', ...shifts.map(shift => fixed(data.totalNoOfSpindlesPerShift[shift])), fixed(Object.values(data.totalNoOfSpindlesPerShift).reduce((s, value) => s + value, 0))],
-      ['Stopped Spindles', ...shifts.map(shift => fixed(data.grandTotal.shifts[shift].stoppedSpindles)), fixed(data.grandTotal.shifts.total.stoppedSpindles)],
-      ['Stopped %', ...shifts.map(shift => fixed(data.grandTotal.shifts[shift].percentage)), fixed(data.grandTotal.shifts.total.percentage)],
-      ['Utilization %', ...shifts.map(shift => fixed(100 - data.grandTotal.shifts[shift].percentage)), fixed(100 - data.grandTotal.shifts.total.percentage)]
+      ['Allotted Spindles', fixed(totalAllotted)],
+      ['Worked Spindles', fixed(totalWorked)],
+      ['Utilization %', fixed(utilization)],
+      ['Stopped Spindles', fixed(totalStopped)],
+      ['Stopped Spindles %', fixed(stoppedPercent)],
+      ['Abstract', fixed(stoppedPercent)]
     ]
   })
   return report

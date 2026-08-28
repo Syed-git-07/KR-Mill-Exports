@@ -121,9 +121,15 @@ export function createFinalReportPdf(report) {
     }
     const body = [...(table.rows || [])]
     if (table.footer) body.push(table.footer)
+    const head = table.headerGroups
+      ? [
+          table.headerGroups.map(group => ({ content: group.label, colSpan: group.span, styles: { halign: 'center' } })),
+          table.columns || []
+        ]
+      : [table.columns || []]
     autoTable(doc, {
       startY: y,
-      head: [table.columns || []],
+      head,
       body,
       theme: 'grid',
       margin: { top: 25, left: 10, right: 10, bottom: 17 },
