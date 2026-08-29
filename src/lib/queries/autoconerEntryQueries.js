@@ -1528,15 +1528,11 @@ export function calculateAutoconerProductionValues(actProdn, wasteKg, idleDrum, 
   }
 }
 
-// Get idle reasons for autoconer
-export function getIdleReasons() {
-  return [
-    { id: 'NO_SUPPLY', name: 'No Cop Supply' },
-    { id: 'NO_POWER', name: 'Power Failure' },
-    { id: 'MACHINE_BREAKDOWN', name: 'Machine Breakdown' },
-    { id: 'NO_OPERATOR', name: 'No Operator' },
-    { id: 'QUALITY_ISSUE', name: 'Quality Issue' },
-    { id: 'CONE_SHORTAGE', name: 'Cone Shortage' },
-    { id: 'OTHER', name: 'Other' }
-  ]
+// Use the Autoconer stoppage master for idle reasons as well.
+export async function getIdleReasons() {
+  const reasons = await getStoppageDetails()
+  return reasons.map(reason => ({
+    id: reason.stoppage_name,
+    name: reason.stoppage_name
+  }))
 }

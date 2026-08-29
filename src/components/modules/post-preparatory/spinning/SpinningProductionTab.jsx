@@ -604,7 +604,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                       ) : effectiveRunTime}
                     </td>
                     <td className="border border-gray-300 px-3 py-1 text-center font-medium text-orange-600 tabular-nums whitespace-nowrap">
-                      {row.stoppage?.[0]?.total_stoppage_time ?? 0}
+                      {row.total_stoppage_mins ?? 0}
                     </td>
                   </tr>
                 )
