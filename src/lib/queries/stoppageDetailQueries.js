@@ -1,5 +1,6 @@
 import { prisma } from '../prisma'
 import { buildTypedSearchWhere } from '../masterSearch'
+import { softDeleteMasterRecord } from './masterSoftDelete'
 
 /**
  * Get all stoppage details with joined data
@@ -165,14 +166,12 @@ export async function updateStoppageDetail(id, stoppageDetailData) {
 }
 
 /**
- * Delete stoppage detail
+ * Soft-delete a stoppage detail while retaining historical references.
  */
 export async function deleteStoppageDetail(id) {
-  await prisma.stoppage_details.delete({
-    where: { id }
-  });
-
-  return true
+  return softDeleteMasterRecord(prisma.stoppage_details, id, {
+    recordLabel: 'Stoppage detail'
+  })
 }
 
 /**

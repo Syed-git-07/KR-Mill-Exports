@@ -444,11 +444,7 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
 
     // Get machines visible on the entry date that have a setup
     const machines = await prisma.spinning_machines.findMany({
-      where: {
-        id: { in: machineIdsWithSetup },
-        installed_date: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-      },
+      where: { id: { in: machineIdsWithSetup } },
       orderBy: { sort_order: 'asc' }
     })
 
@@ -544,13 +540,11 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
     const setups = await getOrCreateSpinningMachineSetups(entryDate, shift)
     const machineIdsWithSetup = setups.map(s => s.machine_id)
 
-    // Get machines visible on the entry date
-    // Only include machines with a setup entry — master-only machines (no setup) are excluded
+    // The setup snapshot is authoritative after initialization. A later Master
+    // soft deletion must not remove an inherited machine from this entry.
     const machines = await prisma.spinning_machines.findMany({
       where: {
-        id: { in: machineIdsWithSetup },
-        installed_date: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
+        id: { in: machineIdsWithSetup }
       },
       orderBy: { sort_order: 'asc' }
     })
@@ -560,8 +554,6 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
       where: { header_id: headerId },
       select: { id: true, machine_id: true }
     })
-
-    const existingMachineIds = existingDetails?.map(d => d.machine_id) || []
 
     // Existing detail rows are snapshots. A later master deactivation or
     // revision must never delete or replace a machine in this entry.
@@ -1299,16 +1291,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
           orderBy: { sort_order: 'asc' }
         })
 
-    const availableMachines = machines.length
-      ? await prisma.spinning_machines.findMany({
-          where: {
-            id: { in: machines.map(machine => machine.id) },
-            ...machineAvailableOnDateWhere(dateObj)
-          }
-        })
-      : []
     const machineById = new Map(machines.map(machine => [machine.id, machine]))
-    const availableMachineIds = new Set(availableMachines.map(machine => machine.id))
 
     const countIds = [...new Set(
       (previousHeader ? sourceRows.map(row => row.count_id) : machines.map(machine => machine.count_id)).filter(Boolean)
@@ -1332,7 +1315,6 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
     const defaultSetups = previousHeader
       ? sourceRows.map(source => {
           const machine = machineById.get(source.machine_id)
-          const isAvailable = availableMachineIds.has(source.machine_id)
           const count = countById.get(source.count_id) || countByName.get(source.count_name)
           const {
             id: _id,
@@ -1350,7 +1332,9 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
             entry_date: dateObj,
             shift: shiftNum,
             run_sequence: 1,
-            is_included: source.is_included !== false && isAvailable,
+            // The previous entry owns membership. A Master soft deletion must
+            // not rewrite the next sequential entry's structure.
+            is_included: source.is_included !== false,
             ...(count ? buildSpinningCountSnapshot(count, { machineSpeed: machine?.speed }) : {}),
             allocated_spindles: firstProvidedNumber(
               [machine?.allocated_spindles, source.allocated_spindles],
@@ -1860,21 +1844,7 @@ export async function applySpinningOptionCheck(payload) {
 
     const targetMachines = await tx.spinning_machines.findMany({
       where: {
-        id: { in: targetMachineIds },
-        AND: [
-          {
-            OR: [
-              { activated_at: null },
-              { installed_date: { lte: targetHeader.entry_date } }
-            ]
-          },
-          {
-            OR: [
-              { deactivated_at: null },
-              { deactivated_at: { gt: targetHeader.entry_date } }
-            ]
-          }
-        ]
+        id: { in: targetMachineIds }
       },
       select: { id: true }
     })

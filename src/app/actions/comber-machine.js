@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { comberMachineCreateSchema, comberMachineUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
@@ -69,9 +68,18 @@ export async function updateComberMachineAction(id, machineData) {
   }
 }
 
-export async function deleteComberMachineAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteComberMachineAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.comber-machine', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => queries.deleteComberMachine(validatedId))
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
 }
 
 export async function searchComberMachinesAction(field, condition, value) {

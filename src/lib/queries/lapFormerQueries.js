@@ -13,6 +13,7 @@ import {
 import { calculateTimeAdjustedProductionMetrics, resolveProductionTime } from '../productionFormulaMath';
 import { getOrCreateDateScopedSetups } from './dateScopedMachineSetup';
 import { findFirstFreeStoppageSlot, getStoppageTotal } from '../stoppageSlotUtils';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate';
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection';
 import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries';
@@ -173,12 +174,12 @@ export async function updateLapFormerMachine(id, machineData) {
   return data;
 }
 
-// Delete a lap former machine (Permanent delete from master screen)
+// Soft-delete a lap former machine while retaining historical entries.
 export async function deleteLapFormerMachine(id) {
-  await prisma.lap_former_machines.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.lap_former_machines, id, {
+    recordLabel: 'Lap former machine',
+    trackRemovalDate: true
   });
-  return true;
 }
 
 // Search lap former machines
@@ -292,12 +293,6 @@ export async function getLapFormerProductionDetails(headerId) {
 
   if (!data || data.length === 0) return [];
 
-  const header = await prisma.lap_former_production_header.findUnique({
-    where: { id: headerId },
-    select: { entry_date: true, shift: true, total_time: true }
-  });
-  const entryDate = header?.entry_date || new Date();
-
   const machineIds = data.map(d => d.machine_id);
   const machines = await prisma.lap_former_machines.findMany({
     where: { id: { in: machineIds } },
@@ -312,13 +307,7 @@ export async function getLapFormerProductionDetails(headerId) {
       ...detail,
       machine: machineMap[detail.machine_id] || null
     }))
-    .filter(detail => {
-      const m = detail.machine;
-      if (!m) return false;
-      if (m.installed_date && new Date(m.installed_date) > entryDate) return false;
-      if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return false;
-      return true;
-    })
+    .filter(detail => !!detail.machine)
     .sort((a, b) => compareLapFormerMachines(a.machine, b.machine));
 }
 
@@ -350,25 +339,13 @@ export async function getLapFormerProductionWithSetup(headerId) {
   const stoppageMap = {};
   stoppages?.forEach(s => { stoppageMap[s.production_detail_id] = s; });
   
-  const header = await prisma.lap_former_production_header.findUnique({
-    where: { id: headerId },
-    select: { entry_date: true, shift: true, total_time: true }
-  });
-  const entryDate = header?.entry_date || new Date();
-
   return (data || [])
     .map(detail => ({
       ...detail,
       machine: machineMap[detail.machine_id] || null,
       stoppage: stoppageMap[detail.id] ? [stoppageMap[detail.id]] : []
     }))
-    .filter(detail => {
-      const m = detail.machine;
-      if (!m) return false;
-      if (m.installed_date && new Date(m.installed_date) > entryDate) return false;
-      if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return false;
-      return true;
-    })
+    .filter(detail => !!detail.machine)
     .sort((a, b) => compareLapFormerMachines(a.machine, b.machine));
 }
 
@@ -384,9 +361,8 @@ export async function initializeLapFormerDetails(headerId) {
   // Get header entry_date for date-based machine visibility
   const header = await prisma.lap_former_production_header.findUnique({
     where: { id: headerId },
-    select: { entry_date: true }
+    select: { total_time: true, shift: true }
   });
-  const entryDate = header?.entry_date || new Date();
 
   // Materialize this header's independent setup snapshot first.
   const setups = await getLapFormerMachineSetups(headerId);
@@ -394,11 +370,7 @@ export async function initializeLapFormerDetails(headerId) {
 
   // Get all lap former machines WITH SPEED visible on the entry date
   const machines = await prisma.lap_former_machines.findMany({
-    where: {
-      id: { in: machineIdsWithSetup },
-      installed_date: { lte: entryDate },
-      OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-    },
+    where: { id: { in: machineIdsWithSetup } },
     select: { id: true, machine_no: true, prodn_mixing: true, speed: true, description: true },
     orderBy: { sort_order: 'asc' }
   });
@@ -483,18 +455,12 @@ export async function syncNewMachinesToLapFormerHeader(headerId) {
     where: { id: headerId },
     select: { entry_date: true, shift: true, total_time: true }
   });
-  const entryDate = header?.entry_date || new Date();
-
   const setups = await getLapFormerMachineSetups(headerId);
   const machineIdsWithSetup = setups.map(s => s.machine_id);
 
   // Get all active lap former machines based on entry date
   const allMachines = await prisma.lap_former_machines.findMany({
-    where: {
-      id: { in: machineIdsWithSetup },
-      installed_date: { lte: entryDate },
-      OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-    },
+    where: { id: { in: machineIdsWithSetup } },
     select: { id: true, machine_no: true, prodn_mixing: true, speed: true, description: true },
     orderBy: { sort_order: 'asc' }
   });
@@ -620,12 +586,6 @@ export async function getLapFormerStoppageEntries(headerId) {
 
   if (!details || details.length === 0) return [];
 
-  const header = await prisma.lap_former_production_header.findUnique({
-    where: { id: headerId },
-    select: { entry_date: true }
-  });
-  const entryDate = header?.entry_date || new Date();
-
   const detailIds = details.map(d => d.id);
   const stoppages = await prisma.lap_former_stoppage_entry.findMany({
     where: { production_detail_id: { in: detailIds } }
@@ -662,13 +622,7 @@ export async function getLapFormerStoppageEntries(headerId) {
   stoppageReasons?.forEach(r => { reasonMap[r.id] = r; });
 
   return details
-    .filter(detail => {
-      const m = machineMap[detail.machine_id];
-      if (!m) return false;
-      if (m.installed_date && new Date(m.installed_date) > entryDate) return false;
-      if (m.deactivated_at && new Date(m.deactivated_at) <= entryDate) return false;
-      return true;
-    })
+    .filter(detail => !!machineMap[detail.machine_id])
     .sort((a, b) => compareLapFormerMachines(machineMap[a.machine_id], machineMap[b.machine_id]))
     .map(detail => {
       const machine = machineMap[detail.machine_id];
@@ -1118,10 +1072,28 @@ export async function getLapFormerMachineSetups(headerId = null) {
     machineSetupOverridesMap,
     newMachineSetupDefaultsMap
   });
+  const snapshotMachineIds = [...new Set((data || []).map(setup => setup.machine_id).filter(Boolean))];
+  const entryMachines = snapshotMachineIds.length
+    ? await prisma.lap_former_machines.findMany({
+        where: { id: { in: snapshotMachineIds } },
+        select: {
+          id: true,
+          machine_no: true,
+          description: true,
+          make_name: true,
+          prodn_mixing: true,
+          speed: true,
+          prodn_efficiency: true,
+          sort_order: true,
+          is_active: true
+        },
+        orderBy: [{ is_active: 'desc' }, { sort_order: 'asc' }]
+      })
+    : [];
 
   const machineMap = {};
-  if (Array.isArray(machines)) {
-    machines.forEach(m => { machineMap[m.id] = m; });
+  if (Array.isArray(entryMachines)) {
+    entryMachines.forEach(m => { machineMap[m.id] = m; });
   }
 
   const mixingMap = {};

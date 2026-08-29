@@ -3,37 +3,30 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const departmentSchema = z.object({
-  code: z.number().min(0, 'Code must be positive'),
   dept_name: z.string().min(2, 'Department name must be at least 2 characters'),
-  sl_no: z.number().min(0, 'SL.NO must be positive'),
   hok: z.number().min(0, 'H.O.K must be positive')
 });
 
-export default function DepartmentForm({ initialData, onSubmit, onCancel }) {
+export default function DepartmentForm({ initialData, onSubmit }) {
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting }
   } = useForm({
     resolver: zodResolver(departmentSchema),
-    defaultValues: initialData || {
-      code: '',
-      dept_name: '',
-      sl_no: '',
-      hok: 0.2
+    defaultValues: {
+      dept_name: initialData?.dept_name || '',
+      hok: initialData?.hok == null ? 0.2 : Number(initialData.hok)
     }
   });
 
   const onFormSubmit = async (data) => {
     const formattedData = {
       ...data,
-      code: parseInt(data.code),
-      sl_no: parseInt(data.sl_no),
       hok: parseFloat(data.hok)
     };
     
@@ -42,36 +35,10 @@ export default function DepartmentForm({ initialData, onSubmit, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Code and serial number are assigned automatically when the department is created.
+      </p>
       <div className="grid grid-cols-2 gap-4">
-        {/* Code */}
-        <div className="space-y-2">
-          <Label htmlFor="code">Code *</Label>
-          <Input
-            id="code"
-            type="number"
-            {...register('code', { valueAsNumber: true })}
-            className={errors.code ? 'border-red-500' : ''}
-            readOnly={!!initialData}
-          />
-          {errors.code && (
-            <p className="text-xs text-red-500">{errors.code.message}</p>
-          )}
-        </div>
-
-        {/* SL.NO */}
-        <div className="space-y-2">
-          <Label htmlFor="sl_no">SL.NO *</Label>
-          <Input
-            id="sl_no"
-            type="number"
-            {...register('sl_no', { valueAsNumber: true })}
-            className={errors.sl_no ? 'border-red-500' : ''}
-          />
-          {errors.sl_no && (
-            <p className="text-xs text-red-500">{errors.sl_no.message}</p>
-          )}
-        </div>
-
         {/* Department Name */}
         <div className="space-y-2 col-span-2">
           <Label htmlFor="dept_name">Department *</Label>

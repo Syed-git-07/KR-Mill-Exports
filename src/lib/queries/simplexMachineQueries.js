@@ -1,6 +1,7 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { machineRemovalDate } from '../machineLifecycle';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 function parseCountTpi(tpiValue) {
   if (tpiValue == null) return null;
@@ -136,10 +137,12 @@ export async function updateSimplexMachine(id, machineData) {
   return data;
 }
 
-// Delete a simplex machine permanently
+// Soft-delete a simplex machine while retaining historical entries.
 export async function deleteSimplexMachine(id) {
-  await prisma.simplex_machines.delete({ where: { id } });
-  return true;
+  return softDeleteMasterRecord(prisma.simplex_machines, id, {
+    recordLabel: 'Simplex machine',
+    trackRemovalDate: true
+  });
 }
 
 // Search simplex machines (only active ones)

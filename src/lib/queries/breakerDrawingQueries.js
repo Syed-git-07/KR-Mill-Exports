@@ -52,17 +52,6 @@ export async function getBreakerDrawingShiftConfiguration(shift) {
   };
 }
 
-function isBreakerMachineVisibleOnDate(machine, entryDate) {
-  if (!machine) return false;
-  const date = entryDate ? new Date(entryDate) : null;
-  if (!date) return true;
-  const activated = machine.activated_at ? new Date(machine.activated_at) : null;
-  const deactivated = machine.deactivated_at ? new Date(machine.deactivated_at) : null;
-  if (activated && activated > date) return false;
-  if (deactivated && deactivated <= date) return false;
-  return true;
-}
-
 // ============================================
 // BREAKER DRAWING PRODUCTION HEADER QUERIES
 // ============================================
@@ -157,15 +146,9 @@ export async function getBreakerDrawingProductionDetails(headerId) {
     machineMap[m.id] = m;
   });
 
-  const header = await prisma.breaker_drawing_production_header.findUnique({
-    where: { id: headerId },
-    select: { entry_date: true }
-  });
-  const entryDate = header?.entry_date || null;
-
   return (data || [])
     .map(d => ({ ...d, machine: machineMap[d.machine_id] || null }))
-    .filter(d => isBreakerMachineVisibleOnDate(d.machine, entryDate));
+    .filter(d => !!d.machine);
 }
 
 // Get production details with machine setup for a header (for display)
@@ -227,28 +210,19 @@ export async function initializeBreakerDrawingDetails(headerId, shift = 1) {
   const totalTime = shiftConfig.totalTime;
   const defaultStoppage = shiftConfig.defaultStoppage;
   
-  // Get entry_date from header for date-based machine visibility
-  const headerForDate = await prisma.breaker_drawing_production_header.findUnique({
-    where: { id: headerId },
-    select: { entry_date: true }
-  });
-  const entryDate = headerForDate?.entry_date || new Date();
-
   // Get all breaker drawing machines visible on this entry date (not yet deactivated)
   // Only include machines that have a setup entry — master-only machines (no setup) are excluded
-  const machines = await prisma.drawing_breaker_machines.findMany({
-    where: {
-      installed_date: { lte: entryDate },
-      OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-    },
-    select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
-    orderBy: { mc_id: 'asc' }
-  });
-
-  // Materialize this header's setup snapshot from the current master values.
+  // Materialize this header's setup snapshot first. Its machine IDs, not the
+  // live Master status, own membership for this entry.
   const setups = await getBreakerDrawingMachineSetups(headerId);
-  const setupMachineIds = new Set((setups || []).map(s => s.machine_id));
-  const machinesWithSetup = (machines || []).filter(m => setupMachineIds.has(m.id));
+  const setupMachineIds = (setups || []).map(s => s.machine_id);
+  const machinesWithSetup = setupMachineIds.length
+    ? await prisma.drawing_breaker_machines.findMany({
+        where: { id: { in: setupMachineIds } },
+        select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
+        orderBy: { mc_id: 'asc' }
+      })
+    : [];
 
   // Create a map of machine_id to setup
   const setupMap = {};
@@ -320,27 +294,17 @@ export async function syncNewMachinesToBreakerDrawingHeader(headerId, shift = 1)
   const totalTime = shiftConfig.totalTime;
   const defaultStoppage = shiftConfig.defaultStoppage;
   
-  // Get entry_date from header for date-based machine visibility
-  const headerForDate = await prisma.breaker_drawing_production_header.findUnique({
-    where: { id: headerId },
-    select: { entry_date: true }
-  });
-  const entryDate = headerForDate?.entry_date || new Date();
-
   // Get all machines visible on this entry date
   // Only include machines with a setup entry — master-only machines (no setup) are excluded
-  const allMachines = await prisma.drawing_breaker_machines.findMany({
-    where: {
-      installed_date: { lte: entryDate },
-      OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-    },
-    select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
-    orderBy: { mc_id: 'asc' }
-  });
-
   const setups = await getBreakerDrawingMachineSetups(headerId);
-  const setupMachineIds = new Set((setups || []).map(s => s.machine_id));
-  const allMachinesWithSetup = (allMachines || []).filter(m => setupMachineIds.has(m.id));
+  const setupMachineIds = (setups || []).map(s => s.machine_id);
+  const allMachinesWithSetup = setupMachineIds.length
+    ? await prisma.drawing_breaker_machines.findMany({
+        where: { id: { in: setupMachineIds } },
+        select: { id: true, machine_no: true, prodn_mixing: true, speed: true },
+        orderBy: { mc_id: 'asc' }
+      })
+    : [];
 
   // Get existing production details for this header
   const existingDetails = await prisma.breaker_drawing_production_detail.findMany({
@@ -874,6 +838,14 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     machineSetupOverridesMap,
     newMachineSetupDefaultsMap
   });
+  const snapshotMachineIds = [...new Set((setups || []).map(setup => setup.machine_id).filter(Boolean))];
+  const entryMachines = snapshotMachineIds.length
+    ? await prisma.drawing_breaker_machines.findMany({
+        where: { id: { in: snapshotMachineIds } },
+        select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, delivery: true, sliver_hank: true, prodn_efficiency: true, is_active: true },
+        orderBy: { is_active: 'desc' }
+      })
+    : [];
   const headerDetails = validHeaderId
     ? await prisma.breaker_drawing_production_detail.findMany({
         where: { header_id: validHeaderId },
@@ -882,8 +854,8 @@ export async function getBreakerDrawingMachineSetups(headerId = null) {
     : [];
 
   const machineMap = {};
-  if (Array.isArray(machines)) {
-    machines.forEach(m => { machineMap[m.id] = m; });
+  if (Array.isArray(entryMachines)) {
+    entryMachines.forEach(m => { machineMap[m.id] = m; });
   }
 
   const mixingMap = {};

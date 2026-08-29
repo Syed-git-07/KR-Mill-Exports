@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { drawingBreakerCreateSchema, drawingBreakerUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
@@ -69,9 +68,18 @@ export async function updateDrawingBreakerMachineAction(id, machineData) {
   }
 }
 
-export async function deleteDrawingBreakerMachineAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteDrawingBreakerMachineAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.drawing-breaker-machine', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => queries.deleteDrawingBreakerMachine(validatedId))
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
 }
 
 export async function searchDrawingBreakerMachinesAction(field, condition, value) {

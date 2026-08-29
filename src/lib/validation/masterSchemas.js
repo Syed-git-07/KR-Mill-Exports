@@ -65,9 +65,7 @@ const nullableDateOnlySchema = z.preprocess(
 export const masterUuidSchema = z.string().uuid('A valid record ID is required')
 
 export const departmentCreateSchema = z.object({
-  code: z.coerce.number().int().nonnegative('Code cannot be negative'),
   dept_name: trimmedString(2, 255),
-  sl_no: z.coerce.number().int().nonnegative('Serial number cannot be negative'),
   hok: z.coerce.number().finite().nonnegative('H.O.K cannot be negative'),
   is_active: z.boolean().optional()
 }).strict()

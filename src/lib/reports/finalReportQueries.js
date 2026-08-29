@@ -346,7 +346,12 @@ async function autoconerShiftProduction(fromDate, toDate) {
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(row)
   }
-  for (const [key, rows] of groups) {
+  const orderedGroups = [...groups.entries()].sort(([leftKey], [rightKey]) => {
+    const [leftDate, leftShift] = leftKey.split('|')
+    const [rightDate, rightShift] = rightKey.split('|')
+    return leftDate.localeCompare(rightDate) || Number(leftShift) - Number(rightShift)
+  })
+  for (const [key, rows] of orderedGroups) {
     const [date, shift, count] = key.split('|')
     report.tables.push({
       title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
@@ -383,7 +388,7 @@ async function autoconerSiderMonthly(fromDate, toDate) {
   return report
 }
 
-async function getSpinningRecords(fromDate, toDate) {
+async function getSpinningRecords(fromDate, toDate, { includeStoppageDetails = false } = {}) {
   const headers = await prisma.spinning_production_header.findMany({
     where: { entry_date: { gte: fromDate, lte: toDate } },
     select: { id: true, entry_date: true, shift: true, supervisor_id: true },
@@ -397,11 +402,44 @@ async function getSpinningRecords(fromDate, toDate) {
   })
   const setups = await prisma.spinning_machine_setup.findMany({
     where: { entry_date: { gte: fromDate, lte: toDate }, machine_id: { in: [...new Set(details.map(detail => detail.machine_id))] } },
-    select: { machine_id: true, entry_date: true, shift: true, run_sequence: true, allocated_spindles: true, conv_40s_value: true }
+    select: { machine_id: true, entry_date: true, shift: true, run_sequence: true, allocated_spindles: true, conv_40s_value: true, act_count: true }
   })
   const headerById = new Map(headers.map(header => [header.id, header]))
   const machineById = new Map(machines.map(machine => [machine.id, machine]))
   const setupByKey = new Map(setups.map(setup => [`${setup.machine_id}|${dateKey(setup.entry_date)}|${setup.shift}|${setup.run_sequence}`, setup]))
+  const stoppageEntries = includeStoppageDetails
+    ? await prisma.spinning_stoppage_entry.findMany({
+        where: { production_detail_id: { in: details.map(detail => detail.id) } },
+        select: {
+          production_detail_id: true,
+          stoppage1_id: true, stoppage1_time: true,
+          stoppage2_id: true, stoppage2_time: true,
+          stoppage3_id: true, stoppage3_time: true,
+          stoppage4_id: true, stoppage4_time: true
+        }
+      })
+    : []
+  const stoppageReasonIds = [...new Set(stoppageEntries.flatMap(entry => [
+    entry.stoppage1_id, entry.stoppage2_id, entry.stoppage3_id, entry.stoppage4_id
+  ]).filter(Boolean))]
+  const stoppageReasons = stoppageReasonIds.length
+    ? await prisma.stoppage_details.findMany({
+        where: { id: { in: stoppageReasonIds } },
+        select: { id: true, short_code: true, stoppage_name: true }
+      })
+    : []
+  const stoppageReasonById = new Map(stoppageReasons.map(reason => [reason.id, reason]))
+  const stoppageByDetailId = new Map(stoppageEntries.map(entry => {
+    const formatted = [1, 2, 3, 4].flatMap(slot => {
+      const reasonId = entry[`stoppage${slot}_id`]
+      const minutes = n(entry[`stoppage${slot}_time`])
+      if (!reasonId || minutes <= 0) return []
+      const reason = stoppageReasonById.get(reasonId)
+      const label = reason?.short_code || reason?.stoppage_name
+      return label ? [`${label}:${minutes}`] : []
+    }).join(',')
+    return [entry.production_detail_id, formatted]
+  }))
   const employees = await payrollEmployeeMap(details.flatMap(detail => [detail.sider1_payroll_employee_id, detail.sider2_payroll_employee_id]))
   return details.map(detail => {
     const header = headerById.get(detail.header_id)
@@ -414,14 +452,14 @@ async function getSpinningRecords(fromDate, toDate) {
       waste: n(detail.waste), wastePercent: n(detail.waste_percent), gps: n(detail.gps), expGps: n(detail.exp_gps),
       workedSpindles: n(detail.worked_spindles), stoppedSpindles: n(detail.stopped_spindles),
       allocatedSpindles: n(setup?.allocated_spindles ?? machine?.allocated_spindles),
-      conv40s: n(setup?.conv_40s_value), stoppage: n(detail.total_stoppage_mins),
+      conv40s: n(setup?.conv_40s_value), actCount: n(setup?.act_count), stoppage: n(detail.total_stoppage_mins),
       sider1Id: detail.sider1_payroll_employee_id,
       sider2Id: detail.sider2_payroll_employee_id,
       sider1Snapshot: detail.sider1_name || '',
       sider2Snapshot: detail.sider2_name || '',
       sider1Employee: employees.get(Number(detail.sider1_payroll_employee_id)) || null,
       sider2Employee: employees.get(Number(detail.sider2_payroll_employee_id)) || null,
-      remarks: detail.remarks || ''
+      remarks: includeStoppageDetails ? (stoppageByDetailId.get(detail.id) || '') : (detail.remarks || '')
     }
   }).map(record => {
     const sider1Identity = resolveHistoricalEmployeeIdentity({
@@ -463,11 +501,16 @@ async function spinningCountGps(fromDate, toDate) {
   }
   for (const [count, frames] of byCount) {
     const countRows = frames.flatMap(frame => frame.rows)
+    const sortedFrames = frames.sort((a, b) => a.frame.localeCompare(b.frame, undefined, { numeric: true }))
+    const frameGpsValues = sortedFrames.map(frame => spinningGps(frame.rows))
+    const averageFrameGps = frameGpsValues.length
+      ? frameGpsValues.reduce((sum, gps) => sum + gps, 0) / frameGpsValues.length
+      : 0
     report.tables.push({
       title: count,
       columns: ['Count', 'Frame', 'Production Kgs', 'Waste Kgs', 'Waste %', 'GPS'],
-      rows: frames.sort((a, b) => a.frame.localeCompare(b.frame, undefined, { numeric: true })).map(frame => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(spinningGps(frame.rows))]),
-      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(spinningGps(countRows))]
+      rows: sortedFrames.map((frame, index) => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(frameGpsValues[index])]),
+      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(averageFrameGps)]
     })
   }
   return report
@@ -512,21 +555,80 @@ async function spinningSiderWise(fromDate, toDate) {
 
 async function spinningDailyShift(fromDate, toDate) {
   const report = baseReport('Spinning Daily Shift Production', fromDate, toDate, 'landscape')
-  const records = await getSpinningRecords(fromDate, toDate)
+  const records = await getSpinningRecords(fromDate, toDate, { includeStoppageDetails: true })
   const supervisors = await supervisorMap(records.map(row => row.supervisorId))
   const groups = new Map()
   for (const row of records) {
-    const key = `${dateKey(row.date)}|${row.shift}|${row.count}`
+    const key = `${dateKey(row.date)}|${row.shift}`
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(row)
   }
   for (const [key, rows] of groups) {
-    const [date, shift, count] = key.split('|')
+    const [date, shift] = key.split('|')
+    const sortedRows = rows.sort((a, b) => a.sortOrder - b.sortOrder || a.machineNo.localeCompare(b.machineNo, undefined, { numeric: true }))
+    const rowsByCount = new Map()
+    for (const row of sortedRows) {
+      if (!rowsByCount.has(row.count)) rowsByCount.set(row.count, [])
+      rowsByCount.get(row.count).push(row)
+    }
+    for (const [count, countRows] of rowsByCount) {
+      report.tables.push({
+        title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
+        columns: ['MC No', 'Worked Spindles', 'Production Kgs', 'GPS Std', 'GPS Act', 'Waste Kgs', 'Waste %', 'Stoppage Detail', 'Gain / Loss', 'Stopped Spl', 'Hank'],
+        rows: countRows.map(row => [row.machineNo, fixed(row.workedSpindles), fixed(row.production), fixed(row.expGps), fixed(row.gps), fixed(row.waste), fixed(row.wastePercent), row.remarks || '-', fixed(row.expGps - row.gps), fixed(row.stoppedSpindles), fixed(row.hank)]),
+        footer: ['TOTAL', fixed(countRows.reduce((s, r) => s + r.workedSpindles, 0)), fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(workedSpindleWeighted(countRows, 'expGps')), fixed(spinningGps(countRows)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), '', fixed(workedSpindleWeighted(countRows, 'expGps') - spinningGps(countRows)), fixed(countRows.reduce((s, r) => s + r.stoppedSpindles, 0)), fixed(countRows.reduce((s, r) => s + r.hank, 0))]
+      })
+    }
+
+    const production = rows.reduce((sum, row) => sum + row.production, 0)
+    const waste = rows.reduce((sum, row) => sum + row.waste, 0)
+    const hank = rows.reduce((sum, row) => sum + row.hank, 0)
+    const allottedSpindles = rows.reduce((sum, row) => sum + row.allocatedSpindles, 0)
+    const workedSpindles = rows.reduce((sum, row) => sum + row.workedSpindles, 0)
+    const convertedProduction = rows.reduce((sum, row) => sum + row.production * row.conv40s, 0)
     report.tables.push({
-      title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
-      columns: ['MC No', 'Hank', 'Worked Spl', 'Prod Kgs', 'GPS Std', 'GPS Act', 'Waste Kgs', 'Waste %', 'Gain / Loss', 'Stopped Spl', 'Stoppage Detail'],
-      rows: rows.sort((a, b) => a.sortOrder - b.sortOrder || a.machineNo.localeCompare(b.machineNo, undefined, { numeric: true })).map(row => [row.machineNo, fixed(row.hank), fixed(row.workedSpindles), fixed(row.production), fixed(row.expGps), fixed(row.gps), fixed(row.waste), fixed(row.wastePercent), fixed(row.expGps - row.gps), fixed(row.stoppedSpindles), row.remarks || '-']),
-      footer: ['TOTAL', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.workedSpindles, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(workedSpindleWeighted(rows, 'expGps')), fixed(spinningGps(rows)), fixed(rows.reduce((s, r) => s + r.waste, 0)), fixed(rows.reduce((s, r) => s + r.waste, 0) / Math.max(rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(workedSpindleWeighted(rows, 'expGps') - spinningGps(rows)), fixed(rows.reduce((s, r) => s + r.stoppedSpindles, 0)), '']
+      title: `${displayDate(date)} - Shift ${shift} - Summary`,
+      columns: ['Production Summary', 'Value', 'Power / Conversion Summary', 'Value'],
+      rows: [
+        ['Production', fixed(production), 'EB Unit / Shift', '-'],
+        ['Utilisation %', fixed(allottedSpindles > 0 ? workedSpindles / allottedSpindles * 100 : 0), 'Genset Unit / Shift', '-'],
+        ["40's Conv Production", fixed(convertedProduction), 'Total Unit / Shift', '-'],
+        ['Average Count', fixed(weighted(rows, 'actCount')), 'Actual Prod. / Unit / Kg', '-'],
+        ["40's Converted GPS", fixed(workedSpindles > 0 ? convertedProduction / workedSpindles * 1000 : 0), "40's Conv Prod. / Unit / Kg", '-'],
+        ['Unit / 1000 Spindles', '-', 'Total Hanks', fixed(hank)],
+        ['Total Allotted Spindles', fixed(allottedSpindles), 'Total Worked Spindles', fixed(workedSpindles)],
+        ['Total Wastages', fixed(waste), 'Total Waste %', fixed(production > 0 ? waste / production * 100 : 0)]
+      ]
+    })
+
+    const siderMap = new Map()
+    for (const row of rows) {
+      const identities = [row.sider1Identity, row.sider2Identity].filter(identity => identity?.identityStatus !== 'UNASSIGNED')
+      for (const identity of identities) {
+        if (!siderMap.has(identity.groupKey)) {
+          siderMap.set(identity.groupKey, { identity, employee: identity.employee, names: new Set(), counts: new Set(), machines: new Set(), sides: 0, production: 0, waste: 0 })
+        }
+        const sider = siderMap.get(identity.groupKey)
+        sider.names.add(identity.displayName)
+        sider.counts.add(row.count)
+        sider.machines.add(row.machineNo)
+        sider.sides += 1
+      }
+      for (const share of siderShares(row)) {
+        const sider = siderMap.get(share.identity.groupKey)
+        if (sider) {
+          sider.production += share.production
+          sider.waste += share.waste
+        }
+      }
+    }
+    const siderRows = [...siderMap.values()]
+      .sort((a, b) => [...a.names].join(' / ').localeCompare([...b.names].join(' / '), undefined, { numeric: true }))
+      .map((sider, index) => [index + 1, [...sider.names].join(' / '), [...sider.counts].join(', '), sider.sides, fixed(sider.production), fixed(sider.waste), fixed(sider.production > 0 ? sider.waste / sider.production * 100 : 0), [...sider.machines].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(', '), sider.employee?.doj ? shortDisplayDate(sider.employee.doj) : '-'])
+    report.tables.push({
+      title: `${displayDate(date)} - Shift ${shift} - Sider Summary`,
+      columns: ['SL No', 'Employee Name', 'Count Name', 'No of Side', 'Production', 'Waste Kgs', 'Waste %', 'Machine', 'D.O.J'],
+      rows: siderRows
     })
   }
   report.notes.push('Energy-unit and power-failure fields are not present in the current production or master schema, so no values are invented in this report.')
@@ -555,20 +657,51 @@ async function spinningStoppageAbstract(fromDate, toDate) {
   const data = await generateSpinningStoppageReport(fromDate, toDate)
   if (!data.success) return { ...report, notes: [data.message], tables: [] }
   const shifts = [1, 2, 3]
+  const workedByShift = Object.fromEntries(shifts.map(shift => [shift, data.totalNoOfSpindlesPerShift[shift]]))
+  const stoppedByShift = Object.fromEntries(shifts.map(shift => [shift, data.grandTotal.shifts[shift].stoppedSpindles]))
+  const allottedByShift = Object.fromEntries(shifts.map(shift => [shift, workedByShift[shift] + stoppedByShift[shift]]))
+  const totalWorked = shifts.reduce((sum, shift) => sum + workedByShift[shift], 0)
+  const totalStopped = data.grandTotal.shifts.total.stoppedSpindles
+  const totalAllotted = totalWorked + totalStopped
+  const utilization = totalAllotted > 0 ? totalWorked / totalAllotted * 100 : 0
+  const stoppedPercent = totalAllotted > 0 ? totalStopped / totalAllotted * 100 : 0
+  const workedDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1
+
   report.tables.push({
-    title: 'Stoppage Category Abstract',
-    columns: ['SL No', 'Stoppage Head', 'I Shift Spl', 'I %', 'II Shift Spl', 'II %', 'III Shift Spl', 'III %', 'Total Spl', 'Total %'],
+    columns: ['SL No', 'SHIFT', 'Worked Spl', '%'],
+    rows: shifts.map(shift => [shift, shift, fixed(workedByShift[shift]), fixed(allottedByShift[shift] > 0 ? workedByShift[shift] / allottedByShift[shift] * 100 : 0)]),
+    footer: ['TOTAL', '', fixed(totalWorked), fixed(utilization)]
+  })
+  report.tables.push({
+    columns: ['Report Parameter', 'Value', 'Report Parameter', 'Value'],
+    rows: [
+      ['Allotted Spindles', fixed(totalAllotted), 'Shift', shifts.length],
+      ['Worked Days', workedDays, '', '']
+    ]
+  })
+  report.tables.push({
+    headerGroups: [
+      { label: 'SL No', span: 1 },
+      { label: 'Reasons', span: 1 },
+      { label: 'I Shift', span: 2 },
+      { label: 'II Shift', span: 2 },
+      { label: 'III Shift', span: 2 },
+      { label: 'Total', span: 2 }
+    ],
+    columns: ['', '', 'Spl', '%', 'Spl', '%', 'Spl', '%', 'Spl', '%'],
     rows: data.reportData.map((head, index) => [index + 1, head.headName, ...shifts.flatMap(shift => [fixed(head.shifts[shift].stoppedSpindles), fixed(head.shifts[shift].percentage)]), fixed(head.shifts.total.stoppedSpindles), fixed(head.shifts.total.percentage)]),
     footer: ['TOTAL', '', ...shifts.flatMap(shift => [fixed(data.grandTotal.shifts[shift].stoppedSpindles), fixed(data.grandTotal.shifts[shift].percentage)]), fixed(data.grandTotal.shifts.total.stoppedSpindles), fixed(data.grandTotal.shifts.total.percentage)]
   })
   report.tables.push({
-    title: 'Spindle Summary',
-    columns: ['Measure', 'I Shift', 'II Shift', 'III Shift', 'Total'],
+    title: 'Abstract',
+    columns: ['Measure', 'Value'],
     rows: [
-      ['Allotted / Worked Spindles', ...shifts.map(shift => fixed(data.totalNoOfSpindlesPerShift[shift])), fixed(Object.values(data.totalNoOfSpindlesPerShift).reduce((s, value) => s + value, 0))],
-      ['Stopped Spindles', ...shifts.map(shift => fixed(data.grandTotal.shifts[shift].stoppedSpindles)), fixed(data.grandTotal.shifts.total.stoppedSpindles)],
-      ['Stopped %', ...shifts.map(shift => fixed(data.grandTotal.shifts[shift].percentage)), fixed(data.grandTotal.shifts.total.percentage)],
-      ['Utilization %', ...shifts.map(shift => fixed(100 - data.grandTotal.shifts[shift].percentage)), fixed(100 - data.grandTotal.shifts.total.percentage)]
+      ['Allotted Spindles', fixed(totalAllotted)],
+      ['Worked Spindles', fixed(totalWorked)],
+      ['Utilization %', fixed(utilization)],
+      ['Stopped Spindles', fixed(totalStopped)],
+      ['Stopped Spindles %', fixed(stoppedPercent)],
+      ['Abstract', fixed(stoppedPercent)]
     ]
   })
   return report

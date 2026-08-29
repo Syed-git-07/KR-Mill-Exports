@@ -9,6 +9,16 @@ import { resolveHistoricalEmployeeIdentity } from '@/lib/payroll/historicalEmplo
  */
 export async function fetchSiderMonthlyData(fromDate, toDate) {
   try {
+    // Calendar selections arrive from the browser as local-midnight instants
+    // (for example, 28 Aug in IST is serialized as 27 Aug 18:30 UTC). Prisma
+    // compares DateTime values in UTC, while the aggregate query below uses
+    // the local calendar date. Normalize both paths to the database's DATE
+    // representation so production totals and sider identities stay aligned.
+    const fromDateKey = format(fromDate, 'yyyy-MM-dd')
+    const toDateKey = format(toDate, 'yyyy-MM-dd')
+    const databaseFromDate = new Date(`${fromDateKey}T00:00:00.000Z`)
+    const databaseToDate = new Date(`${toDateKey}T00:00:00.000Z`)
+
     // Get all production details with sider information for the date range
     const [productionData, headers] = await Promise.all([prisma.$queryRaw`
       SELECT 
@@ -22,11 +32,11 @@ export async function fetchSiderMonthlyData(fromDate, toDate) {
       FROM spinning_production_detail spd
       INNER JOIN spinning_production_header sph ON spd.header_id = sph.id
       INNER JOIN spinning_machines sm ON spd.machine_id = sm.id
-      WHERE sph.entry_date BETWEEN ${format(fromDate, 'yyyy-MM-dd')} AND ${format(toDate, 'yyyy-MM-dd')}
+      WHERE sph.entry_date BETWEEN ${fromDateKey} AND ${toDateKey}
       GROUP BY sm.id, sm.machine_no, sm.sort_order, sph.shift
       ORDER BY sm.sort_order, sm.machine_no, sph.shift
     `, prisma.spinning_production_header.findMany({
-      where: { entry_date: { gte: fromDate, lte: toDate } },
+      where: { entry_date: { gte: databaseFromDate, lte: databaseToDate } },
       select: { id: true, shift: true }
     })])
 

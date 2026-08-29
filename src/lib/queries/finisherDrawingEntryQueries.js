@@ -390,7 +390,8 @@ export async function getFinisherDrawingProductionWithSetup(headerId) {
 // Initialize production details for all finisher drawing machines
 export async function initializeFinisherDrawingDetails(headerId) {
   try {
-    // Fetch header info for date-based machine filtering and shift-driven runtime
+    // Active Master machines seed only a first-ever entry. Once materialized,
+    // the entry setup snapshot controls membership independently.
     const header = await prisma.finisher_drawing_production_header.findUnique({
       where: { id: headerId },
       select: { entry_date: true, shift: true, total_time: true }
@@ -400,7 +401,7 @@ export async function initializeFinisherDrawingDetails(headerId) {
     const defaultWorkTime = Math.max(totalTime, 0)
 
     // Get machines active on entry_date
-    const machines = await prisma.drawing_finisher_machines.findMany({
+    const activeMasterMachines = await prisma.drawing_finisher_machines.findMany({
       where: {
         installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
@@ -415,11 +416,11 @@ export async function initializeFinisherDrawingDetails(headerId) {
       orderBy: [{ is_active: 'desc' }, { sort_order: 'asc' }]
     })
 
-    const machineIds = machines.map(m => m.id)
+    const machineIds = activeMasterMachines.map(m => m.id)
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
     const newMachineSetupDefaultsMap = {};
-    machines.forEach(m => {
+    activeMasterMachines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
@@ -449,7 +450,22 @@ export async function initializeFinisherDrawingDetails(headerId) {
       setupMap[s.machine_id] = s
     })
 
-    const machinesWithSetup = machines.filter(m => !!setupMap[m.id])
+    // The setup snapshot may carry a machine that has since been soft-deleted
+    // from Master. Fetch those exact rows so sequential entries keep structure.
+    const setupMachineIds = setups.map(setup => setup.machine_id)
+    const machinesWithSetup = setupMachineIds.length
+      ? await prisma.drawing_finisher_machines.findMany({
+          where: { id: { in: setupMachineIds } },
+          select: {
+            id: true,
+            machine_no: true,
+            prodn_mixing: true,
+            speed: true,
+            prodn_efficiency: true
+          },
+          orderBy: [{ is_active: 'desc' }, { sort_order: 'asc' }]
+        })
+      : []
 
     const details = machinesWithSetup.map(machine => {
       const setup = setupMap[machine.id] || {}
@@ -513,7 +529,8 @@ export async function initializeFinisherDrawingDetails(headerId) {
 // Sync new machines to existing header (for machines added after header was created)
 export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
   try {
-    // Fetch header info for date-based machine filtering and shift-driven runtime
+    // Active Master machines seed only a first-ever entry. Once materialized,
+    // the entry setup snapshot controls membership independently.
     const header = await prisma.finisher_drawing_production_header.findUnique({
       where: { id: headerId },
       select: { entry_date: true, shift: true, total_time: true }
@@ -522,7 +539,7 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
     const totalTime = header?.total_time || await getFinisherDrawingShiftTime(header?.shift || 1)
 
     // Get machines active on entry_date
-    const machines = await prisma.drawing_finisher_machines.findMany({
+    const activeMasterMachines = await prisma.drawing_finisher_machines.findMany({
       where: {
         installed_date: { lte: entryDate },
         OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
@@ -537,10 +554,10 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
       orderBy: { sort_order: 'asc' }
     })
 
-    const machineIds = machines.map(m => m.id)
+    const machineIds = activeMasterMachines.map(m => m.id)
     const machineSpeedMap = {};
     const machineSetupOverridesMap = {};
-    machines.forEach(m => {
+    activeMasterMachines.forEach(m => {
       machineSpeedMap[m.id] = m.speed;
       const rawEfficiency = m.prodn_efficiency == null ? null : Number(m.prodn_efficiency);
       machineSetupOverridesMap[m.id] = {
@@ -557,6 +574,19 @@ export async function syncFinisherDrawingNewMachinesToHeader(headerId) {
       machineIds,
       machineSpeedMap,
       machineSetupOverridesMap
+    })
+
+    const setupMachineIds = setups.map(setup => setup.machine_id)
+    const machines = await prisma.drawing_finisher_machines.findMany({
+      where: { id: { in: setupMachineIds } },
+      select: {
+        id: true,
+        machine_no: true,
+        prodn_mixing: true,
+        speed: true,
+        prodn_efficiency: true
+      },
+      orderBy: { sort_order: 'asc' }
     })
 
     const setupMap = {}
@@ -1158,13 +1188,21 @@ export async function getFinisherDrawingMachineSetups(headerId = null) {
       machineSpeedMap,
       machineSetupOverridesMap
     })
+
+    const snapshotMachineIds = [...new Set((data || []).map(setup => setup.machine_id).filter(Boolean))]
+    const entryMachines = snapshotMachineIds.length
+      ? await prisma.drawing_finisher_machines.findMany({
+          where: { id: { in: snapshotMachineIds } },
+          select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, prodn_efficiency: true, is_active: true }
+        })
+      : []
     const headerDetails = validHeaderId
       ? await prisma.finisher_drawing_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
       : []
 
     const machineMap = {}
-    if (Array.isArray(machines)) {
-      machines.forEach(machine => { machineMap[machine.id] = machine })
+    if (Array.isArray(entryMachines)) {
+      entryMachines.forEach(machine => { machineMap[machine.id] = machine })
     }
 
     const mixingMap = {}

@@ -3,11 +3,13 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import { runBulkActions } from '../src/lib/actionResults.js'
-import {
-  disabledMasterDeleteResult,
-  MASTER_DELETE_DISABLED_MESSAGE
-} from '../src/lib/masterSafety.js'
 import { buildTypedSearchWhere } from '../src/lib/masterSearch.js'
+import {
+  getActiveMasterRecordCount,
+  getMasterRecordRowClassName,
+  orderMasterRecords
+} from '../src/lib/masterRecordDisplay.js'
+import { softDeleteMasterRecord } from '../src/lib/queries/masterSoftDelete.js'
 import {
   autoconerMachineCreateSchema,
   cardingMachineUpdateSchema,
@@ -33,19 +35,114 @@ const protectedDeleteActions = [
   'simplex-machine'
 ]
 
-test('referenced master deletion is blocked after authentication', async () => {
+const protectedDeleteQueries = {
+  department: ['queries.js', 'deleteDepartment'],
+  supervisor: ['supervisorQueries.js', 'deleteSupervisor'],
+  'stoppage-head': ['stoppageHeadQueries.js', 'deleteStoppageHead'],
+  'stoppage-detail': ['stoppageDetailQueries.js', 'deleteStoppageDetail'],
+  'spinning-count': ['spinningCountQueries.js', 'deleteSpinningCount'],
+  'spinning-machine': ['spinningMachineQueries.js', 'deleteSpinningMachine'],
+  autoconer: ['autoconerQueries.js', 'deleteAutoconerMachine'],
+  'carding-machine': ['cardingMachineQueries.js', 'deleteCardingMachine'],
+  'drawing-breaker': ['drawingBreakerQueries.js', 'deleteDrawingBreakerMachine'],
+  'comber-machine': ['comberMachineQueries.js', 'deleteComberMachine'],
+  'drawing-finisher': ['drawingFinisherQueries.js', 'deleteDrawingFinisherMachine'],
+  'lap-former': ['lapFormerQueries.js', 'deleteLapFormerMachine'],
+  'simplex-machine': ['simplexMachineQueries.js', 'deleteSimplexMachine']
+}
+
+const softDeleteMasterPages = [
+  'masters/department/page.jsx',
+  'masters/supervisor/page.jsx',
+  'masters/stoppage-head/page.jsx',
+  'masters/stoppage-detail/page.jsx',
+  'masters/spinning-count/page.jsx',
+  'masters/spinning-machine/page.jsx',
+  'masters/autoconer/page.jsx',
+  'preparatory-master/carding-machine/page.jsx',
+  'preparatory-master/comber/page.jsx',
+  'preparatory-master/drawing-breaker/page.jsx',
+  'preparatory-master/drawing-finisher/page.jsx',
+  'preparatory-master/lap-former/page.jsx',
+  'preparatory-master/simplex/page.jsx'
+]
+
+test('soft-deleted Master records are displayed last in red without an active status column', async () => {
+  const records = [
+    { id: 'deleted-first', is_active: false },
+    { id: 'active-first', is_active: true },
+    { id: 'unknown-status' },
+    { id: 'deleted-second', is_active: false }
+  ]
+
+  assert.deepEqual(
+    orderMasterRecords(records).map(record => record.id),
+    ['active-first', 'unknown-status', 'deleted-first', 'deleted-second']
+  )
+  assert.equal(getMasterRecordRowClassName({ is_active: false }), '!bg-red-100 hover:!bg-red-200 text-red-700')
+  assert.equal(getMasterRecordRowClassName({ is_active: true }), '!bg-white hover:!bg-yellow-100')
+  assert.equal(getActiveMasterRecordCount(records), 2)
+
+  for (const pagePath of softDeleteMasterPages) {
+    const source = await readFile(new URL(`../src/app/${pagePath}`, import.meta.url), 'utf8')
+    assert.match(source, /orderMasterRecords\(/, `${pagePath} must place deleted records last`)
+    assert.match(source, /getRowClassName=\{getMasterRecordRowClassName\}/, `${pagePath} must render deleted records in red`)
+  }
+
+  const supervisorSource = await readFile(
+    new URL('../src/app/masters/supervisor/page.jsx', import.meta.url),
+    'utf8'
+  )
+  assert.doesNotMatch(supervisorSource, /role_status|Role Status|Active'\s*:\s*'Inactive/)
+})
+
+test('referenced Master deletion is authenticated, audited, and soft-only', async () => {
   for (const actionName of protectedDeleteActions) {
     const source = await readFile(new URL(`../src/app/actions/${actionName}.js`, import.meta.url), 'utf8')
     const deleteAction = source.match(/export async function delete[\s\S]*?\n}/)?.[0]
 
     assert.ok(deleteAction, `${actionName} must export a delete action`)
     assert.match(deleteAction, /await requireRole\('ADMIN'\)/, `${actionName} delete must require ADMIN`)
-    assert.match(deleteAction, /disabledMasterDeleteResult\(\)/, `${actionName} delete must be blocked`)
+    assert.match(deleteAction, /masterUuidSchema\.parse\(id\)/, `${actionName} delete must validate its id`)
+    assert.match(deleteAction, /executeAuditedMasterMutation\(/, `${actionName} delete must be audited`)
+    assert.match(deleteAction, /action: 'DELETE'/, `${actionName} must record a DELETE audit event`)
+
+    const [queryFile, functionName] = protectedDeleteQueries[actionName]
+    const querySource = await readFile(new URL(`../src/lib/queries/${queryFile}`, import.meta.url), 'utf8')
+    const queryBody = querySource.match(
+      new RegExp(`export async function ${functionName}\\(id\\) \\{([\\s\\S]*?)\\n\\}`)
+    )?.[1]
+    assert.match(queryBody || '', /softDeleteMasterRecord\(/, `${functionName} must soft-delete`)
+    assert.doesNotMatch(queryBody || '', /\.delete\(/, `${functionName} must not hard-delete`)
+  }
+})
+
+test('soft delete is idempotent and retains the original machine removal date', async () => {
+  const record = { id: 'machine-1', is_active: true, deactivated_at: null }
+  let updateCount = 0
+  const model = {
+    async findUnique() {
+      return { id: record.id, is_active: record.is_active }
+    },
+    async update({ data }) {
+      updateCount += 1
+      Object.assign(record, data)
+      return { ...record }
+    }
   }
 
-  assert.throws(
-    () => disabledMasterDeleteResult(),
-    error => error.message === MASTER_DELETE_DISABLED_MESSAGE
+  const deleted = await softDeleteMasterRecord(model, record.id, { trackRemovalDate: true })
+  const removalTime = deleted.deactivated_at.getTime()
+  const repeated = await softDeleteMasterRecord(model, record.id, { trackRemovalDate: true })
+
+  assert.equal(deleted.is_active, false)
+  assert.equal(repeated.is_active, false)
+  assert.equal(record.deactivated_at.getTime(), removalTime)
+  assert.equal(updateCount, 1)
+
+  await assert.rejects(
+    softDeleteMasterRecord({ findUnique: async () => null }, 'missing'),
+    /Master record not found/
   )
 })
 
@@ -77,7 +174,7 @@ test('allowed Master mutations emit operation-level audit events', async () => {
   ]) {
     const source = await readFile(new URL(`../src/app/actions/${actionName}.js`, import.meta.url), 'utf8')
     const allowedMutations = [...source.matchAll(
-      /export async function ((?:create|update|activate)\w*Action)\([^)]*\) \{([\s\S]*?)(?=\n})/g
+      /export async function ((?:create|update|delete|activate)\w*Action)\([^)]*\) \{([\s\S]*?)(?=\n})/g
     )]
 
     for (const [, functionName, body] of allowedMutations) {
@@ -88,12 +185,6 @@ test('allowed Master mutations emit operation-level audit events', async () => {
       )
     }
 
-    if (['hok-strength', 'tpi-entry', 'twc-entry'].includes(actionName)) {
-      const deleteBody = source.match(
-        /export async function delete\w*Action\([^)]*\) \{([\s\S]*?)(?=\n})/
-      )?.[1]
-      assert.match(deleteBody || '', /executeAuditedMasterMutation\(/)
-    }
   }
 })
 
@@ -210,6 +301,10 @@ test('all Master write actions validate payloads before database queries', async
 test('Master schemas allow lifecycle-only updates and reject unsafe input', () => {
   assert.deepEqual(cardingMachineUpdateSchema.parse({ is_active: false }), { is_active: false })
   assert.deepEqual(comberMachineUpdateSchema.parse({ is_active: false }), { is_active: false })
+  assert.deepEqual(
+    departmentCreateSchema.parse({ dept_name: 'Valid', hok: 0.2 }),
+    { dept_name: 'Valid', hok: 0.2 }
+  )
   assert.throws(() => departmentCreateSchema.parse({
     code: 1, dept_name: 'A', sl_no: 1, hok: 0.2
   }))
@@ -227,16 +322,48 @@ test('Master schemas allow lifecycle-only updates and reject unsafe input', () =
   }))
 })
 
-test('Comber permanent removal sends a status-only payload and preserves unrelated fields', async () => {
+test('Department identity and display sequence are system-owned and database-guarded', async () => {
+  const [gridSource, formSource, querySource, schemaSource, migrationSource, integritySource] = await Promise.all([
+    readFile(new URL('../src/components/common/DataGrid.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/modules/masters/DepartmentForm.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/lib/queries/queries.js', import.meta.url), 'utf8'),
+    readFile(new URL('../prisma/schema.prisma', import.meta.url), 'utf8'),
+    readFile(new URL('../prisma/migrations/20260829_department_generated_identity/migration.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../scripts/master-integrity-report.js', import.meta.url), 'utf8')
+  ])
+
+  assert.match(gridSource, /getRowId\?\.\(row, index\) \?\? row\.id \?\? index/)
+  assert.doesNotMatch(gridSource, /key=\{row\.code/)
+  assert.doesNotMatch(formSource, /register\(['"](?:code|sl_no)['"]\)/)
+  assert.match(formSource, /assigned automatically/)
+
+  assert.match(querySource, /isolationLevel: 'Serializable'/)
+  assert.match(querySource, /const nextSequence = Math\.max/)
+  assert.match(querySource, /code: nextSequence/)
+  assert.match(querySource, /sl_no: nextSequence/)
+  assert.doesNotMatch(querySource, /code: departmentData\.code|sl_no: departmentData\.sl_no/)
+
+  assert.match(schemaSource, /sl_no\s+Int\s+@unique\(map: "uq_departments_sl_no"\)/)
+  assert.match(schemaSource, /code\s+Int\s+@unique\(map: "uq_departments_code"\)/)
+  assert.match(migrationSource, /UPDATE `departments`/)
+  assert.match(migrationSource, /ADD UNIQUE KEY `uq_departments_code`/)
+  assert.match(migrationSource, /ADD UNIQUE KEY `uq_departments_sl_no`/)
+  assert.match(integritySource, /duplicateDepartmentCodes/)
+  assert.match(integritySource, /duplicateDepartmentSerials/)
+  assert.match(integritySource, /missingMasterIdentityIndexes/)
+})
+
+test('Comber uses the shared soft-delete path without exposing restore details in the UI', async () => {
   const [pageSource, querySource] = await Promise.all([
     readFile(new URL('../src/app/preparatory-master/comber/page.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/lib/queries/comberMachineQueries.js', import.meta.url), 'utf8')
   ])
 
-  assert.doesNotMatch(pageSource, /updateComberMachineAction\([^,]+,\s*\{\s*\.\.\./)
-  assert.match(pageSource, /updateComberMachineAction\(targetId, \{ is_active: false \}\)/)
-  assert.doesNotMatch(pageSource, /is_active: true/)
+  assert.match(pageSource, /deleteComberMachineAction\(/)
+  assert.match(pageSource, /Delete machine /)
+  assert.doesNotMatch(pageSource, /This is a soft delete|Existing entry snapshots/)
   assert.doesNotMatch(pageSource, /handleActivate/)
+  assert.match(querySource, /softDeleteMasterRecord\(prisma\.comber_machines/)
   assert.match(querySource, /hasField\('sliver_hank'\) && \{ sliver_hank: machineData\.sliver_hank \}/)
 })
 
@@ -283,6 +410,60 @@ test('machine masters expose neither entry removal nor a restore action', async 
     assert.match(source, /style=\{\{ display: 'none' \}\}/, pageFile)
     assert.doesNotMatch(source, /handleActivate|secondaryActionLabel=.*Activate/, pageFile)
   }
+
+  const [actionSource, querySource] = await Promise.all([
+    readFile(new URL('../src/app/actions/spinning-machine.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/lib/queries/spinningMachineQueries.js', import.meta.url), 'utf8')
+  ])
+  assert.doesNotMatch(actionSource, /activateSpinningMachineAction/)
+  assert.doesNotMatch(querySource, /activateSpinningMachine/)
+})
+
+test('all referenced Master pages expose concise working delete controls', async () => {
+  const pagePaths = [
+    'masters/department', 'masters/supervisor', 'masters/stoppage-head',
+    'masters/stoppage-detail', 'masters/spinning-count', 'masters/spinning-machine',
+    'masters/autoconer', 'preparatory-master/carding-machine',
+    'preparatory-master/comber', 'preparatory-master/drawing-breaker',
+    'preparatory-master/drawing-finisher', 'preparatory-master/lap-former',
+    'preparatory-master/simplex'
+  ]
+
+  for (const pagePath of pagePaths) {
+    const source = await readFile(new URL(`../src/app/${pagePath}/page.jsx`, import.meta.url), 'utf8')
+    assert.match(source, /const handleDelete = async/, pagePath)
+    assert.match(source, /onClick=\{handleDelete\}/, pagePath)
+    assert.match(source, /confirm\(`Delete /, pagePath)
+    assert.doesNotMatch(source, /This is a soft delete|Existing .*retain|snapshots? remain/i, pagePath)
+    assert.doesNotMatch(source, /MASTER_DELETE_DISABLED_MESSAGE|disabledMasterDeleteResult/, pagePath)
+  }
+})
+
+test('Master counters include active records only and calculator omits keyboard instructions', async () => {
+  const countedPages = [
+    'masters/department/page.jsx',
+    'masters/supervisor/page.jsx',
+    'masters/spinning-count/page.jsx',
+    'masters/spinning-machine/page.jsx',
+    'masters/autoconer/page.jsx',
+    'preparatory-master/carding-machine/page.jsx',
+    'preparatory-master/comber/page.jsx',
+    'preparatory-master/drawing-breaker/page.jsx',
+    'preparatory-master/drawing-finisher/page.jsx',
+    'preparatory-master/lap-former/page.jsx',
+    'preparatory-master/simplex/page.jsx'
+  ]
+
+  for (const pagePath of countedPages) {
+    const source = await readFile(new URL(`../src/app/${pagePath}`, import.meta.url), 'utf8')
+    assert.match(source, /getActiveMasterRecordCount\(/, `${pagePath} must count active records only`)
+  }
+
+  const calculatorSource = await readFile(
+    new URL('../src/components/common/ProductionCalculator.jsx', import.meta.url),
+    'utf8'
+  )
+  assert.doesNotMatch(calculatorSource, /Keyboard input is ready|Enter = calculate|Esc = close|\( \) = grouping/)
 })
 
 test('Master pages expose write controls only to administrators', async () => {

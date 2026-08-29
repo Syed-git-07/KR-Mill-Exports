@@ -1,6 +1,7 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { machineRemovalDate } from '../machineLifecycle';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 /**
  * Drawing Finisher Machine Master - CRUD Operations
@@ -117,12 +118,12 @@ export async function updateDrawingFinisherMachine(id, machineData) {
   return data;
 }
 
-// Delete a drawing finisher machine
+// Soft-delete a drawing finisher machine while retaining historical entries.
 export async function deleteDrawingFinisherMachine(id) {
-  await prisma.drawing_finisher_machines.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.drawing_finisher_machines, id, {
+    recordLabel: 'Drawing finisher machine',
+    trackRemovalDate: true
   });
-  return true;
 }
 
 // Search drawing finisher machines (active + inactive)

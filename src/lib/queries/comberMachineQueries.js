@@ -1,6 +1,7 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { machineLookupWhere, machineRemovalDate } from '../machineLifecycle';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 /**
  * Comber Machine Master - CRUD Operations
@@ -186,12 +187,12 @@ export async function updateComberMachine(id, machineData) {
   });
 }
 
-// Delete a comber machine
+// Soft-delete a comber machine while retaining historical entries.
 export async function deleteComberMachine(id) {
-  await prisma.comber_machines.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.comber_machines, id, {
+    recordLabel: 'Comber machine',
+    trackRemovalDate: true
   });
-  return true;
 }
 
 // Search comber machines (all machines)

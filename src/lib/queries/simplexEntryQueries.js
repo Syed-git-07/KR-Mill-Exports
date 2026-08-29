@@ -27,13 +27,6 @@ function firstFiniteNumber(values, fallback) {
   return fallback
 }
 
-function isSimplexMachineVisibleOnDate(machine, entryDate) {
-  if (!machine) return false
-  if (machine.installed_date && new Date(machine.installed_date) > entryDate) return false
-  if (machine.deactivated_at && new Date(machine.deactivated_at) <= entryDate) return false
-  return true
-}
-
 // ============================================
 // SIMPLEX SHIFT CONFIG QUERIES
 // ============================================
@@ -171,12 +164,6 @@ export async function getSimplexProductionDetails(headerId) {
     const validDetails = data.filter(d => !!d.machine_id)
     if (validDetails.length === 0) return []
 
-    const header = await prisma.simplex_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = header?.entry_date || new Date()
-
     const machineIds = validDetails.map(d => d.machine_id)
     const machines = await prisma.simplex_machines.findMany({
       where: { id: { in: machineIds } },
@@ -205,7 +192,7 @@ export async function getSimplexProductionDetails(headerId) {
         ...detail,
         machine: machineMap[detail.machine_id] || null
       }))
-      .filter(detail => isSimplexMachineVisibleOnDate(detail.machine, entryDate))
+      .filter(detail => !!detail.machine)
       .sort((a, b) => (a.machine?.sort_order || 9999) - (b.machine?.sort_order || 9999))
   } catch (error) {
     throw error
@@ -225,12 +212,6 @@ export async function getSimplexProductionWithSetup(headerId) {
 
     const validDetails = data.filter(d => !!d.machine_id)
     if (validDetails.length === 0) return []
-
-    const header = await prisma.simplex_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = header?.entry_date || new Date()
 
     const detailIds = validDetails.map(d => d.id)
     const machineIds = validDetails.map(d => d.machine_id)
@@ -272,7 +253,7 @@ export async function getSimplexProductionWithSetup(headerId) {
         machine: machineMap[detail.machine_id] || null,
         stoppage: stoppageMap[detail.id] ? [stoppageMap[detail.id]] : []
       }))
-      .filter(detail => isSimplexMachineVisibleOnDate(detail.machine, entryDate))
+      .filter(detail => !!detail.machine)
       .sort((a, b) => (a.machine?.sort_order || 9999) - (b.machine?.sort_order || 9999)) || []
   } catch (error) {
     throw error
@@ -282,23 +263,17 @@ export async function getSimplexProductionWithSetup(headerId) {
 // Initialize production details for all simplex machines
 export async function initializeSimplexProductionDetails(headerId) {
   try {
-    // Get header entry_date for date-based machine visibility
     const header = await prisma.simplex_production_header.findUnique({
       where: { id: headerId },
-      select: { entry_date: true, total_time: true, shift: true }
+      select: { total_time: true, shift: true }
     })
-    const entryDate = header?.entry_date || new Date()
 
     const setups = await getSimplexMachineSetups(headerId)
     const machineIdsWithSetup = setups.map(s => s.machine_id)
 
     // Get all machines visible on this entry date
     const machines = await prisma.simplex_machines.findMany({
-      where: {
-        id: { in: machineIdsWithSetup },
-        installed_date: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-      },
+      where: { id: { in: machineIdsWithSetup } },
       orderBy: { sort_order: 'asc' }
     })
 
@@ -368,23 +343,12 @@ export async function initializeSimplexProductionDetails(headerId) {
 // Add missing production details for newly added machines in an existing header
 export async function addMissingSimplexProductionDetails(headerId) {
   try {
-    // Get header entry_date for date-based machine visibility
-    const headerForDate = await prisma.simplex_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = headerForDate?.entry_date || new Date()
-
     const setups = await getSimplexMachineSetups(headerId)
     const machineIdsWithSetup = setups.map(s => s.machine_id)
 
     // Get machines visible on this entry date
     const machines = await prisma.simplex_machines.findMany({
-      where: {
-        id: { in: machineIdsWithSetup },
-        installed_date: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-      },
+      where: { id: { in: machineIdsWithSetup } },
       orderBy: { sort_order: 'asc' }
     })
 
@@ -532,12 +496,6 @@ export async function getSimplexStoppageEntries(headerId) {
     const validDetails = details.filter(d => !!d.machine_id)
     if (validDetails.length === 0) return []
 
-    const header = await prisma.simplex_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = header?.entry_date || new Date()
-
     const detailIds = validDetails.map(d => d.id)
     const machineIds = validDetails.map(d => d.machine_id)
 
@@ -600,7 +558,7 @@ export async function getSimplexStoppageEntries(headerId) {
           stoppage4: reasonMap[s.stoppage4_id] || null,
         }
       })
-      .filter(row => isSimplexMachineVisibleOnDate(row.production_detail?.machine, entryDate))
+      .filter(row => !!row.production_detail?.machine)
       .sort((a, b) => {
         const sortA = a.production_detail?.machine?.sort_order || 9999
         const sortB = b.production_detail?.machine?.sort_order || 9999
@@ -1009,13 +967,21 @@ export async function getSimplexMachineSetups(headerId = null) {
       machineSetupOverridesMap,
       newMachineSetupDefaultsMap
     })
+    const snapshotMachineIds = [...new Set((setups || []).map(setup => setup.machine_id).filter(Boolean))]
+    const entryMachines = snapshotMachineIds.length
+      ? await prisma.simplex_machines.findMany({
+          where: { id: { in: snapshotMachineIds } },
+          select: { id: true, machine_no: true, description: true, make_name: true, prodn_mixing: true, speed: true, mc_effi: true, tpi: true, no_of_spindles: true, is_active: true },
+          orderBy: { is_active: 'desc' }
+        })
+      : []
     const headerDetails = validHeaderId
       ? await prisma.simplex_production_detail.findMany({ where: { header_id: validHeaderId }, select: { machine_id: true, prodn_mixing: true } })
       : []
 
     const machineMap = {}
-    if (Array.isArray(machines)) {
-      machines.forEach(m => { machineMap[m.id] = m })
+    if (Array.isArray(entryMachines)) {
+      entryMachines.forEach(m => { machineMap[m.id] = m })
     }
 
     const mixingMap = {}

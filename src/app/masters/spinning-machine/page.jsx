@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
 import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
@@ -19,6 +18,7 @@ import {
   getSpinningMachineWithSetupAction
 } from '@/app/actions/spinning-machine';
 import { Plus, Pencil, Trash2, PowerOff } from 'lucide-react';
+import { getActiveMasterRecordCount, getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
 
 export default function SpinningMachineMaster() {
   const { canManageMasters } = useAuthUser();
@@ -61,7 +61,7 @@ export default function SpinningMachineMaster() {
           remarks: machine.remarks || '-'
         }));
         
-        setMachines(formattedData);
+        setMachines(orderMasterRecords(formattedData));
         setError(null);
       } else {
         setError('Failed to load machines: ' + result.error);
@@ -87,7 +87,7 @@ export default function SpinningMachineMaster() {
           remarks: machine.remarks || '-'
         }));
         
-        setMachines(formattedData);
+        setMachines(orderMasterRecords(formattedData));
         toast.success(`Found ${result.data.length} machine(s)`);
       } else {
         toast.error('Search failed: ' + result.error);
@@ -190,44 +190,41 @@ export default function SpinningMachineMaster() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk permanent delete
-      if (!confirm(`Permanently remove ${selectedRows.length} machine(s)?\n\nThis cannot be undone.`)) {
-        return;
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false);
+      if (activeRows.length === 0) return toast.info('All selected machines are already deleted');
+      if (!confirm(`Delete ${activeRows.length} machine(s)?`)) return;
 
-      try {
-        await Promise.all(selectedRows.map(row => deleteSpinningMachineAction(row.id)));
-        toast.success(`${selectedRows.length} machine(s) permanently removed`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadMachines();
-      } catch (error) {
-        toast.error('Failed to remove machines: ' + error.message);
-      }
+      const { succeeded, failed } = await runBulkActions(
+        activeRows,
+        row => deleteSpinningMachineAction(row.id)
+      );
+      if (succeeded.length) toast.success(`${succeeded.length} machine(s) deleted from Machine Master`);
+      if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
+      setSelectedRows(failed.map(outcome => outcome.item));
+      setIsSelectMode(failed.length > 0);
+      if (succeeded.length) loadMachines();
     } else if (!isSelectMode && selectedRowId) {
-      // Single permanent delete from modal
       const machine = machines.find(m => m.id === selectedRowId);
+      if (machine?.is_active === false) return toast.info('Machine is already deleted');
       const machineName = machine?.machine_no || 'this machine';
-      if (!confirm(`Permanently remove machine "${machineName}"?\n\nThis cannot be undone.`)) {
-        return;
-      }
+      if (!confirm(`Delete machine "${machineName}"?`)) return;
 
       try {
         const result = await deleteSpinningMachineAction(selectedRowId);
         if (result.success) {
-          toast.success('Machine permanently removed');
+          toast.success('Machine deleted from Machine Master');
           setSelectedRowId(null);
           setIsModalOpen(false);
           setEditingMachine(null);
           loadMachines();
         } else {
-          toast.error('Failed to remove machine: ' + result.error);
+          toast.error('Failed to delete machine: ' + result.error);
         }
       } catch (error) {
-        toast.error('Failed to remove machine: ' + error.message);
+        toast.error('Failed to delete machine: ' + error.message);
       }
     } else {
-      toast.error('Please select machine(s) to remove');
+      toast.error('Please select machine(s) to delete');
     }
   };
 
@@ -321,11 +318,13 @@ export default function SpinningMachineMaster() {
           <Button 
             onClick={handleDelete} 
             className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedRowId || machines.find(row => row.id === selectedRowId)?.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -360,11 +359,7 @@ export default function SpinningMachineMaster() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
-          getRowClassName={(row) =>
-            !row.is_active
-              ? '!bg-red-100 hover:!bg-red-200 text-red-700'
-              : '!bg-white hover:!bg-yellow-100'
-          }
+          getRowClassName={getMasterRecordRowClassName}
           onRowDoubleClick={canManageMasters ? openEditForm : undefined}
           onContextMenu={(row, e) => {
             if (!canManageMasters) return;
@@ -377,9 +372,7 @@ export default function SpinningMachineMaster() {
       {/* Stats */}
       {!loading && !error && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <span>Total Records: {machines.length}</span>
-          <span className="text-green-700">Available: {machines.filter(m => m.is_active).length}</span>
-          <span className="text-red-600">Removed: {machines.filter(m => !m.is_active).length}</span>
+          <span>Active Machines: {getActiveMasterRecordCount(machines)}</span>
         </div>
       )}
 
@@ -395,7 +388,7 @@ export default function SpinningMachineMaster() {
         }}
         onDelete={null}
         showDelete={false}
-        deleteLabel="Remove Permanently"
+        deleteLabel="Delete"
         deleteIsDanger={true}
         onSecondaryAction={null}
         secondaryActionLabel="Remove Machine"

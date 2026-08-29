@@ -1,6 +1,7 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { machineLookupWhere, machineRemovalDate } from '../machineLifecycle';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 /**
  * Drawing Breaker Machine Master - CRUD Operations
@@ -63,44 +64,7 @@ export async function createDrawingBreakerMachine(machineData) {
     where: { machine_no: machineData.machine_no, is_active: true }
   });
   if (existing) {
-    if (!existing.is_active) {
-      return prisma.$transaction(async (tx) => {
-        const reactivated = await tx.drawing_breaker_machines.update({
-          where: { id: existing.id },
-          data: {
-            description: machineData.description,
-            make_name: machineData.make_name,
-            model: machineData.model,
-            prodn_mixing: machineData.prodn_mixing,
-            speed: machineData.speed,
-            delivery: machineData.delivery ?? null,
-            sliver_hank: machineData.sliver_hank != null ? machineData.sliver_hank : null,
-            prodn_efficiency: machineData.prodn_effi,
-            installed_date: installedDate,
-            is_active: true,
-            direct_hank_entry: machineData.direct_hank_entry ?? false,
-            direct_kgs_entry: machineData.direct_kgs_entry ?? false,
-            activated_at: installedDate || new Date(),
-            deactivated_at: null,
-          }
-        });
-
-        // Reactivation must never erase dated historical setup snapshots. Remove
-        // only the legacy template row so master-side reactivation does not
-        // automatically enroll the machine in a new setup.
-        await tx.breaker_drawing_machine_setup.deleteMany({
-          where: {
-            machine_id: existing.id,
-            entry_date: new Date('1970-01-01T00:00:00.000Z'),
-            shift: 1
-          }
-        });
-
-        return reactivated;
-      });
-    } else {
-      throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
-    }
+    throw new Error(`Machine ${machineData.machine_no} already exists and is active`);
   }
 
   // Fetch max sort_order so new machine goes to the end
@@ -179,10 +143,12 @@ export async function updateDrawingBreakerMachine(id, machineData) {
   });
 }
 
-// Delete a drawing breaker machine
+// Soft-delete a drawing breaker machine while retaining historical entries.
 export async function deleteDrawingBreakerMachine(id) {
-  await prisma.drawing_breaker_machines.delete({ where: { id } });
-  return true;
+  return softDeleteMasterRecord(prisma.drawing_breaker_machines, id, {
+    recordLabel: 'Drawing breaker machine',
+    trackRemovalDate: true
+  });
 }
 
 // Search drawing breaker machines (all, no is_active filter)

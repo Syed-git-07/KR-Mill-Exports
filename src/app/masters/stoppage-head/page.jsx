@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
+import { runBulkActions } from '@/lib/actionResults';
 import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
@@ -17,6 +17,7 @@ import {
   searchStoppageHeadsAction
 } from '@/app/actions/stoppage-head';
 import { Plus, Trash2 } from 'lucide-react';
+import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
 
 export default function StoppageHeadMaster() {
   const { canManageMasters } = useAuthUser();
@@ -44,7 +45,7 @@ export default function StoppageHeadMaster() {
     try {
       const result = await getStoppageHeadsAction();
       if (result.success) {
-        setStoppageHeads(result.data);
+        setStoppageHeads(orderMasterRecords(result.data));
       } else {
         toast.error('Failed to load stoppage heads: ' + result.error);
       }
@@ -57,7 +58,7 @@ export default function StoppageHeadMaster() {
     try {
       const result = await searchStoppageHeadsAction(field, condition, value);
       if (result.success) {
-        setStoppageHeads(result.data);
+        setStoppageHeads(orderMasterRecords(result.data));
         toast.success(`Found ${result.data.length} stoppage head(s)`);
       } else {
         toast.error('Search failed: ' + result.error);
@@ -116,25 +117,18 @@ export default function StoppageHeadMaster() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} stoppage head(s)?`)) {
-        return;
-      }
-
-      try {
-        await Promise.all(selectedRows.map(row => deleteStoppageHeadAction(row.id)));
-        toast.success(`${selectedRows.length} stoppage head(s) deleted successfully`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadStoppageHeads();
-      } catch (error) {
-        toast.error('Failed to delete stoppage heads: ' + error.message);
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false);
+      if (activeRows.length === 0) return toast.info('All selected stoppage heads are already deleted');
+      if (!confirm(`Delete ${activeRows.length} stoppage head(s)?`)) return;
+      const { succeeded, failed } = await runBulkActions(activeRows, row => deleteStoppageHeadAction(row.id));
+      if (succeeded.length) toast.success(`${succeeded.length} stoppage head(s) deleted`);
+      if (failed.length) toast.error(`${failed.length} stoppage head(s) failed: ${failed[0].error}`);
+      setSelectedRows(failed.map(outcome => outcome.item));
+      setIsSelectMode(failed.length > 0);
+      if (succeeded.length) loadStoppageHeads();
     } else if (!isSelectMode && selectedStoppageHead) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedStoppageHead.stoppage_head_name}"?`)) {
-        return;
-      }
+      if (selectedStoppageHead.is_active === false) return toast.info('Stoppage head is already deleted');
+      if (!confirm(`Delete "${selectedStoppageHead.stoppage_head_name}"?`)) return;
 
       try {
         const result = await deleteStoppageHeadAction(selectedStoppageHead.id);
@@ -202,11 +196,13 @@ export default function StoppageHeadMaster() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedStoppageHead || selectedStoppageHead.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -222,6 +218,7 @@ export default function StoppageHeadMaster() {
       <DataGrid 
         columns={columns}
         data={stoppageHeads}
+        getRowClassName={getMasterRecordRowClassName}
         onRowClick={handleRowClick}
         selectedRow={selectedStoppageHead}
         showCheckbox={isSelectMode}

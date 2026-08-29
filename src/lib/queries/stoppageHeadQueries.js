@@ -1,5 +1,6 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 /**
  * Stoppage Head Master CRUD Operations
@@ -43,13 +44,11 @@ export async function updateStoppageHead(id, stoppageData) {
   return data;
 }
 
-// Delete stoppage head
+// Soft-delete a stoppage head while retaining historical references.
 export async function deleteStoppageHead(id) {
-  await prisma.stoppage_heads.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.stoppage_heads, id, {
+    recordLabel: 'Stoppage head'
   });
-
-  return true;
 }
 
 // Search stoppage heads

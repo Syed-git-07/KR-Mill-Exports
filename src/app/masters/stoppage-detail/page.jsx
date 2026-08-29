@@ -9,8 +9,9 @@ import StoppageDetailForm from '@/components/modules/masters/StoppageDetailForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety'
+import { runBulkActions } from '@/lib/actionResults'
 import { useAuthUser } from '@/components/auth/AuthUserContext'
+import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
 
 export default function StoppageDetailPage() {
   const { canManageMasters } = useAuthUser()
@@ -41,7 +42,7 @@ export default function StoppageDetailPage() {
     try {
       const result = await getStoppageDetailsAction()
       if (result.success) {
-        setStoppageDetails(result.data)
+        setStoppageDetails(orderMasterRecords(result.data))
       } else {
         toast.error('Failed to load stoppage details: ' + result.error)
       }
@@ -59,7 +60,7 @@ export default function StoppageDetailPage() {
     try {
       const result = await searchStoppageDetailsAction(field, condition, value)
       if (result.success) {
-        setStoppageDetails(result.data)
+        setStoppageDetails(orderMasterRecords(result.data))
         toast.success(`Found ${result.data.length} result(s)`)
       } else {
         toast.error('Search failed: ' + result.error)
@@ -85,25 +86,18 @@ export default function StoppageDetailPage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} stoppage detail(s)?`)) {
-        return
-      }
-
-      try {
-        await Promise.all(selectedRows.map(row => deleteStoppageDetailAction(row.id)))
-        toast.success(`${selectedRows.length} stoppage detail(s) deleted successfully`)
-        setSelectedRows([])
-        setIsSelectMode(false)
-        loadStoppageDetails()
-      } catch (error) {
-        toast.error('Failed to delete stoppage details: ' + error.message)
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false)
+      if (activeRows.length === 0) return toast.info('All selected stoppage details are already deleted')
+      if (!confirm(`Delete ${activeRows.length} stoppage detail(s)?`)) return
+      const { succeeded, failed } = await runBulkActions(activeRows, row => deleteStoppageDetailAction(row.id))
+      if (succeeded.length) toast.success(`${succeeded.length} stoppage detail(s) deleted`)
+      if (failed.length) toast.error(`${failed.length} stoppage detail(s) failed: ${failed[0].error}`)
+      setSelectedRows(failed.map(outcome => outcome.item))
+      setIsSelectMode(failed.length > 0)
+      if (succeeded.length) loadStoppageDetails()
     } else if (!isSelectMode && selectedStoppageDetail) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedStoppageDetail.stoppage_name}"?`)) {
-        return
-      }
+      if (selectedStoppageDetail.is_active === false) return toast.info('Stoppage detail is already deleted')
+      if (!confirm(`Delete "${selectedStoppageDetail.stoppage_name}"?`)) return
 
       try {
         const result = await deleteStoppageDetailAction(selectedStoppageDetail.id)
@@ -208,11 +202,13 @@ export default function StoppageDetailPage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedStoppageDetail || selectedStoppageDetail.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -233,6 +229,7 @@ export default function StoppageDetailPage() {
       <DataGrid 
         columns={columns}
         data={stoppageDetails}
+        getRowClassName={getMasterRecordRowClassName}
         onRowClick={handleRowClick}
         selectedRow={selectedStoppageDetail}
         showCheckbox={isSelectMode}

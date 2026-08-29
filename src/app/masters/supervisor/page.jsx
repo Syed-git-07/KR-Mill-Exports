@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
+import { runBulkActions } from '@/lib/actionResults';
 import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
@@ -17,6 +17,7 @@ import {
   searchSupervisorsAction
 } from '@/app/actions/supervisor';
 import { Plus, Trash2 } from 'lucide-react';
+import { getActiveMasterRecordCount, getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
 
 export default function SupervisorMaster() {
   const { canManageMasters } = useAuthUser();
@@ -39,7 +40,6 @@ export default function SupervisorMaster() {
     { key: 'token_no', label: 'Token', width: '110px' },
     { key: 'employee_code', label: 'Employee Code', width: '130px' },
     { key: 'payroll_status', label: 'Payroll Status', width: '120px' },
-    { key: 'role_status', label: 'Role Status', width: '110px' },
     { key: 'department_name', label: 'Department', width: 'auto' }
   ];
 
@@ -55,11 +55,10 @@ export default function SupervisorMaster() {
       if (result.success) {
         const formattedData = result.data.map(supervisor => ({
           ...supervisor,
-          department_name: supervisor.dept_name || '-',
-          role_status: supervisor.is_active ? 'Active' : 'Inactive'
+          department_name: supervisor.dept_name || '-'
         }));
         
-        setSupervisors(formattedData);
+        setSupervisors(orderMasterRecords(formattedData));
         setError(null);
       } else {
         setError('Failed to load supervisors: ' + result.error);
@@ -82,11 +81,10 @@ export default function SupervisorMaster() {
       if (result.success) {
         const formattedData = result.data.map(supervisor => ({
           ...supervisor,
-          department_name: supervisor.dept_name || '-',
-          role_status: supervisor.is_active ? 'Active' : 'Inactive'
+          department_name: supervisor.dept_name || '-'
         }));
         
-        setSupervisors(formattedData);
+        setSupervisors(orderMasterRecords(formattedData));
         toast.success(`Found ${result.data.length} supervisor(s)`);
       } else {
         toast.error('Search failed: ' + result.error);
@@ -116,25 +114,18 @@ export default function SupervisorMaster() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} supervisor(s)?`)) {
-        return;
-      }
-
-      try {
-        await Promise.all(selectedRows.map(row => deleteSupervisorAction(row.id)));
-        toast.success(`${selectedRows.length} supervisor(s) deleted successfully`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadSupervisors();
-      } catch (error) {
-        toast.error('Failed to delete supervisors: ' + error.message);
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false);
+      if (activeRows.length === 0) return toast.info('All selected supervisors are already deleted');
+      if (!confirm(`Delete ${activeRows.length} supervisor(s)?`)) return;
+      const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSupervisorAction(row.id));
+      if (succeeded.length) toast.success(`${succeeded.length} supervisor(s) deleted`);
+      if (failed.length) toast.error(`${failed.length} supervisor(s) failed: ${failed[0].error}`);
+      setSelectedRows(failed.map(outcome => outcome.item));
+      setIsSelectMode(failed.length > 0);
+      if (succeeded.length) loadSupervisors();
     } else if (!isSelectMode && selectedSupervisor) {
-      // Single delete
-      if (!confirm(`Are you sure you want to delete supervisor "${selectedSupervisor.supervisor_name}"?`)) {
-        return;
-      }
+      if (selectedSupervisor.is_active === false) return toast.info('Supervisor is already deleted');
+      if (!confirm(`Delete supervisor "${selectedSupervisor.supervisor_name}"?`)) return;
 
       try {
         const result = await deleteSupervisorAction(selectedSupervisor.id);
@@ -232,11 +223,13 @@ export default function SupervisorMaster() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedSupervisor || selectedSupervisor.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -265,6 +258,7 @@ export default function SupervisorMaster() {
         <DataGrid
           columns={columns}
           data={supervisors}
+          getRowClassName={getMasterRecordRowClassName}
           onRowClick={handleRowClick}
           selectedRow={selectedSupervisor}
           showCheckbox={isSelectMode}
@@ -284,7 +278,7 @@ export default function SupervisorMaster() {
 
       {!loading && !error && (
         <div className="text-sm text-muted-foreground">
-          Total Supervisors: {supervisors.length}
+          Active Supervisors: {getActiveMasterRecordCount(supervisors)}
         </div>
       )}
 

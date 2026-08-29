@@ -293,7 +293,7 @@ export async function removeAutoconerMachineAction(id, headerId) {
 
 export async function getIdleReasonsAction() {
   await requireUser()
-  return { success: true, data: queries.getIdleReasons() }
+  return { success: true, data: await queries.getIdleReasons() }
 }
 
 

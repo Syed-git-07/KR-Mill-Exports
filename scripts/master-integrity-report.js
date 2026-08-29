@@ -21,6 +21,11 @@ const expectedActiveMachineIndexes = [
   'uq_spinning_active_machine_no'
 ]
 
+const expectedMasterIdentityIndexes = [
+  'uq_departments_code',
+  'uq_departments_sl_no'
+]
+
 const moduleConfigs = machineModules.map(moduleConfig => [
   moduleConfig.key,
   moduleConfig.machine,
@@ -175,7 +180,10 @@ async function main() {
       SELECT DISTINCT INDEX_NAME AS indexName
       FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE()
-        AND INDEX_NAME LIKE 'uq_%_active_machine_no'
+        AND (
+          INDEX_NAME LIKE 'uq_%_active_machine_no'
+          OR INDEX_NAME IN ('uq_departments_code', 'uq_departments_sl_no')
+        )
     `,
     prisma.$queryRaw`
       SELECT DISTINCT CONSTRAINT_NAME AS constraintName
@@ -188,6 +196,8 @@ async function main() {
     ]))
   ])
   const installedGuards = installedGuardRows.map(row => row.indexName)
+  const installedActiveMachineIndexes = expectedActiveMachineIndexes.filter(name => installedGuards.includes(name))
+  const installedMasterIdentityIndexes = expectedMasterIdentityIndexes.filter(name => installedGuards.includes(name))
   const installedForeignKeys = installedForeignKeyRows.map(row => row.constraintName)
   const orphanReferences = Object.fromEntries(relationAudits)
 
@@ -196,6 +206,8 @@ async function main() {
     generatedAt: new Date().toISOString(),
     masters: {
       duplicateDepartmentNames: duplicateGroups(departments, 'dept_name'),
+      duplicateDepartmentCodes: duplicateGroups(departments, 'code'),
+      duplicateDepartmentSerials: duplicateGroups(departments, 'sl_no'),
       duplicateSupervisorNames: duplicateGroups(supervisors, 'supervisor_name'),
       duplicateStoppageHeadNames: duplicateGroups(stoppageHeads, 'stoppage_head_name'),
       duplicateStoppageDetailsByContext: duplicateGroupsBy(
@@ -213,8 +225,11 @@ async function main() {
     },
     databaseGuards: {
       expectedActiveMachineIndexes,
-      installedActiveMachineIndexes: installedGuards,
+      installedActiveMachineIndexes,
       missingActiveMachineIndexes: expectedActiveMachineIndexes.filter(name => !installedGuards.includes(name)),
+      expectedMasterIdentityIndexes,
+      installedMasterIdentityIndexes,
+      missingMasterIdentityIndexes: expectedMasterIdentityIndexes.filter(name => !installedGuards.includes(name)),
       expectedForeignKeys,
       installedForeignKeys: expectedForeignKeys.filter(name => installedForeignKeys.includes(name)),
       missingForeignKeys: expectedForeignKeys.filter(name => !installedForeignKeys.includes(name))
@@ -270,6 +285,7 @@ async function main() {
     const relationIssues = Object.values(report.relationalIntegrity.orphanReferences)
       .some(rows => rows.length > 0)
     const guardIssues = report.databaseGuards.missingActiveMachineIndexes.length > 0 ||
+      report.databaseGuards.missingMasterIdentityIndexes.length > 0 ||
       report.databaseGuards.missingForeignKeys.length > 0
 
     if (masterIssues || moduleIssues || relationIssues || guardIssues) {

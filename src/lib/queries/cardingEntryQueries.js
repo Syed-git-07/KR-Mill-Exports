@@ -12,13 +12,6 @@ import { sanitizeEntryHeaderUpdate, sanitizeEntrySetupUpdate, sanitizeEntryStopp
 import { machineLookupWhere } from '../machineLifecycle'
 import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
 
-function isCardingMachineVisibleOnDate(machine, entryDate) {
-  if (!machine) return false
-  if (machine.installed_date && new Date(machine.installed_date) > entryDate) return false
-  if (machine.deactivated_at && new Date(machine.deactivated_at) <= entryDate) return false
-  return true
-}
-
 // ============================================
 // SHIFT CONFIGURATION QUERIES
 // ============================================
@@ -182,18 +175,12 @@ export async function getCardingProductionDetails(headerId) {
       machineMap[m.id] = m
     })
 
-    const header = await prisma.carding_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = header?.entry_date || new Date()
-
     return data
       .map(detail => ({
         ...detail,
         machine: machineMap[detail.machine_id] || null
       }))
-      .filter(detail => isCardingMachineVisibleOnDate(detail.machine, entryDate))
+      .filter(detail => !!detail.machine)
       .sort((a, b) => (a.machine?.sort_order || 9999) - (b.machine?.sort_order || 9999))
   } catch (error) {
     throw error
@@ -270,14 +257,7 @@ export async function getCardingProductionWithSetup(headerId) {
       return aNum - bNum
     }) || []
 
-    // Apply date-visibility filter: hide machines not active on this entry date
-    const hdrForDate = await prisma.carding_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = hdrForDate?.entry_date || new Date()
-
-    return sorted.filter(detail => isCardingMachineVisibleOnDate(detail.machine, entryDate))
+    return sorted.filter(detail => !!detail.machine)
   } catch (error) {
     throw error
   }
@@ -308,11 +288,7 @@ export async function initializeProductionDetails(headerId, shift = 1) {
 
     // Get all carding machines visible on the entry date that have a setup entry
     const machines = await prisma.carding_machines.findMany({
-      where: {
-        id: { in: machineIdsWithSetup },
-        installed_date: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-      },
+      where: { id: { in: machineIdsWithSetup } },
       orderBy: { mc_id: 'asc' }
     })
 
@@ -460,11 +436,7 @@ export async function syncNewMachinesToHeader(headerId, shift = 1) {
 
     // Get all carding machines visible on this entry date that have a setup entry
     const machines = await prisma.carding_machines.findMany({
-      where: {
-        id: { in: machineIdsWithSetup },
-        installed_date: { lte: entryDate },
-        OR: [{ deactivated_at: null }, { deactivated_at: { gt: entryDate } }]
-      },
+      where: { id: { in: machineIdsWithSetup } },
       orderBy: { mc_id: 'asc' }
     })
 
@@ -693,14 +665,7 @@ export async function getCardingStoppageEntries(headerId) {
       return aNum - bNum
     }) || []
 
-    // Apply date-visibility filter: hide machines not active on this entry date
-    const hdrForDate = await prisma.carding_production_header.findUnique({
-      where: { id: headerId },
-      select: { entry_date: true }
-    })
-    const entryDate = hdrForDate?.entry_date || new Date()
-
-    return sorted.filter(entry => isCardingMachineVisibleOnDate(entry.production_detail?.machine, entryDate))
+    return sorted.filter(entry => !!entry.production_detail?.machine)
   } catch (error) {
     throw error
   }
@@ -1092,9 +1057,9 @@ export async function getOrCreateCardingMachineSetups(entryDate, shift = 1) {
 
         return {
           ...rest,
-          // Entry removal is inherited; permanent Master removal also excludes
-          // the machine from this and subsequent future structures.
-          is_included: s.is_included !== false && !!machine,
+          // Entry membership is inherited from the previous entry. Machine
+          // Master soft deletion affects lookup/add availability only.
+          is_included: s.is_included !== false,
           speed: defaultSpeed,
           hank_constant: hankConstant,
           std_efficiency_factor: stdEfficiencyFactor,
@@ -1216,9 +1181,7 @@ export async function getCardingMachineSetups(entryDate, shift = 1) {
     })
 
     const data = setups
-      // Setup snapshots are retained for history, but the setup grid must use
-      // the same date-effective machine lifecycle rule as Production/Stoppage.
-      .filter(setup => isCardingMachineVisibleOnDate(machineMap[setup.machine_id], dateObj))
+      .filter(setup => !!machineMap[setup.machine_id])
       .map(setup => ({
         ...setup,
         machine: machineMap[setup.machine_id]

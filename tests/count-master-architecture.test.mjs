@@ -115,7 +115,7 @@ test('Count Master writes do not mutate historical machine setup snapshots', asy
     'utf8'
   )
   const updateFunction = countQueries.match(
-    /export async function updateSpinningCount[\s\S]*?(?=\/\/ Delete spinning count)/
+    /export async function updateSpinningCount[\s\S]*?(?=export async function deleteSpinningCount)/
   )?.[0]
 
   assert.ok(updateFunction)

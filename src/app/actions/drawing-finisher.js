@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { drawingFinisherCreateSchema, drawingFinisherUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
@@ -70,9 +69,18 @@ export async function updateDrawingFinisherMachineAction(id, machineData) {
   }
 }
 
-export async function deleteDrawingFinisherMachineAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteDrawingFinisherMachineAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.drawing-finisher-machine', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => queries.deleteDrawingFinisherMachine(validatedId))
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
 }
 
 export async function searchDrawingFinisherMachinesAction(field, condition, value) {
