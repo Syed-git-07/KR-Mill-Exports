@@ -98,6 +98,25 @@ test('a master-only machine is not enrolled when a previous entry exists', async
   assert.equal(harness.rows().some(row => row.machine_id === 'machine-2'), false)
 })
 
+test('a soft-deleted Master machine remains in the next inherited entry structure', async () => {
+  const previousDate = new Date('2026-08-14T00:00:00.000Z')
+  const prior = {
+    machine_id: 'machine-deleted-from-master', entry_date: previousDate,
+    shift: 1, is_included: true, speed: 90, prodn_mixing: 'ENTRY COUNT'
+  }
+  const harness = setupHarness([prior], { entry_date: previousDate, shift: 1 })
+  const setups = await getOrCreateDateScopedSetups({
+    setupModel: harness.setupModel,
+    headerModel: harness.headerModel,
+    headerId: 'header-1',
+    // The current active Master list no longer contains this machine.
+    machineIds: []
+  })
+
+  assert.deepEqual(setups.map(row => row.machine_id), ['machine-deleted-from-master'])
+  assert.equal(setups[0].prodn_mixing, 'ENTRY COUNT')
+})
+
 test('the first-ever entry seeds legacy master machines that lack baseline setup rows', async () => {
   const harness = setupHarness()
   const setups = await getOrCreateDateScopedSetups({
@@ -134,6 +153,22 @@ test('an existing entry snapshot is never backfilled from Master or a prior entr
 
   assert.deepEqual(setups, [existing])
   assert.equal(harness.rows().length, 1)
+})
+
+test('reopening an entry keeps snapshot machines absent from the active Master list', async () => {
+  const existing = {
+    machine_id: 'inactive-master-machine', entry_date: targetDate,
+    shift: 1, is_included: true, speed: 90
+  }
+  const harness = setupHarness([existing])
+  const setups = await getOrCreateDateScopedSetups({
+    setupModel: harness.setupModel,
+    headerModel: harness.headerModel,
+    headerId: 'header-1',
+    machineIds: []
+  })
+
+  assert.deepEqual(setups, [existing])
 })
 
 test('an interrupted empty header is skipped when resolving the previous format', async () => {

@@ -185,10 +185,7 @@ async function initializeAutoconerProductionDetails(headerId, shift = 1) {
     // Get machines visible on entry_date
     // Only include machines with a setup entry — master-only machines (no setup) are excluded
     const machines = await prisma.autoconer_machines.findMany({
-      where: {
-        id: { in: machineIdsWithSetup },
-        ...machineAvailableOnDateWhere(entryDate)
-      },
+      where: { id: { in: machineIdsWithSetup } },
       orderBy: [
         { group_id: 'asc' },
         { machine_no: 'asc' }
@@ -286,12 +283,11 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
     const setups = await getOrCreateAutoconerMachineSetups(entryDate, shift)
     const machineIdsWithSetup = setups.map(s => s.machine_id)
 
-    // 2. Get currently visible machines for entry_date
-    // Only include machines with a setup entry — master-only machines (no setup) are excluded
+    // The setup snapshot is authoritative after initialization. A later Master
+    // soft deletion must not remove an inherited machine from this entry.
     const machines = await prisma.autoconer_machines.findMany({
       where: {
-        id: { in: machineIdsWithSetup },
-        ...machineAvailableOnDateWhere(entryDate)
+        id: { in: machineIdsWithSetup }
       },
       orderBy: [{ group_id: 'asc' }, { machine_no: 'asc' }]
     })
@@ -303,7 +299,6 @@ export async function syncNewMachinesToAutoconerHeader(headerId, shift = 1) {
     })
     const existingMachineIds = existingDetails.map(d => d.machine_id)
 
-    // 4. Find stale rows — machines deactivated on or before entry_date OR with no setup
     // Existing detail rows are entry snapshots. Master revisions and later
     // deactivations must not delete or replace them.
     const remainingMachineIds = existingMachineIds
@@ -892,7 +887,9 @@ export async function getOrCreateAutoconerMachineSetups(entryDate, shift = 1) {
         if (!cloneDataMap.has(targetMachineId)) {
           cloneDataMap.set(targetMachineId, {
             ...rest,
-            is_included: s.is_included !== false && !!activeMachine,
+            // Preserve previous-entry membership even when its Master row was
+            // soft-deleted. Master status only controls explicit Add lookup.
+            is_included: s.is_included !== false,
             machine_id: targetMachineId,
             ...(currentCount ? buildAutoconerCountSnapshot(currentCount) : {}),
             entry_date: dateObj,

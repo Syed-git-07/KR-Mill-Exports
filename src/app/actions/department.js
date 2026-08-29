@@ -3,11 +3,10 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { departmentCreateSchema, departmentUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
-import { getDepartments, createDepartment, updateDepartment, searchDepartments } from '@/lib/queries/queries'
+import { getDepartments, createDepartment, updateDepartment, deleteDepartment, searchDepartments } from '@/lib/queries/queries'
 import { serializeData } from '@/lib/serialize'
 
 export async function getDepartmentsAction() {
@@ -47,9 +46,18 @@ export async function updateDepartmentAction(id, departmentData) {
   }
 }
 
-export async function deleteDepartmentAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteDepartmentAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.department', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => deleteDepartment(validatedId))
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
 }
 
 export async function searchDepartmentsAction(field, condition, value) {

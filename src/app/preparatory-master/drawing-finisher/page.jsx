@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety';
 import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
 import SearchFilter from '@/components/common/SearchFilter';
@@ -18,6 +17,7 @@ import {
   searchDrawingFinisherMachinesAction
 } from '@/app/actions/drawing-finisher';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
+import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
 
 export default function DrawingFinisherPage() {
   const { canManageMasters } = useAuthUser();
@@ -71,7 +71,7 @@ export default function DrawingFinisherPage() {
         speed: machine.speed || 0
       }));
       
-      setMachines(formattedData);
+      setMachines(orderMasterRecords(formattedData));
     } catch (err) {
       console.error('Error loading drawing finisher machines:', err);
       toast.error('Failed to load drawing finisher machines: ' + err.message);
@@ -100,7 +100,7 @@ export default function DrawingFinisherPage() {
         speed: machine.speed || 0
       }));
       
-      setMachines(formattedData);
+      setMachines(orderMasterRecords(formattedData));
       toast.success(`Found ${result.data.length} result(s)`);
     } catch (err) {
       console.error('Search error:', err);
@@ -190,32 +190,25 @@ export default function DrawingFinisherPage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} machine(s)?`)) {
-        return;
-      }
-
-      try {
-        await Promise.all(selectedRows.map(row => deleteDrawingFinisherMachineAction(row.id)));
-        toast.success(`${selectedRows.length} machine(s) deleted successfully`);
-        setSelectedRows([]);
-        setIsSelectMode(false);
-        loadMachines();
-      } catch (error) {
-        toast.error('Failed to delete machines: ' + error.message);
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false);
+      if (activeRows.length === 0) return toast.info('All selected machines are already deleted');
+      if (!confirm(`Delete ${activeRows.length} machine(s) from Machine Master?\n\nThis is a soft delete. Existing entry snapshots remain unchanged, and deleted records cannot be restored.`)) return;
+      const { succeeded, failed } = await runBulkActions(activeRows, row => deleteDrawingFinisherMachineAction(row.id));
+      if (succeeded.length) toast.success(`${succeeded.length} machine(s) deleted from Machine Master`);
+      if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
+      setSelectedRows(failed.map(outcome => outcome.item));
+      setIsSelectMode(failed.length > 0);
+      if (succeeded.length) loadMachines();
     } else if (!isSelectMode && selectedMachine) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedMachine.machine_no}"?`)) {
-        return;
-      }
+      if (selectedMachine.is_active === false) return toast.info('Machine is already deleted');
+      if (!confirm(`Delete machine "${selectedMachine.machine_no}" from Machine Master?\n\nThis is a soft delete. Existing entry snapshots remain unchanged, and the record cannot be restored.`)) return;
 
       try {
         const result = await deleteDrawingFinisherMachineAction(selectedMachine.id);
         if (!result.success) {
           throw new Error(result.error);
         }
-        toast.success('Machine deleted successfully');
+        toast.success('Machine deleted from Machine Master');
         setSelectedMachine(null);
         setIsModalOpen(false);
         loadMachines();
@@ -315,11 +308,13 @@ export default function DrawingFinisherPage() {
           <Button 
             onClick={handleDelete} 
             className="bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedMachine || selectedMachine.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -350,11 +345,7 @@ export default function DrawingFinisherPage() {
           selectedRows={selectedRows}
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
-          getRowClassName={(row) =>
-            !row.is_active
-              ? '!bg-red-100 hover:!bg-red-200 text-red-700'
-              : '!bg-white hover:!bg-yellow-100'
-          }
+          getRowClassName={getMasterRecordRowClassName}
           onRowDoubleClick={(row) => {
             if (!canManageMasters) return;
             setSelectedMachine(row);
@@ -392,7 +383,7 @@ export default function DrawingFinisherPage() {
         }}
         onDelete={null}
         showDelete={false}
-        deleteLabel="Remove Permanently"
+        deleteLabel="Delete"
         deleteIsDanger={true}
         onSecondaryAction={null}
         secondaryActionLabel="Remove Machine"

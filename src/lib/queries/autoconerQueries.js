@@ -1,6 +1,7 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { applyPermanentRemoval } from '../machineLifecycle';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 const machineCountSelect = { id: true, count_name: true };
 
@@ -187,13 +188,12 @@ export async function updateAutoconerMachine(id, machineData) {
   });
 }
 
-// Delete autoconer machine
+// Soft-delete an autoconer machine while retaining historical entries.
 export async function deleteAutoconerMachine(id) {
-  await prisma.autoconer_machines.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.autoconer_machines, id, {
+    recordLabel: 'Autoconer machine',
+    trackRemovalDate: true
   });
-  
-  return true;
 }
 
 // Search autoconer machines (active only)

@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { masterUuidSchema, spinningMachineCreateSchema, spinningMachineUpdateSchema } from '@/lib/validation/masterSchemas'
 
@@ -48,18 +47,14 @@ export async function updateSpinningMachineAction(id, machineData) {
   }
 }
 
-export async function deleteSpinningMachineAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
-}
-
-export async function activateSpinningMachineAction(id) {
+export async function deleteSpinningMachineAction(id) {
   const user = await requireRole('ADMIN')
   try {
     const validatedId = masterUuidSchema.parse(id)
     const data = await executeAuditedMasterMutation({
-      user, action: 'ACTIVATE', resource: 'master.spinning-machine', targetId: validatedId
-    }, () => queries.activateSpinningMachine(validatedId))
+      user, action: 'DELETE', resource: 'master.spinning-machine', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => queries.deleteSpinningMachine(validatedId))
     return { success: true, data: serializeData(data) }
   } catch (error) {
     return { success: false, error: safeActionError(error) }

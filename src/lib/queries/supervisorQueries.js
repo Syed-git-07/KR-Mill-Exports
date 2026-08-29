@@ -2,6 +2,7 @@ import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { findActivePayrollEmployeeById, getPayrollEmployeesByIds } from '../payroll/employees';
 import { resolveHistoricalEmployeeIdentity } from '../payroll/historicalEmployeeIdentity';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 /**
  * Supervisor Master CRUD Operations
@@ -107,13 +108,11 @@ export async function updateSupervisor(id, supervisorData) {
   return data;
 }
 
-// Delete supervisor
+// Soft-delete a supervisor while retaining historical production headers.
 export async function deleteSupervisor(id) {
-  await prisma.supervisors.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.supervisors, id, {
+    recordLabel: 'Supervisor'
   });
-
-  return true;
 }
 
 // Search supervisors

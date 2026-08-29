@@ -1,6 +1,7 @@
 import { prisma } from '../prisma'
 import { buildTypedSearchWhere } from '../masterSearch'
 import { machineRemovalDate } from '../machineLifecycle'
+import { softDeleteMasterRecord } from './masterSoftDelete'
 
 const machineCountSelect = { id: true, count_name: true }
 
@@ -157,18 +158,11 @@ export async function getSpinningMachineWithSetup(id) {
   return flattenMachineCount(machine)
 }
 
-export async function activateSpinningMachine(id) {
-  const machine = await prisma.spinning_machines.findUnique({ where: { id } })
-  if (!machine || machine.is_active === true) return machine
-  return prisma.spinning_machines.update({
-    where: { id },
-    data: { is_active: true, activated_at: new Date(), deactivated_at: null }
-  })
-}
-
 export async function deleteSpinningMachine(id) {
-  await prisma.spinning_machines.delete({ where: { id } })
-  return true
+  return softDeleteMasterRecord(prisma.spinning_machines, id, {
+    recordLabel: 'Spinning machine',
+    trackRemovalDate: true
+  })
 }
 
 export async function searchSpinningMachines(field, condition, value) {

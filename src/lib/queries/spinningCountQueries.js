@@ -1,5 +1,6 @@
 import { prisma } from '../prisma'
 import { buildTypedSearchWhere } from '../masterSearch'
+import { softDeleteMasterRecord } from './masterSoftDelete'
 
 /**
  * Spinning Count Master CRUD Operations
@@ -99,13 +100,11 @@ export async function updateSpinningCount(id, countData) {
   }
 }
 
-// Delete spinning count
+// Soft-delete a spinning count while retaining machine and entry snapshots.
 export async function deleteSpinningCount(id) {
-  await prisma.spinning_counts.delete({
-    where: { id }
-  });
-
-  return true
+  return softDeleteMasterRecord(prisma.spinning_counts, id, {
+    recordLabel: 'Spinning count'
+  })
 }
 
 // Search spinning counts

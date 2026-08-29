@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { masterUuidSchema, stoppageDetailCreateSchema, stoppageDetailUpdateSchema } from '@/lib/validation/masterSchemas'
 
@@ -48,9 +47,18 @@ export async function updateStoppageDetailAction(id, stoppageData) {
   }
 }
 
-export async function deleteStoppageDetailAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteStoppageDetailAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.stoppage-detail', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => queries.deleteStoppageDetail(validatedId))
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
 }
 
 export async function searchStoppageDetailsAction(field, condition, value) {

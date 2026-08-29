@@ -1,6 +1,7 @@
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { machineRemovalDate } from '../machineLifecycle';
+import { softDeleteMasterRecord } from './masterSoftDelete';
 
 /**
  * Carding Machine Master - CRUD Operations
@@ -158,13 +159,12 @@ export async function getCardingCountOptions() {
   }
 }
 
-// Delete a carding machine
+// Soft-delete a carding machine while retaining historical entries.
 export async function deleteCardingMachine(id) {
-  await prisma.carding_machines.delete({
-    where: { id }
+  return softDeleteMasterRecord(prisma.carding_machines, id, {
+    recordLabel: 'Carding machine',
+    trackRemovalDate: true
   });
-  
-  return true;
 }
 
 // Search carding machines

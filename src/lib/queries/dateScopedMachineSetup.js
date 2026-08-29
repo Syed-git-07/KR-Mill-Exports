@@ -128,12 +128,10 @@ export async function getOrCreateDateScopedSetups({
   })
 
   // Any row, including an exclusion marker, proves that this entry already has
-  // its own snapshot. Reopening it must never merge in a later Master change or
-  // a subsequent edit made to the source entry.
+  // its own snapshot. Reopening it must never merge in a later Master change,
+  // including a Master soft deletion, or a subsequent source-entry edit.
   if (targetSnapshot.length) {
-    return targetSnapshot.filter(
-      row => row.is_included && (!allowedMachineIds || allowedMachineIds.has(row.machine_id))
-    )
+    return targetSnapshot.filter(row => row.is_included)
   }
 
   // Membership must come from one exact prior entry. Looking up the latest row
@@ -167,8 +165,9 @@ export async function getOrCreateDateScopedSetups({
     materializableRows = [...latestByMachine.values()]
   }
 
-  // A permanent Master removal is effective for future entries, while a new
-  // Master machine is not auto-enrolled when a prior entry already exists.
+  // Machine Master controls only the first-ever entry. Once a prior entry
+  // exists, its exact membership is authoritative: later Master additions or
+  // soft deletions must not alter the sequence automatically.
   if (!previousHeader) {
     materializableRows = materializableRows.filter(
       row => !allowedMachineIds || allowedMachineIds.has(row.machine_id)
@@ -202,9 +201,6 @@ export async function getOrCreateDateScopedSetups({
         }
         return cloneDateScopedSetup(row, entryDate, shift, {
           ...overrides,
-          ...(previousHeader && allowedMachineIds && !allowedMachineIds.has(row.machine_id)
-            ? { is_included: false }
-            : {}),
           ...(machineSetupOverridesMap?.[row.machine_id] || {})
         })
       }),
@@ -216,7 +212,7 @@ export async function getOrCreateDateScopedSetups({
     where: { entry_date: entryDate, shift },
     orderBy: { machine_id: 'asc' }
   })
-  return createdSnapshot.filter(
-    row => row.is_included && (!allowedMachineIds || allowedMachineIds.has(row.machine_id))
+  return createdSnapshot.filter(row =>
+    row.is_included && (previousHeader || !allowedMachineIds || allowedMachineIds.has(row.machine_id))
   )
 }

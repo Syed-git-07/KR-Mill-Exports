@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { masterUuidSchema, spinningCountCreateSchema, spinningCountUpdateSchema } from '@/lib/validation/masterSchemas'
 
@@ -48,9 +47,18 @@ export async function updateSpinningCountAction(id, countData) {
   }
 }
 
-export async function deleteSpinningCountAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteSpinningCountAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const data = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.spinning-count', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => queries.deleteSpinningCount(validatedId))
+    return { success: true, data: serializeData(data) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
 }
 
 export async function searchSpinningCountsAction(field, condition, value) {

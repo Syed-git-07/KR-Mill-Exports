@@ -3,7 +3,6 @@
 import { requireRole, requireUser } from '@/lib/security/auth'
 
 import { safeActionError } from '@/lib/security/errors'
-import { disabledMasterDeleteResult } from '@/lib/masterSafety'
 import { executeAuditedMasterMutation } from '@/lib/security/masterAudit'
 import { lapFormerCreateSchema, lapFormerUpdateSchema, masterUuidSchema } from '@/lib/validation/masterSchemas'
 
@@ -12,6 +11,7 @@ import {
   getLapFormerMachines,
   createLapFormerMachine,
   updateLapFormerMachine,
+  deleteLapFormerMachine,
   searchLapFormerMachines,
   getActiveLapFormerMachines,
   getSpinningCountOptions
@@ -80,9 +80,19 @@ export async function updateLapFormerMachineAction(id, data) {
   }
 }
 
-export async function deleteLapFormerMachineAction() {
-  await requireRole('ADMIN')
-  return disabledMasterDeleteResult()
+export async function deleteLapFormerMachineAction(id) {
+  const user = await requireRole('ADMIN')
+  try {
+    const validatedId = masterUuidSchema.parse(id)
+    const machine = await executeAuditedMasterMutation({
+      user, action: 'DELETE', resource: 'master.lap-former-machine', targetId: validatedId,
+      changes: { is_active: false }
+    }, () => deleteLapFormerMachine(validatedId));
+    return { success: true, data: serializeData(machine) };
+  } catch (error) {
+    console.error('Delete lap former machine error:', error);
+    return { success: false, error: safeActionError(error) };
+  }
 }
 
 export async function searchLapFormerMachinesAction(field, condition, value) {

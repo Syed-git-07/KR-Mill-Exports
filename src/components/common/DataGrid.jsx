@@ -14,7 +14,8 @@ export default function DataGrid({
   selectedRows, 
   onSelectRow, 
   onSelectAll,
-  getRowClassName
+  getRowClassName,
+  getRowId
 }) {
   const allSelected = showCheckbox && data?.length > 0 && selectedRows?.length === data.length;
   
@@ -43,13 +44,16 @@ export default function DataGrid({
         <TableBody className="bg-white">
           {data && data.length > 0 ? (
             data.map((row, index) => {
+              // Database UUIDs are the stable identity for Master rows. Never
+              // prefer editable business values such as code or serial number.
+              const rowKey = getRowId?.(row, index) ?? row.id ?? index
               const isSelected = selectedRows?.some(r => r.id === row.id);
               const isRowSelected = isSelected || selectedRow?.id === row.id || selectedRowId === row.id;
               const rowExtraCls = getRowClassName ? getRowClassName(row) : '!bg-white hover:!bg-yellow-100'
               const cellExtraCls = rowExtraCls.split(' ').filter(c => !c.startsWith('hover:')).join(' ')
               return (
                 <TableRow
-                  key={row.code || row.id || index}
+                  key={rowKey}
                   onClick={() => onRowClick && onRowClick(row)}
                   onDoubleClick={() => onRowDoubleClick && onRowDoubleClick(row)}
                   onContextMenu={(e) => onContextMenu && onContextMenu(row, e)}

@@ -9,8 +9,9 @@ import DepartmentForm from '@/components/modules/masters/DepartmentForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety'
+import { runBulkActions } from '@/lib/actionResults'
 import { useAuthUser } from '@/components/auth/AuthUserContext'
+import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
 
 export default function DepartmentPage() {
   const { canManageMasters } = useAuthUser()
@@ -30,7 +31,7 @@ export default function DepartmentPage() {
     try {
       const result = await getDepartmentsAction()
       if (result.success) {
-        setDepartments(result.data)
+        setDepartments(orderMasterRecords(result.data))
       } else {
         toast.error('Failed to load departments: ' + result.error)
       }
@@ -48,7 +49,7 @@ export default function DepartmentPage() {
     try {
       const result = await searchDepartmentsAction(field, condition, value)
       if (result.success) {
-        setDepartments(result.data)
+        setDepartments(orderMasterRecords(result.data))
         toast.success(`Found ${result.data.length} result(s)`)
       } else {
         toast.error('Search failed: ' + result.error)
@@ -83,25 +84,18 @@ export default function DepartmentPage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} department(s)?`)) {
-        return
-      }
-
-      try {
-        await Promise.all(selectedRows.map(row => deleteDepartmentAction(row.id)))
-        toast.success(`${selectedRows.length} department(s) deleted successfully`)
-        setSelectedRows([])
-        setIsSelectMode(false)
-        loadDepartments()
-      } catch (error) {
-        toast.error('Failed to delete departments: ' + error.message)
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false)
+      if (activeRows.length === 0) return toast.info('All selected departments are already deleted')
+      if (!confirm(`Delete ${activeRows.length} department(s)?\n\nThis is a soft delete; existing historical references will be retained.`)) return
+      const { succeeded, failed } = await runBulkActions(activeRows, row => deleteDepartmentAction(row.id))
+      if (succeeded.length) toast.success(`${succeeded.length} department(s) deleted`)
+      if (failed.length) toast.error(`${failed.length} department(s) failed: ${failed[0].error}`)
+      setSelectedRows(failed.map(outcome => outcome.item))
+      setIsSelectMode(failed.length > 0)
+      if (succeeded.length) loadDepartments()
     } else if (!isSelectMode && selectedDepartment) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedDepartment.dept_name}"?`)) {
-        return
-      }
+      if (selectedDepartment.is_active === false) return toast.info('Department is already deleted')
+      if (!confirm(`Delete "${selectedDepartment.dept_name}"?\n\nThis is a soft delete; existing historical references will be retained.`)) return
 
       try {
         const result = await deleteDepartmentAction(selectedDepartment.id)
@@ -205,11 +199,13 @@ export default function DepartmentPage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedDepartment || selectedDepartment.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -229,6 +225,7 @@ export default function DepartmentPage() {
         <DataGrid 
           columns={columns}
           data={departments}
+          getRowClassName={getMasterRecordRowClassName}
           onRowClick={handleRowClick}
           selectedRow={selectedDepartment}
           showCheckbox={isSelectMode}

@@ -9,8 +9,9 @@ import SpinningCountForm from '@/components/modules/masters/SpinningCountForm'
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { MASTER_DELETE_DISABLED_MESSAGE } from '@/lib/masterSafety'
+import { runBulkActions } from '@/lib/actionResults'
 import { useAuthUser } from '@/components/auth/AuthUserContext'
+import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
 
 export default function SpinningCountPage() {
   const { canManageMasters } = useAuthUser()
@@ -30,7 +31,7 @@ export default function SpinningCountPage() {
     try {
       const result = await getSpinningCountsAction()
       if (result.success) {
-        setSpinningCounts(result.data)
+        setSpinningCounts(orderMasterRecords(result.data))
         if (!result.data || result.data.length === 0) {
           console.warn('No data returned from database')
           toast.error('No spinning count records found. Please check database.')
@@ -54,7 +55,7 @@ export default function SpinningCountPage() {
     try {
       const result = await searchSpinningCountsAction(field, condition, value)
       if (result.success) {
-        setSpinningCounts(result.data)
+        setSpinningCounts(orderMasterRecords(result.data))
         toast.success(`Found ${result.data.length} result(s)`)
       } else {
         toast.error('Search failed: ' + result.error)
@@ -80,25 +81,18 @@ export default function SpinningCountPage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} spinning count(s)?`)) {
-        return
-      }
-
-      try {
-        await Promise.all(selectedRows.map(row => deleteSpinningCountAction(row.id)))
-        toast.success(`${selectedRows.length} spinning count(s) deleted successfully`)
-        setSelectedRows([])
-        setIsSelectMode(false)
-        loadSpinningCounts()
-      } catch (error) {
-        toast.error('Failed to delete spinning counts: ' + error.message)
-      }
+      const activeRows = selectedRows.filter(row => row.is_active !== false)
+      if (activeRows.length === 0) return toast.info('All selected counts are already deleted')
+      if (!confirm(`Delete ${activeRows.length} spinning count(s)?\n\nThis is a soft delete; existing machine and entry snapshots will be retained.`)) return
+      const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSpinningCountAction(row.id))
+      if (succeeded.length) toast.success(`${succeeded.length} spinning count(s) deleted`)
+      if (failed.length) toast.error(`${failed.length} spinning count(s) failed: ${failed[0].error}`)
+      setSelectedRows(failed.map(outcome => outcome.item))
+      setIsSelectMode(failed.length > 0)
+      if (succeeded.length) loadSpinningCounts()
     } else if (!isSelectMode && selectedSpinningCount) {
-      // Single delete from modal
-      if (!confirm(`Are you sure you want to delete "${selectedSpinningCount.count_name}"?`)) {
-        return
-      }
+      if (selectedSpinningCount.is_active === false) return toast.info('Spinning count is already deleted')
+      if (!confirm(`Delete "${selectedSpinningCount.count_name}"?\n\nThis is a soft delete; existing machine and entry snapshots will be retained.`)) return
 
       try {
         const result = await deleteSpinningCountAction(selectedSpinningCount.id)
@@ -201,11 +195,13 @@ export default function SpinningCountPage() {
             onClick={handleDelete} 
             variant="outline"
             className="border-red-600 text-red-600 hover:bg-red-50 flex-1 sm:flex-none"
-            disabled
-            title={MASTER_DELETE_DISABLED_MESSAGE}
+            disabled={isSelectMode
+              ? selectedRows.filter(row => row.is_active !== false).length === 0
+              : !selectedSpinningCount || selectedSpinningCount.is_active === false
+            }
           >
             <Trash2 className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs sm:text-sm">Deletion Disabled</span>
+            <span className="text-xs sm:text-sm">Delete</span>
           </Button>
         </div>
       </div>
@@ -223,6 +219,7 @@ export default function SpinningCountPage() {
         <DataGrid 
           columns={columns}
           data={spinningCounts}
+          getRowClassName={getMasterRecordRowClassName}
           onRowClick={handleRowClick}
           selectedRow={selectedSpinningCount}
           showCheckbox={isSelectMode}
