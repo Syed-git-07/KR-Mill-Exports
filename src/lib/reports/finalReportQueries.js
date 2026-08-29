@@ -346,7 +346,12 @@ async function autoconerShiftProduction(fromDate, toDate) {
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(row)
   }
-  for (const [key, rows] of groups) {
+  const orderedGroups = [...groups.entries()].sort(([leftKey], [rightKey]) => {
+    const [leftDate, leftShift] = leftKey.split('|')
+    const [rightDate, rightShift] = rightKey.split('|')
+    return leftDate.localeCompare(rightDate) || Number(leftShift) - Number(rightShift)
+  })
+  for (const [key, rows] of orderedGroups) {
     const [date, shift, count] = key.split('|')
     report.tables.push({
       title: `${displayDate(date)} - Shift ${shift} - ${count} - ${supervisors.get(rows[0].supervisorId) || 'Not Assigned'}`,
