@@ -17,7 +17,7 @@ import {
   searchSimplexMachinesAction
 } from '@/app/actions/simplex-machine';
 import { Plus, Trash2, PowerOff } from 'lucide-react';
-import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
+import { getActiveMasterRecordCount, getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
 
 export default function SimplexMachinePage() {
   const { canManageMasters } = useAuthUser();
@@ -143,7 +143,7 @@ export default function SimplexMachinePage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected machines are already deleted');
-      if (!confirm(`Delete ${activeRows.length} machine(s) from Machine Master?\n\nThis is a soft delete. Existing entry snapshots remain unchanged, and deleted records cannot be restored.`)) return;
+      if (!confirm(`Delete ${activeRows.length} machine(s)?`)) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSimplexMachineAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} machine(s) deleted from Machine Master`);
       if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
@@ -152,7 +152,7 @@ export default function SimplexMachinePage() {
       if (succeeded.length) loadMachines();
     } else if (!isSelectMode && selectedMachine) {
       if (selectedMachine.is_active === false) return toast.info('Machine is already deleted');
-      if (!confirm(`Delete machine "${selectedMachine.machine_no}" from Machine Master?\n\nThis is a soft delete. Existing entry snapshots remain unchanged, and the record cannot be restored.`)) return;
+      if (!confirm(`Delete machine "${selectedMachine.machine_no}"?`)) return;
 
       try {
         const result = await deleteSimplexMachineAction(selectedMachine.id);
@@ -368,9 +368,7 @@ export default function SimplexMachinePage() {
       {/* Stats */}
       {!loading && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <span>Total Records: {machines.length}</span>
-          <span className="text-green-700">Available: {machines.filter(m => m.is_active).length}</span>
-          <span className="text-red-600">Removed: {machines.filter(m => !m.is_active).length}</span>
+          <span>Active Machines: {getActiveMasterRecordCount(machines)}</span>
           {selectedMachine && (
             <span>Selected: {selectedMachine.machine_no} - {selectedMachine.description}</span>
           )}

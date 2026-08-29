@@ -119,7 +119,7 @@ export default function StoppageHeadMaster() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected stoppage heads are already deleted');
-      if (!confirm(`Delete ${activeRows.length} stoppage head(s)?\n\nThis is a soft delete; existing stoppage history will be retained.`)) return;
+      if (!confirm(`Delete ${activeRows.length} stoppage head(s)?`)) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteStoppageHeadAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} stoppage head(s) deleted`);
       if (failed.length) toast.error(`${failed.length} stoppage head(s) failed: ${failed[0].error}`);
@@ -128,7 +128,7 @@ export default function StoppageHeadMaster() {
       if (succeeded.length) loadStoppageHeads();
     } else if (!isSelectMode && selectedStoppageHead) {
       if (selectedStoppageHead.is_active === false) return toast.info('Stoppage head is already deleted');
-      if (!confirm(`Delete "${selectedStoppageHead.stoppage_head_name}"?\n\nThis is a soft delete; existing stoppage history will be retained.`)) return;
+      if (!confirm(`Delete "${selectedStoppageHead.stoppage_head_name}"?`)) return;
 
       try {
         const result = await deleteStoppageHeadAction(selectedStoppageHead.id);

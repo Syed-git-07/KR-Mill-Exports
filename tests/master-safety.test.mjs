@@ -4,7 +4,11 @@ import test from 'node:test'
 
 import { runBulkActions } from '../src/lib/actionResults.js'
 import { buildTypedSearchWhere } from '../src/lib/masterSearch.js'
-import { getMasterRecordRowClassName, orderMasterRecords } from '../src/lib/masterRecordDisplay.js'
+import {
+  getActiveMasterRecordCount,
+  getMasterRecordRowClassName,
+  orderMasterRecords
+} from '../src/lib/masterRecordDisplay.js'
 import { softDeleteMasterRecord } from '../src/lib/queries/masterSoftDelete.js'
 import {
   autoconerMachineCreateSchema,
@@ -77,6 +81,7 @@ test('soft-deleted Master records are displayed last in red without an active st
   )
   assert.equal(getMasterRecordRowClassName({ is_active: false }), '!bg-red-100 hover:!bg-red-200 text-red-700')
   assert.equal(getMasterRecordRowClassName({ is_active: true }), '!bg-white hover:!bg-yellow-100')
+  assert.equal(getActiveMasterRecordCount(records), 2)
 
   for (const pagePath of softDeleteMasterPages) {
     const source = await readFile(new URL(`../src/app/${pagePath}`, import.meta.url), 'utf8')
@@ -348,14 +353,15 @@ test('Department identity and display sequence are system-owned and database-gua
   assert.match(integritySource, /missingMasterIdentityIndexes/)
 })
 
-test('Comber uses the shared soft-delete path and never exposes restore', async () => {
+test('Comber uses the shared soft-delete path without exposing restore details in the UI', async () => {
   const [pageSource, querySource] = await Promise.all([
     readFile(new URL('../src/app/preparatory-master/comber/page.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/lib/queries/comberMachineQueries.js', import.meta.url), 'utf8')
   ])
 
   assert.match(pageSource, /deleteComberMachineAction\(/)
-  assert.match(pageSource, /This is a soft delete/)
+  assert.match(pageSource, /Delete machine /)
+  assert.doesNotMatch(pageSource, /This is a soft delete|Existing entry snapshots/)
   assert.doesNotMatch(pageSource, /handleActivate/)
   assert.match(querySource, /softDeleteMasterRecord\(prisma\.comber_machines/)
   assert.match(querySource, /hasField\('sliver_hank'\) && \{ sliver_hank: machineData\.sliver_hank \}/)
@@ -413,7 +419,7 @@ test('machine masters expose neither entry removal nor a restore action', async 
   assert.doesNotMatch(querySource, /activateSpinningMachine/)
 })
 
-test('all referenced Master pages expose a working soft-delete control', async () => {
+test('all referenced Master pages expose concise working delete controls', async () => {
   const pagePaths = [
     'masters/department', 'masters/supervisor', 'masters/stoppage-head',
     'masters/stoppage-detail', 'masters/spinning-count', 'masters/spinning-machine',
@@ -427,9 +433,37 @@ test('all referenced Master pages expose a working soft-delete control', async (
     const source = await readFile(new URL(`../src/app/${pagePath}/page.jsx`, import.meta.url), 'utf8')
     assert.match(source, /const handleDelete = async/, pagePath)
     assert.match(source, /onClick=\{handleDelete\}/, pagePath)
-    assert.match(source, /soft delete/i, pagePath)
+    assert.match(source, /confirm\(`Delete /, pagePath)
+    assert.doesNotMatch(source, /This is a soft delete|Existing .*retain|snapshots? remain/i, pagePath)
     assert.doesNotMatch(source, /MASTER_DELETE_DISABLED_MESSAGE|disabledMasterDeleteResult/, pagePath)
   }
+})
+
+test('Master counters include active records only and calculator omits keyboard instructions', async () => {
+  const countedPages = [
+    'masters/department/page.jsx',
+    'masters/supervisor/page.jsx',
+    'masters/spinning-count/page.jsx',
+    'masters/spinning-machine/page.jsx',
+    'masters/autoconer/page.jsx',
+    'preparatory-master/carding-machine/page.jsx',
+    'preparatory-master/comber/page.jsx',
+    'preparatory-master/drawing-breaker/page.jsx',
+    'preparatory-master/drawing-finisher/page.jsx',
+    'preparatory-master/lap-former/page.jsx',
+    'preparatory-master/simplex/page.jsx'
+  ]
+
+  for (const pagePath of countedPages) {
+    const source = await readFile(new URL(`../src/app/${pagePath}`, import.meta.url), 'utf8')
+    assert.match(source, /getActiveMasterRecordCount\(/, `${pagePath} must count active records only`)
+  }
+
+  const calculatorSource = await readFile(
+    new URL('../src/components/common/ProductionCalculator.jsx', import.meta.url),
+    'utf8'
+  )
+  assert.doesNotMatch(calculatorSource, /Keyboard input is ready|Enter = calculate|Esc = close|\( \) = grouping/)
 })
 
 test('Master pages expose write controls only to administrators', async () => {

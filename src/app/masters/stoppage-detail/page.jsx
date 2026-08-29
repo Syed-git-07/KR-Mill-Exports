@@ -88,7 +88,7 @@ export default function StoppageDetailPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false)
       if (activeRows.length === 0) return toast.info('All selected stoppage details are already deleted')
-      if (!confirm(`Delete ${activeRows.length} stoppage detail(s)?\n\nThis is a soft delete; existing stoppage entries will retain their history.`)) return
+      if (!confirm(`Delete ${activeRows.length} stoppage detail(s)?`)) return
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteStoppageDetailAction(row.id))
       if (succeeded.length) toast.success(`${succeeded.length} stoppage detail(s) deleted`)
       if (failed.length) toast.error(`${failed.length} stoppage detail(s) failed: ${failed[0].error}`)
@@ -97,7 +97,7 @@ export default function StoppageDetailPage() {
       if (succeeded.length) loadStoppageDetails()
     } else if (!isSelectMode && selectedStoppageDetail) {
       if (selectedStoppageDetail.is_active === false) return toast.info('Stoppage detail is already deleted')
-      if (!confirm(`Delete "${selectedStoppageDetail.stoppage_name}"?\n\nThis is a soft delete; existing stoppage entries will retain their history.`)) return
+      if (!confirm(`Delete "${selectedStoppageDetail.stoppage_name}"?`)) return
 
       try {
         const result = await deleteStoppageDetailAction(selectedStoppageDetail.id)

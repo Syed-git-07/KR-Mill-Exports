@@ -11,7 +11,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { runBulkActions } from '@/lib/actionResults'
 import { useAuthUser } from '@/components/auth/AuthUserContext'
-import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
+import { getActiveMasterRecordCount, getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
 
 export default function DepartmentPage() {
   const { canManageMasters } = useAuthUser()
@@ -86,7 +86,7 @@ export default function DepartmentPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false)
       if (activeRows.length === 0) return toast.info('All selected departments are already deleted')
-      if (!confirm(`Delete ${activeRows.length} department(s)?\n\nThis is a soft delete; existing historical references will be retained.`)) return
+      if (!confirm(`Delete ${activeRows.length} department(s)?`)) return
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteDepartmentAction(row.id))
       if (succeeded.length) toast.success(`${succeeded.length} department(s) deleted`)
       if (failed.length) toast.error(`${failed.length} department(s) failed: ${failed[0].error}`)
@@ -95,7 +95,7 @@ export default function DepartmentPage() {
       if (succeeded.length) loadDepartments()
     } else if (!isSelectMode && selectedDepartment) {
       if (selectedDepartment.is_active === false) return toast.info('Department is already deleted')
-      if (!confirm(`Delete "${selectedDepartment.dept_name}"?\n\nThis is a soft delete; existing historical references will be retained.`)) return
+      if (!confirm(`Delete "${selectedDepartment.dept_name}"?`)) return
 
       try {
         const result = await deleteDepartmentAction(selectedDepartment.id)
@@ -241,7 +241,7 @@ export default function DepartmentPage() {
           }}
         />      {/* Stats */}
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-        <span>Total Records: {departments.length}</span>
+        <span>Active Departments: {getActiveMasterRecordCount(departments)}</span>
         {selectedDepartment && (
           <span>Selected: {selectedDepartment.dept_name}</span>
         )}

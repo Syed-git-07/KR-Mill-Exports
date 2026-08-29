@@ -676,11 +676,13 @@ export default function ProductionCalculator({ userId }) {
                   >
                     {displayResult}
                   </p>
-                  <p className={`mt-1 h-4 truncate text-right text-[10px] ${
-                    error ? "text-red-500" : copied ? "text-emerald-600" : "text-slate-400"
-                  }`} title={error || undefined}>
-                    {error || (copied ? "Result copied" : "Keyboard input is ready")}
-                  </p>
+                  {(error || copied) && (
+                    <p className={`mt-1 h-4 truncate text-right text-[10px] ${
+                      error ? "text-red-500" : "text-emerald-600"
+                    }`} title={error || undefined}>
+                      {error || "Result copied"}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-3 grid h-10 shrink-0 grid-cols-5 gap-2">
@@ -738,10 +740,6 @@ export default function ProductionCalculator({ userId }) {
                   </button>
                 </div>
 
-                <div className="mt-2 flex shrink-0 items-center justify-between px-0.5 text-[10px] text-slate-400">
-                  <span>Enter = calculate · Esc = close</span>
-                  <span>( ) = grouping</span>
-                </div>
               </div>
             )}
           </div>

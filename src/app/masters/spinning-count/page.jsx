@@ -11,7 +11,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { runBulkActions } from '@/lib/actionResults'
 import { useAuthUser } from '@/components/auth/AuthUserContext'
-import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
+import { getActiveMasterRecordCount, getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay'
 
 export default function SpinningCountPage() {
   const { canManageMasters } = useAuthUser()
@@ -83,7 +83,7 @@ export default function SpinningCountPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false)
       if (activeRows.length === 0) return toast.info('All selected counts are already deleted')
-      if (!confirm(`Delete ${activeRows.length} spinning count(s)?\n\nThis is a soft delete; existing machine and entry snapshots will be retained.`)) return
+      if (!confirm(`Delete ${activeRows.length} spinning count(s)?`)) return
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSpinningCountAction(row.id))
       if (succeeded.length) toast.success(`${succeeded.length} spinning count(s) deleted`)
       if (failed.length) toast.error(`${failed.length} spinning count(s) failed: ${failed[0].error}`)
@@ -92,7 +92,7 @@ export default function SpinningCountPage() {
       if (succeeded.length) loadSpinningCounts()
     } else if (!isSelectMode && selectedSpinningCount) {
       if (selectedSpinningCount.is_active === false) return toast.info('Spinning count is already deleted')
-      if (!confirm(`Delete "${selectedSpinningCount.count_name}"?\n\nThis is a soft delete; existing machine and entry snapshots will be retained.`)) return
+      if (!confirm(`Delete "${selectedSpinningCount.count_name}"?`)) return
 
       try {
         const result = await deleteSpinningCountAction(selectedSpinningCount.id)
@@ -237,7 +237,7 @@ export default function SpinningCountPage() {
       
       {/* Stats */}
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-        <span>Total Records: {spinningCounts.length}</span>
+        <span>Active Counts: {getActiveMasterRecordCount(spinningCounts)}</span>
         {selectedSpinningCount && (
           <span>Selected: {selectedSpinningCount.count_name}</span>
         )}

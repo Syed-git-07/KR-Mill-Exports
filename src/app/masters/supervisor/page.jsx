@@ -17,7 +17,7 @@ import {
   searchSupervisorsAction
 } from '@/app/actions/supervisor';
 import { Plus, Trash2 } from 'lucide-react';
-import { getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
+import { getActiveMasterRecordCount, getMasterRecordRowClassName, orderMasterRecords } from '@/lib/masterRecordDisplay';
 
 export default function SupervisorMaster() {
   const { canManageMasters } = useAuthUser();
@@ -116,7 +116,7 @@ export default function SupervisorMaster() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected supervisors are already deleted');
-      if (!confirm(`Delete ${activeRows.length} supervisor(s)?\n\nThis is a soft delete; existing production headers will retain their supervisor history.`)) return;
+      if (!confirm(`Delete ${activeRows.length} supervisor(s)?`)) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSupervisorAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} supervisor(s) deleted`);
       if (failed.length) toast.error(`${failed.length} supervisor(s) failed: ${failed[0].error}`);
@@ -125,7 +125,7 @@ export default function SupervisorMaster() {
       if (succeeded.length) loadSupervisors();
     } else if (!isSelectMode && selectedSupervisor) {
       if (selectedSupervisor.is_active === false) return toast.info('Supervisor is already deleted');
-      if (!confirm(`Delete supervisor "${selectedSupervisor.supervisor_name}"?\n\nThis is a soft delete; existing production headers will retain their supervisor history.`)) return;
+      if (!confirm(`Delete supervisor "${selectedSupervisor.supervisor_name}"?`)) return;
 
       try {
         const result = await deleteSupervisorAction(selectedSupervisor.id);
@@ -278,7 +278,7 @@ export default function SupervisorMaster() {
 
       {!loading && !error && (
         <div className="text-sm text-muted-foreground">
-          Total Supervisors: {supervisors.length}
+          Active Supervisors: {getActiveMasterRecordCount(supervisors)}
         </div>
       )}
 
