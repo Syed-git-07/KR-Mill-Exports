@@ -6,7 +6,6 @@ import { format } from 'date-fns'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -30,7 +29,7 @@ import {
 } from "@/components/ui/dialog"
 import Calendar from '@/components/common/HolidayAwareCalendar'
 import DeferredMount from '@/components/common/DeferredMount'
-import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft, Percent } from 'lucide-react'
+import { CalendarIcon, Loader2, RefreshCw, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from "@/lib/utils"
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -51,7 +50,6 @@ import {
   getSpinningAvailableDatesAction,
   getSpinningShiftConfigAction,
   getSpinningCountsAction,
-  getSpinningMachineSetupsAction,
   batchUpdateSpinningMachineSetupsAction
 } from '@/app/actions/spinning-entry'
 
@@ -82,9 +80,6 @@ function SpinningEntryContent() {
   const [selectedSourceDate, setSelectedSourceDate] = useState(null)
   const [isLoadingDates, setIsLoadingDates] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
-  const [efficiencyDialogOpen, setEfficiencyDialogOpen] = useState(false)
-  const [efficiencyPercent, setEfficiencyPercent] = useState('95')
-  const [isLoadingEfficiency, setIsLoadingEfficiency] = useState(false)
   const [isSavingAll, setIsSavingAll] = useState(false)
   const productionTabRef = useRef(null)
   const stoppageTabRef = useRef(null)
@@ -404,61 +399,6 @@ function SpinningEntryContent() {
     }
   }
 
-  const loadCurrentSetups = useCallback(async () => {
-    const result = await getSpinningMachineSetupsAction(parseInt(shift), format(date, 'yyyy-MM-dd'))
-    if (!result?.success) throw new Error(result?.error || 'Failed to load machine setups')
-    return result.data || []
-  }, [date, shift])
-
-  const handleOpenEfficiencyDialog = async () => {
-    if (!headerId) return
-    setIsLoadingEfficiency(true)
-    try {
-      const setups = await loadCurrentSetups()
-      const firstSetup = setups[0]
-      const draftValue = firstSetup
-        ? sharedDraftsRef.current.setup?.[firstSetup.id]?.efficiency
-        : null
-      const currentEfficiency = draftValue ?? firstSetup?.efficiency ?? 0.95
-      setEfficiencyPercent(String(Math.round(Number(currentEfficiency) * 10000) / 100))
-      setEfficiencyDialogOpen(true)
-    } catch (error) {
-      toast.error(error.message || 'Failed to load efficiency')
-    } finally {
-      setIsLoadingEfficiency(false)
-    }
-  }
-
-  const handleApplyEfficiency = async () => {
-    const percent = Number(efficiencyPercent)
-    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-      toast.error('Efficiency must be between 0 and 100')
-      return
-    }
-
-    setIsLoadingEfficiency(true)
-    try {
-      const setups = await loadCurrentSetups()
-      const efficiency = percent / 100
-      const nextSetupDrafts = { ...(sharedDraftsRef.current.setup || {}) }
-      setups.forEach(setup => {
-        nextSetupDrafts[setup.id] = {
-          ...(nextSetupDrafts[setup.id] || {}),
-          setup_id: setup.id,
-          machine_id: setup.machine_id,
-          efficiency
-        }
-      })
-      setSetupDraftEdits(nextSetupDrafts)
-      setEfficiencyDialogOpen(false)
-      toast.success(`Efficiency set to ${percent}% for this entry. Click Update to save.`)
-    } catch (error) {
-      toast.error(error.message || 'Failed to set efficiency')
-    } finally {
-      setIsLoadingEfficiency(false)
-    }
-  }
-
   const handleSaveAllTabs = async () => {
     if (!headerId || saveInFlightRef.current) return
 
@@ -661,47 +601,9 @@ function SpinningEntryContent() {
               </Button>
             )}
 
-            {/* Copy Previous Speed is available only inside Machine Setup. */}
+            {/* Setup-wide tools are available only inside Machine Setup. */}
             {headerId && activeTab === 'setup' && (
               <div className="ml-auto flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleOpenEfficiencyDialog}
-                  disabled={isLoadingEfficiency}
-                >
-                  {isLoadingEfficiency ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Percent className="h-4 w-4 mr-1" />}
-                  <span>Set Efficiency</span>
-                </Button>
-                <Dialog open={efficiencyDialogOpen} onOpenChange={setEfficiencyDialogOpen}>
-                  <DialogContent className="sm:max-w-sm">
-                    <DialogHeader>
-                      <DialogTitle>Set Spinning Efficiency</DialogTitle>
-                      <DialogDescription>
-                        Applies to every machine in {format(date, 'dd-MMM-yyyy')}, Shift {shift} only. Other entries are unchanged. Default is 95%.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-2 py-4">
-                      <Label htmlFor="spinning-entry-efficiency">Efficiency %</Label>
-                      <Input
-                        id="spinning-entry-efficiency"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={efficiencyPercent}
-                        onChange={(event) => setEfficiencyPercent(event.target.value)}
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setEfficiencyDialogOpen(false)}>Cancel</Button>
-                      <Button onClick={handleApplyEfficiency} disabled={isLoadingEfficiency}>
-                        {isLoadingEfficiency && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                        Apply
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
                 <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
                   <DialogTrigger asChild>
                     <Button 
