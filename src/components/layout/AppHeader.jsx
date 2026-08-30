@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, FileClock, Home, KeyRound, LogOut, UserRoundCheck } from "lucide-react";
+import { ArrowLeft, FileClock, Home, KeyRound, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
 import { withBasePath } from "@/lib/app-path";
@@ -80,30 +80,17 @@ export default function AppHeader({ user }) {
           <ProductionCalculator userId={user.id} />
 
           {user.role === "ADMIN" && (
-            <>
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 text-slate-600 hover:bg-slate-100 hover:text-[#0b2d47]"
-              >
-                <Link href="/admin/payroll-mapping">
-                  <UserRoundCheck />
-                  <span className="hidden xl:inline">Payroll mapping</span>
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 text-slate-600 hover:bg-slate-100 hover:text-[#0b2d47]"
-              >
-                <Link href="/admin/security-logs">
-                  <FileClock />
-                  <span className="hidden lg:inline">Activity</span>
-                </Link>
-              </Button>
-            </>
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-slate-600 hover:bg-slate-100 hover:text-[#0b2d47]"
+            >
+              <Link href="/admin/security-logs">
+                <FileClock />
+                <span className="hidden lg:inline">Activity</span>
+              </Link>
+            </Button>
           )}
 
           <Button
