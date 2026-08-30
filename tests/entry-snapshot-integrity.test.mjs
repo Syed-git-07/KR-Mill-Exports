@@ -198,14 +198,14 @@ test('Spinning count-run time and count stay distinct across all three tabs', ()
 })
 
 test('Spinning entry efficiency is date-shift scoped and drives Expected GPS only', () => {
-  const page = read('src/app/post-preparatory/spinning/entry/page.jsx')
+  const setup = read('src/components/modules/post-preparatory/spinning/SpinningMachineSetupTab.jsx')
   const production = read('src/components/modules/post-preparatory/spinning/SpinningProductionTab.jsx')
   const stoppage = read('src/components/modules/post-preparatory/spinning/SpinningStoppageTab.jsx')
   const formulas = read('src/lib/productionFormulaMath.js')
 
-  assert.match(page, /Set Efficiency/)
-  assert.match(page, /efficiency:\s*percent \/ 100|const efficiency = percent \/ 100/)
-  assert.match(page, /Click Update to save/)
+  assert.match(setup, /Set Effi\. %/)
+  assert.match(setup, /const efficiency = percent \/ 100/)
+  assert.match(setup, /Click Update to save/)
   assert.match(production, /calculateSpinningLossEfficiency/)
   assert.match(stoppage, /calculateSpinningLossEfficiency/)
   assert.match(production, /efficiency:\s*setup\.efficiency \?\? 0\.95/)

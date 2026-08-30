@@ -21,7 +21,7 @@ test('spinning efficiency is a dated setup snapshot with a 95 percent default', 
   assert.match(queries, /entry_date: dateObj,[\s\S]*?shift: shiftNum/)
 })
 
-test('machine setup exposes per-row and bulk entry efficiency controls', async () => {
+test('machine setup is the single place for per-row and bulk entry efficiency controls', async () => {
   const [setupTab, entryPage] = await Promise.all([
     read('src/components/modules/post-preparatory/spinning/SpinningMachineSetupTab.jsx'),
     read('src/app/post-preparatory/spinning/entry/page.jsx')
@@ -29,10 +29,11 @@ test('machine setup exposes per-row and bulk entry efficiency controls', async (
 
   assert.match(setupTab, />Effi\. %</)
   assert.match(setupTab, /applyEfficiencyPercent/)
-  assert.match(setupTab, /for \(const row of setupData\)/)
-  assert.match(entryPage, />\s*Set Efficiency\s*</)
-  assert.match(entryPage, /Other entries are unchanged/)
-  assert.match(entryPage, /Default is 95%/)
+  assert.match(setupTab, /setupData\.forEach/)
+  assert.match(setupTab, /setEditedRows/)
+  assert.match(setupTab, /Applies to every machine in this entry only/)
+  assert.doesNotMatch(entryPage, />\s*Set Efficiency\s*</)
+  assert.doesNotMatch(entryPage, /spinning-entry-efficiency/)
 })
 
 test('copy-previous remains speed-only and does not copy efficiency', async () => {

@@ -428,9 +428,21 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       return
     }
 
-    for (const row of setupData) {
-      handleInputChange(row.id, 'efficiency', percent / 100)
-    }
+    const efficiency = percent / 100
+    setEditedRows(previous => {
+      const next = { ...previous }
+      setupData.forEach(row => {
+        const machineId = row.machine_id ?? row.machine?.id
+        next[row.id] = {
+          ...next[row.id],
+          setup_id: row.id,
+          ...(machineId ? { machine_id: machineId } : {}),
+          efficiency
+        }
+      })
+      return next
+    })
+    setSetupData(previous => previous.map(row => ({ ...row, efficiency })))
     toast.success(`Efficiency staged at ${percent}% for this entry. Click Update to save.`)
   }
 
@@ -960,10 +972,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <div className="flex shrink-0 gap-2">
-          <div className="flex shrink-0 items-center gap-2 rounded border border-gray-300 px-2 py-1">
+      {/* Setup tools */}
+      <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-t border-slate-200 pt-3 pb-1">
+        <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2 py-1.5">
             <span className="text-xs font-medium text-gray-700">Option Check</span>
             <label className="flex items-center gap-1 text-xs">
               <Checkbox
@@ -993,7 +1004,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               />
               <span>Count</span>
             </label>
-            <span className="border-l border-gray-300 pl-2 text-[11px] font-medium text-gray-600">
+            <span className="border-l border-gray-300 pl-1.5 text-[11px] font-medium text-gray-600">
               From
             </span>
             <Popover open={optionCalendarOpen} onOpenChange={setOptionCalendarOpen}>
@@ -1013,7 +1024,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                         ? 'Previous entries could not be loaded'
                         : 'Source date'
                   }
-                  className="h-8 w-[126px] justify-start px-2 text-xs font-normal"
+                  className="h-8 w-[116px] justify-start px-2 text-xs font-normal"
                 >
                   <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
                   {optionSourceDateValue
@@ -1049,7 +1060,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                       ? 'Previous entries could not be loaded'
                       : 'Source shift'
                 }
-                className="w-[92px] text-xs"
+                className="w-[84px] text-xs"
               >
                 <SelectValue
                   placeholder={
@@ -1079,8 +1090,11 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             >
               Check
             </Button>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 rounded border border-gray-300 px-2 py-1">
+        </div>
+        <div
+          className="flex shrink-0 items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5"
+          title="Applies to every machine in this entry only. Click Update to save."
+        >
             <Label htmlFor="bulk-spinning-efficiency" className="whitespace-nowrap text-xs">Set Effi. %</Label>
             <NumberInput
               id="bulk-spinning-efficiency"
@@ -1092,54 +1106,60 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               onChange={(event) => setBulkEfficiencyPercent(event.target.value)}
               className="h-8 w-20 text-center text-xs"
             />
-            <Button type="button" variant="outline" size="sm" onClick={applyEfficiencyPercent}>
+            <Button type="button" size="sm" onClick={applyEfficiencyPercent} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
               Apply all
             </Button>
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => {
-              const selected = setupData.find(row => String(row.id) === String(selectedRows[0]))
-              setNewCountId('')
-              setCountRunMinutes(String(selected?.run_time ?? ''))
-              setCountChangeDialog(true)
-            }}
-            disabled={selectedRows.length !== 1 || !setupData.find(row => String(row.id) === String(selectedRows[0]))?.is_latest_run}
-          >
-            Count Change
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => { resetMachineForm(); setAddMachineDialog(true); }}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Master machine
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setRemoveDialog(true)}
-            disabled={selectedRows.length === 0}
-            className="text-red-600 hover:text-red-700"
-          >
-            <Trash2 className="h-4 w-4 mr-1" />
-            Remove machine {selectedRows.length > 0 && `(${selectedRows.length})`}
-          </Button>
         </div>
-        <span className="ml-auto shrink-0 text-sm text-gray-500">
-          {selectedRows.length > 0 && (
-            <span className="text-blue-600 font-medium mr-4">
-              {selectedRows.length} machine(s) selected
-            </span>
-          )}
-          {Object.keys(editedRows).length > 0 && (
-            <span className="text-yellow-600 font-medium">
-              {Object.keys(editedRows).length} row(s) modified
-            </span>
-          )}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const selected = setupData.find(row => String(row.id) === String(selectedRows[0]))
+                setNewCountId('')
+                setCountRunMinutes(String(selected?.run_time ?? ''))
+                setCountChangeDialog(true)
+              }}
+              disabled={selectedRows.length !== 1 || !setupData.find(row => String(row.id) === String(selectedRows[0]))?.is_latest_run}
+              className="border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+            >
+              Count Change
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => { resetMachineForm(); setAddMachineDialog(true); }}
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add machine
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRemoveDialog(true)}
+              disabled={selectedRows.length === 0}
+              className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Remove machine {selectedRows.length > 0 && `(${selectedRows.length})`}
+            </Button>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2 text-xs">
+            {selectedRows.length > 0 && (
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700">
+                {selectedRows.length} machine(s) selected
+              </span>
+            )}
+            {Object.keys(editedRows).length > 0 && (
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+                {Object.keys(editedRows).length} row(s) modified
+              </span>
+            )}
+        </div>
       </div>
 
       {/* Count Change Dialog */}
