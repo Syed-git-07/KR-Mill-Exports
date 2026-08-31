@@ -431,7 +431,9 @@ async function autoconerShiftProduction(fromDate, toDate) {
 
 async function autoconerSiderMonthly(fromDate, toDate) {
   const report = baseReport('Sider Monthly Autoconer Production Report', fromDate, toDate, 'landscape')
-  const records = await getAutoconerRecords(fromDate, toDate)
+  report.title = `Month wise Report for Autoconer Sider From ${displayDate(fromDate)} To ${displayDate(toDate)}`
+  report.period = ''
+  const records = (await getAutoconerRecords(fromDate, toDate)).filter(row => row.identityStatus !== 'UNASSIGNED')
   const groups = new Map()
   for (const row of records) {
     const key = `${row.employeeIdentity.groupKey}|${row.count}`
@@ -444,8 +446,13 @@ async function autoconerSiderMonthly(fromDate, toDate) {
     const snapshots = [...new Set(items.map(item => item.employeeName).filter(Boolean))]
     const token = employee?.token_no || employee?.emp_code || (items[0]?.identityStatus === 'UNRESOLVED_LEGACY' ? 'UNMAPPED' : '-')
     return [token, snapshots.join(' / ') || 'NIL', employee?.doj ? displayDate(employee.doj) : '-', count, fixed(items.reduce((s, r) => s + r.production, 0)), fixed(weighted(items, 'efficiency')), fixed(weighted(items, 'red'))]
-  }).sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
-  report.tables.push({ columns: ['Token No', 'Sider Name', 'DOJ', 'Count', 'Prod Kgs', 'EFF %', 'RED'], rows: rows.map((row, index) => [index + 1, ...row]), columnPrefix: 'S No' })
+  }).sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { sensitivity: 'base' }))
+  report.tables.push({
+    columns: ['Token No', 'Sider Name', 'DOJ', 'Count', 'Prod Kgs', 'EFF %', 'RED'],
+    rows: rows.map((row, index) => [index + 1, ...row]),
+    footer: ['TOTAL', '', '', '', '', fixed(records.reduce((sum, record) => sum + record.production, 0)), fixed(weighted(records, 'efficiency')), fixed(weighted(records, 'red'))],
+    columnPrefix: 'S No'
+  })
   // Keep the first column label explicit after adding the serial number.
   report.tables[0].columns = ['S No', 'Token No', 'Sider Name', 'DOJ', 'Count', 'Prod Kgs', 'EFF %', 'RED']
   return report
