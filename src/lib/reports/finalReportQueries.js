@@ -294,11 +294,19 @@ async function preparatoryParticularSider(fromDate, toDate, employeeId) {
   const masters = await payrollEmployeeMap([payrollId])
   const employee = masters.get(payrollId)
   report.meta.push(['Sider', employee?.emp_name || '-'], ['Token No', employee?.emp_code || '-'], ['DOJ', employee?.doj ? displayDate(employee.doj) : '-'])
-  report.tables.push({
-    columns: ['SL No', 'Date', 'Department', 'Shift', 'Effi %', 'UTTI %', 'Waste %'],
-    rows: records.map((row, index) => [index + 1, displayDate(row.date), row.department, row.shift, fixed(row.efficiency), fixed(row.utilization), fixed(row.wastePercent)]),
-    footer: ['TOTAL', '', '', '', fixed(weighted(records, 'efficiency')), fixed(weighted(records, 'utilization')), fixed(weighted(records, 'wastePercent'))]
-  })
+  const recordsByDepartment = new Map()
+  for (const record of records) {
+    if (!recordsByDepartment.has(record.department)) recordsByDepartment.set(record.department, [])
+    recordsByDepartment.get(record.department).push(record)
+  }
+  for (const [department, departmentRecords] of recordsByDepartment) {
+    report.tables.push({
+      title: department,
+      columns: ['Date', 'Shift', 'Effi %', 'UTTI %', 'Waste %'],
+      rows: departmentRecords.map(row => [displayDate(row.date), row.shift, fixed(row.efficiency), fixed(row.utilization), fixed(row.wastePercent)]),
+      footer: ['TOTAL', '', fixed(weighted(departmentRecords, 'efficiency')), fixed(weighted(departmentRecords, 'utilization')), fixed(weighted(departmentRecords, 'wastePercent'))]
+    })
+  }
   return report
 }
 
@@ -578,9 +586,9 @@ async function spinningCountGps(fromDate, toDate) {
       : 0
     report.tables.push({
       title: count,
-      columns: ['Count', 'Frame', 'Production Kgs', 'Waste Kgs', 'Waste %', 'GPS'],
-      rows: sortedFrames.map((frame, index) => [count, frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(frameGpsValues[index])]),
-      footer: ['TOTAL', '', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(averageFrameGps)]
+      columns: ['Frame', 'Production Kgs', 'Waste Kgs', 'Waste %', 'GPS'],
+      rows: sortedFrames.map((frame, index) => [frame.frame, fixed(frame.rows.reduce((s, r) => s + r.production, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0)), fixed(frame.rows.reduce((s, r) => s + r.waste, 0) / Math.max(frame.rows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(frameGpsValues[index])]),
+      footer: ['TOTAL', fixed(countRows.reduce((s, r) => s + r.production, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0)), fixed(countRows.reduce((s, r) => s + r.waste, 0) / Math.max(countRows.reduce((s, r) => s + r.production, 0), 1) * 100), fixed(averageFrameGps)]
     })
   }
   return report
