@@ -386,6 +386,7 @@ function SpinningEntryContent() {
       
       toast.success(`Copied speed from ${result.data.copiedFrom} shift ${shift} - ${result.data.machinesUpdated} machines updated`)
       setCopyDialogOpen(false)
+      clearAllDrafts()
       
       // Refresh data and force tabs to reload
       loadProductionHeader()

@@ -301,6 +301,7 @@ function BreakerDrawingEntryContent() {
       
       toast.success(`Copied speed from ${result.copiedFrom} shift ${shift} - ${result.machinesUpdated} machines updated`)
       setCopyDialogOpen(false)
+      clearAllDrafts()
       
       // Refresh data
       loadProductionHeader()
