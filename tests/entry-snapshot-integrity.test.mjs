@@ -376,6 +376,26 @@ test('confirmed date or shift changes clear drafts before loading another entry'
   }
 })
 
+test('Copy Previous Speed clears stale drafts after a successful copy', () => {
+  const pages = [
+    'src/app/preparatory-entry/carding/entry/page.jsx',
+    'src/app/preparatory-entry/breaker-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/finisher-drawing/entry/page.jsx',
+    'src/app/preparatory-entry/lap-former/entry/page.jsx',
+    'src/app/post-preparatory/spinning/entry/page.jsx',
+  ]
+
+  for (const page of pages) {
+    const source = read(page)
+    const handlerStart = source.indexOf('const handleCopyPreviousData')
+    const catchStart = source.indexOf('\n    } catch (error)', handlerStart)
+    const copyHandler = handlerStart >= 0 && catchStart > handlerStart
+      ? source.slice(handlerStart, catchStart)
+      : ''
+    assert.match(copyHandler, /clearAllDrafts\(\)/, page)
+  }
+})
+
 test('all eight entry pages warn before browser navigation with unsaved drafts', () => {
   const pages = [
     'src/app/preparatory-entry/carding/entry/page.jsx',
