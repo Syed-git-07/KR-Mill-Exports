@@ -103,13 +103,20 @@ export default function SpinningDailyProductionReport() {
       autoTable(doc, {
         startY: 28,
         head: [[
-          'S.No', 'Mc', 
-          'Exp\nGPS I', 'Exp\nGPS II', 'Exp\nGPS III',
-          'Ach\nGPS I', 'Ach\nGPS II', 'Ach\nGPS III',
-          'Prodn\nI', 'Prodn\nII', 'Prodn\nIII', 'Prodn\nTotal',
-          'Waste\n% I', 'Waste\n% II', 'Waste\n% III', 'Waste\nAvg',
-          'Stop\nI', 'Stop\nII', 'Stop\nIII',
-          'GPS'
+          { content: 'S.No', rowSpan: 2, styles: { valign: 'middle' } },
+          { content: 'Mc Name', rowSpan: 2, styles: { valign: 'middle' } },
+          { content: 'Expected GPS', colSpan: 3 },
+          { content: 'Achieved GPS', colSpan: 3 },
+          { content: 'PRODN. Kgs.', colSpan: 4 },
+          { content: 'Waste [ % ]', colSpan: 4 },
+          { content: 'Stopped Mins', colSpan: 3 },
+          { content: 'GPS', rowSpan: 2, styles: { valign: 'middle' } }
+        ], [
+          'I', 'II', 'III',
+          'I', 'II', 'III',
+          'I', 'II', 'III', 'Total',
+          'I', 'II', 'III', 'Avg.',
+          'I', 'II', 'III'
         ]],
         body: tableData,
         theme: 'grid',
@@ -278,26 +285,17 @@ export default function SpinningDailyProductionReport() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-purple-50">
-                      <TableHead className="text-center font-bold">S.No</TableHead>
-                      <TableHead className="font-bold">Mc Name</TableHead>
-                      <TableHead className="text-center font-bold">Expected GPS I</TableHead>
-                      <TableHead className="text-center font-bold">Expected GPS II</TableHead>
-                      <TableHead className="text-center font-bold">Expected GPS III</TableHead>
-                      <TableHead className="text-center font-bold">Achieved GPS I</TableHead>
-                      <TableHead className="text-center font-bold">Achieved GPS II</TableHead>
-                      <TableHead className="text-center font-bold">Achieved GPS III</TableHead>
-                      <TableHead className="text-right font-bold">PRODN. Kgs. I</TableHead>
-                      <TableHead className="text-right font-bold">PRODN. Kgs. II</TableHead>
-                      <TableHead className="text-right font-bold">PRODN. Kgs. III</TableHead>
-                      <TableHead className="text-right font-bold">PRODN. Total</TableHead>
-                      <TableHead className="text-right font-bold">Waste % I</TableHead>
-                      <TableHead className="text-right font-bold">Waste % II</TableHead>
-                      <TableHead className="text-right font-bold">Waste % III</TableHead>
-                      <TableHead className="text-right font-bold">Waste Avg.</TableHead>
-                      <TableHead className="text-right font-bold">Stopped Mins I</TableHead>
-                      <TableHead className="text-right font-bold">Stopped Mins II</TableHead>
-                      <TableHead className="text-right font-bold">Stopped Mins III</TableHead>
-                      <TableHead className="text-center font-bold">GPS</TableHead>
+                      <TableHead rowSpan={2} className="text-center font-bold">S.No</TableHead>
+                      <TableHead rowSpan={2} className="font-bold">Mc Name</TableHead>
+                      <TableHead colSpan={3} className="text-center font-bold">Expected GPS</TableHead>
+                      <TableHead colSpan={3} className="text-center font-bold">Achieved GPS</TableHead>
+                      <TableHead colSpan={4} className="text-center font-bold">PRODN. Kgs.</TableHead>
+                      <TableHead colSpan={4} className="text-center font-bold">Waste [ % ]</TableHead>
+                      <TableHead colSpan={3} className="text-center font-bold">Stopped Mins</TableHead>
+                      <TableHead rowSpan={2} className="text-center font-bold">GPS</TableHead>
+                    </TableRow>
+                    <TableRow className="bg-purple-50">
+                      {['I', 'II', 'III', 'I', 'II', 'III', 'I', 'II', 'III', 'Total', 'I', 'II', 'III', 'Avg.', 'I', 'II', 'III'].map((label, index) => <TableHead key={`${label}-${index}`} className="text-center font-bold">{label}</TableHead>)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>

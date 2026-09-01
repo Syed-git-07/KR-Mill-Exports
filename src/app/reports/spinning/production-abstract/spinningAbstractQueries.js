@@ -219,7 +219,7 @@ export async function fetchSpinningAbstractSummary(reportDate) {
       wasteKg,
       wastePercent: productionKg > 0 ? wasteKg / productionKg * 100 : 0,
       utilizationPercent: runTime > 0 ? workTime / runTime * 100 : 0,
-      gainLoss: gpsAchieved > 0 ? productionKg * ((gpsAchieved - gpsStd) / gpsAchieved) : 0
+      gainLoss: gpsAchieved > 0 ? (productionKg * (gpsAchieved - gpsStd)) / gpsAchieved : 0
     }
   })
 
