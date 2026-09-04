@@ -43,6 +43,7 @@ import {
   addSpinningMachineAction,
   lookupSpinningMachineByNoAction
 } from '@/app/actions/spinning-entry'
+import { calculateSpinningNoOfSpindles } from '@/lib/productionFormulaMath'
 import { getSpinningMachineWithSetupAction } from '@/app/actions/spinning-machine'
 import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
 
@@ -164,15 +165,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       ...(d.c_waste_percent != null && { c_waste_percent: parseFloat(d.c_waste_percent) }),
     }))
     toast.success(`Machine #${val} details filled`, { id: toastId })
-  }
-
-  // Calculate No of Spindles based on shift
-  const calculateNoOfSpindles = (allocatedSpindles) => {
-    if (!allocatedSpindles) return 0
-    // Shift 1 & 2: allocated / 8 * 8.5
-    // Shift 3: allocated / 8 * 7
-    const multiplier = shift === 3 ? 7 : 8.5
-    return Math.round((allocatedSpindles / 8) * multiplier)
   }
 
   // Count change dialog
@@ -887,7 +879,11 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
                       {row.allocated_spindles ?? row.machine?.allocated_spindles ?? 1104}
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-center font-medium text-green-600 tabular-nums whitespace-nowrap">
-                      {calculateNoOfSpindles(row.allocated_spindles ?? row.machine?.allocated_spindles)}
+                      {calculateSpinningNoOfSpindles(
+                        row.allocated_spindles ?? row.machine?.allocated_spindles,
+                        row.run_time ?? effectiveTotalTime,
+                        shift
+                      )}
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <NumberInput
