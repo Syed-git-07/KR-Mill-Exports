@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import SearchSelectionDialog from '@/components/ui/search-selection-dialog'
+import { rankSelectionResults } from '@/lib/selectionSearch'
 
 /**
  * EnterSelect — dropdown where:
@@ -37,9 +38,14 @@ export default function EnterSelect({
   const highlightedRef = useRef(null)
 
   // Filtered options based on search term
-  const filtered = searchable && search.trim()
-    ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
-    : options
+  const filtered = useMemo(() => (
+    searchable
+      ? rankSelectionResults(options, search, {
+          getPrimaryText: (option) => option.label,
+          getSecondaryTexts: (option) => option.searchTerms || [],
+        })
+      : options
+  ), [options, search, searchable])
 
   // Scroll highlighted item into view
   useEffect(() => {

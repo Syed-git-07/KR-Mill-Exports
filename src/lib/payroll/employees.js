@@ -9,15 +9,32 @@ export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(50, Number(limit))) : 10
   const term = String(searchTerm || '').trim()
   const companyId = getPayrollCompanyId()
+  const containsTerm = `%${term}%`
+  const prefixTerm = `${term}%`
   const nameClause = term
     ? Prisma.sql`AND (
-        e.firstName LIKE ${`%${term}%`}
-        OR NULLIF(TRIM(e.middleName), '-') LIKE ${`%${term}%`}
-        OR NULLIF(TRIM(e.lastName), '-') LIKE ${`%${term}%`}
-        OR CONCAT_WS(' ', e.firstName, NULLIF(TRIM(e.middleName), '-'), NULLIF(TRIM(e.lastName), '-')) LIKE ${`%${term}%`}
-        OR e.employeeCode LIKE ${`${term}%`}
-        OR e.biometricEnrollmentId LIKE ${`${term}%`}
+        e.firstName LIKE ${containsTerm}
+        OR NULLIF(TRIM(e.middleName), '-') LIKE ${containsTerm}
+        OR NULLIF(TRIM(e.lastName), '-') LIKE ${containsTerm}
+        OR CONCAT_WS(' ', e.firstName, NULLIF(TRIM(e.middleName), '-'), NULLIF(TRIM(e.lastName), '-')) LIKE ${containsTerm}
+        OR e.employeeCode LIKE ${prefixTerm}
+        OR e.biometricEnrollmentId LIKE ${prefixTerm}
       )`
+    : Prisma.empty
+  const priorityClause = term
+    ? Prisma.sql`
+        CASE
+          WHEN CONCAT_WS(' ', e.firstName, NULLIF(TRIM(e.middleName), '-'), NULLIF(TRIM(e.lastName), '-')) = ${term}
+            OR e.employeeCode = ${term}
+            OR e.biometricEnrollmentId = ${term} THEN 0
+          WHEN e.firstName LIKE ${prefixTerm}
+            OR CONCAT_WS(' ', e.firstName, NULLIF(TRIM(e.middleName), '-'), NULLIF(TRIM(e.lastName), '-')) LIKE ${prefixTerm} THEN 1
+          WHEN NULLIF(TRIM(e.middleName), '-') LIKE ${prefixTerm}
+            OR NULLIF(TRIM(e.lastName), '-') LIKE ${prefixTerm} THEN 2
+          WHEN e.employeeCode LIKE ${prefixTerm}
+            OR e.biometricEnrollmentId LIKE ${prefixTerm} THEN 3
+          ELSE 4
+        END ASC,`
     : Prisma.empty
 
   const employees = await payrollDb.$queryRaw`
@@ -38,7 +55,7 @@ export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
     WHERE e.companyId = ${companyId}
       AND e.status = 'Active'
     ${nameClause}
-    ORDER BY e.firstName ASC, e.middleName ASC, e.lastName ASC,
+    ORDER BY ${priorityClause} e.firstName ASC, e.middleName ASC, e.lastName ASC,
       e.employeeCode ASC, e.biometricEnrollmentId ASC, e.id ASC
     LIMIT ${safeLimit}
   `

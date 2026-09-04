@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import SearchSelectionDialog from '@/components/ui/search-selection-dialog'
+import { rankSelectionResults } from '@/lib/selectionSearch'
 
 /**
  * Searchable stoppage selector used by every preparatory and post-preparatory
@@ -34,16 +35,12 @@ export default function StoppageAutocomplete({
   }, [displayValue, open])
 
   const filteredReasons = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    if (!term) return reasons
-
-    return reasons.filter((reason) => {
-      const head = reason.stoppage_head_name || reason.category || ''
-      return (
-        reason.stoppage_name?.toLowerCase().includes(term) ||
-        reason.short_code?.toLowerCase().includes(term) ||
-        head.toLowerCase().includes(term)
-      )
+    return rankSelectionResults(reasons, query, {
+      getPrimaryText: (reason) => reason.stoppage_name,
+      getSecondaryTexts: (reason) => {
+        const head = reason.stoppage_head_name || reason.category || ''
+        return [reason.short_code, head]
+      },
     })
   }, [query, reasons])
 
