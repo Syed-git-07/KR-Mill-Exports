@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import EnterSelect from '@/components/ui/enter-select'
+import EnterSelect from '@/components/ui/entry-select'
 import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'

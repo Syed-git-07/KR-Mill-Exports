@@ -6,6 +6,7 @@ import { searchEmployeesAction } from '@/app/actions/employee'
 import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import SearchSelectionDialog from '@/components/ui/search-selection-dialog'
 
 function employeeReference(employee) {
   return [...new Set([employee?.token_no || employee?.emp_code, employee?.employee_code].filter(Boolean))]
@@ -26,6 +27,7 @@ export default function EmployeeAutocomplete({
   className = "",
   cleanCell = false,
   editingHighlight = false,
+  dialogMode = false,
   disabled = false,
   'data-row': dataRow,
   'data-col': dataCol
@@ -38,6 +40,8 @@ export default function EmployeeAutocomplete({
   const debounceTimer = useRef(null)
   const requestSeqRef = useRef(0)
   const highlightedRef = useRef(null)
+  const inputRef = useRef(null)
+  const selectionCommittedRef = useRef(false)
   const hasUnselectedText = employeeId == null && searchTerm.trim().length > 0
 
   // Update searchTerm when value prop changes (external sync)
@@ -55,7 +59,7 @@ export default function EmployeeAutocomplete({
     const requestSeq = ++requestSeqRef.current
     setIsLoading(true)
     try {
-      const result = await searchEmployeesAction(term, 15)
+      const result = await searchEmployeesAction(term, 50)
       if (requestSeq === requestSeqRef.current && result.success) {
         setEmployees(result.data || [])
       }
@@ -90,7 +94,11 @@ export default function EmployeeAutocomplete({
   const applySelection = (employee) => {
     if (!employee) return
     const finalName = employee.emp_name || ''
+    selectionCommittedRef.current = true
+    requestSeqRef.current += 1
     setSearchTerm(finalName)
+    setEmployees([])
+    setIsLoading(false)
     onChange(finalName, employee)
     setOpen(false)
     setHighlightedIndex(-1)
@@ -125,52 +133,122 @@ export default function EmployeeAutocomplete({
     }
   }
 
+  const renderEmployeeDetails = (emp, isHighlighted) => (
+    <div className="grid min-w-[48rem] grid-cols-[minmax(6rem,0.65fr)_minmax(14rem,1.6fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)] items-center gap-4">
+      <span className={cn('truncate text-[13px] font-semibold tabular-nums', isHighlighted ? 'text-blue-50' : 'text-slate-700')}>
+        {employeeReference(emp) || '-'}
+      </span>
+      <span className="break-words text-[13px] font-semibold leading-5">{emp.emp_name}</span>
+      <span className={cn('break-words text-[13px] leading-5', isHighlighted ? 'text-blue-100' : 'text-slate-500')}>
+        {emp.department || '-'}
+      </span>
+      <span className={cn('break-words text-[13px] leading-5', isHighlighted ? 'text-blue-100' : 'text-slate-500')}>
+        {emp.designation || '-'}
+      </span>
+    </div>
+  )
+
+  const updateEmployeeSearch = (nextValue) => {
+    // Invalidate any older payroll request immediately so a fast Enter/click
+    // can never choose a result from the previous search term.
+    requestSeqRef.current += 1
+    setSearchTerm(nextValue)
+    setEmployees([])
+    setIsLoading(nextValue.trim().length > 0)
+    onChange(nextValue, null)
+    setHighlightedIndex(-1)
+  }
+
+  const employeeInput = (inputKeyDown) => (
+    <div className="relative">
+      <Input
+        ref={inputRef}
+        value={searchTerm}
+        onChange={(e) => {
+          const nextValue = e.target.value
+          updateEmployeeSearch(nextValue)
+          setOpen(nextValue.trim().length > 0)
+        }}
+        onKeyDown={inputKeyDown}
+        onFocus={(event) => event.currentTarget.select()}
+        onClick={(event) => {
+          event.currentTarget.select()
+          // Entry dialogs are typing-only; retain the legacy click behavior
+          // for the non-entry popover used by masters and reports.
+          if (!dialogMode && !disabled && searchTerm.trim()) setOpen(true)
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={cn(
+          "h-full",
+          hasUnselectedText && "pr-24",
+          dialogMode && "!text-xs",
+          cleanCell && "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+          editingHighlight && "focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100",
+          className
+        )}
+        autoComplete="off"
+        aria-haspopup={dialogMode ? 'dialog' : 'listbox'}
+        aria-expanded={open}
+      />
+      {hasUnselectedText && (
+        <span
+          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+          aria-label="Employee text is not linked to a payroll employee"
+        >
+          NOT SELECTED
+        </span>
+      )}
+    </div>
+  )
+
+  if (dialogMode) {
+    return (
+      <div className="relative h-full" data-row={dataRow} data-col={dataCol} data-autocomplete="employee">
+        {employeeInput()}
+
+        <SearchSelectionDialog
+          open={open}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen)
+            if (!nextOpen) {
+              requestSeqRef.current += 1
+              setEmployees([])
+              setIsLoading(false)
+              if (!selectionCommittedRef.current && employeeId != null) setSearchTerm(value)
+              selectionCommittedRef.current = false
+            }
+          }}
+          title="Select employee"
+          searchValue={searchTerm}
+          onSearchValueChange={updateEmployeeSearch}
+          searchPlaceholder="Type employee name or number..."
+          items={employees}
+          getItemKey={(employee) => employee.payroll_employee_id ?? employee.id}
+          isItemSelected={(employee) => employeeId != null && String(employeeId) === String(employee.payroll_employee_id)}
+          onSelect={applySelection}
+          isLoading={isLoading}
+          emptyMessage={searchTerm.trim() ? 'No matching payroll employees found' : 'Start typing to search payroll employees'}
+          listHeader={(
+            <div className="grid min-w-[48rem] grid-cols-[minmax(6rem,0.65fr)_minmax(14rem,1.6fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)] gap-4 pl-7">
+              <span>Emp code</span>
+              <span>Employee name</span>
+              <span>Department</span>
+              <span>Designation</span>
+            </div>
+          )}
+          renderItem={(employee, { highlighted: isHighlighted }) => renderEmployeeDetails(employee, isHighlighted)}
+          returnFocusRef={inputRef}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="relative h-full" data-row={dataRow} data-col={dataCol} data-autocomplete="employee">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverAnchor asChild>
-          <div className="relative">
-            <Input
-              value={searchTerm}
-              onChange={(e) => {
-                const nextValue = e.target.value
-                setSearchTerm(nextValue)
-                onChange(nextValue, null)
-                setHighlightedIndex(-1)
-                setOpen(nextValue.trim().length > 0)
-              }}
-              onKeyDown={handleModalKeyDown}
-              onClick={() => {
-                if (!disabled && searchTerm.trim()) setOpen(true)
-              }}
-              placeholder={placeholder}
-              disabled={disabled}
-              className={cn(
-                "h-full",
-                (employeeId != null || hasUnselectedText) && "pr-24",
-                cleanCell && "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
-                editingHighlight && "focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100",
-                className
-              )}
-              autoComplete="off"
-            />
-            {employeeId != null && (
-              <span
-                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600"
-                aria-label={`Payroll employee ID ${employeeId}`}
-              >
-                ID {employeeId}
-              </span>
-            )}
-            {hasUnselectedText && (
-              <span
-                className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
-                aria-label="Employee text is not linked to a payroll employee"
-              >
-                NOT SELECTED
-              </span>
-            )}
-          </div>
+          {employeeInput(handleModalKeyDown)}
         </PopoverAnchor>
 
         <PopoverContent

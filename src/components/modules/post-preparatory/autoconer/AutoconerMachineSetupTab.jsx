@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import EnterSelect from "@/components/ui/enter-select"
+import EnterSelect from "@/components/ui/entry-select"
 import {
   Select,
   SelectContent,

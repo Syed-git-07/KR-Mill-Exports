@@ -16,7 +16,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
-import EnterSelect from '@/components/ui/enter-select'
+import EnterSelect from '@/components/ui/entry-select'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {

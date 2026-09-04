@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHand
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import StoppageAutocomplete from "@/components/ui/stoppage-autocomplete"
-import EnterSelect from "@/components/ui/enter-select"
+import EnterSelect from "@/components/ui/entry-select"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {

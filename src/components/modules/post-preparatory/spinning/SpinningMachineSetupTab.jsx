@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import EnterSelect from "@/components/ui/enter-select"
+import EnterSelect from "@/components/ui/entry-select"
 import HolidayAwareCalendar from '@/components/common/HolidayAwareCalendar'
 import {
   Dialog,

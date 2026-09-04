@@ -14,7 +14,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { NumberInput } from '@/components/ui/number-input'
-import EnterSelect from '@/components/ui/enter-select'
+import EnterSelect from '@/components/ui/entry-select'
 import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'

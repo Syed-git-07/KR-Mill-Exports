@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
-import EnterSelect from "@/components/ui/enter-select"
+import EnterSelect from "@/components/ui/entry-select"
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
@@ -508,6 +508,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight
+                        dialogMode
                         className="h-9 rounded-none text-sm w-full min-w-35"
                         data-row={index}
                         data-col="sider1_name"
@@ -522,6 +523,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight
+                        dialogMode
                         className="h-9 rounded-none text-sm w-full min-w-35"
                         data-row={index}
                         data-col="sider2_name"

@@ -30,9 +30,11 @@ export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
       CAST(e.biometricEnrollmentId AS CHAR) AS token_no,
       e.dateOfJoining AS doj,
       d.departmentname AS department,
+      dg.name AS designation,
       e.status
     FROM employees e
     LEFT JOIN departments d ON d.id = e.departmentId
+    LEFT JOIN designations dg ON dg.id = e.designationId
     WHERE e.companyId = ${companyId}
       AND e.status = 'Active'
     ${nameClause}
@@ -59,9 +61,11 @@ export async function getPayrollEmployeesByIds(ids) {
       CAST(e.biometricEnrollmentId AS CHAR) AS token_no,
       e.dateOfJoining AS doj,
       d.departmentname AS department,
+      dg.name AS designation,
       e.status
     FROM employees e
     LEFT JOIN departments d ON d.id = e.departmentId
+    LEFT JOIN designations dg ON dg.id = e.designationId
     WHERE e.companyId = ${companyId}
       AND e.id IN (${Prisma.join(uniqueIds)})
   `
@@ -85,9 +89,11 @@ async function findPayrollEmployeeById(id, { activeOnly }) {
       CAST(e.biometricEnrollmentId AS CHAR) AS token_no,
       e.dateOfJoining AS doj,
       d.departmentname AS department,
+      dg.name AS designation,
       e.status
     FROM employees e
     LEFT JOIN departments d ON d.id = e.departmentId
+    LEFT JOIN designations dg ON dg.id = e.designationId
     WHERE e.companyId = ${companyId}
       AND e.id = ${employeeId}
       ${statusClause}
