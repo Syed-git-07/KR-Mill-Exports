@@ -641,7 +641,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="entry-tab-panel">
       {hasExceededError && (
         <div className="p-3 bg-red-100 border-2 border-red-500 text-red-700 rounded font-semibold text-sm flex items-center gap-2">
           <svg className="w-5 h-5 text-red-500 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -665,8 +665,8 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       </div>
 
       {/* Stoppage Grid */}
-      <div className="border-2 border-gray-400 rounded overflow-hidden">
-        <div className="overflow-x-auto max-h-87.5 overflow-y-auto">
+      <div className="entry-grid-frame border-2 border-gray-400 rounded overflow-hidden">
+        <div className="entry-grid-scroll overflow-x-auto overflow-y-auto">
           <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
@@ -826,7 +826,7 @@ const LapFormerStoppageTab = forwardRef(function LapFormerStoppageTab({
       </div>
 
       {/* Stoppage Application Forms */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="entry-stoppage-tools">
         {/* Full Stoppage */}
         <Card className="border-2">
           <CardHeader className="py-4 bg-gray-50">

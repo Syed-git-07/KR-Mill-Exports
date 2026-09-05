@@ -386,7 +386,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="entry-tab-panel">
       {/* Action Bar */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
@@ -402,8 +402,8 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
       </div>
 
       {/* Production Grid */}
-      <div className="border-2 border-gray-400 rounded overflow-hidden">
-        <div className="overflow-x-auto max-h-125 overflow-y-auto">
+      <div className="entry-grid-frame border-2 border-gray-400 rounded overflow-hidden">
+        <div className="entry-grid-scroll overflow-x-auto overflow-y-auto">
           <table className="entry-data-grid w-max min-w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>

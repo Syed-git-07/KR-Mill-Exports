@@ -449,14 +449,14 @@ function BreakerDrawingEntryContent() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
+    <div className="entry-workspace">
       {/* Page Title */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Breaker Drawing Machine Entry</h1>
       </div>
 
       {/* Control Bar */}
-      <Card>
+      <Card className="entry-controls">
         <CardContent className="py-4">
           <div className="flex items-center gap-6 flex-wrap">
             {/* Back to List */}
@@ -478,7 +478,7 @@ function BreakerDrawingEntryContent() {
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-[180px] justify-start text-left font-normal",
+                      "w-[144px] justify-start text-left font-normal",
                       !date && "text-muted-foreground"
                     )}
                   >
@@ -503,7 +503,7 @@ function BreakerDrawingEntryContent() {
             <div className="flex items-center gap-2">
               <Label className="text-sm font-medium">Shift</Label>
               <Select value={shift} onValueChange={handleShiftChange}>
-                <SelectTrigger className="w-[80px]">
+                <SelectTrigger className="w-[64px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -518,7 +518,7 @@ function BreakerDrawingEntryContent() {
             <div className="flex items-center gap-2">
               <Label className="text-sm font-medium">Supervisor</Label>
               <Select value={supervisorId || undefined} onValueChange={handleSupervisorChange}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Select supervisor" />
                 </SelectTrigger>
                 <SelectContent>
@@ -535,7 +535,7 @@ function BreakerDrawingEntryContent() {
             <div className="flex items-center gap-2">
               <Label className="text-sm font-medium">Maisitry</Label>
               <Select value={maisitryId || 'nil'} onValueChange={(val) => handleMaisitryChange(val === 'nil' ? '' : val)}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="NIL" />
                 </SelectTrigger>
                 <SelectContent>
@@ -657,12 +657,12 @@ function BreakerDrawingEntryContent() {
 
       {/* Tabs */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-64">
+        <div className="entry-loading flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
           <span className="ml-2">Loading...</span>
         </div>
       ) : headerId ? (
-        <Card>
+        <Card className="entry-sheet">
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">
               <TabsTrigger 
@@ -685,7 +685,7 @@ function BreakerDrawingEntryContent() {
               </TabsTrigger>
             </TabsList>
 
-            <CardContent className="pt-4">
+            <CardContent className="entry-sheet-content">
               <TabsContent value="production" className="m-0 data-[state=inactive]:hidden" forceMount>
                 <DeferredMount active={activeTab === 'production'}>
                 <BreakerDrawingProductionTab 
@@ -739,10 +739,10 @@ function BreakerDrawingEntryContent() {
           </Tabs>
         </Card>
       ) : (
-        <Card className="p-12">
+        <Card className="entry-empty-state p-6">
           <div className="text-center text-gray-500">
             <p className="text-lg mb-4">No production entry found for this date and shift.</p>
-            <p className="text-sm mb-6">Click "Initialize Entry" to create a new production entry for all Breaker Drawing machines (BD1-BD4).</p>
+            <p className="text-sm mb-6">Click &quot;Initialize Entry&quot; to create a new production entry for all Breaker Drawing machines (BD1-BD4).</p>
             <Button onClick={handleInitialize} disabled={isInitializing}>
               {isInitializing ? (
                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -755,7 +755,7 @@ function BreakerDrawingEntryContent() {
 
       {/* Footer Actions */}
       {headerId && (
-        <Card>
+        <Card className="entry-footer">
           <CardContent className="py-3">
             <div className="flex items-center justify-between">
               <div className="flex gap-2">

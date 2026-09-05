@@ -1,0 +1,290 @@
+/* Shared by the six preparatory and two post-preparatory entry pages.
+ * Reserve space for the header and actions; only the data grid grows/scrolls.
+ * Keep these rules scoped so list pages, masters and portalled dialogs retain
+ * their own spacing. Both entry layouts already reserve the 3rem app header.
+ */
+.entry-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+.entry-workspace > * {
+  flex-shrink: 0;
+  min-width: 0;
+  margin-block: 0;
+}
+
+.entry-workspace > div:has(> h1) {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+
+.entry-workspace h1 {
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+}
+
+.entry-controls,
+.entry-sheet,
+.entry-footer {
+  padding: 0;
+  gap: 0;
+  border-radius: 0.5rem;
+}
+
+.entry-controls > [data-slot="card-content"],
+.entry-footer > [data-slot="card-content"] {
+  padding: 0.5rem 0.75rem;
+}
+
+.entry-controls > [data-slot="card-content"] > div {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+/* Share spare width between every control, including the setup action,
+ * instead of letting its auto margin leave the fields clustered at the left. */
+.entry-controls > [data-slot="card-content"] > div > .ml-auto {
+  margin-left: 0;
+}
+
+.entry-controls > [data-slot="card-content"] > div > div:has(> label) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.entry-controls label {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #475569;
+}
+
+.entry-controls button,
+.entry-footer button,
+.entry-tab-panel > div:not(.entry-grid-frame) [data-slot="button"] {
+  min-height: 2rem;
+  height: auto;
+  padding-block: 0.375rem;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.entry-workspace .entry-sheet {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.entry-workspace > :is(.entry-empty-state, .entry-loading) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.entry-sheet > [data-slot="tabs"],
+.entry-sheet-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  gap: 0;
+}
+
+.entry-sheet [data-slot="tabs-list"] {
+  flex-shrink: 0;
+  height: 2.125rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.entry-sheet [data-slot="tabs-trigger"] {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.entry-sheet-content {
+  padding: 0.5rem;
+  overflow: hidden;
+}
+
+.entry-sheet-content > [data-slot="tabs-content"] {
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* forceMount preserves drafts; never let layout styles reveal inactive tabs. */
+.entry-sheet-content > [data-slot="tabs-content"][data-state="inactive"] {
+  display: none;
+}
+
+.entry-tab-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: min-content;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.entry-tab-panel > * {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.entry-tab-panel > .flex,
+.entry-tab-panel > .flex > .flex,
+.entry-footer [data-slot="card-content"] > .flex,
+.entry-footer [data-slot="card-content"] > .flex > .flex {
+  flex-wrap: wrap;
+  gap: 0.375rem 0.5rem;
+}
+
+.entry-tab-panel > .entry-grid-frame {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 7.5rem;
+  min-width: 0;
+}
+
+.entry-grid-scroll {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+/* Slightly denser rows, retaining the existing column widths and alert colors. */
+.entry-workspace .entry-data-grid {
+  font-size: 0.8125rem;
+}
+
+.entry-workspace .entry-data-grid th {
+  padding-block: 0.375rem;
+}
+
+.entry-workspace .entry-data-grid :is(input:not([type="checkbox"]):not([type="radio"]), button[role="combobox"], .h-9) {
+  height: 2rem;
+}
+
+.entry-workspace .entry-data-grid .text-sm {
+  font-size: 0.8125rem;
+}
+
+.entry-stoppage-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.entry-stoppage-tools > [data-slot="card"] {
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: 0.375rem;
+}
+
+.entry-stoppage-tools [data-slot="card-header"] {
+  padding: 0.375rem 0.625rem;
+}
+
+.entry-stoppage-tools [data-slot="card-title"] {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.entry-stoppage-tools [data-slot="card-content"] {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+}
+
+.entry-stoppage-tools [data-slot="card-content"] > * {
+  min-width: 0;
+  margin: 0;
+}
+
+.entry-stoppage-tools [data-slot="card-content"] > .grid {
+  gap: 0.5rem;
+}
+
+.entry-stoppage-tools label {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.entry-stoppage-tools :is(input, button[role="combobox"]) {
+  width: 100%;
+  min-width: 0;
+  height: 2rem;
+  font-size: 0.8125rem;
+}
+
+.entry-stoppage-tools [data-autocomplete="stoppage"] > div:first-child {
+  height: 2rem;
+}
+
+.entry-stoppage-tools [data-slot="card-content"] > button:last-child {
+  grid-column: 2;
+}
+
+.entry-footer {
+  margin-top: auto;
+  box-shadow: 0 -2px 6px rgb(15 23 42 / 5%);
+}
+
+.entry-tab-panel > .entry-field-reference {
+  margin: 0;
+  padding: 0.5rem;
+}
+
+.entry-field-reference h4 {
+  margin-bottom: 0.25rem;
+}
+
+/* Small windows keep Update visible, with overflow confined to the panel.
+ * Header scrolling is a fallback for zoomed/narrow screens with wrapped fields.
+ */
+@media (max-width: 900px), (max-height: 600px) {
+  .entry-controls {
+    max-height: 35%;
+    overflow: auto;
+  }
+
+  .entry-stoppage-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media print {
+  .entry-workspace,
+  .entry-tab-panel {
+    height: auto;
+    overflow: visible;
+  }
+
+  .entry-workspace .entry-sheet,
+  .entry-sheet-content,
+  .entry-sheet-content > [data-slot="tabs-content"],
+  .entry-tab-panel > .entry-grid-frame,
+  .entry-grid-scroll {
+    display: block;
+    overflow: visible;
+  }
+}

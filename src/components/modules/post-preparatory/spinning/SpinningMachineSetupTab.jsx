@@ -778,7 +778,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="entry-tab-panel">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
@@ -789,8 +789,8 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       </div>
 
       {/* Machine Setup Grid */}
-      <div className="border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
-        <div className="overflow-x-auto max-h-125 overflow-y-auto">
+      <div className="entry-grid-frame border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
+        <div className="entry-grid-scroll overflow-x-auto overflow-y-auto">
           <table className="entry-data-grid w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
@@ -1366,7 +1366,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       </Dialog>
 
       {/* Field Legend */}
-      <div className="mt-4 p-4 bg-gray-50 rounded-lg text-xs text-gray-600">
+      <div className="entry-field-reference bg-gray-50 rounded-lg text-xs text-gray-600">
         <h4 className="font-semibold mb-2">Field Reference:</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <div><strong>Act.Count:</strong> Actual count value (e.g., 69.5)</div>

@@ -446,7 +446,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="entry-tab-panel">
       {/* Header with actions */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-600">
@@ -462,8 +462,8 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
       </div>
 
       {/* Production Table */}
-      <div className="border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
-        <div className="overflow-x-auto max-h-125 overflow-y-auto">
+      <div className="entry-grid-frame border-2 border-gray-400 rounded overflow-hidden" ref={tableRef}>
+        <div className="entry-grid-scroll overflow-x-auto overflow-y-auto">
           <table className="entry-data-grid w-full border-collapse text-sm table-fixed">
             <thead className="bg-blue-600 text-white sticky top-0">
               <tr>
