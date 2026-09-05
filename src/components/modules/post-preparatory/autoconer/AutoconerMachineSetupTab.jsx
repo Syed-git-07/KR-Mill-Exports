@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -65,7 +67,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     setLocalEditedRows(next)
     onSharedDraftEditsChange?.(next)
   }, [onSharedDraftEditsChange])
-  const [selectedRows, setSelectedRows] = useState([])
+  const { selectedRows, setSelectedRows, getRowProps } = useEntryRowSelection(setupData, 'setup')
 
   useEffect(() => {
     editedRowsRef.current = editedRows || {}
@@ -620,8 +622,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
                 const isEdited = editedRows[row.id]
                 
                 return (
-                  <tr 
-                    key={rowKey}
+                  <tr key={rowKey} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                     className={`
                       ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
                       ${isSelected ? 'bg-blue-100' : ''} 

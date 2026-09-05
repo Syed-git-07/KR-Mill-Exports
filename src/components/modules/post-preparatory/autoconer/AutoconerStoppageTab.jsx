@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -66,6 +68,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
   onMachineCountChange
 }, ref) {
   const [stoppageData, setStoppageData] = useState([])
+  const { getRowProps } = useEntryRowSelection()
   const [stoppageReasons, setStoppageReasons] = useState([])
   const [machines, setMachines] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -524,8 +527,7 @@ const AutoconerStoppageTab = forwardRef(function AutoconerStoppageTab({
                   toNumber(row.stoppage3_time) + toNumber(row.stoppage4_time)
                 
                 return (
-                  <tr 
-                    key={row.id}
+                  <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                     className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                   >
                     <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">

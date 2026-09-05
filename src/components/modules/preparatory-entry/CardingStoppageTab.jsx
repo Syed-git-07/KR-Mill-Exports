@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -103,6 +105,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveCardingShiftFallbackTime(shift)
   const [stoppageData, setStoppageData] = useState([])
+  const { getRowProps } = useEntryRowSelection()
   const shiftTimeVal = effectiveTotalTime
   const hasExceededError = stoppageData.some(row => ((Number(row.stoppage1_time) || 0) + (Number(row.stoppage2_time) || 0) + (Number(row.stoppage3_time) || 0) + (Number(row.stoppage4_time) || 0)) > shiftTimeVal)
   const [stoppageReasons, setStoppageReasons] = useState([])
@@ -678,8 +681,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
             </thead>
             <tbody>
               {stoppageData.map((row, index) => (
-                <tr 
-                  key={row.id}
+                <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                 >
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">

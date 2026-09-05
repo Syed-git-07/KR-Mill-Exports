@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -42,7 +44,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   const [isSaving, setIsSaving] = useState(false)
   const [localEditedRows, setLocalEditedRows] = useState({})
   const editedRows = onSharedDraftEditsChange ? (sharedDraftEdits || {}) : localEditedRows
-  const [selectedRows, setSelectedRows] = useState([])
+  const { selectedRows, setSelectedRows, getRowProps } = useEntryRowSelection(setupData, 'machine')
   const editedRowsRef = useRef({})
 
   const setEditedRows = useCallback((updater) => {
@@ -478,8 +480,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
             </thead>
             <tbody ref={tableRef}>
               {setupData.map((row, index) => (
-                <tr 
-                  key={row.id}
+                <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} ${selectedRows.includes(row.machine_id) ? 'bg-blue-100' : ''} hover:bg-blue-50`}
                 >
                   <td className="border border-gray-300 px-2 py-1 text-center">

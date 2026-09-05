@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -52,6 +54,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [stoppageData, setStoppageData] = useState([])
+  const { getRowProps } = useEntryRowSelection()
   const [stoppageReasons, setStoppageReasons] = useState([])
   const [machines, setMachines] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -598,8 +601,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
                 const setupDraft = findSetupDraftForMachine(row.machine_id, row.setup_id)
                 const hasMultipleRuns = stoppageData.filter(item => String(item.machine_id) === String(row.machine_id)).length > 1
                 const effectiveRunTime = setupDraft?.run_time ?? row.run_time ?? effectiveTotalTime
-                return <tr
-                  key={row.id}
+                return <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                 >
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">

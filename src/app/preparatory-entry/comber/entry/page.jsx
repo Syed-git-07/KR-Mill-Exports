@@ -1,5 +1,7 @@
 'use client'
 
+import { EntryRowSelectionProvider } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
@@ -489,6 +491,7 @@ function ComberEntryContent() {
         </div>
       ) : headerId ? (
         <Card className="entry-sheet">
+          <EntryRowSelectionProvider key={headerId}>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">
               <TabsTrigger 
@@ -557,6 +560,7 @@ function ComberEntryContent() {
               </TabsContent>
             </CardContent>
           </Tabs>
+          </EntryRowSelectionProvider>
         </Card>
       ) : (
         <Card className="entry-empty-state p-6">

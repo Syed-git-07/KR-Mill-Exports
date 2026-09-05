@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -53,6 +55,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveSpinningShiftFallbackTime(shiftNo)
   const [productionData, setProductionData] = useState([])
+  const { getRowProps } = useEntryRowSelection()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [localEditedRows, setLocalEditedRows] = useState({})
@@ -495,7 +498,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                 const effectiveRunTime = effectiveSetup?.run_time ?? row.run_time ?? effectiveTotalTime
                 
                 return (
-                  <tr key={row.id} className={`${bgClass} hover:bg-blue-50`}>
+                  <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])} className={`${bgClass} hover:bg-blue-50`}>
                     <td className="border border-gray-300 px-3 py-1 font-medium text-center whitespace-nowrap">
                       {row.machine?.machine_no || '-'}
                     </td>

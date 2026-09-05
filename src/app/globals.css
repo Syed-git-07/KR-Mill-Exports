@@ -240,6 +240,20 @@ div[class*="overflow-x-auto"][class*="overflow-y-auto"]
     background-color: #eff6ff;
   }
 
+  .entry-data-grid tbody tr[data-entry-selected="true"] > td {
+    background-color: #eff6ff;
+  }
+
+  /* Keep the existing pale-yellow draft indication visible on hover and
+     selection. The blue edge distinguishes selected rows even when edited. */
+  .entry-data-grid tbody tr[data-entry-modified="true"] > td {
+    background-color: #fefce8;
+  }
+
+  .entry-data-grid tbody tr[data-entry-selected="true"] > td:first-child {
+    box-shadow: inset 3px 0 0 #60a5fa;
+  }
+
   .entry-data-grid tbody td > :is(input, textarea, select, button[role="combobox"]) {
     background-color: transparent;
   }

@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -46,7 +48,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
   const editedRowsRef = useRef({})
   const lastLoadKeyRef = useRef('')
   const [isSaving, setIsSaving] = useState(false)
-  const [selectedRows, setSelectedRows] = useState([])
+  const { selectedRows, setSelectedRows, getRowProps } = useEntryRowSelection(setupData, 'setup')
 
   const setEditedRows = useCallback((updater) => {
     if (onSharedDraftEditsChange) {
@@ -515,8 +517,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
                 const isSelected = selectedRows.includes(row.id)
 
                 return (
-                  <tr 
-                    key={row.id}
+                  <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                     className={`
                       ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
                       ${isEdited ? 'bg-yellow-50' : ''} 

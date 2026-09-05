@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -53,6 +55,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
   onMachineCountChange
 }, ref) {
   const [productionData, setProductionData] = useState([])
+  const { getRowProps } = useEntryRowSelection()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [localEditedRows, setLocalEditedRows] = useState({})
@@ -475,8 +478,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     : 'text-red-600 font-semibold'
                 
                 return (
-                  <tr 
-                    key={row.id}
+                  <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                     className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                   >
                     {/* Machine No */}

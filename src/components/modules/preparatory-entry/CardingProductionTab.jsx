@@ -1,5 +1,7 @@
 'use client'
 
+import { useEntryRowSelection } from '@/components/common/EntryRowSelection'
+
 import { confirmAction } from '@/lib/confirmation'
 
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
@@ -59,6 +61,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
 }, ref) {
   const effectiveTotalTime = totalTime ?? resolveCardingShiftFallbackTime(shift)
   const [productionData, setProductionData] = useState([])
+  const { getRowProps } = useEntryRowSelection()
   const [machineSetups, setMachineSetups] = useState({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -529,8 +532,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
             </thead>
             <tbody>
               {productionData.map((row, index) => (
-                <tr 
-                  key={row.id}
+                <tr key={row.id} {...getRowProps(row)} data-entry-modified={Boolean(editedRows[row.id])}
                   className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${editedRows[row.id] ? 'bg-yellow-50' : ''} hover:bg-blue-50`}
                 >
                   <td className="border border-gray-300 px-2 py-1 font-medium text-blue-700 whitespace-nowrap">
