@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
@@ -137,7 +139,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
   })
 
   // Remove machine dialog
-  const [removeDialog, setRemoveDialog] = useState(false)
+
 
   // Helper to get next mc_id
   const getNextMcId = useCallback(() => {
@@ -361,7 +363,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRows).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
@@ -374,9 +376,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
     return { success: true }
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRows).length === 0) return true
-    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   useImperativeHandle(ref, () => ({
@@ -388,7 +390,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   // Add new machine setup
   const handleAddMachine = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (!newMachine.machine_id || !newMachine.count_id) {
       toast.warning('Please select machine and count')
@@ -434,7 +436,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   // Add an existing Machine Master record to this entry snapshot.
   const handleAddNewMachine = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (!newMachineData.machine_no) {
       toast.warning('Machine number is required')
@@ -510,7 +512,9 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
   // Remove selected machines from this entry snapshot only.
   const handleRemoveMachines = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
 
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
@@ -535,7 +539,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${machineIds.length} machine(s) removed successfully`)
-      setRemoveDialog(false)
+
       setSelectedRows([])
       if (onRefresh) onRefresh()
       else await loadData()
@@ -713,7 +717,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setRemoveDialog(true)}
+            onClick={handleRemoveMachines}
             disabled={selectedRows.length === 0}
             className="text-red-600 hover:text-red-700"
           >
@@ -758,7 +762,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCountChangeDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setCountChangeDialog(false) }}>
               Cancel
             </Button>
             <Button onClick={handleBulkCountChange} disabled={!newCountId}>
@@ -833,7 +837,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddMachineDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setAddMachineDialog(false) }}>
               Cancel
             </Button>
             <Button onClick={handleAddMachine} disabled={isSaving || !newMachine.machine_id || !newMachine.count_id}>
@@ -844,32 +848,6 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
         </DialogContent>
       </Dialog>
 
-      {/* Remove Machine Dialog */}
-      <Dialog open={removeDialog} onOpenChange={setRemoveDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove Machines</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-              Remove {selectedRows.length} selected machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleRemoveMachines} 
-              disabled={isSaving}
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
-              Remove {selectedRows.length} Machine(s)
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Add an existing Machine Master record to this entry snapshot. */}
       <Dialog open={addNewMachineDialog} onOpenChange={setAddNewMachineDialog}>
@@ -1088,7 +1066,7 @@ const AutoconerMachineSetupTab = forwardRef(function AutoconerMachineSetupTab({
 
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddNewMachineDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setAddNewMachineDialog(false) }}>
               Cancel
             </Button>
             <Button 

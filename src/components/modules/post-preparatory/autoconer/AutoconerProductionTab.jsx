@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
@@ -375,7 +377,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRowsRef.current || {}).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Production. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})

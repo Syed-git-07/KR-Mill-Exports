@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import {
   Table,
@@ -515,7 +517,7 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRows).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Stoppage. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
@@ -528,9 +530,9 @@ const CardingStoppageTab = forwardRef(function CardingStoppageTab({
     return { success: true }
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRows).length === 0) return true
-    return window.confirm('You have unsaved stoppage row edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   useImperativeHandle(ref, () => ({

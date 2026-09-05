@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
@@ -128,7 +130,7 @@ export default function DrawingBreakerPage() {
         toast.info('All selected machines are already inactive');
         return;
       }
-      if (!confirm(`Permanently remove ${activeRows.length} machine(s)?\n\nThey will be excluded from entries initialized today onward and cannot be restored.`)) return;
+      if (!(await confirmAction('permanently remove'))) return;
       try {
         const { succeeded, failed } = await runBulkActions(
           activeRows,
@@ -154,7 +156,7 @@ export default function DrawingBreakerPage() {
         return;
       }
       const machineName = machine?.machine_no || 'this machine';
-      if (!confirm(`Permanently remove machine "${machineName}"?\n\nIt will be excluded from entries initialized today onward and cannot be restored.`)) return;
+      if (!(await confirmAction('permanently remove'))) return;
       try {
         const result = await updateDrawingBreakerMachineAction(targetId, { is_active: false });
         if (result.success) {
@@ -176,7 +178,7 @@ export default function DrawingBreakerPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected machines are already deleted');
-      if (!confirm(`Delete ${activeRows.length} machine(s)?`)) return;
+      if (!(await confirmAction('delete'))) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteDrawingBreakerMachineAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} machine(s) deleted from Machine Master`);
       if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
@@ -187,7 +189,7 @@ export default function DrawingBreakerPage() {
       const machine = machines.find(m => m.id === selectedRowId);
       if (machine?.is_active === false) return toast.info('Machine is already deleted');
       const machineName = machine?.machine_no || 'this machine';
-      if (!confirm(`Delete machine "${machineName}"?`)) return;
+      if (!(await confirmAction('delete'))) return;
       try {
         const result = await deleteDrawingBreakerMachineAction(selectedRowId);
         if (result.success) {
@@ -232,6 +234,7 @@ export default function DrawingBreakerPage() {
   };
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     setIsLoading(true);
     try {
       let result;
@@ -317,7 +320,7 @@ export default function DrawingBreakerPage() {
         </div>
       ) : machines.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No machines found. Click "Add New" to add your first machine.
+          No machines found. Click &quot;Add New&quot; to add your first machine.
         </div>
       ) : (
         <DataGrid

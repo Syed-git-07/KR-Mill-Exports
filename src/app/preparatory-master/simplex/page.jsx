@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
@@ -143,7 +145,7 @@ export default function SimplexMachinePage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected machines are already deleted');
-      if (!confirm(`Delete ${activeRows.length} machine(s)?`)) return;
+      if (!(await confirmAction('delete'))) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSimplexMachineAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} machine(s) deleted from Machine Master`);
       if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
@@ -152,7 +154,7 @@ export default function SimplexMachinePage() {
       if (succeeded.length) loadMachines();
     } else if (!isSelectMode && selectedMachine) {
       if (selectedMachine.is_active === false) return toast.info('Machine is already deleted');
-      if (!confirm(`Delete machine "${selectedMachine.machine_no}"?`)) return;
+      if (!(await confirmAction('delete'))) return;
 
       try {
         const result = await deleteSimplexMachineAction(selectedMachine.id);
@@ -179,7 +181,7 @@ export default function SimplexMachinePage() {
         return;
       }
 
-      if (!confirm(`Permanently remove ${activeRows.length} machine(s)?\n\nThey will be excluded from entries initialized today onward and cannot be restored.`)) return;
+      if (!(await confirmAction('permanently remove'))) return;
 
       try {
         const { succeeded, failed } = await runBulkActions(
@@ -205,7 +207,7 @@ export default function SimplexMachinePage() {
         return;
       }
 
-    if (!confirm(`Permanently remove machine "${selectedMachine.machine_no}"?\n\nIt will be excluded from entries initialized today onward and cannot be restored.`)) return;
+    if (!(await confirmAction('permanently remove'))) return;
 
       try {
         const result = await updateSimplexMachineAction(selectedMachine.id, { is_active: false });
@@ -247,6 +249,7 @@ export default function SimplexMachinePage() {
   };
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     setIsLoading(true);
     try {
       let result;
@@ -336,7 +339,7 @@ export default function SimplexMachinePage() {
         </div>
       ) : machines.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No machines found. Click "Add New" to add your first machine.
+          No machines found. Click &quot;Add New&quot; to add your first machine.
         </div>
       ) : (
         <DataGrid

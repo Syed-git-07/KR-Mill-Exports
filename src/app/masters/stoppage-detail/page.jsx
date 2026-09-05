@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react'
 import { getStoppageDetailsAction, createStoppageDetailAction, updateStoppageDetailAction, deleteStoppageDetailAction, searchStoppageDetailsAction } from '@/app/actions/stoppage-detail'
 import SearchFilter from '@/components/common/SearchFilter'
@@ -88,7 +90,7 @@ export default function StoppageDetailPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false)
       if (activeRows.length === 0) return toast.info('All selected stoppage details are already deleted')
-      if (!confirm(`Delete ${activeRows.length} stoppage detail(s)?`)) return
+      if (!(await confirmAction('delete'))) return
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteStoppageDetailAction(row.id))
       if (succeeded.length) toast.success(`${succeeded.length} stoppage detail(s) deleted`)
       if (failed.length) toast.error(`${failed.length} stoppage detail(s) failed: ${failed[0].error}`)
@@ -97,7 +99,7 @@ export default function StoppageDetailPage() {
       if (succeeded.length) loadStoppageDetails()
     } else if (!isSelectMode && selectedStoppageDetail) {
       if (selectedStoppageDetail.is_active === false) return toast.info('Stoppage detail is already deleted')
-      if (!confirm(`Delete "${selectedStoppageDetail.stoppage_name}"?`)) return
+      if (!(await confirmAction('delete'))) return
 
       try {
         const result = await deleteStoppageDetailAction(selectedStoppageDetail.id)
@@ -118,6 +120,7 @@ export default function StoppageDetailPage() {
   }
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     try {
       setIsLoading(true)
       if (isEditing && selectedStoppageDetail) {

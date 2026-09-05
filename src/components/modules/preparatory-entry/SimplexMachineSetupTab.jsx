@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
@@ -80,7 +82,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
   // Dialog states
   const [showCountChangeDialog, setShowCountChangeDialog] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+
   
   // Count change form
   const [newCount, setNewCount] = useState('')
@@ -317,7 +319,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRows).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
@@ -422,6 +424,9 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
 
   // Remove selected machines from this date-and-shift entry snapshot only.
   const handleRemoveMachines = async () => {
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
       return
@@ -439,7 +444,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
-      setShowRemoveDialog(false)
+
       setSelectedRows([])
       
       if (onRefresh) onRefresh()
@@ -672,7 +677,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
         </Button>
         <Button 
           variant="outline"
-          onClick={() => setShowRemoveDialog(true)}
+          onClick={handleRemoveMachines}
           disabled={selectedRows.length === 0}
           className="text-red-600 hover:text-red-700"
         >
@@ -720,7 +725,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCountChangeDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowCountChangeDialog(false) }}>
               Cancel
             </Button>
             <Button 
@@ -892,7 +897,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowAddDialog(false) }}>
               Cancel
             </Button>
             <Button 
@@ -907,44 +912,7 @@ const SimplexMachineSetupTab = forwardRef(function SimplexMachineSetupTab({ head
       </Dialog>
 
       {/* Remove Machine Confirmation Dialog */}
-      <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
-        <DialogContent className="sm:max-w-100">
-          <DialogHeader>
-            <DialogTitle>Remove Machines</DialogTitle>
-            <DialogDescription>
-              Remove {selectedRows.length} selected machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="text-sm text-gray-600">
-              Selected machines to remove:
-              <ul className="list-disc pl-5 mt-2">
-                {selectedRows.map(rowId => {
-                  const machine = setupData.find(r => r.id === rowId)?.machine
-                  return (
-                    <li key={rowId}>
-                      {machine?.machine_no || 'Unknown'} - {machine?.machine_name || 'N/A'}
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRemoveDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleRemoveMachines}
-              disabled={isSaving}
-            >
-              {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
         </>
       )}
     </div>

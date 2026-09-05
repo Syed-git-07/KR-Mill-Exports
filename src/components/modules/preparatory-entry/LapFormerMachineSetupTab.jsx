@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -136,7 +138,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showMixingChangeDialog, setShowMixingChangeDialog] = useState(false)
-  const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+
 
   // New machine form - defaults come from centralized Lap Former formula fallback.
   // shift_time uses totalTime from shift configuration
@@ -359,7 +361,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRows).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
@@ -489,6 +491,9 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
 
   // Remove machine
   const handleRemoveMachine = async () => {
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
     if (selectedRows.length === 0) {
       toast.warning('Please select at least one machine')
       return
@@ -506,7 +511,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
-      setShowRemoveDialog(false)
+
       setSelectedRows([])
       setEditedRows({})
       if (onRefresh) onRefresh()
@@ -709,7 +714,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setShowRemoveDialog(true)}
+            onClick={handleRemoveMachine}
             disabled={selectedRows.length === 0}
             className="text-red-600 hover:text-red-700"
           >
@@ -864,7 +869,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
             </div>
           </div>
           <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowAddDialog(false)} className="h-10 px-6">Cancel</Button>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowAddDialog(false) }} className="h-10 px-6">Cancel</Button>
             <Button onClick={handleAddMachine} disabled={isSaving} className="h-10 px-6 bg-blue-600 hover:bg-blue-700">
               {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Add Machine
@@ -903,7 +908,7 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
             </div>
           </div>
           <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowMixingChangeDialog(false)} className="h-10 px-6">Cancel</Button>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowMixingChangeDialog(false) }} className="h-10 px-6">Cancel</Button>
             <Button onClick={handleChangeMixing} disabled={isSaving || (!newMixing && !customMixing)} className="h-10 px-6 bg-blue-600 hover:bg-blue-700">
               {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Apply to {selectedRows.length} Machine(s)
@@ -912,32 +917,6 @@ const LapFormerMachineSetupTab = forwardRef(function LapFormerMachineSetupTab({
         </DialogContent>
       </Dialog>
 
-      {/* Remove Machine Dialog */}
-      <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
-            <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            This affects only this date and shift. Machine Master and all other entries remain unchanged.
-          </div>
-          <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleRemoveMachine} 
-              disabled={isSaving}
-              className="h-10 px-6"
-            >
-              {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Remove {selectedRows.length} Machine(s)
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 })

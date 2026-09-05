@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
@@ -139,7 +141,7 @@ export default function DrawingFinisherPage() {
         return;
       }
 
-      if (!confirm(`Permanently remove ${activeRows.length} machine(s)?\n\nThey will be excluded from entries initialized today onward and cannot be restored.`)) {
+      if (!(await confirmAction('permanently remove'))) {
         return;
       }
 
@@ -168,7 +170,7 @@ export default function DrawingFinisherPage() {
         return;
       }
 
-      if (!confirm(`Permanently remove machine "${targetMachine.machine_no}"?\n\nIt will be excluded from entries initialized today onward and cannot be restored.`)) {
+      if (!(await confirmAction('permanently remove'))) {
         return;
       }
 
@@ -192,7 +194,7 @@ export default function DrawingFinisherPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected machines are already deleted');
-      if (!confirm(`Delete ${activeRows.length} machine(s)?`)) return;
+      if (!(await confirmAction('delete'))) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteDrawingFinisherMachineAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} machine(s) deleted from Machine Master`);
       if (failed.length) toast.error(`${failed.length} machine(s) failed: ${failed[0].error}`);
@@ -201,7 +203,7 @@ export default function DrawingFinisherPage() {
       if (succeeded.length) loadMachines();
     } else if (!isSelectMode && selectedMachine) {
       if (selectedMachine.is_active === false) return toast.info('Machine is already deleted');
-      if (!confirm(`Delete machine "${selectedMachine.machine_no}"?`)) return;
+      if (!(await confirmAction('delete'))) return;
 
       try {
         const result = await deleteDrawingFinisherMachineAction(selectedMachine.id);
@@ -245,6 +247,7 @@ export default function DrawingFinisherPage() {
   };
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     setIsLoading(true);
     try {
       let result;
@@ -333,7 +336,7 @@ export default function DrawingFinisherPage() {
         </div>
       ) : machines.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No machines found. Click "Add New" to add your first machine.
+          No machines found. Click &quot;Add New&quot; to add your first machine.
         </div>
       ) : (
         <DataGrid

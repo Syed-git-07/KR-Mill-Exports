@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -491,16 +493,16 @@ const ComberStoppageTab = forwardRef(function ComberStoppageTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRows).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Stoppage. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
     await loadData()
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRows).length === 0) return true
-    return window.confirm('You have unsaved stoppage edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   const discardChanges = async () => {

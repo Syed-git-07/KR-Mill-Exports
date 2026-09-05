@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { confirmAction } from "@/lib/confirmation";
 
 import {
   Dialog,
@@ -33,6 +34,12 @@ export default function FormModal({
   formId,
 }) {
   const contentRef = useRef(null);
+
+  const handleCancel = async () => {
+    if (isLoading || !(await confirmAction('cancel'))) return;
+    if (onCancel) onCancel();
+    else onOpenChange?.(false);
+  };
 
   const submitForm = (form) => {
     if (!form) return false;
@@ -119,7 +126,7 @@ export default function FormModal({
           <div className="flex gap-2 ml-auto">
             <Button
               variant="outline"
-              onClick={onCancel}
+              onClick={handleCancel}
               disabled={isLoading}
               className="border-gray-300 hover:bg-gray-50"
             >

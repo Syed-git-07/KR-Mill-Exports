@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
@@ -98,7 +100,7 @@ export default function HolidayListManagement({ canManageHolidays = false }) {
       toast.error('Please select a holiday list to delete')
       return
     }
-    if (!confirm(`Delete holiday list '${list.name}'?`)) return
+    if (!(await confirmAction('delete'))) return
 
     try {
       const result = await deleteHolidayListAction(list.id)
@@ -117,6 +119,7 @@ export default function HolidayListManagement({ canManageHolidays = false }) {
   }
 
   const handleSaveList = async (values) => {
+    if (!(await confirmAction('update'))) return
     setIsSubmittingList(true)
     try {
       const payload = {
@@ -190,7 +193,7 @@ export default function HolidayListManagement({ canManageHolidays = false }) {
   }
 
   const handleDeleteHoliday = async (holiday) => {
-    if (!confirm(`Delete holiday on ${format(new Date(holiday.date), 'yyyy-MM-dd')}?`)) return
+    if (!(await confirmAction('delete'))) return
     try {
       const result = await deleteHolidayAction(holiday.id)
       if (result.success) {
@@ -205,6 +208,7 @@ export default function HolidayListManagement({ canManageHolidays = false }) {
   }
 
   const handleSaveHoliday = async (values) => {
+    if (!(await confirmAction('update'))) return
     if (!selectedHolidayList) {
       toast.error('Please open a holiday list first')
       return

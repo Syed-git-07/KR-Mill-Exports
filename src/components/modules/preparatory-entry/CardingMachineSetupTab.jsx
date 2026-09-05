@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import {
   Table,
@@ -158,7 +160,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showCountChangeDialog, setShowCountChangeDialog] = useState(false)
-  const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+
 
   // New machine form
   const [newMachine, setNewMachine] = useState({
@@ -363,7 +365,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRowsRef.current || editedRows || {}).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
@@ -376,9 +378,9 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
     return { success: true }
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRows).length === 0) return true
-    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   useImperativeHandle(ref, () => ({
@@ -408,7 +410,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   // Add new machine to setup
   const handleAddMachine = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (!newMachine.machine_no) {
       toast.warning('Machine number is required')
@@ -452,7 +454,9 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   // Remove selected machines
   const handleRemoveMachines = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
 
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
@@ -471,7 +475,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
-      setShowRemoveDialog(false)
+
       setSelectedRows([])
       if (onRefresh) onRefresh()
       else await loadData()
@@ -485,7 +489,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
 
   // Change count for selected machines
   const handleCountChange = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to change count')
@@ -667,7 +671,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setShowRemoveDialog(true)}
+            onClick={handleRemoveMachines}
             disabled={selectedRows.length === 0}
             className="text-red-600 hover:text-red-700"
           >
@@ -818,7 +822,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
             </p>
           </div>
           <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowAddDialog(false)} className="h-10 px-6">Cancel</Button>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowAddDialog(false) }} className="h-10 px-6">Cancel</Button>
             <Button onClick={handleAddMachine} disabled={isSaving} className="h-10 px-6 bg-blue-600 hover:bg-blue-700">
               {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Add Machine
@@ -857,7 +861,7 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
             </div>
           </div>
           <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowCountChangeDialog(false)} className="h-10 px-6">Cancel</Button>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowCountChangeDialog(false) }} className="h-10 px-6">Cancel</Button>
             <Button onClick={handleCountChange} disabled={isSaving || (!newCount && !customCount)} className="h-10 px-6 bg-blue-600 hover:bg-blue-700">
               {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Apply to {selectedRows.length} Machine(s)
@@ -866,32 +870,6 @@ const CardingMachineSetupTab = forwardRef(function CardingMachineSetupTab({
         </DialogContent>
       </Dialog>
 
-      {/* Remove Machine Dialog */}
-      <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Remove Machines</DialogTitle>
-            <DialogDescription className="text-sm">
-              Are you sure you want to remove {selectedRows.length} selected machine(s) from this entry?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-4 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-            This affects only this date and shift. Machine Master and all other entries remain unchanged.
-          </div>
-          <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowRemoveDialog(false)} className="h-10 px-6">Cancel</Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleRemoveMachines} 
-              disabled={isSaving}
-              className="h-10 px-6"
-            >
-              {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Remove {selectedRows.length} Machine(s)
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 })

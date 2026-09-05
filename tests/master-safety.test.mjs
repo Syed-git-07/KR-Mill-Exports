@@ -360,7 +360,7 @@ test('Comber uses the shared soft-delete path without exposing restore details i
   ])
 
   assert.match(pageSource, /deleteComberMachineAction\(/)
-  assert.match(pageSource, /Delete machine /)
+  assert.match(pageSource, /await confirmAction\('delete'\)/)
   assert.doesNotMatch(pageSource, /This is a soft delete|Existing entry snapshots/)
   assert.doesNotMatch(pageSource, /handleActivate/)
   assert.match(querySource, /softDeleteMasterRecord\(prisma\.comber_machines/)
@@ -433,7 +433,7 @@ test('all referenced Master pages expose concise working delete controls', async
     const source = await readFile(new URL(`../src/app/${pagePath}/page.jsx`, import.meta.url), 'utf8')
     assert.match(source, /const handleDelete = async/, pagePath)
     assert.match(source, /onClick=\{handleDelete\}/, pagePath)
-    assert.match(source, /confirm\(`Delete /, pagePath)
+    assert.match(source, /if \(!\(await confirmAction\('delete'\)\)\) return/, pagePath)
     assert.doesNotMatch(source, /This is a soft delete|Existing .*retain|snapshots? remain/i, pagePath)
     assert.doesNotMatch(source, /MASTER_DELETE_DISABLED_MESSAGE|disabledMasterDeleteResult/, pagePath)
   }

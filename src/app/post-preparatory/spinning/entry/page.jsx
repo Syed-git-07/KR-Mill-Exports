@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
@@ -306,21 +308,21 @@ function SpinningEntryContent() {
 
   useUnsavedChangesWarning(getUnsavedEditCount() > 0)
 
-  const confirmIfUnsaved = useCallback((message) => {
+  const confirmIfUnsaved = useCallback(async (message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
-    return window.confirm(`${message}\n\nYou have ${unsaved} unsaved edit(s). Continue and discard in-memory edits?`)
+    return await confirmAction('discard unsaved changes')
   }, [getUnsavedEditCount])
 
-  const handleDateChange = (nextDate) => {
+  const handleDateChange = async (nextDate) => {
     if (!nextDate) return
-    if (!confirmIfUnsaved('Changing date will reload entry data.')) return
+    if (!(await confirmIfUnsaved('Changing date will reload entry data.'))) return
     replaceAllDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
     setDate(nextDate)
   }
 
-  const handleShiftChange = (nextShift) => {
-    if (!confirmIfUnsaved('Changing shift will reload entry data.')) return
+  const handleShiftChange = async (nextShift) => {
+    if (!(await confirmIfUnsaved('Changing shift will reload entry data.'))) return
     replaceAllDrafts({ header: {}, production: {}, stoppage: {}, setup: {} })
     setShift(nextShift)
   }
@@ -351,12 +353,12 @@ function SpinningEntryContent() {
   }
 
   // Handle opening copy dialog
-  const handleOpenCopyDialog = () => {
+  const handleOpenCopyDialog = async () => {
     if (!headerId) {
       toast.warning('Please initialize the entry first')
       return
     }
-    if (!confirmIfUnsaved('Copying previous data can overwrite current working values.')) {
+    if (!(await confirmIfUnsaved('Copying previous data can overwrite current working values.'))) {
       return
     }
     loadAvailableDates()
@@ -409,6 +411,9 @@ function SpinningEntryContent() {
       toast.info('No changes to save')
       return
     }
+
+    if (!(await confirmAction('update'))) return
+    if (saveInFlightRef.current) return
 
     const draftsAtSaveStart = sharedDraftsRef.current
     saveInFlightRef.current = true
@@ -480,7 +485,7 @@ function SpinningEntryContent() {
       return
     }
 
-    const confirmed = window.confirm(`Discard ${unsaved} unsaved edit(s) across all tabs?`)
+    const confirmed = await confirmAction('cancel')
     if (!confirmed) return
 
     await Promise.all([
@@ -494,6 +499,10 @@ function SpinningEntryContent() {
     toast.success('Unsaved changes discarded')
   }
 
+  const handleTabChange = (nextTab) => {
+    setActiveTab(nextTab)
+  }
+
   return (
     <div className="entry-workspace">
       {/* Control Bar */}
@@ -504,7 +513,7 @@ function SpinningEntryContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/post-preparatory/spinning')}
+              onClick={async () => (await confirmIfUnsaved('Going back will discard unsaved edits.')) && router.push('/post-preparatory/spinning')}
               className="flex items-center gap-1"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -660,7 +669,7 @@ function SpinningEntryContent() {
                   <div className="flex justify-end gap-2">
                     <Button 
                       variant="outline" 
-                      onClick={() => setCopyDialogOpen(false)}
+                      onClick={async () => { if (await confirmAction('cancel')) setCopyDialogOpen(false) }}
                     >
                       Cancel
                     </Button>
@@ -693,7 +702,7 @@ function SpinningEntryContent() {
         </div>
       ) : headerId ? (
         <Card className="entry-sheet">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">
               <TabsTrigger 
                 value="production" 

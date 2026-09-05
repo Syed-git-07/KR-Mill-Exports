@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react'
 import { getSpinningCountsAction, createSpinningCountAction, updateSpinningCountAction, deleteSpinningCountAction, searchSpinningCountsAction } from '@/app/actions/spinning-count'
 import SearchFilter from '@/components/common/SearchFilter'
@@ -83,7 +85,7 @@ export default function SpinningCountPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false)
       if (activeRows.length === 0) return toast.info('All selected counts are already deleted')
-      if (!confirm(`Delete ${activeRows.length} spinning count(s)?`)) return
+      if (!(await confirmAction('delete'))) return
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSpinningCountAction(row.id))
       if (succeeded.length) toast.success(`${succeeded.length} spinning count(s) deleted`)
       if (failed.length) toast.error(`${failed.length} spinning count(s) failed: ${failed[0].error}`)
@@ -92,7 +94,7 @@ export default function SpinningCountPage() {
       if (succeeded.length) loadSpinningCounts()
     } else if (!isSelectMode && selectedSpinningCount) {
       if (selectedSpinningCount.is_active === false) return toast.info('Spinning count is already deleted')
-      if (!confirm(`Delete "${selectedSpinningCount.count_name}"?`)) return
+      if (!(await confirmAction('delete'))) return
 
       try {
         const result = await deleteSpinningCountAction(selectedSpinningCount.id)
@@ -137,6 +139,7 @@ export default function SpinningCountPage() {
   }
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     setIsLoading(true)
     try {
       if (isEditing && selectedSpinningCount) {

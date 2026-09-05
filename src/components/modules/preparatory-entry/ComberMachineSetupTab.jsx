@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -78,7 +80,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showCountChangeDialog, setShowCountChangeDialog] = useState(false)
-  const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+
   const [addCountSearch, setAddCountSearch] = useState('')
   const [showAddCountDrop, setShowAddCountDrop] = useState(false)
   const addCountRef = useRef(null)
@@ -241,13 +243,13 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
     }
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRows).length === 0) return true
-    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   const handleRefreshClick = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
     setEditedRows({})
     await loadData()
   }
@@ -310,7 +312,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
   }
 
   const handleAddMachine = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (!newMachine.machine_no) {
       toast.warning('Please enter machine number')
@@ -366,7 +368,9 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   // Remove selected machines
   const handleRemoveMachines = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
 
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
@@ -385,7 +389,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
       const failed = results.filter(r => !r.success)
       if (failed.length > 0) throw new Error(failed[0].error)
       toast.success(`${selectedRows.length} machine(s) removed successfully`)
-      setShowRemoveDialog(false)
+
       setSelectedRows([])
       if (onRefresh) onRefresh()
       else await loadData()
@@ -399,7 +403,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
 
   // Change count for selected machines
   const handleCountChange = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to change count')
@@ -589,7 +593,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         </Button>
         <Button 
           variant="outline"
-          onClick={() => setShowRemoveDialog(true)}
+          onClick={handleRemoveMachines}
           disabled={selectedRows.length === 0}
           className="text-red-600 hover:text-red-700"
         >
@@ -742,7 +746,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowAddDialog(false) }}>Cancel</Button>
             <Button onClick={handleAddMachine} disabled={isSaving}>
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
               Add Machine
@@ -788,7 +792,7 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCountChangeDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowCountChangeDialog(false) }}>Cancel</Button>
             <Button onClick={handleCountChange} disabled={isSaving}>
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Edit className="h-4 w-4 mr-1" />}
               Apply Change
@@ -797,24 +801,6 @@ const ComberMachineSetupTab = forwardRef(function ComberMachineSetupTab({
         </DialogContent>
       </Dialog>
 
-      {/* Remove Machine Dialog */}
-      <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">Remove Machine(s)</DialogTitle>
-            <DialogDescription>
-              Remove {selectedRows.length} machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRemoveDialog(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleRemoveMachines} disabled={isSaving}>
-              {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 })

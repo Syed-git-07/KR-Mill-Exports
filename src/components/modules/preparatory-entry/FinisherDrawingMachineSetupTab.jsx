@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -71,7 +73,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
   // Dialog states
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showMixingChangeDialog, setShowMixingChangeDialog] = useState(false)
-  const [showRemoveDialog, setShowRemoveDialog] = useState(false)
+
 
   // New machine form seeded from centralized fallback defaults.
   const [newMachine, setNewMachine] = useState({
@@ -344,13 +346,13 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
     }
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRowsRef.current || editedRows || {}).length === 0) return true
-    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   const handleRefreshClick = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
     setEditedRows({})
     await loadData({ force: true })
   }
@@ -446,6 +448,9 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
 
   // Remove machine
   const handleRemoveMachine = async () => {
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
     if (selectedRows.length === 0) {
       toast.warning('Please select at least one machine')
       return
@@ -463,7 +468,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
       const failed = results.find(result => !result?.success)
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
       toast.success(`${selectedRows.length} machine(s) removed`)
-      setShowRemoveDialog(false)
+
       setSelectedRows([])
       if (onRefresh) onRefresh()
       else await loadData({ force: true })
@@ -634,7 +639,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         </Button>
         <Button 
           variant="outline" 
-          onClick={() => setShowRemoveDialog(true)}
+          onClick={handleRemoveMachine}
           disabled={selectedRows.length === 0}
           className="text-red-600 hover:text-red-700"
         >
@@ -769,7 +774,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
             </div>
           </div>
           <DialogFooter className="gap-3">
-            <Button variant="outline" onClick={() => setShowAddDialog(false)} className="h-10 px-6">
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowAddDialog(false) }} className="h-10 px-6">
               Cancel
             </Button>
             <Button 
@@ -817,7 +822,7 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMixingChangeDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setShowMixingChangeDialog(false) }}>
               Cancel
             </Button>
             <Button 
@@ -832,31 +837,6 @@ const FinisherDrawingMachineSetupTab = forwardRef(function FinisherDrawingMachin
         </DialogContent>
       </Dialog>
 
-      {/* Remove Machine Dialog */}
-      <Dialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">Remove Machine(s)</DialogTitle>
-            <DialogDescription>
-              Remove {selectedRows.length} machine(s) from this entry and subsequently initialized entries? Machine Master remains unchanged.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRemoveDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleRemoveMachine}
-              disabled={isSaving}
-              variant="destructive"
-            >
-              {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              <Trash2 className="h-4 w-4 mr-1" />
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 })

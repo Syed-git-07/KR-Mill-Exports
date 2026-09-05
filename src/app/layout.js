@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import GlobalRequestLoader from "@/components/common/GlobalRequestLoader";
 import NumberInputWheelGuard from "@/components/common/NumberInputWheelGuard";
 import AppHeader from "@/components/layout/AppHeader";
+import ActionConfirmation from "@/components/common/ActionConfirmation";
 import { withBasePath } from "@/lib/app-path";
 import { getCurrentUser } from "@/lib/security/auth";
 import { AuthUserProvider } from "@/components/auth/AuthUserContext";
@@ -41,6 +42,7 @@ export default async function RootLayout({ children }) {
         <AuthUserProvider user={user}>
           <GlobalRequestLoader />
           <NumberInputWheelGuard />
+          <ActionConfirmation />
           <div className="min-h-screen bg-gray-50">
             {user && <AppHeader user={user} />}
             {children}

@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
@@ -104,10 +106,10 @@ function ComberEntryContent() {
 
   useUnsavedChangesWarning(getUnsavedEditCount() > 0)
 
-  const confirmIfUnsaved = useCallback((message) => {
+  const confirmIfUnsaved = useCallback(async (message) => {
     const unsaved = getUnsavedEditCount()
     if (!unsaved) return true
-    return window.confirm(`${message}\n\nYou have ${unsaved} unsaved edit(s). Continue and discard in-memory edits?`)
+    return await confirmAction('discard unsaved changes')
   }, [getUnsavedEditCount])
 
   // Load supervisors
@@ -240,6 +242,9 @@ function ComberEntryContent() {
       return
     }
 
+    if (!(await confirmAction('update'))) return
+    if (saveInFlightRef.current) return
+
     const draftsAtSaveStart = sharedDraftsRef.current
     saveInFlightRef.current = true
     setIsSavingAll(true)
@@ -305,7 +310,7 @@ function ComberEntryContent() {
       return
     }
 
-    const confirmed = window.confirm(`Discard ${unsaved} unsaved edit(s) across all tabs?`)
+    const confirmed = await confirmAction('cancel')
     if (!confirmed) return
 
     await Promise.all([
@@ -324,15 +329,15 @@ function ComberEntryContent() {
     clearAllDrafts()
   }, [date, shift, clearAllDrafts])
 
-  const handleDateChange = (nextDate) => {
+  const handleDateChange = async (nextDate) => {
     if (!nextDate) return
-    if (!confirmIfUnsaved('Changing date will reload entry data.')) return
+    if (!(await confirmIfUnsaved('Changing date will reload entry data.'))) return
     clearAllDrafts()
     setDate(nextDate)
   }
 
-  const handleShiftChange = (nextShift) => {
-    if (!confirmIfUnsaved('Changing shift will reload entry data.')) return
+  const handleShiftChange = async (nextShift) => {
+    if (!(await confirmIfUnsaved('Changing shift will reload entry data.'))) return
     clearAllDrafts()
     setShift(nextShift)
   }
@@ -358,7 +363,7 @@ function ComberEntryContent() {
               variant="outline"
               size="sm"
               className="border-blue-300 text-blue-600 hover:bg-blue-50"
-              onClick={() => confirmIfUnsaved('Going back will discard unsaved edits.') && router.push('/preparatory-entry/comber')}
+              onClick={async () => (await confirmIfUnsaved('Going back will discard unsaved edits.')) && router.push('/preparatory-entry/comber')}
             >
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to List

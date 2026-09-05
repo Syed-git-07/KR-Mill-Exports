@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
@@ -85,6 +87,7 @@ export default function StoppageHeadMaster() {
   };
 
   const handleSave = async (data) => {
+    if (!(await confirmAction('update'))) return
     try {
       setIsLoading(true);
       if (isEditing && selectedStoppageHead) {
@@ -119,7 +122,7 @@ export default function StoppageHeadMaster() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected stoppage heads are already deleted');
-      if (!confirm(`Delete ${activeRows.length} stoppage head(s)?`)) return;
+      if (!(await confirmAction('delete'))) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteStoppageHeadAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} stoppage head(s) deleted`);
       if (failed.length) toast.error(`${failed.length} stoppage head(s) failed: ${failed[0].error}`);
@@ -128,7 +131,7 @@ export default function StoppageHeadMaster() {
       if (succeeded.length) loadStoppageHeads();
     } else if (!isSelectMode && selectedStoppageHead) {
       if (selectedStoppageHead.is_active === false) return toast.info('Stoppage head is already deleted');
-      if (!confirm(`Delete "${selectedStoppageHead.stoppage_head_name}"?`)) return;
+      if (!(await confirmAction('delete'))) return;
 
       try {
         const result = await deleteStoppageHeadAction(selectedStoppageHead.id);

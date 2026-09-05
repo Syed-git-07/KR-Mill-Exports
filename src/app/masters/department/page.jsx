@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react'
 import { getDepartmentsAction, createDepartmentAction, updateDepartmentAction, deleteDepartmentAction, searchDepartmentsAction } from '@/app/actions/department'
 import SearchFilter from '@/components/common/SearchFilter'
@@ -86,7 +88,7 @@ export default function DepartmentPage() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false)
       if (activeRows.length === 0) return toast.info('All selected departments are already deleted')
-      if (!confirm(`Delete ${activeRows.length} department(s)?`)) return
+      if (!(await confirmAction('delete'))) return
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteDepartmentAction(row.id))
       if (succeeded.length) toast.success(`${succeeded.length} department(s) deleted`)
       if (failed.length) toast.error(`${failed.length} department(s) failed: ${failed[0].error}`)
@@ -95,7 +97,7 @@ export default function DepartmentPage() {
       if (succeeded.length) loadDepartments()
     } else if (!isSelectMode && selectedDepartment) {
       if (selectedDepartment.is_active === false) return toast.info('Department is already deleted')
-      if (!confirm(`Delete "${selectedDepartment.dept_name}"?`)) return
+      if (!(await confirmAction('delete'))) return
 
       try {
         const result = await deleteDepartmentAction(selectedDepartment.id)
@@ -140,6 +142,7 @@ export default function DepartmentPage() {
   }
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     setIsLoading(true)
     try {
       if (isEditing && selectedDepartment) {

@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -113,7 +115,7 @@ export default function HOKStrengthPage() {
 
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
-      if (!confirm(`Delete ${selectedRows.length} HOK entries?`)) return;
+      if (!(await confirmAction('delete'))) return;
       try {
         const results = await Promise.all(selectedRows.map(row => deleteHOKEntryAction(row.hok_id)));
         const failed = results.filter(r => !r.success);
@@ -130,7 +132,7 @@ export default function HOKStrengthPage() {
         console.error(error);
       }
     } else if (!isSelectMode && selectedEntry) {
-      if (!confirm(`Delete HOK entry for ${selectedEntry.formatted_date}?`)) return;
+      if (!(await confirmAction('delete'))) return;
       try {
         const result = await deleteHOKEntryAction(selectedEntry.hok_id);
         if (!result.success) {
@@ -174,6 +176,7 @@ export default function HOKStrengthPage() {
   };
 
   const handleSubmit = async (formData) => {
+    if (!(await confirmAction('update'))) return
     try {
       let result;
       if (isEditing && editingEntry) {

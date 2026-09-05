@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -163,7 +165,7 @@ export default function TPIEntryMaster() {
   const handleDelete = async () => {
     if (isSelectMode && selectedRows.length > 0) {
       // Bulk delete
-      if (!confirm(`Are you sure you want to delete ${selectedRows.length} entry(ies)?`)) {
+      if (!(await confirmAction('delete'))) {
         return;
       }
 
@@ -182,7 +184,7 @@ export default function TPIEntryMaster() {
       }
     } else if (!isSelectMode && selectedRow) {
       // Single delete from modal
-      if (!confirm(`Are you sure you want to delete this TPI entry?`)) {
+      if (!(await confirmAction('delete'))) {
         return;
       }
 
@@ -205,6 +207,7 @@ export default function TPIEntryMaster() {
   };
 
   const handleSave = async (formData) => {
+    if (!(await confirmAction('update'))) return
     setIsLoading(true);
     try {
       if (isEditing && editingEntry) {
@@ -283,7 +286,7 @@ export default function TPIEntryMaster() {
         </div>
       ) : entries.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No entries found. Click "Add New" to add your first entry.
+          No entries found. Click &quot;Add New&quot; to add your first entry.
         </div>
       ) : (
         <DataGrid

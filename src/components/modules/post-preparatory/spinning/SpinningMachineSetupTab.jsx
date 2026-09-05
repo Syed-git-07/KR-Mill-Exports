@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
@@ -314,7 +316,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   }
 
   // Remove machine dialog
-  const [removeDialog, setRemoveDialog] = useState(false)
+
 
   const mergeServerRowsWithDrafts = useCallback((rows) => {
     const drafts = editedRowsRef.current || {}
@@ -526,7 +528,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   const handleRefreshClick = async () => {
     if (Object.keys(editedRows).length > 0) {
-      const shouldDiscard = window.confirm('You have unsaved changes in Machine Setup. Refresh will discard them. Continue?')
+      const shouldDiscard = await confirmAction('discard unsaved changes')
       if (!shouldDiscard) return
     }
     setEditedRows({})
@@ -539,9 +541,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
     return { success: true }
   }
 
-  const confirmDiscardLocalEdits = () => {
+  const confirmDiscardLocalEdits = async () => {
     if (Object.keys(editedRows).length === 0) return true
-    return window.confirm('You have unsaved machine setup edits. This action will reload data and discard them. Continue?')
+    return await confirmAction('discard unsaved changes')
   }
 
   useImperativeHandle(ref, () => ({
@@ -638,7 +640,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       return
     }
 
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     setIsSaving(true)
     try {
@@ -675,7 +677,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   // Add machine (creates new or reactivates existing)
   const handleAddMachine = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmDiscardLocalEdits())) return
 
     if (!newMachineData.machine_no) {
       toast.warning('Machine number is required')
@@ -731,7 +733,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
 
   // Remove selected machines from this entry snapshot only.
   const handleRemoveMachines = async () => {
-    if (!confirmDiscardLocalEdits()) return
+    if (!(await confirmAction(Object.keys(editedRows).length > 0
+      ? 'remove and discard unsaved changes'
+      : 'remove'))) return
 
     if (selectedRows.length === 0) {
       toast.warning('Please select machines to remove')
@@ -756,7 +760,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       if (failed) throw new Error(failed.error || 'Failed to remove a machine')
 
       toast.success(`${machineIds.length} machine(s) removed successfully`)
-      setRemoveDialog(false)
+
       setSelectedRows([])
       if (onRefresh) onRefresh()
       else await loadData()
@@ -1136,7 +1140,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setRemoveDialog(true)}
+              onClick={handleRemoveMachines}
               disabled={selectedRows.length === 0}
               className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
             >
@@ -1192,7 +1196,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCountChangeDialog(false)}>
+            <Button variant="outline" onClick={async () => { if (await confirmAction('cancel')) setCountChangeDialog(false) }}>
               Cancel
             </Button>
             <Button onClick={handleCountChange} disabled={isSaving || !newCountId || countRunMinutes === ''}>
@@ -1332,7 +1336,9 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAddMachineDialog(false); resetMachineForm(); }}>Cancel</Button>
+            <Button variant="outline" onClick={async () => {
+                  if (!(await confirmAction('cancel'))) return
+ setAddMachineDialog(false); resetMachineForm(); }}>Cancel</Button>
             <Button onClick={handleAddMachine} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
               {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
               Add Machine
@@ -1342,28 +1348,7 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       </Dialog>
 
       {/* Remove Machines Dialog */}
-      <Dialog open={removeDialog} onOpenChange={setRemoveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove Machines</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-gray-600 mb-4">
-              Are you sure you want to remove {selectedRows.length} machine(s)?
-            </p>
-            <p className="text-sm text-red-600">
-              This removes the selected machines from this entry and subsequently initialized entries. Machine Master remains unchanged.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveDialog(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleRemoveMachines} disabled={isSaving}>
-              {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
       {/* Field Legend */}
       <div className="entry-field-reference bg-gray-50 rounded-lg text-xs text-gray-600">

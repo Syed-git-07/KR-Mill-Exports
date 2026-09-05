@@ -1,5 +1,7 @@
 'use client';
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
@@ -116,7 +118,7 @@ export default function SupervisorMaster() {
     if (isSelectMode && selectedRows.length > 0) {
       const activeRows = selectedRows.filter(row => row.is_active !== false);
       if (activeRows.length === 0) return toast.info('All selected supervisors are already deleted');
-      if (!confirm(`Delete ${activeRows.length} supervisor(s)?`)) return;
+      if (!(await confirmAction('delete'))) return;
       const { succeeded, failed } = await runBulkActions(activeRows, row => deleteSupervisorAction(row.id));
       if (succeeded.length) toast.success(`${succeeded.length} supervisor(s) deleted`);
       if (failed.length) toast.error(`${failed.length} supervisor(s) failed: ${failed[0].error}`);
@@ -125,7 +127,7 @@ export default function SupervisorMaster() {
       if (succeeded.length) loadSupervisors();
     } else if (!isSelectMode && selectedSupervisor) {
       if (selectedSupervisor.is_active === false) return toast.info('Supervisor is already deleted');
-      if (!confirm(`Delete supervisor "${selectedSupervisor.supervisor_name}"?`)) return;
+      if (!(await confirmAction('delete'))) return;
 
       try {
         const result = await deleteSupervisorAction(selectedSupervisor.id);
@@ -170,6 +172,7 @@ export default function SupervisorMaster() {
   };
 
   const handleSave = async (supervisorData) => {
+    if (!(await confirmAction('update'))) return
     try {
       if (isEditing && editingSupervisor) {
         const result = await updateSupervisorAction(editingSupervisor.id, supervisorData);
@@ -252,7 +255,7 @@ export default function SupervisorMaster() {
         </div>
       ) : supervisors.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No supervisors found. Click "New" to add your first supervisor.
+          No supervisors found. Click &quot;New&quot; to add your first supervisor.
         </div>
       ) : (
         <DataGrid

@@ -1,5 +1,7 @@
 'use client'
 
+import { confirmAction } from '@/lib/confirmation'
+
 import { useState, useEffect, useCallback, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
@@ -213,12 +215,10 @@ function SimplexEntryContent() {
   }, [])
   useUnsavedChangesWarning(getUnsavedEditCount() > 0)
 
-  const confirmUnsavedDiscard = useCallback((actionLabel) => {
+  const confirmUnsavedDiscard = useCallback(async (actionLabel) => {
     const unsavedCount = getUnsavedEditCount()
     if (unsavedCount === 0) return true
-    return window.confirm(
-      `You have ${unsavedCount} unsaved row change(s). ${actionLabel} will discard them. Continue?`
-    )
+    return await confirmAction('discard unsaved changes')
   }, [getUnsavedEditCount])
 
   const discardAllTabChanges = useCallback(async () => {
@@ -232,7 +232,7 @@ function SimplexEntryContent() {
 
   const handleBackToList = useCallback(async () => {
     const unsavedCount = getUnsavedEditCount()
-    if (unsavedCount > 0 && !confirmUnsavedDiscard('Going back to list')) return
+    if (unsavedCount > 0 && !(await confirmUnsavedDiscard('Going back to list'))) return
     if (unsavedCount > 0) await discardAllTabChanges()
     router.push('/preparatory-entry/simplex')
   }, [router, getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges])
@@ -240,14 +240,14 @@ function SimplexEntryContent() {
   const handleDateChange = useCallback(async (newDate) => {
     if (!newDate) return
     if (newDate.toDateString() === date.toDateString()) return
-    if (!confirmUnsavedDiscard('Changing date')) return
+    if (!(await confirmUnsavedDiscard('Changing date'))) return
     if (getUnsavedEditCount() > 0) await discardAllTabChanges()
     setDate(newDate)
   }, [date, getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges])
 
   const handleShiftChange = useCallback(async (newShift) => {
     if (newShift === shift) return
-    if (!confirmUnsavedDiscard('Changing shift')) return
+    if (!(await confirmUnsavedDiscard('Changing shift'))) return
     if (getUnsavedEditCount() > 0) await discardAllTabChanges()
     setShift(newShift)
   }, [shift, getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges])
@@ -317,7 +317,7 @@ function SimplexEntryContent() {
 
   // Refresh data
   const handleRefresh = useCallback(async () => {
-    if (!confirmUnsavedDiscard('Refreshing')) return
+    if (!(await confirmUnsavedDiscard('Refreshing'))) return
     if (getUnsavedEditCount() > 0) await discardAllTabChanges()
 
     await loadProductionHeader()
@@ -336,6 +336,9 @@ function SimplexEntryContent() {
       toast.info('No changes to save')
       return
     }
+
+    if (!(await confirmAction('update'))) return
+    if (saveInFlightRef.current) return
 
     const draftsAtSaveStart = sharedDraftsRef.current
     const liveEditedCounts = {
@@ -410,12 +413,16 @@ function SimplexEntryContent() {
       toast.info('No unsaved changes to discard')
       return
     }
-    if (!confirmUnsavedDiscard('Cancelling changes')) return
+    if (!(await confirmAction('cancel'))) return
 
     await discardAllTabChanges()
     await loadProductionHeader()
     toast.success('Unsaved changes discarded')
   }, [getUnsavedEditCount, confirmUnsavedDiscard, discardAllTabChanges, loadProductionHeader])
+
+  const handleTabChange = (nextTab) => {
+    setActiveTab(nextTab)
+  }
 
   return (
     <div className="entry-workspace">
@@ -559,7 +566,7 @@ function SimplexEntryContent() {
         </div>
       ) : headerId ? (
         <Card className="entry-sheet">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="w-full justify-start border-b-0 rounded-none bg-transparent p-0 gap-1">
               <TabsTrigger 
                 value="production" 
