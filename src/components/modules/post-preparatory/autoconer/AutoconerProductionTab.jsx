@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Button } from "@/components/ui/button"
 import EmployeeAutocomplete from "@/components/ui/employee-autocomplete"
-import EnterSelect from "@/components/ui/enter-select"
+import EnterSelect from "@/components/ui/entry-select"
 import {
   Select,
   SelectContent,
@@ -490,6 +490,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                         placeholder="Type employee name..."
                         cleanCell
                         editingHighlight
+                        dialogMode
                         className="h-9 rounded-none text-xs w-full min-w-35"
                         data-row={index}
                         data-col="emp_name"
@@ -589,6 +590,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="idle_reason">
                       <EnterSelect
                         value={row.idle_reason || 'none'}
+                        dialogTitle="Select idle-drum reason"
                         options={[
                           { value: 'none', label: '-' },
                           ...idleReasons.map(r => ({ value: r.id, label: r.name }))

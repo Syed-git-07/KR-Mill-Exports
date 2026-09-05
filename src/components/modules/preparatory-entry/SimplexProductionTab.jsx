@@ -453,6 +453,7 @@ const SimplexProductionTab = forwardRef(function SimplexProductionTab({
                         onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}
                         cleanCell
                         editingHighlight
+                        dialogMode
                         className="h-9 rounded-none text-sm w-full min-w-35"
                         data-row={index}
                         data-col="emp_name"

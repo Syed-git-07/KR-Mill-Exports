@@ -16,7 +16,7 @@ import {
 import { Loader2, Plus, Trash2, Edit, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
-import EnterSelect from '@/components/ui/enter-select'
+import EnterSelect from '@/components/ui/entry-select'
 import {
   getComberEntryTabDataAction,
   runComberEntryBatchAction,

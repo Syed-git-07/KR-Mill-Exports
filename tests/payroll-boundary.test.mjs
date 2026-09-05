@@ -58,7 +58,7 @@ test('employee autocomplete fails visibly instead of falling back to employee_ma
   assert.match(payrollEmployees, /formatPayrollEmployeeName/)
   assert.match(payrollEmployees, /hydratePayrollEmployeeNames/)
   assert.match(autocomplete, /emp\.payroll_employee_id/)
-  assert.match(autocomplete, /ID \{employeeId\}/)
+  assert.doesNotMatch(autocomplete, />\s*ID \{employeeId\}\s*</)
   assert.match(autocomplete, /onChange\(nextValue, null\)/)
   assert.match(autocomplete, /employeeReference/)
 })

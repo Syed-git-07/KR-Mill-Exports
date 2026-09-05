@@ -609,6 +609,7 @@ const BreakerDrawingProductionTab = forwardRef(function BreakerDrawingProduction
                       data-col="emp_name"
                       cleanCell
                       editingHighlight
+                      dialogMode
                       className="h-9 rounded-none text-sm w-full min-w-35"
                       onEnterNavigation={() => focusNextRow(index, 'emp_name')}
                     />

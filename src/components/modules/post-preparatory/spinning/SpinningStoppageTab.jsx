@@ -16,7 +16,7 @@ import {
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import StoppageAutocomplete from '@/components/ui/stoppage-autocomplete'
-import EnterSelect from '@/components/ui/enter-select'
+import EnterSelect from '@/components/ui/entry-select'
 import { resolveSpinningShiftFallbackTime } from '@/lib/spinningShiftFallback'
 import { useServerDataLoader } from '@/hooks/useServerDataLoader'
 import {
@@ -24,7 +24,7 @@ import {
   runSpinningEntryBatchAction,
 } from '@/app/actions/spinning-entry'
 import { applyBulkStoppageDraft } from '@/lib/stoppageSlotUtils'
-import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency } from '@/lib/productionFormulaMath'
+import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, calculateSpinningNoOfSpindles } from '@/lib/productionFormulaMath'
 
 /**
  * Spinning Stoppage Entry Tab
@@ -174,10 +174,7 @@ const SpinningStoppageTab = forwardRef(function SpinningStoppageTab({
     // Use act_count from machine setup for Exp GPS calculation
     const count = actCount
 
-    // Calculate No of Spindles based on shift
-    // Shift 1 & 2: allocated / 8 * 8.5, Shift 3: allocated / 8 * 7
-    const multiplier = shiftNo === 3 ? 7 : 8.5
-    const totalSpindles = Math.round((allocatedSpindles / 8) * multiplier)
+    const totalSpindles = calculateSpinningNoOfSpindles(allocatedSpindles, runTime, shiftNo)
 
     // STOPPED SPL = (total STOPPED MIN / TOTAL MIN) * TOTAL SPL (No of Spindle)
     const stoppedSpindles = runTime > 0 ? (totalStoppageTime / runTime) * totalSpindles : 0

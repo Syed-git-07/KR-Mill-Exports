@@ -1,13 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, X } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import SearchSelectionDialog from '@/components/ui/search-selection-dialog'
+import { rankSelectionResults } from '@/lib/selectionSearch'
 
 /**
  * Searchable stoppage selector used by every preparatory and post-preparatory
- * stoppage entry. Selection still returns the existing stoppage id; typing is
- * only used to filter the available reasons.
+ * stoppage entry. Reasons are selected in a modal so the grid is never covered
+ * by an inline dropdown.
  */
 export default function StoppageAutocomplete({
   value = '',
@@ -21,104 +23,38 @@ export default function StoppageAutocomplete({
   editingHighlight = false,
   disabled = false,
   compact = false,
-  onEnterNavigation,
   'data-row': dataRow,
   'data-col': dataCol
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(displayValue || '')
-  const [highlightedIndex, setHighlightedIndex] = useState(-1)
-  const containerRef = useRef(null)
   const inputRef = useRef(null)
-  const highlightedRef = useRef(null)
 
   useEffect(() => {
     if (!open) setQuery(displayValue || '')
   }, [displayValue, open])
 
   const filteredReasons = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    if (!term) return reasons
-
-    return reasons.filter((reason) => {
-      const head = reason.stoppage_head_name || reason.category || ''
-      return (
-        reason.stoppage_name?.toLowerCase().includes(term) ||
-        reason.short_code?.toLowerCase().includes(term) ||
-        head.toLowerCase().includes(term)
-      )
+    return rankSelectionResults(reasons, query, {
+      getPrimaryText: (reason) => reason.stoppage_name,
+      getSecondaryTexts: (reason) => {
+        const head = reason.stoppage_head_name || reason.category || ''
+        return [reason.short_code, head]
+      },
     })
   }, [query, reasons])
-
-  useEffect(() => {
-    setHighlightedIndex(open && query.trim() && filteredReasons.length ? 0 : -1)
-  }, [open, query, filteredReasons.length])
-
-  useEffect(() => {
-    highlightedRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [highlightedIndex])
-
-  useEffect(() => {
-    if (!open) return undefined
-
-    const handleOutsidePointer = (event) => {
-      if (!containerRef.current?.contains(event.target)) {
-        setOpen(false)
-        setQuery(displayValue || '')
-      }
-    }
-
-    document.addEventListener('mousedown', handleOutsidePointer)
-    return () => document.removeEventListener('mousedown', handleOutsidePointer)
-  }, [open, displayValue])
 
   const selectReason = useCallback((reason) => {
     onSelect?.(reason.id, reason)
     setQuery(reason.stoppage_name || '')
     setOpen(false)
-    setHighlightedIndex(-1)
   }, [onSelect])
 
-  const handleChange = (event) => {
+  const handleTriggerChange = (event) => {
     const nextQuery = event.target.value
     setQuery(nextQuery)
-    // Keep the editing state active when the final character is removed so
-    // the previous selected name is not restored by the display-value sync.
-    setOpen(true)
+    setOpen(nextQuery.trim().length > 0)
     if (nextQuery.length === 0 && value) onClear?.()
-  }
-
-  const handleKeyDown = (event) => {
-    if (disabled) return
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      if (!open) setOpen(true)
-      setHighlightedIndex((previous) => Math.min(previous + 1, filteredReasons.length - 1))
-      return
-    }
-
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setHighlightedIndex((previous) => Math.max(previous - 1, 0))
-      return
-    }
-
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      if (open && highlightedIndex >= 0 && filteredReasons[highlightedIndex]) {
-        selectReason(filteredReasons[highlightedIndex])
-      } else if (!open) {
-        onEnterNavigation?.()
-      }
-      return
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      setOpen(false)
-      setQuery(displayValue || '')
-    }
   }
 
   const clearSelection = (event) => {
@@ -132,7 +68,6 @@ export default function StoppageAutocomplete({
 
   return (
     <div
-      ref={containerRef}
       className="relative"
       data-row={dataRow}
       data-col={dataCol}
@@ -151,12 +86,19 @@ export default function StoppageAutocomplete({
           disabled={disabled}
           placeholder={placeholder}
           autoComplete="off"
-          role="combobox"
-          aria-autocomplete="list"
+          aria-haspopup="dialog"
           aria-expanded={open}
-          onChange={handleChange}
+          onChange={handleTriggerChange}
           onFocus={(event) => event.currentTarget.select()}
-          onKeyDown={handleKeyDown}
+          onClick={(event) => event.currentTarget.select()}
+          onKeyDown={(event) => {
+            if (disabled) return
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              setOpen(false)
+              setQuery(displayValue || '')
+            }
+          }}
           className={cn(
             'flex-1 min-w-0 bg-transparent px-2 text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded',
             cleanCell && 'h-full rounded-none focus:ring-0',
@@ -181,53 +123,43 @@ export default function StoppageAutocomplete({
         )}
       </div>
 
-      {open && query.length > 0 && (
-        <div
-          role="listbox"
-          className="absolute z-50 mt-1 w-max min-w-full max-w-[28rem] max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
-        >
-          {filteredReasons.length === 0 ? (
-            <div className="px-3 py-3 text-center text-sm text-gray-500">No stoppage found</div>
-          ) : filteredReasons.map((reason, index) => {
-            const isHighlighted = highlightedIndex === index
-            const isSelected = String(value || '') === String(reason.id)
-            const head = reason.stoppage_head_name || reason.category || 'General'
-
-            return (
-              <button
-                key={reason.id}
-                ref={isHighlighted ? highlightedRef : null}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectReason(reason)}
-                onMouseEnter={() => setHighlightedIndex(index)}
-                className={cn(
-                  'flex w-full items-start px-3 py-2 text-left select-none',
-                  isHighlighted ? 'bg-blue-600 text-white' : 'text-gray-900 hover:bg-gray-100'
-                )}
-              >
-                <Check className={cn(
-                  'mr-2 mt-0.5 h-4 w-4 shrink-0',
-                  isSelected ? (isHighlighted ? 'text-white opacity-100' : 'text-blue-600 opacity-100') : 'opacity-0'
-                )} />
-                <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                  <span className="truncate text-sm font-medium">{reason.stoppage_name}</span>
-                  <span className={cn('truncate text-xs font-semibold', isHighlighted ? 'text-blue-100' : 'text-gray-500')}>
-                    {head}
-                  </span>
-                  {reason.short_code && (
-                    <span className={cn('col-span-2 truncate text-xs', isHighlighted ? 'text-blue-100' : 'text-gray-500')}>
-                      {reason.short_code}
-                    </span>
-                  )}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <SearchSelectionDialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen)
+        }}
+        title="Select stoppage reason"
+        searchValue={query}
+        onSearchValueChange={setQuery}
+        searchPlaceholder="Type a stoppage reason, code, or category..."
+        items={filteredReasons}
+        getItemKey={(reason) => reason.id}
+        isItemSelected={(reason) => String(value || '') === String(reason.id)}
+        onSelect={selectReason}
+        emptyMessage="No matching stoppage reasons found"
+        listHeader={(
+          <div className="grid min-w-[42rem] grid-cols-[minmax(14rem,1.5fr)_minmax(9rem,0.8fr)_minmax(6rem,0.5fr)] gap-4 pl-7">
+            <span>Stoppage reason</span>
+            <span>Category</span>
+            <span>Short code</span>
+          </div>
+        )}
+        renderItem={(reason, { highlighted }) => {
+          const head = reason.stoppage_head_name || reason.category || 'General'
+          return (
+            <div className="grid min-w-[42rem] grid-cols-[minmax(14rem,1.5fr)_minmax(9rem,0.8fr)_minmax(6rem,0.5fr)] items-center gap-4">
+              <span className="break-words text-[13px] font-semibold leading-5">{reason.stoppage_name}</span>
+              <span className={cn('break-words text-[13px] leading-5', highlighted ? 'text-blue-100' : 'text-slate-500')}>
+                {head}
+              </span>
+              <span className={cn('break-words text-[13px] font-medium leading-5', highlighted ? 'text-blue-100' : 'text-slate-500')}>
+                {reason.short_code || '-'}
+              </span>
+            </div>
+          )
+        }}
+        returnFocusRef={inputRef}
+      />
     </div>
   )
 }

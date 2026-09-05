@@ -3,7 +3,7 @@ import { addMachineToEntrySnapshot, assertEntryDetailUnlocked, assertEntryHeader
 import { resolveSpinningShiftFallbackTime } from '../spinningShiftFallback'
 import { findFirstFreeStoppageSlot } from '../stoppageSlotUtils'
 import { copyPreviousSpeeds, getAvailablePreviousSpeedDates } from './copyPreviousSpeed'
-import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, resolveProductionTime } from '../productionFormulaMath'
+import { calculateSpinningExpectedGps, calculateSpinningLossEfficiency, calculateSpinningNoOfSpindles, resolveProductionTime } from '../productionFormulaMath'
 import { sanitizeProductionDetailUpdate } from './productionDetailUpdate'
 import { preparePayrollEmployeeUpdate } from '../payroll/employeeSelection'
 import { getActiveProductionSupervisors, validateProductionSupervisorIds, validateProductionSupervisorUpdate } from './productionSupervisorQueries'
@@ -129,15 +129,12 @@ export async function getSpinningShiftConfiguration(shift) {
 // ============================================
 
 /**
- * Calculate No of Spindles based on shift
- * Formula: 
- *   Shift 1 & 2: (Allocated Spindles / 8) × 8.5
- *   Shift 3:     (Allocated Spindles / 8) × 7
+ * Calculate spindle-hours for the row's actual count-run duration.
+ * Formula: (Allocated Spindles / 8) × (Run Time Minutes / 60).
+ * Missing runtimes retain the shift defaults of 510/420 minutes.
  */
-export function calculateNoOfSpindles(allocatedSpindles, shift) {
-  if (!allocatedSpindles) return 0
-  const multiplier = parseInt(shift) === 3 ? 7 : 8.5
-  return Math.round((allocatedSpindles / 8) * multiplier)
+export function calculateNoOfSpindles(allocatedSpindles, shift, runTime) {
+  return calculateSpinningNoOfSpindles(allocatedSpindles, runTime, shift)
 }
 
 /**
@@ -236,8 +233,8 @@ export function calculateSpinningProduction(params) {
     efficiency = 0.95
   } = params
 
-  // Calculate No of Spindles based on shift
-  const totalSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
+  // Calculate spindle-hours for this count run.
+  const totalSpindles = calculateNoOfSpindles(allocatedSpindles, shift, runTime)
 
   const constant = calculateConstant(actCount, totalSpindles, twCon, doffLoss, cWastePercent)
   const actProdn = calculateActProdn(actHank, constant)
@@ -467,8 +464,8 @@ export async function initializeSpinningProductionDetails(headerId, shift = 1) {
     const details = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
       const allocatedSpindles = firstProvidedNumber([setup.allocated_spindles, machine.allocated_spindles], 1104)
-      // Calculate No of Spindles based on shift: (Allocated / 8) × 8.5 for Shift 1&2, × 7 for Shift 3
-      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
+      // A new unsplit row starts with the configured full-shift runtime.
+      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift, shiftConfig.totalTime)
 
       return {
         header_id: headerId,
@@ -578,8 +575,8 @@ export async function syncNewMachinesToSpinningHeader(headerId, shift = 1) {
     const details = newMachines.map(machine => {
       const setup = setupMap[machine.id] || {}
       const allocatedSpindles = firstProvidedNumber([setup.allocated_spindles, machine.allocated_spindles], 1104)
-      // Calculate No of Spindles based on shift: (Allocated / 8) × 8.5 for Shift 1&2, × 7 for Shift 3
-      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
+      // A new unsplit row starts with the configured full-shift runtime.
+      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift, shiftConfig.totalTime)
 
       return {
         header_id: headerId,
@@ -940,7 +937,7 @@ export async function updateSpinningStoppageEntry(stoppageId, updates) {
       })
       const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
       const shift = header?.shift || 1
-      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
+      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift, runTime)
       // STOPPED SPL = (Total Stoppage Mins / Total Min) × No of Spindles
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       // WORKED SPL = No of Spindles - STOPPED SPL
@@ -1065,7 +1062,7 @@ export async function applyFullStoppage(headerId, stoppageId, stoppageTime) {
       const machine = machineMap[detail.machine_id]
       const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, machine?.allocated_spindles], 1104)
       const runTime = detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
-      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
+      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift, runTime)
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       const workedSpl = noOfSpindles - stoppedSpl
 
@@ -1209,7 +1206,7 @@ export async function applyPartialStoppage(headerId, fromMachineNo, toMachineNo,
       const setup = setupMap[`${detail.machine_id}:${detail.run_sequence || 1}`] || setupMap[detail.machine_id]
       const allocatedSpindles = firstProvidedNumber([setup?.allocated_spindles, detail.spinning_machines?.allocated_spindles], 1104)
       const runTime = detail.run_time ?? resolveSpinningShiftFallbackTime(shift)
-      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift)
+      const noOfSpindles = calculateNoOfSpindles(allocatedSpindles, shift, runTime)
       const stoppedSpl = runTime > 0 ? (totalStoppageTime / runTime) * noOfSpindles : 0
       const workedSpl = noOfSpindles - stoppedSpl
 

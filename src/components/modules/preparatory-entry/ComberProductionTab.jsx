@@ -498,6 +498,7 @@ const ComberProductionTab = forwardRef(function ComberProductionTab({
                       className="h-9 rounded-none text-sm w-full min-w-44"
                       cleanCell
                       editingHighlight
+                      dialogMode
                       data-row={index}
                       data-col="emp_name"
                       onEnterNavigation={() => focusNextRow(index, 'emp_name')}

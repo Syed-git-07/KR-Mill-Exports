@@ -49,6 +49,7 @@ const {
   calculateSpinningExpectedGps,
   calculateSpinningEntryMetrics,
   calculateSpinningLossEfficiency,
+  calculateSpinningNoOfSpindles,
   calculateTimeAdjustedProductionMetrics,
   resolveProductionTime
 } = await importSourceModule('../src/lib/productionFormulaMath.js')
@@ -291,7 +292,7 @@ test('spinning entry metrics use the exact count-run duration', () => {
   })
 
   assert.equal(metrics.work_time, 90)
-  assert.equal(metrics._totalSpindles, 1173)
+  assert.equal(metrics._totalSpindles, 276)
   assert.ok(metrics.worked_spindles < metrics._totalSpindles)
   assert.ok(metrics.act_prodn > 0)
 
@@ -309,6 +310,15 @@ test('spinning entry metrics use the exact count-run duration', () => {
   assert.equal(fullyStopped.work_time, 0)
   assert.equal(fullyStopped.worked_spindles, 0)
   assert.equal(fullyStopped.gps, 0)
+})
+
+test('spinning spindle-hours are prorated for each split count run', () => {
+  assert.equal(calculateSpinningNoOfSpindles(1104, 510, 1), 1173)
+  assert.equal(calculateSpinningNoOfSpindles(1104, 420, 3), 966)
+  assert.equal(calculateSpinningNoOfSpindles(1104, 200, 1), 460)
+  assert.equal(calculateSpinningNoOfSpindles(1104, 310, 1), 713)
+  assert.equal(calculateSpinningNoOfSpindles(1824, 200, 3), 760)
+  assert.equal(calculateSpinningNoOfSpindles(1824, 220, 3), 836)
 })
 
 test('explicit zero master values are never replaced by formula defaults', () => {

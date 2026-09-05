@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import SearchSelectionDialog from '@/components/ui/search-selection-dialog'
+import { rankSelectionResults } from '@/lib/selectionSearch'
 
 /**
  * EnterSelect — dropdown where:
@@ -23,6 +25,9 @@ export default function EnterSelect({
   editingHighlight = false,
   disabled = false,
   searchable = false,
+  dialogMode = false,
+  dialogTitle = 'Select an option',
+  dialogDescription = null,
 }) {
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(null)
@@ -33,9 +38,14 @@ export default function EnterSelect({
   const highlightedRef = useRef(null)
 
   // Filtered options based on search term
-  const filtered = searchable && search.trim()
-    ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
-    : options
+  const filtered = useMemo(() => (
+    searchable
+      ? rankSelectionResults(options, search, {
+          getPrimaryText: (option) => option.label,
+          getSecondaryTexts: (option) => option.searchTerms || [],
+        })
+      : options
+  ), [options, search, searchable])
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -105,7 +115,9 @@ export default function EnterSelect({
 
   // Close on outside click
   useEffect(() => {
-    if (!open) return
+    // Radix owns outside-click handling in dialog mode. The dialog is portalled
+    // outside this component, so the legacy dropdown listener must stay off.
+    if (!open || dialogMode) return
     const handler = (e) => {
       if (!triggerRef.current?.closest('[data-enter-select]')?.contains(e.target)) {
         setOpen(false)
@@ -114,9 +126,79 @@ export default function EnterSelect({
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  }, [open, dialogMode])
 
   const displayLabel = options.find(o => o.value === value)?.label ?? placeholder
+
+  if (dialogMode) {
+    return (
+      <div className="relative" data-enter-select>
+        <div className="relative h-full">
+          <input
+            ref={triggerRef}
+            type="text"
+            value={open ? search : (value != null && value !== '' ? displayLabel : '')}
+            disabled={disabled}
+            placeholder={placeholder}
+            onFocus={(event) => event.currentTarget.select()}
+            onClick={(event) => event.currentTarget.select()}
+            onChange={(event) => {
+              const nextSearch = event.target.value
+              setSearch(nextSearch)
+              setOpen(nextSearch.trim().length > 0)
+            }}
+            className={cn(
+              'peer h-6 w-full rounded border border-gray-300 bg-white px-2 text-xs',
+              (value == null || value === '') && 'pr-6',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+              cleanCell && 'h-full rounded-none border-0 bg-transparent shadow-none focus:ring-0 focus:border-transparent',
+              editingHighlight && 'focus:bg-orange-500 focus:text-white focus:placeholder:text-orange-100',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              className
+            )}
+            autoComplete="off"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+          />
+          {(value == null || value === '') && (
+            <Search className={cn(
+              'pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400',
+              editingHighlight && 'peer-focus:text-white'
+            )} />
+          )}
+        </div>
+
+        <SearchSelectionDialog
+          open={open}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen)
+            if (!nextOpen) setSearch('')
+          }}
+          title={dialogTitle}
+          description={dialogDescription}
+          searchValue={search}
+          onSearchValueChange={setSearch}
+          searchPlaceholder={`Search ${dialogTitle.replace(/^select\s+/i, '').toLowerCase()}...`}
+          items={filtered}
+          getItemKey={(option) => option.value}
+          isItemSelected={(option) => option.value === value}
+          onSelect={(option) => {
+            onChange?.(option.value)
+            setOpen(false)
+            setSearch('')
+            setTimeout(() => onNextRow?.(), 0)
+          }}
+          renderItem={(option, { highlighted: isHighlighted }) => (
+            <span className={cn('block break-words text-[13px] font-medium leading-5', isHighlighted ? 'text-white' : 'text-slate-900')}>
+              {option.label}
+            </span>
+          )}
+          emptyMessage="No matching options found"
+          returnFocusRef={triggerRef}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="relative" data-enter-select onKeyDown={handleKeyDown}>

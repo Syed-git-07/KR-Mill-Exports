@@ -641,6 +641,7 @@ const FinisherDrawingProductionTab = forwardRef(function FinisherDrawingProducti
                       placeholder="Type employee name..."
                       cleanCell
                       editingHighlight
+                      dialogMode
                       className="h-9 rounded-none text-sm w-full min-w-44"
                       data-row={index}
                       data-col="emp_name"

@@ -24,7 +24,7 @@ import {
   lookupSimplexMachineByNoAction
 } from '@/app/actions/simplexEntryActions'
 import { NumberInput } from '@/components/ui/number-input'
-import EnterSelect from '@/components/ui/enter-select'
+import EnterSelect from '@/components/ui/entry-select'
 
 const parseFloatOr = (value, fallback) => {
   const parsed = Number.parseFloat(value)

@@ -52,6 +52,19 @@ export function calculateSpinningExpectedGps({
   return (7.2 * safeSpeed / safeTpi / safeCount) * safeEfficiency
 }
 
+/**
+ * Converts the physical spindle allocation into spindle-hours for one count
+ * run. A full shift remains 8.5 hours (510 minutes) for shifts 1/2 and
+ * 7 hours (420 minutes) for shift 3; split count runs use their own minutes.
+ */
+export function calculateSpinningNoOfSpindles(allocatedSpindles, runTime, shift = 1) {
+  const safeAllocatedSpindles = Math.max(toFiniteNumber(allocatedSpindles), 0)
+  const defaultRunTime = Number(shift) === 3 ? 420 : 510
+  const safeRunTime = Math.max(toFiniteNumber(runTime, defaultRunTime), 0)
+
+  return Math.round((safeAllocatedSpindles / 8) * (safeRunTime / 60))
+}
+
 export function calculateSpinningEntryMetrics({
   actHank,
   waste,
@@ -64,9 +77,7 @@ export function calculateSpinningEntryMetrics({
   expectedGps,
 }) {
   const time = resolveProductionTime(runTime, stoppageMins)
-  const safeAllocatedSpindles = Math.max(toFiniteNumber(allocatedSpindles), 0)
-  const multiplier = Number(shift) === 3 ? 7 : 8.5
-  const totalSpindles = Math.round((safeAllocatedSpindles / 8) * multiplier)
+  const totalSpindles = calculateSpinningNoOfSpindles(allocatedSpindles, time.totalTime, shift)
   const safeActCount = Math.max(toFiniteNumber(actCount), 0)
   const safeLossEfficiency = Math.max(toFiniteNumber(lossEfficiency), 0)
   const constant = safeActCount > 0

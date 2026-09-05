@@ -543,6 +543,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
                       placeholder="Type employee name..."
                       cleanCell
                       editingHighlight
+                      dialogMode
                       className="h-9 rounded-none text-sm w-full min-w-35"
                     />
                   </td>
