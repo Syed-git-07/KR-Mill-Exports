@@ -9,6 +9,29 @@ import { masterUuidSchema, spinningMachineCreateSchema, spinningMachineUpdateSch
 import { serializeData } from '@/lib/serialize'
 
 import * as queries from '@/lib/queries/spinningMachineQueries'
+import { getSpinningMasterEfficiency, setSpinningMasterEfficiency } from '@/lib/queries/spinningMachineDefaults'
+
+export async function getSpinningMasterEfficiencyAction() {
+  await requireUser()
+  try {
+    return { success: true, data: await getSpinningMasterEfficiency() }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
+
+export async function setSpinningMasterEfficiencyAction(percent) {
+  const user = await requireRole('ADMIN')
+  try {
+    const data = await executeAuditedMasterMutation({
+      user, action: 'UPDATE', resource: 'master.spinning-machine',
+      changes: { efficiencyPercent: percent }
+    }, () => setSpinningMasterEfficiency(percent))
+    return { success: true, data: Number(data.efficiency) }
+  } catch (error) {
+    return { success: false, error: safeActionError(error) }
+  }
+}
 
 export async function getSpinningMachinesAction() {
   await requireUser()

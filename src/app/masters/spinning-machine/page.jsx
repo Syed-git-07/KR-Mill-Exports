@@ -7,12 +7,16 @@ import { toast } from 'sonner';
 import { runBulkActions } from '@/lib/actionResults';
 import { useAuthUser } from '@/components/auth/AuthUserContext';
 import { Button } from '@/components/ui/button';
+import { NumberInput } from '@/components/ui/number-input';
+import { Label } from '@/components/ui/label';
 import SearchFilter from '@/components/common/SearchFilter';
 import DataGrid from '@/components/common/DataGrid';
 import FormModal from '@/components/common/FormModal';
 import SpinningMachineForm from '@/components/modules/masters/SpinningMachineForm';
 import {
   getSpinningMachinesAction,
+  getSpinningMasterEfficiencyAction,
+  setSpinningMasterEfficiencyAction,
   createSpinningMachineAction,
   updateSpinningMachineAction,
   deleteSpinningMachineAction,
@@ -32,6 +36,37 @@ export default function SpinningMachineMaster() {
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [selectedRows, setSelectedRows] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
+  const [efficiencyPercent, setEfficiencyPercent] = useState('');
+  const [efficiencyLoading, setEfficiencyLoading] = useState(true);
+  const [efficiencySaving, setEfficiencySaving] = useState(false);
+
+  useEffect(() => {
+    getSpinningMasterEfficiencyAction().then(result => {
+      if (!result.success) throw new Error(result.error);
+      setEfficiencyPercent(String(Math.round(result.data * 10000) / 100));
+    }).catch(error => toast.error(error.message || 'Failed to load efficiency'))
+      .finally(() => setEfficiencyLoading(false));
+  }, []);
+
+  const applyEfficiencyPercent = async () => {
+    const percent = Number(efficiencyPercent);
+    if (efficiencyPercent.trim() === '' || !Number.isFinite(percent) || percent < 0 || percent > 100) {
+      toast.error('Efficiency must be between 0 and 100');
+      return;
+    }
+    setEfficiencySaving(true);
+    try {
+      const result = await setSpinningMasterEfficiencyAction(percent);
+      if (!result.success) throw new Error(result.error);
+      const savedPercent = Math.round(result.data * 10000) / 100;
+      setEfficiencyPercent(String(savedPercent));
+      toast.success(`Efficiency saved at ${savedPercent}% for all machines in future entries.`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to save efficiency');
+    } finally {
+      setEfficiencySaving(false);
+    }
+  };
 
   const searchFields = [
     'machine_no',
@@ -333,6 +368,27 @@ export default function SpinningMachineMaster() {
       </div>
 
       {/* Search Filter */}
+      {canManageMasters && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <Label htmlFor="bulk-spinning-efficiency" className="font-semibold text-blue-900">Set Efficiency %</Label>
+          <NumberInput
+            id="bulk-spinning-efficiency"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={efficiencyPercent}
+            onChange={event => setEfficiencyPercent(event.target.value)}
+            disabled={efficiencyLoading || efficiencySaving}
+            className="w-24 bg-white text-center"
+          />
+          <Button type="button" onClick={applyEfficiencyPercent} disabled={efficiencyLoading || efficiencySaving} className="bg-blue-600 text-white hover:bg-blue-700">
+            {efficiencySaving ? 'Saving...' : 'Apply all'}
+          </Button>
+          <p className="text-sm text-blue-900">Applies to all machines in new entries. Existing entries keep their saved efficiency.</p>
+        </div>
+      )}
+
       <SearchFilter
         fields={searchFields}
         onSearch={handleSearch}

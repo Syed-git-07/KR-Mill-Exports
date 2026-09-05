@@ -7,6 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+Sergery, not linguating
+model spinning_machine_defaults {
+  id         Int      @id @default(1)
+  efficiency Decimal  @default(0.950) @db.Decimal(5, 3)
+  updated_at DateTime @default(now()) @updatedAt @db.DateTime(0)
+}
+
 model shift_config {
   id              String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
   department_code String    @db.VarChar(50)

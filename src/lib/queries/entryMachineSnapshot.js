@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { getSpinningMasterEfficiency } from './spinningMachineDefaults'
 import { buildSpinningCountSnapshot } from '@/lib/countMasterSnapshots'
 import { machineAvailableOnDateWhere, machineIdentifierWhere } from '@/lib/machineLifecycle'
 
@@ -383,6 +384,9 @@ export async function addMachineToEntrySnapshot(moduleName, headerId, {
 
     const requestedOverrides = selectSetupOverrides(models, setupOverrides)
     const masterDefaults = selectSetupOverrides(models, buildSetupFromMachineMaster(moduleName, machine, header))
+    if (moduleName === 'spinning') {
+      masterDefaults.efficiency = await getSpinningMasterEfficiency(tx)
+    }
     const requestedStructure = Object.fromEntries(
       Object.entries(requestedOverrides).filter(
         ([field, value]) => ENTRY_STRUCTURE_FIELDS.has(field) && present(value)

@@ -175,7 +175,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
   const [countChangeDialog, setCountChangeDialog] = useState(false)
   const [newCountId, setNewCountId] = useState('')
   const [countRunMinutes, setCountRunMinutes] = useState('')
-  const [bulkEfficiencyPercent, setBulkEfficiencyPercent] = useState('95')
 
   // Option check (carry-forward from a selected earlier entry)
   const [optionCheck, setOptionCheck] = useState({
@@ -415,31 +414,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
       }
       return row
     }))
-  }
-
-  const applyEfficiencyPercent = () => {
-    const percent = Number(bulkEfficiencyPercent)
-    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-      toast.error('Efficiency must be between 0 and 100')
-      return
-    }
-
-    const efficiency = percent / 100
-    setEditedRows(previous => {
-      const next = { ...previous }
-      setupData.forEach(row => {
-        const machineId = row.machine_id ?? row.machine?.id
-        next[row.id] = {
-          ...next[row.id],
-          setup_id: row.id,
-          ...(machineId ? { machine_id: machineId } : {}),
-          efficiency
-        }
-      })
-      return next
-    })
-    setSetupData(previous => previous.map(row => ({ ...row, efficiency })))
-    toast.success(`Efficiency staged at ${percent}% for this entry. Click Update to save.`)
   }
 
   // Handle row selection
@@ -1091,25 +1065,6 @@ const SpinningMachineSetupTab = forwardRef(function SpinningMachineSetupTab({
               disabled={isSaving || isLoadingOptionSource || !hasOptionSelected}
             >
               Check
-            </Button>
-        </div>
-        <div
-          className="flex shrink-0 items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5"
-          title="Applies to every machine in this entry only. Click Update to save."
-        >
-            <Label htmlFor="bulk-spinning-efficiency" className="whitespace-nowrap text-xs">Set Effi. %</Label>
-            <NumberInput
-              id="bulk-spinning-efficiency"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={bulkEfficiencyPercent}
-              onChange={(event) => setBulkEfficiencyPercent(event.target.value)}
-              className="h-8 w-20 text-center text-xs"
-            />
-            <Button type="button" size="sm" onClick={applyEfficiencyPercent} disabled={isSaving} className="bg-blue-600 text-white hover:bg-blue-700">
-              Apply all
             </Button>
         </div>
         <div className="flex shrink-0 items-center gap-2">

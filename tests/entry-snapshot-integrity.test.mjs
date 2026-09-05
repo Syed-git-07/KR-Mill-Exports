@@ -203,9 +203,8 @@ test('Spinning entry efficiency is date-shift scoped and drives Expected GPS onl
   const stoppage = read('src/components/modules/post-preparatory/spinning/SpinningStoppageTab.jsx')
   const formulas = read('src/lib/productionFormulaMath.js')
 
-  assert.match(setup, /Set Effi\. %/)
-  assert.match(setup, /const efficiency = percent \/ 100/)
-  assert.match(setup, /Click Update to save/)
+  assert.doesNotMatch(setup, /bulk-spinning-efficiency/)
+  assert.match(setup, /handleInputChange\(row.id, 'efficiency', Number\(event.target.value\) \/ 100\)/)
   assert.match(production, /calculateSpinningLossEfficiency/)
   assert.match(stoppage, /calculateSpinningLossEfficiency/)
   assert.match(production, /efficiency:\s*setup\.efficiency \?\? 0\.95/)

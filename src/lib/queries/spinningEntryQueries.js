@@ -18,7 +18,7 @@ import {
 import { machineAvailableOnDateWhere, machineLookupWhere } from '../machineLifecycle'
 import { findPreviousEntrySetupSnapshot } from './dateScopedMachineSetup'
 
-const DEFAULT_SPINNING_EFFICIENCY_FACTOR = 0.95
+import { getSpinningMasterEfficiency } from './spinningMachineDefaults'
 
 const isProvided = value => value !== null && value !== undefined && value !== ''
 
@@ -1257,6 +1257,8 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
       return existingSetups.filter(setup => setup.is_included)
     }
 
+    const masterEfficiency = await getSpinningMasterEfficiency()
+
     const previousSnapshot = await findPreviousEntrySetupSnapshot({
       headerModel: prisma.spinning_production_header,
       setupModel: prisma.spinning_machine_setup,
@@ -1339,7 +1341,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
             ),
             session_no: 1,
             run_time: targetShiftTime,
-            efficiency: DEFAULT_SPINNING_EFFICIENCY_FACTOR,
+            efficiency: masterEfficiency,
             conversion_factor: 2.20456
           }
         })
@@ -1353,7 +1355,7 @@ export async function getOrCreateSpinningMachineSetups(entryDate, shift = 1) {
           allocated_spindles: firstProvidedNumber([machine.allocated_spindles], 1104),
           session_no: 1,
           run_time: targetShiftTime,
-          efficiency: DEFAULT_SPINNING_EFFICIENCY_FACTOR,
+          efficiency: masterEfficiency,
           conversion_factor: 2.20456
         }))
     
@@ -1633,6 +1635,7 @@ export async function upsertSpinningMachineSetup(machineId, entryDate, setupData
         machine_id: machineId,
         entry_date: dateObj,
         shift: shiftNum,
+        efficiency: await getSpinningMasterEfficiency(tx),
         ...prepared.data,
         is_included: true
       }
@@ -2274,7 +2277,7 @@ export async function addSpinningMachine(machineData) {
         allocated_spindles: firstProvidedNumber([masterAllocatedSpindles], 1104),
         session_no: toFiniteNumber(session_no, 1),
         run_time: run_time ?? resolveSpinningShiftFallbackTime(activeShift),
-        efficiency: toFiniteNumber(efficiency, 0.95)
+        efficiency: toFiniteNumber(efficiency, await getSpinningMasterEfficiency())
       })
     }
 
