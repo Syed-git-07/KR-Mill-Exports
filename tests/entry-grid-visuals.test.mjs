@@ -53,7 +53,7 @@ test('entry grid CSS distinguishes editable and fixed cells without replacing al
   assert.match(css, /button\[role="combobox"\]:not\(:disabled\)/)
   assert.match(css, /\.entry-data-grid tbody tr:nth-child\(odd\) > td/)
   assert.match(css, /\.entry-data-grid tbody tr:nth-child\(even\) > td/)
-  assert.match(css, /border-color: #94a3b8 !important/)
+  assert.match(css, /border-color: #cbd5e1 !important/)
   assert.match(css, /text-align: center !important/)
   assert.doesNotMatch(css, /\.entry-data-grid[^}]*text-red-600/)
 })

@@ -182,88 +182,158 @@ div[class*="overflow-x-auto"][class*="overflow-y-auto"]
 /*
  * Shared visual language for production-entry grids.
  *
- * - Warm, alternating cells identify displayed/calculated values.
- * - Pale-blue cells identify controls the operator can edit.
- * - Existing semantic utilities (GPS alerts, selected/edited rows, totals,
- *   etc.) remain authoritative because this sits in the component layer.
+ * Faint pink reference rows, blue editors and white results separate columns.
+ * Dark values take priority over decorative text colors. Selection is
+ * separate from hover and unsaved edits. Keep this unlayered so individual
+ * cell background utilities cannot interrupt the full-row highlight.
  */
-@layer components {
-  .entry-data-grid {
-    color: #172033;
-  }
+.entry-data-grid {
+  color: #172033;
+  --entry-gutter-width: 1.25rem;
+}
 
-  .entry-data-grid :is(th, td) {
-    vertical-align: middle;
-    border-color: #94a3b8 !important;
-  }
+.entry-workspace .entry-grid-frame {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background: #fff;
+  overflow: hidden;
+}
 
-  .entry-data-grid thead th {
-    border-color: #93c5fd !important;
-    box-shadow: inset -1px 0 0 rgb(30 64 175 / 65%), 0 1px 0 #1d4ed8;
-  }
+/* A generated, empty table cell reserves a gutter outside the data cells.
+   It adds no DOM cell, editor or tab stop, preserving keyboard navigation
+   and checkbox/action targets. Sticky positioning keeps it visible while
+   scrolling horizontally; normal table layout aligns it with each row. */
+.entry-data-grid tr::before {
+  content: "";
+  display: table-cell;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: var(--entry-gutter-width);
+  min-width: var(--entry-gutter-width);
+  padding: 0;
+  border: 0;
+  border-right: 1px solid #cbd5e1;
+  background: #fff center / 8px 10px no-repeat;
+  pointer-events: none;
+}
 
-  .entry-data-grid tbody tr:nth-child(odd) > td {
-    background-color: #fff7ed;
-  }
+.entry-data-grid tbody tr[data-entry-selected="true"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 10'%3E%3Cpath fill='%234b6f98' d='M1 0 8 5 1 10Z'/%3E%3C/svg%3E");
+}
 
-  .entry-data-grid tbody tr:nth-child(even) > td {
-    background-color: #fff1f2;
-  }
+.entry-data-grid thead tr::before {
+  z-index: 32;
+}
 
-  .entry-data-grid tbody td:has(
-    input:not(:disabled):not([readonly]),
-    textarea:not(:disabled):not([readonly]),
-    select:not(:disabled),
-    button[role="combobox"]:not(:disabled)
-  ) {
-    background-color: #eff6ff;
-  }
+.entry-data-grid > thead {
+  background-color: #fff;
+}
 
-  .entry-data-grid tbody td:has(
-    input:not(:disabled):not([readonly]):focus,
-    textarea:not(:disabled):not([readonly]):focus,
-    select:not(:disabled):focus,
-    button[role="combobox"][data-state="open"]
-  ) {
-    background-color: #dbeafe;
-  }
+.entry-data-grid :is(th, td) {
+  vertical-align: middle;
+  border-color: #cbd5e1 !important;
+}
 
-  .entry-data-grid tbody tr.bg-yellow-50 > td {
-    background-color: #fefce8;
-  }
+.entry-workspace .entry-grid-scroll .entry-data-grid > thead.sticky > tr > th {
+  color: #fff;
+  background-color: #2563eb;
+  border-color: #779bea !important;
+  box-shadow: 0 1px 0 #1d4ed8;
+}
 
-  .entry-data-grid tbody tr.bg-blue-100 > td {
-    background-color: #dbeafe;
-  }
+/* The arrow gutter precedes the first data cell, so round the blue header
+   itself as well as the outer frame. Clipping also works on collapsed tables. */
+.entry-data-grid thead th:first-child {
+  clip-path: inset(0 round 0.375rem 0 0 0);
+}
 
-  .entry-data-grid tbody tr:hover > td {
-    background-color: #eff6ff;
-  }
+.entry-data-grid thead th:last-child {
+  clip-path: inset(0 round 0 0.375rem 0 0);
+}
 
-  .entry-data-grid tbody tr[data-entry-selected="true"] > td {
-    background-color: #eff6ff;
-  }
+.entry-data-grid tbody tr:nth-child(odd) > td {
+  background-color: var(--entry-row-background, #fff);
+}
 
-  /* Keep the existing pale-yellow draft indication visible on hover and
-     selection. The blue edge distinguishes selected rows even when edited. */
-  .entry-data-grid tbody tr[data-entry-modified="true"] > td {
-    background-color: #fefce8;
-  }
+.entry-data-grid tbody tr:nth-child(even) > td {
+  background-color: var(--entry-row-background, #fff8fa);
+}
 
-  .entry-data-grid tbody tr[data-entry-selected="true"] > td:first-child {
-    box-shadow: inset 3px 0 0 #60a5fa;
-  }
+/* Keep calculated values on white to reduce large blocks of color.
+   Editable numeric controls below still receive the light blue editor tint. */
+.entry-data-grid tbody td:is(.tabular-nums, :has(input[type="number"][readonly])) {
+  background-color: var(--entry-row-background, #fff);
+}
 
-  .entry-data-grid tbody td > :is(input, textarea, select, button[role="combobox"]) {
-    background-color: transparent;
-  }
+.entry-data-grid tbody td:has(
+  input:not(:disabled):not([readonly]),
+  textarea:not(:disabled):not([readonly]),
+  select:not(:disabled),
+  button[role="combobox"]:not(:disabled)
+) {
+  background-color: var(--entry-row-background, #f3f7fc);
+}
 
-  .entry-data-grid :is(th, td).text-right,
-  .entry-data-grid td > :is(input, textarea).text-right {
-    /* Entry grids use centered numeric columns. Tailwind utilities are emitted
-       in a later cascade layer, so this must remain authoritative. */
-    text-align: center !important;
-  }
+.entry-data-grid tbody tr:hover {
+  --entry-row-background: #eaf0f6;
+}
+
+.entry-data-grid tbody tr[data-entry-selected="true"] {
+  --entry-row-background: #dce9f8;
+}
+
+.entry-data-grid tbody tr[data-entry-selected="true"] > td {
+  box-shadow: inset 0 1px 0 #93afd0, inset 0 -1px 0 #93afd0;
+}
+
+/* Unsaved edits use a fine amber rule rather than another full-row fill.
+   Selection remains the same blue before and after editing. */
+.entry-data-grid tbody tr[data-entry-modified="true"] > td {
+  box-shadow: inset 0 -1px 0 #c6a564;
+}
+
+.entry-data-grid tbody tr[data-entry-modified="true"][data-entry-selected="true"] > td {
+  box-shadow: inset 0 1px 0 #93afd0, inset 0 -1px 0 #c6a564;
+}
+
+.entry-data-grid tbody td > :is(input, textarea, select, button[role="combobox"]) {
+  background-color: transparent;
+}
+
+/* Replace the bright orange editor fill, including nested autocompletes,
+   with a light surface and a precise focus outline. Dialogs are portalled
+   outside the table and keep their own styling. */
+.entry-data-grid tbody td :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select, button[role="combobox"]):focus {
+  color: #172033;
+  background-color: #f8fbff;
+  outline: 0;
+  box-shadow: inset 0 0 0 2px #7898bb;
+}
+
+.entry-data-grid tbody td :is(input, textarea)::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+.entry-data-grid tbody td :focus-within > svg,
+.entry-data-grid tbody td button[role="combobox"]:focus > :is(span, svg) {
+  color: #475569;
+}
+
+/* Routine values use dark ink; efficiency and validation status colors
+   remain meaningful and readable. These rules never reach portal dialogs. */
+.entry-data-grid tbody :is(.text-blue-600, .text-blue-700, .text-purple-600, .text-orange-600, .text-orange-700) {
+  color: #293747;
+}
+.entry-data-grid tbody .text-green-600 { color: #315f49; }
+.entry-data-grid tbody .text-yellow-600 { color: #86621f; }
+
+.entry-data-grid :is(th, td).text-right,
+.entry-data-grid td > :is(input, textarea).text-right {
+  /* Entry grids use centered numeric columns. Tailwind utilities are emitted
+     in a later cascade layer, so this must remain authoritative. */
+  text-align: center !important;
 }
 
 /* Print Styles */
