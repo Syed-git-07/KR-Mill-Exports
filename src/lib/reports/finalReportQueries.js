@@ -7,11 +7,11 @@ import { generateSpinningStoppageReport } from '@/lib/queries/spinningStoppageRe
 import { getAutoconerStoppagePercentageReport } from '@/app/reports/autoconer/stoppage-percentage/autoconerStoppagePercentageQueries'
 
 const PREPARATORY_DEPARTMENTS = [
-  { label: 'CARDING', model: 'carding', machineModel: 'carding_machines', effi: 'effi_percent', std: 'std_prodn' },
-  { label: 'BREAKER DRAWING', model: 'breaker_drawing', machineModel: 'drawing_breaker_machines', effi: 'effi_percent', std: 'std_prodn' },
-  { label: 'LAP FORMER', model: 'lap_former', machineModel: 'lap_former_machines', effi: 'effi_percent', std: 'std_prodn' },
+  { label: 'CARDING', model: 'carding', machineModel: 'carding_machines', effi: 'effi_percent', std: 'exp_prodn' },
+  { label: 'BREAKER DRAWING', model: 'breaker_drawing', machineModel: 'drawing_breaker_machines', effi: 'effi_percent', std: 'exp_prodn' },
+  { label: 'LAP FORMER', model: 'lap_former', machineModel: 'lap_former_machines', effi: 'effi_percent', std: 'exp_prodn' },
   { label: 'COMBER', model: 'comber', machineModel: 'comber_machines', effi: 'act_effi_percent', std: 'std_hrs' },
-  { label: 'FINISHER DRAWING', model: 'finisher_drawing', machineModel: 'drawing_finisher_machines', effi: 'effi_percent', std: 'std_prodn' },
+  { label: 'FINISHER DRAWING', model: 'finisher_drawing', machineModel: 'drawing_finisher_machines', effi: 'effi_percent', std: 'exp_prodn' },
   { label: 'SIMPLEX', model: 'simplex', machineModel: 'simplex_machines', effi: 'act_effi_percent', std: 'std_hrs' }
 ]
 
@@ -69,10 +69,10 @@ async function supervisorMap(ids) {
   return getProductionSupervisorDisplayMap(ids)
 }
 
-async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = false, includeStoppageDetails = false } = {}) {
+async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = false, includeStoppageDetails = false, shift = null } = {}) {
   const departmentResults = await Promise.all(PREPARATORY_DEPARTMENTS.map(async department => {
     const headers = await prisma[`${department.model}_production_header`].findMany({
-      where: { entry_date: { gte: fromDate, lte: toDate } },
+      where: { entry_date: { gte: fromDate, lte: toDate }, ...(shift == null ? {} : { shift }) },
       select: { id: true, entry_date: true, shift: true, supervisor_id: true },
       orderBy: [{ entry_date: 'asc' }, { shift: 'asc' }]
     })
@@ -84,6 +84,7 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
       work_time: true, [department.effi]: true, [department.std]: true
     }
     if (department.model !== 'comber') select.run_time = true
+    if (department.model === 'simplex') select.run_min = true
     if (department.model !== 'simplex') select.act_hank = true
     if (department.model !== 'simplex') select.total_stoppage_mins = true
 
@@ -134,10 +135,14 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
         detailId: detail.id,
         employeeId: detail.payroll_employee_id,
         employeeName: detail.employee_name || '',
-        hank: includeSimplexHank && department.model === 'simplex'
-          ? n(simplexSetupByKey.get(`${detail.machine_id}|${dateKey(header.entry_date)}|${header.shift}|${detail.run_sequence}`)?.sl_hank)
+        hank: department.model === 'simplex'
+          ? (includeSimplexHank
+            ? n(simplexSetupByKey.get(`${detail.machine_id}|${dateKey(header.entry_date)}|${header.shift}|${detail.run_sequence}`)?.sl_hank)
+            : n(detail.std_hrs) / 60)
           : n(detail.act_hank),
-        standard: n(detail[department.std]),
+        standard: department.model === 'simplex' && !includeSimplexHank
+          ? n(detail.run_min) / 60
+          : n(detail[department.std]) / (department.std === 'std_hrs' ? 60 : 1),
         production: n(detail.act_prodn),
         efficiency: n(detail[department.effi]),
         utilization: n(detail.uti_percent),
@@ -159,7 +164,7 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
     payrollEmployeeMap(rawRecords.map(record => record.employeeId)),
     includeStoppageDetails && stoppageIds.length ? prisma.stoppage_details.findMany({
       where: { id: { in: stoppageIds } },
-      select: { id: true, short_code: true, code: true }
+      select: { id: true, short_code: true, code: true, stoppage_name: true }
     }) : []
   ])
   const stoppageCodeById = new Map(stoppageDetails.map(detail => [detail.id, detail.short_code || String(detail.code)]))
@@ -180,6 +185,10 @@ async function getPreparatoryRecords(fromDate, toDate, { includeSimplexHank = fa
       employeeIdentity: identity,
       identityStatus: identity.identityStatus,
       employeeName: identity.displayName,
+      stoppageLegend: record.stoppageSlots.map(slot => {
+        const detail = stoppageDetails.find(item => item.id === slot.id)
+        return detail ? `${detail.stoppage_name}-${stoppageCodeById.get(slot.id)}` : null
+      }).filter(Boolean),
       stoppage
     }
   })
@@ -189,6 +198,11 @@ function weighted(rows, field) {
   const weight = rows.reduce((sum, row) => sum + row.production, 0)
   if (weight > 0) return rows.reduce((sum, row) => sum + row[field] * row.production, 0) / weight
   return rows.length ? rows.reduce((sum, row) => sum + row[field], 0) / rows.length : 0
+}
+
+// Template shift totals average the stored machine/run percentages, not kilograms.
+function preparatoryAverage(rows, field) {
+  return rows.length ? rows.reduce((sum, row) => sum + n(row[field]), 0) / rows.length : 0
 }
 
 function spinningGps(rows) {
@@ -230,6 +244,7 @@ async function preparatoryAbstract(fromDate, toDate) {
   })
   report.template = 'preparatory-abstract'
   report.referenceDate = shortDisplayDate(toDate)
+  report.periodLabel = dateKey(fromDate) === dateKey(toDate) ? '' : periodText(fromDate, toDate)
   report.signatures = ['AM(P)', 'GM', 'M.D']
   report.meta.push(['Up To', periodText(uptoFrom, toDate)])
   report.tables.push({
@@ -289,6 +304,7 @@ async function preparatoryAbstract(fromDate, toDate) {
 
 async function preparatoryParticularSider(fromDate, toDate, employeeId) {
   const report = baseReport('Preparatory Particular Sider Report', fromDate, toDate)
+  report.signatures = ['AM(P)', 'DGM', 'DIRECTOR']
   const payrollId = Number(employeeId)
   const records = (await getPreparatoryRecords(fromDate, toDate)).filter(row => Number(row.employeeId) === payrollId)
   const masters = await payrollEmployeeMap([payrollId])
@@ -300,19 +316,28 @@ async function preparatoryParticularSider(fromDate, toDate, employeeId) {
     recordsByDepartment.get(record.department).push(record)
   }
   for (const [department, departmentRecords] of recordsByDepartment) {
+    const shifts = new Map()
+    for (const row of departmentRecords) {
+      const key = `${dateKey(row.date)}|${row.shift}`
+      if (!shifts.has(key)) shifts.set(key, [])
+      shifts.get(key).push(row)
+    }
     report.tables.push({
       title: department,
       columns: ['Date', 'Shift', 'Effi %', 'UTTI %', 'Waste %'],
-      rows: departmentRecords.map(row => [displayDate(row.date), row.shift, fixed(row.efficiency), fixed(row.utilization), fixed(row.wastePercent)]),
+      rows: [...shifts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, rows]) => [displayDate(rows[0].date), rows[0].shift, fixed(preparatoryAverage(rows, 'efficiency')), fixed(preparatoryAverage(rows, 'utilization')), fixed(weighted(rows, 'wastePercent'))]),
       footer: ['TOTAL', '', fixed(weighted(departmentRecords, 'efficiency')), fixed(weighted(departmentRecords, 'utilization')), fixed(weighted(departmentRecords, 'wastePercent'))]
     })
   }
   return report
 }
 
-async function preparatoryShiftProduction(fromDate, toDate) {
+async function preparatoryShiftProduction(fromDate, toDate, employeeId, selectedShift = null) {
   const report = baseReport('Preparatory Shift Wise Production Report', fromDate, toDate, 'landscape')
-  const records = await getPreparatoryRecords(fromDate, toDate, { includeStoppageDetails: true })
+  report.signatures = ['AM(P)', 'DGM', 'DIRECTOR']
+  const records = await getPreparatoryRecords(fromDate, toDate, { includeStoppageDetails: true, shift: selectedShift })
+  if (selectedShift != null) report.meta.push(['Shift', selectedShift])
+  report.notes = [...new Set(records.flatMap(row => row.stoppageLegend))].sort()
   const supervisors = await supervisorMap(records.map(row => row.supervisorId))
   const groups = new Map()
   for (const row of records) {
@@ -320,14 +345,20 @@ async function preparatoryShiftProduction(fromDate, toDate) {
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(row)
   }
-  for (const [key, rows] of groups) {
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
+    const [aDate, aShift, aDepartment] = a.split('|')
+    const [bDate, bShift, bDepartment] = b.split('|')
+    return aDate.localeCompare(bDate) || Number(aShift) - Number(bShift)
+      || PREPARATORY_DEPARTMENTS.findIndex(dept => dept.label === aDepartment) - PREPARATORY_DEPARTMENTS.findIndex(dept => dept.label === bDepartment)
+  })
+  for (const [key, rows] of orderedGroups) {
     const [date, shift, department] = key.split('|')
     const supervisor = supervisors.get(rows[0].supervisorId) || 'Not Assigned'
     report.tables.push({
       title: `${department} - ${displayDate(date)} - Shift ${shift} - ${supervisor}`,
       columns: ['MC No', 'Sider Name', 'Hank', 'Std. Hk / Prod', 'Prod Kgs', 'Effi %', 'UTTI %', 'Stoppage'],
       rows: rows.sort((a, b) => a.sortOrder - b.sortOrder || a.machineNo.localeCompare(b.machineNo, undefined, { numeric: true })).map(row => [row.machineNo, row.employeeName, fixed(row.hank), fixed(row.standard), fixed(row.production), fixed(row.efficiency), fixed(row.utilization), row.stoppage]),
-      footer: ['TOTAL', '', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.standard, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(weighted(rows, 'efficiency')), fixed(weighted(rows, 'utilization')), fixed(rows.reduce((s, r) => s + r.stoppageTotal, 0), 0)]
+      footer: ['TOTAL', '', fixed(rows.reduce((s, r) => s + r.hank, 0)), fixed(rows.reduce((s, r) => s + r.standard, 0)), fixed(rows.reduce((s, r) => s + r.production, 0)), fixed(preparatoryAverage(rows, 'efficiency')), fixed(preparatoryAverage(rows, 'utilization')), '']
     })
   }
   return report
@@ -806,11 +837,16 @@ const REPORT_BUILDERS = {
   'spinning-stoppage-abstract': spinningStoppageAbstract
 }
 
-export async function buildFinalReport(reportKey, fromDate, toDate, employeeId = null) {
+export async function buildFinalReport(reportKey, fromDate, toDate, employeeId = null, shift = null) {
   const builder = REPORT_BUILDERS[reportKey]
   if (!builder) throw new Error('Unknown report type')
   const normalizedFrom = reportDate(fromDate, 'From date')
   const normalizedTo = reportDate(toDate, 'To date')
   if (normalizedFrom > normalizedTo) throw new Error('From date cannot be after To date')
+  if (reportKey === 'preparatory-shift-production') {
+    const selectedShift = shift == null || shift === '' ? null : Number(shift)
+    if (selectedShift != null && ![1, 2, 3].includes(selectedShift)) throw new Error('Select a valid shift')
+    return builder(normalizedFrom, normalizedTo, employeeId, selectedShift)
+  }
   return builder(normalizedFrom, normalizedTo, employeeId)
 }

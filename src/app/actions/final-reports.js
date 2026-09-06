@@ -10,7 +10,7 @@ function reportDate(value) {
   return new Date(`${value}T00:00:00.000Z`)
 }
 
-export async function generateFinalReportAction(reportKey, from, to, employeeId = null) {
+export async function generateFinalReportAction(reportKey, from, to, employeeId = null, shift = null) {
   await requireUser()
   try {
     const config = getFinalReportConfig(reportKey)
@@ -22,7 +22,7 @@ export async function generateFinalReportAction(reportKey, from, to, employeeId 
     const fromDate = reportDate(from)
     const toDate = reportDate(to)
     if (fromDate > toDate) return { success: false, error: 'From date cannot be after To date' }
-    const report = await buildFinalReport(reportKey, fromDate, toDate, payrollEmployeeId)
+    const report = await buildFinalReport(reportKey, fromDate, toDate, payrollEmployeeId, shift)
     return { success: true, data: report }
   } catch (error) {
     console.error(`Failed to generate ${reportKey}:`, error)

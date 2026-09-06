@@ -37,7 +37,7 @@ export default function PreparatorySiderPerformanceReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generatePreparatorySiderPerformanceReportAction(fromDate, toDate)
+      const result = await generatePreparatorySiderPerformanceReportAction(format(fromDate, 'yyyy-MM-dd'), format(toDate, 'yyyy-MM-dd'))
       
       if (result.success) {
         setReportData(result.data)
@@ -158,7 +158,7 @@ export default function PreparatorySiderPerformanceReportPage() {
       
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      const signatoriesText = 'AM(P)          GM          MD'
+      const signatoriesText = 'AM(P)          DGM          DIRECTOR'
       doc.text(signatoriesText, pageWidth / 2, yPosition, { align: 'center' })
 
       // Generate filename with date
@@ -378,8 +378,8 @@ export default function PreparatorySiderPerformanceReportPage() {
               <div className="text-center mt-8 pt-4 border-t print:border-black">
                 <p className="text-sm font-semibold space-x-20">
                   <span>AM(P)</span>
-                  <span>GM</span>
-                  <span>MD</span>
+                  <span>DGM</span>
+                  <span>DIRECTOR</span>
                 </p>
               </div>
             </div>

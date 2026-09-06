@@ -110,8 +110,6 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
     emp.totalWastePercent += wastePercent
     emp.metricWeight += production
     emp.recordCount++
-    emp.weightedEfficiency = (emp.weightedEfficiency || 0) + (Number(detail[effiField]) || 0) * production
-    emp.weightedUtilization = (emp.weightedUtilization || 0) + (Number(detail.uti_percent) || 0) * production
     emp.weightedWaste = (emp.weightedWaste || 0) + (Number(detail.waste_percent) || 0) * production
   })
 
@@ -128,14 +126,14 @@ async function getDepartmentEmployeePerformance(departmentCode, fromDate, toDate
       employeeCode: master?.employee_code || '-',
       doj: master?.doj ? new Date(master.doj).toISOString() : null,
       productionKgs: parseFloat(emp.totalProduction.toFixed(2)),
-      efficiencyPercent: parseFloat(average(emp.weightedEfficiency, emp.totalEfficiency).toFixed(2)),
-      utilizationPercent: parseFloat(average(emp.weightedUtilization, emp.totalUtilization).toFixed(2)),
+      efficiencyPercent: parseFloat((emp.recordCount ? emp.totalEfficiency / emp.recordCount : 0).toFixed(2)),
+      utilizationPercent: parseFloat((emp.recordCount ? emp.totalUtilization / emp.recordCount : 0).toFixed(2)),
       wastePercent: parseFloat(average(emp.weightedWaste, emp.totalWastePercent).toFixed(2))
     }
   })
 
-  // Sort by production descending
-  employees.sort((a, b) => b.productionKgs - a.productionKgs)
+  // The template lists names alphabetically within each department.
+  employees.sort((a, b) => a.name.localeCompare(b.name) || String(a.tokenNo).localeCompare(String(b.tokenNo), undefined, { numeric: true }) || (a.payrollEmployeeId || 0) - (b.payrollEmployeeId || 0))
 
   return employees
 }

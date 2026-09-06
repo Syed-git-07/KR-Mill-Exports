@@ -54,6 +54,11 @@ function createPreparatoryAbstractPdf(report) {
   doc.text(report.referenceDate || '', 105, 19)
 
   let y = 25
+  if (report.periodLabel) {
+    doc.setFontSize(7)
+    doc.text(`Period totals: ${report.periodLabel}`, 25, 23)
+    y = 28
+  }
   for (const table of report.tables || []) {
     doc.setDrawColor(255, 0, 0)
     doc.setLineWidth(0.6)

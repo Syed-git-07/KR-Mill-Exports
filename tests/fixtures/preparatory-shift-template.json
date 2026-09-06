@@ -1,0 +1,489 @@
+{
+  "source": "PREPARATORY SHIFT WISE PRODUCTION REPORT.pdf, 05-05-2025, Shift 1",
+  "departments": {
+    "CARDING": [
+      {
+        "machine": "CA1",
+        "hank": 50.87,
+        "standard": 179.44,
+        "production": 177.48,
+        "efficiency": 98.91,
+        "utilization": 60.78
+      },
+      {
+        "machine": "CA2",
+        "hank": 21.28,
+        "standard": 75.25,
+        "production": 74.26,
+        "efficiency": 98.68,
+        "utilization": 25.49
+      },
+      {
+        "machine": "CA3",
+        "hank": 46.85,
+        "standard": 164.97,
+        "production": 163.47,
+        "efficiency": 99.09,
+        "utilization": 55.88
+      },
+      {
+        "machine": "CA4",
+        "hank": 48.75,
+        "standard": 167.87,
+        "production": 170.1,
+        "efficiency": 101.33,
+        "utilization": 56.86
+      },
+      {
+        "machine": "CA5",
+        "hank": 47.75,
+        "standard": 167.87,
+        "production": 166.62,
+        "efficiency": 99.26,
+        "utilization": 56.86
+      },
+      {
+        "machine": "CA6",
+        "hank": 48.0,
+        "standard": 167.87,
+        "production": 167.47,
+        "efficiency": 99.76,
+        "utilization": 56.86
+      },
+      {
+        "machine": "CA7",
+        "hank": 49.4,
+        "standard": 167.87,
+        "production": 172.37,
+        "efficiency": 102.68,
+        "utilization": 56.86
+      },
+      {
+        "machine": "CA8",
+        "hank": 48.43,
+        "standard": 167.87,
+        "production": 168.99,
+        "efficiency": 100.67,
+        "utilization": 56.86
+      },
+      {
+        "machine": "CA9",
+        "hank": 48.83,
+        "standard": 167.87,
+        "production": 170.36,
+        "efficiency": 101.48,
+        "utilization": 56.86
+      },
+      {
+        "machine": "CA10",
+        "hank": 33.77,
+        "standard": 121.56,
+        "production": 117.83,
+        "efficiency": 96.93,
+        "utilization": 41.18
+      },
+      {
+        "machine": "CA11",
+        "hank": 69.26,
+        "standard": 234.44,
+        "production": 224.4,
+        "efficiency": 95.72,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA12",
+        "hank": 68.71,
+        "standard": 234.44,
+        "production": 222.64,
+        "efficiency": 94.97,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA13",
+        "hank": 67.68,
+        "standard": 234.44,
+        "production": 236.13,
+        "efficiency": 100.72,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA14",
+        "hank": 67.27,
+        "standard": 234.44,
+        "production": 234.72,
+        "efficiency": 100.12,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA15",
+        "hank": 67.45,
+        "standard": 234.44,
+        "production": 235.34,
+        "efficiency": 100.38,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA16",
+        "hank": 67.93,
+        "standard": 234.44,
+        "production": 237.01,
+        "efficiency": 101.1,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA17",
+        "hank": 67.89,
+        "standard": 234.44,
+        "production": 219.97,
+        "efficiency": 93.83,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA18",
+        "hank": 67.62,
+        "standard": 234.44,
+        "production": 235.91,
+        "efficiency": 100.63,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA19",
+        "hank": 68.73,
+        "standard": 234.44,
+        "production": 222.69,
+        "efficiency": 94.99,
+        "utilization": 79.41
+      },
+      {
+        "machine": "CA20",
+        "hank": 58.51,
+        "standard": 211.28,
+        "production": 204.15,
+        "efficiency": 96.63,
+        "utilization": 71.57
+      },
+      {
+        "machine": "CA21",
+        "hank": 48.0,
+        "standard": 164.97,
+        "production": 167.49,
+        "efficiency": 101.53,
+        "utilization": 55.88
+      },
+      {
+        "machine": "CA22",
+        "hank": 22.12,
+        "standard": 83.93,
+        "production": 77.17,
+        "efficiency": 91.95,
+        "utilization": 28.43
+      }
+    ],
+    "BREAKER DRAWING": [
+      {
+        "machine": "BD1",
+        "hank": 48.56,
+        "standard": 322.76,
+        "production": 314.68,
+        "efficiency": 97.5,
+        "utilization": 19.61
+      },
+      {
+        "machine": "BD2",
+        "hank": 273.77,
+        "standard": 968.27,
+        "production": 887.05,
+        "efficiency": 91.61,
+        "utilization": 70.59
+      },
+      {
+        "machine": "BD3",
+        "hank": 340.5,
+        "standard": 1102.76,
+        "production": 1103.26,
+        "efficiency": 100.05,
+        "utilization": 80.39
+      },
+      {
+        "machine": "BD4",
+        "hank": 400.02,
+        "standard": 1291.03,
+        "production": 1296.12,
+        "efficiency": 100.39,
+        "utilization": 94.12
+      }
+    ],
+    "LAP FORMER": [
+      {
+        "machine": "LF1",
+        "hank": 26.44,
+        "standard": 1469.47,
+        "production": 1462.64,
+        "efficiency": 99.54,
+        "utilization": 39.22
+      },
+      {
+        "machine": "LF2",
+        "hank": 13.07,
+        "standard": 716.36,
+        "production": 723.02,
+        "efficiency": 100.93,
+        "utilization": 25.49
+      },
+      {
+        "machine": "LF3",
+        "hank": 25.63,
+        "standard": 1432.73,
+        "production": 1417.83,
+        "efficiency": 98.96,
+        "utilization": 50.98
+      }
+    ],
+    "COMBER": [
+      {
+        "machine": "CO1",
+        "hank": 76.02,
+        "standard": 6.39,
+        "production": 246.31,
+        "efficiency": 100.95,
+        "utilization": 83.33
+      },
+      {
+        "machine": "CO2",
+        "hank": 87.17,
+        "standard": 7.24,
+        "production": 282.44,
+        "efficiency": 100.51,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO3",
+        "hank": 79.42,
+        "standard": 7.18,
+        "production": 257.33,
+        "efficiency": 99.15,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO4",
+        "hank": 54.16,
+        "standard": 5.01,
+        "production": 175.49,
+        "efficiency": 95.19,
+        "utilization": 66.67
+      },
+      {
+        "machine": "CO5",
+        "hank": 63.06,
+        "standard": 6.16,
+        "production": 204.32,
+        "efficiency": 85.12,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO6",
+        "hank": 92.51,
+        "standard": 6.38,
+        "production": 299.74,
+        "efficiency": 90.1,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO7",
+        "hank": 30.71,
+        "standard": 2.45,
+        "production": 99.5,
+        "efficiency": 90.98,
+        "utilization": 38.24
+      },
+      {
+        "machine": "CO8",
+        "hank": 31.56,
+        "standard": 2.4,
+        "production": 102.26,
+        "efficiency": 95.58,
+        "utilization": 35.29
+      },
+      {
+        "machine": "CO9",
+        "hank": 70.95,
+        "standard": 6.52,
+        "production": 229.89,
+        "efficiency": 93.27,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO10",
+        "hank": 75.1,
+        "standard": 7.22,
+        "production": 243.33,
+        "efficiency": 100.06,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO11",
+        "hank": 93.14,
+        "standard": 7.09,
+        "production": 301.79,
+        "efficiency": 100.28,
+        "utilization": 90.2
+      },
+      {
+        "machine": "CO12",
+        "hank": 99.39,
+        "standard": 7.29,
+        "production": 322.04,
+        "efficiency": 101.64,
+        "utilization": 93.14
+      },
+      {
+        "machine": "CO13",
+        "hank": 106.41,
+        "standard": 7.19,
+        "production": 344.78,
+        "efficiency": 101.51,
+        "utilization": 91.18
+      }
+    ],
+    "FINISHER DRAWING": [
+      {
+        "machine": "FD4",
+        "hank": 171.88,
+        "standard": 571.47,
+        "production": 556.93,
+        "efficiency": 97.46,
+        "utilization": 84.31
+      },
+      {
+        "machine": "FD5",
+        "hank": 153.42,
+        "standard": 505.02,
+        "production": 497.1,
+        "efficiency": 98.43,
+        "utilization": 74.51
+      },
+      {
+        "machine": "FD6",
+        "hank": 84.29,
+        "standard": 279.09,
+        "production": 273.11,
+        "efficiency": 97.86,
+        "utilization": 41.18
+      },
+      {
+        "machine": "FD7",
+        "hank": 99.47,
+        "standard": 318.96,
+        "production": 322.3,
+        "efficiency": 101.05,
+        "utilization": 47.06
+      },
+      {
+        "machine": "FD8",
+        "hank": 158.93,
+        "standard": 505.02,
+        "production": 514.95,
+        "efficiency": 101.97,
+        "utilization": 74.51
+      },
+      {
+        "machine": "FD9",
+        "hank": 139.53,
+        "standard": 465.15,
+        "production": 452.09,
+        "efficiency": 97.19,
+        "utilization": 68.63
+      },
+      {
+        "machine": "FD10",
+        "hank": 145.08,
+        "standard": 491.73,
+        "production": 470.08,
+        "efficiency": 95.6,
+        "utilization": 72.55
+      }
+    ],
+    "SIMPLEX": [
+      {
+        "machine": "1",
+        "hank": 1.07,
+        "standard": 1.05,
+        "production": 56.81,
+        "efficiency": 97.83,
+        "utilization": 13.73
+      },
+      {
+        "machine": "2",
+        "hank": 7.05,
+        "standard": 6.53,
+        "production": 353.48,
+        "efficiency": 92.63,
+        "utilization": 90.2
+      },
+      {
+        "machine": "3",
+        "hank": 7.59,
+        "standard": 7.57,
+        "production": 423.11,
+        "efficiency": 99.69,
+        "utilization": 97.06
+      },
+      {
+        "machine": "4",
+        "hank": 5.98,
+        "standard": 6.03,
+        "production": 261.46,
+        "efficiency": 100.89,
+        "utilization": 76.47
+      },
+      {
+        "machine": "5",
+        "hank": 5.83,
+        "standard": 5.58,
+        "production": 317.85,
+        "efficiency": 95.82,
+        "utilization": 74.51
+      },
+      {
+        "machine": "6",
+        "hank": 7.67,
+        "standard": 7.6,
+        "production": 332.12,
+        "efficiency": 99.13,
+        "utilization": 98.04
+      },
+      {
+        "machine": "7",
+        "hank": 5.98,
+        "standard": 5.95,
+        "production": 285.18,
+        "efficiency": 99.5,
+        "utilization": 76.47
+      },
+      {
+        "machine": "8",
+        "hank": 5.98,
+        "standard": 5.93,
+        "production": 284.38,
+        "efficiency": 99.22,
+        "utilization": 76.47
+      },
+      {
+        "machine": "9",
+        "hank": 7.82,
+        "standard": 7.78,
+        "production": 360.95,
+        "efficiency": 99.53,
+        "utilization": 100.0
+      },
+      {
+        "machine": "10",
+        "hank": 7.36,
+        "standard": 7.15,
+        "production": 304.62,
+        "efficiency": 97.15,
+        "utilization": 94.12
+      }
+    ]
+  }
+}

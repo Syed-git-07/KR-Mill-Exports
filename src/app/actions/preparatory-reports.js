@@ -23,13 +23,13 @@ export async function generatePreparatoryStoppageReportAction(fromDate, toDate) 
     
     // Create date-only values for MySQL DATE comparison (no timezone conversion)
     // Extract year, month, day and create new Date in UTC
-    const fromYear = from.getFullYear()
-    const fromMonth = from.getMonth()
-    const fromDay = from.getDate()
+    const fromYear = from.getUTCFullYear()
+    const fromMonth = from.getUTCMonth()
+    const fromDay = from.getUTCDate()
     
-    const toYear = to.getFullYear()
-    const toMonth = to.getMonth()
-    const toDay = to.getDate()
+    const toYear = to.getUTCFullYear()
+    const toMonth = to.getUTCMonth()
+    const toDay = to.getUTCDate()
     
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
@@ -87,13 +87,13 @@ export async function generatePreparatoryWasteReportAction(fromDate, toDate) {
     
     // Create date-only values for MySQL DATE comparison (no timezone conversion)
     // Extract year, month, day and create new Date in UTC
-    const fromYear = from.getFullYear()
-    const fromMonth = from.getMonth()
-    const fromDay = from.getDate()
+    const fromYear = from.getUTCFullYear()
+    const fromMonth = from.getUTCMonth()
+    const fromDay = from.getUTCDate()
     
-    const toYear = to.getFullYear()
-    const toMonth = to.getMonth()
-    const toDay = to.getDate()
+    const toYear = to.getUTCFullYear()
+    const toMonth = to.getUTCMonth()
+    const toDay = to.getUTCDate()
     
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))
@@ -129,13 +129,13 @@ export async function generatePreparatorySiderPerformanceReportAction(fromDate, 
     
     // Create date-only values for MySQL DATE comparison (no timezone conversion)
     // Extract year, month, day and create new Date in UTC
-    const fromYear = from.getFullYear()
-    const fromMonth = from.getMonth()
-    const fromDay = from.getDate()
+    const fromYear = from.getUTCFullYear()
+    const fromMonth = from.getUTCMonth()
+    const fromDay = from.getUTCDate()
     
-    const toYear = to.getFullYear()
-    const toMonth = to.getMonth()
-    const toDay = to.getDate()
+    const toYear = to.getUTCFullYear()
+    const toMonth = to.getUTCMonth()
+    const toDay = to.getUTCDate()
     
     // Create dates at midnight UTC to match MySQL DATE storage
     const normalizedFrom = new Date(Date.UTC(fromYear, fromMonth, fromDay, 0, 0, 0))

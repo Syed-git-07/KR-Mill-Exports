@@ -90,9 +90,9 @@ function getUpToDateRange(selectedDate) {
   const date = new Date(selectedDate)
   
   // Start of month in UTC
-  const startOfMonth = new Date(Date.UTC(date.getFullYear(), date.getMonth(), 1, 0, 0, 0))
+  const startOfMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0))
   
-  const selectedDayEnd = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59))
+  const selectedDayEnd = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59))
   
   return { from: startOfMonth, to: selectedDayEnd }
 }

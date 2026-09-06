@@ -64,7 +64,8 @@ async function getDepartmentStoppageData(
       select: {
         id: true,
         entry_date: true,
-        shift: true
+        shift: true,
+        total_time: true
       }
     }),
     prisma.shift_config.findMany({
@@ -86,7 +87,7 @@ async function getDepartmentStoppageData(
 
   // Get all production details for these headers
   const headerIds = headers.map(h => h.id)
-  const detailSelect = { id: true, header_id: true }
+  const detailSelect = { id: true, header_id: true, machine_id: true }
   if (tablePrefix !== 'comber') detailSelect.run_time = true
   const details = await prisma[`${tablePrefix}_production_detail`].findMany({
     where: {
@@ -156,17 +157,24 @@ async function getDepartmentStoppageData(
   
   // Track unique shift times (to avoid counting same machine multiple times)
   const shiftTimeTracker = {}
+  const countedComberMachines = new Set()
 
   // Every production detail contributes to available machine time, including
   // details that correctly have no stoppage-entry row.
   details.forEach(detail => {
     const header = headerMap[detail.header_id]
     if (!header) return
+    // Comber has no per-run allocation field: count the recorded machine shift once.
+    if (tablePrefix === 'comber') {
+      const machineShift = `${detail.header_id}|${detail.machine_id}`
+      if (countedComberMachines.has(machineShift)) return
+      countedComberMachines.add(machineShift)
+    }
     const shiftKey = `shift_${header.shift}`
     if (!shiftTimeTracker[shiftKey]) {
       shiftTimeTracker[shiftKey] = { totalTime: 0 }
     }
-    shiftTimeTracker[shiftKey].totalTime += Number(detail.run_time ?? shiftTimeMap[header.shift] ?? 510) || 0
+    shiftTimeTracker[shiftKey].totalTime += Number(detail.run_time ?? header.total_time ?? shiftTimeMap[header.shift] ?? (Number(header.shift) === 3 ? 420 : 510)) || 0
   })
 
   stoppages.forEach(stoppage => {
@@ -180,19 +188,19 @@ async function getDepartmentStoppageData(
     // Process each of the 4 stoppage slots
     for (let i = 1; i <= 4; i++) {
       const stoppageId = stoppage[`stoppage${i}_id`]
-      const stoppageTime = stoppage[`stoppage${i}_time`] || 0
+      const stoppageTime = Number(stoppage[`stoppage${i}_time`]) || 0
 
       if (!stoppageId || stoppageTime === 0) continue
 
       const stoppageDetail = stoppageDetailMap[stoppageId]
-      if (!stoppageDetail) continue
+      if (!stoppageDetail) throw new Error('A historical stoppage reason is missing')
 
       const stoppageHead = stoppageHeadMap[stoppageDetail.stoppage_head_id]
-      if (!stoppageHead) continue
+      if (!stoppageHead) throw new Error('A historical stoppage category is missing')
 
       // Category name from database (already uppercase with periods)
       const categoryName = stoppageHead.stoppage_head_name
-      if (!categoryName || !CATEGORY_PREFIX[categoryName]) continue
+      if (!categoryName || !CATEGORY_PREFIX[categoryName]) throw new Error(`Unmapped stoppage category: ${categoryName || stoppageHead.id}`)
 
       const displayCategory = CATEGORY_DISPLAY_NAMES[categoryName] || categoryName
 
@@ -281,7 +289,7 @@ function aggregateStoppageData(records, shiftTimeTracker) {
 function calculatePercentages(aggregated) {
   const result = {}
 
-  Object.keys(aggregated).forEach(category => {
+  Object.keys(aggregated).sort().forEach(category => {
     result[category] = {
       reasons: [],
       categoryTotal: {
@@ -292,7 +300,7 @@ function calculatePercentages(aggregated) {
       }
     }
 
-    Object.keys(aggregated[category]).forEach(reason => {
+    Object.keys(aggregated[category]).sort().forEach(reason => {
       const data = aggregated[category][reason]
 
       const shift1Pct = data.shift1.shiftTime > 0 
@@ -321,6 +329,8 @@ function calculatePercentages(aggregated) {
       result[category].categoryTotal.total += totalPct
     })
 
+    // Keep full precision until the department net total has been calculated.
+    result[category].rawCategoryTotal = { ...result[category].categoryTotal }
     // Round category totals
     result[category].categoryTotal.shift1 = parseFloat(result[category].categoryTotal.shift1.toFixed(2))
     result[category].categoryTotal.shift2 = parseFloat(result[category].categoryTotal.shift2.toFixed(2))
@@ -345,7 +355,6 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
 
   const [stoppageDetails, stoppageHeads] = await Promise.all([
     prisma.stoppage_details.findMany({
-      where: { is_active: true },
       select: {
         id: true,
         stoppage_head_id: true,
@@ -354,7 +363,6 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
       }
     }),
     prisma.stoppage_heads.findMany({
-      where: { is_active: true },
       select: { id: true, stoppage_head_name: true }
     })
   ])
@@ -368,6 +376,7 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
     )
   )
 
+  let serialNumber = 1
   for (let index = 0; index < departments.length; index += 1) {
     const dept = departments[index]
     const outcome = results[index]
@@ -381,10 +390,12 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
       // Calculate department net total
       const netTotals = { shift1: 0, shift2: 0, shift3: 0, total: 0 }
       Object.values(percentages).forEach(categoryData => {
-        netTotals.shift1 += categoryData.categoryTotal.shift1
-        netTotals.shift2 += categoryData.categoryTotal.shift2
-        netTotals.shift3 += categoryData.categoryTotal.shift3
-        netTotals.total += categoryData.categoryTotal.total
+        netTotals.shift1 += categoryData.rawCategoryTotal.shift1
+        netTotals.shift2 += categoryData.rawCategoryTotal.shift2
+        netTotals.shift3 += categoryData.rawCategoryTotal.shift3
+        netTotals.total += categoryData.rawCategoryTotal.total
+        delete categoryData.rawCategoryTotal
+        categoryData.reasons.forEach(reason => { reason.serialNumber = serialNumber++ })
       })
 
       report.departments[dept.name] = {
@@ -397,13 +408,7 @@ export async function generatePreparatoryStoppageReport(fromDate, toDate) {
       }
     } catch(error) {
       console.error(`Error processing ${dept.name}:`, error)
-      report.departments[dept.name] = {
-        code: dept.code,
-        categories: {},
-        netTotal: 0,
-        netTotals: { shift1: 0, shift2: 0, shift3: 0, total: 0 },
-        error: 'This department could not be included in the report.'
-      }
+      throw new Error(`${dept.name} stoppage report is incomplete: ${error.message}`)
     }
   }
 

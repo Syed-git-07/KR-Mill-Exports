@@ -49,7 +49,7 @@ export default function PreparatoryWasteReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generatePreparatoryWasteReportAction(fromDate, toDate)
+      const result = await generatePreparatoryWasteReportAction(format(fromDate, 'yyyy-MM-dd'), format(toDate, 'yyyy-MM-dd'))
       
       if (result.success) {
         setReportData(result.data)
@@ -145,21 +145,6 @@ export default function PreparatoryWasteReportPage() {
       })
 
       yPosition = doc.lastAutoTable.finalY + 15
-
-      // Signatories
-      if (yPosition > 270) {
-        doc.addPage()
-        yPosition = 15
-      }
-      
-      yPosition = Math.max(yPosition, doc.internal.pageSize.height - 20)
-      doc.setLineWidth(0.3)
-      doc.line(14, yPosition - 5, pageWidth - 14, yPosition - 5)
-      
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      const signatoriesText = 'AM(P)          GM          MD'
-      doc.text(signatoriesText, pageWidth / 2, yPosition, { align: 'center' })
 
       // Generate filename with date
       const fromDateStr = format(new Date(reportData.period.from), 'dd-MM-yyyy')
@@ -339,14 +324,6 @@ export default function PreparatoryWasteReportPage() {
                 </table>
               </div>
 
-              {/* Signatories */}
-              <div className="text-center mt-8 pt-4 border-t print:border-black">
-                <p className="text-sm font-semibold space-x-20">
-                  <span>AM(P)</span>
-                  <span>GM</span>
-                  <span>MD</span>
-                </p>
-              </div>
             </div>
           </CardContent>
         </Card>

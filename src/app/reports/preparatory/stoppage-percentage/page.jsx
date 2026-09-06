@@ -46,7 +46,7 @@ export default function PreparatoryStoppageReportPage() {
 
     setIsLoading(true)
     try {
-      const result = await generatePreparatoryStoppageReportAction(fromDate, toDate)
+      const result = await generatePreparatoryStoppageReportAction(format(fromDate, 'yyyy-MM-dd'), format(toDate, 'yyyy-MM-dd'))
       
       if (result.success) {
         setReportData(result.data)
@@ -121,13 +121,13 @@ export default function PreparatoryStoppageReportPage() {
           yPosition += 5
 
           // Prepare table data
-          const tableData = categoryData.reasons.map((reasonData, idx) => {
+          const tableData = categoryData.reasons.map((reasonData) => {
             const displayReason = reasonData.reason.startsWith(prefix)
               ? reasonData.reason
               : `${prefix} ${reasonData.reason}`
             
             return [
-              idx + 1,
+              reasonData.serialNumber,
               displayReason,
               reasonData.shift1.toFixed(2),
               reasonData.shift2.toFixed(2),
@@ -377,7 +377,6 @@ export default function PreparatoryStoppageReportPage() {
                   {/* Categories */}
                   {Object.entries(deptData.categories).map(([category, categoryData]) => {
                     const prefix = CATEGORY_PREFIX[category] || 'XX'
-                    let slNo = 1
 
                     return (
                       <div key={category} className="space-y-2">
@@ -403,7 +402,7 @@ export default function PreparatoryStoppageReportPage() {
                               
                               return (
                                 <tr key={idx}>
-                                  <td className="border border-gray-300 px-2 py-1 text-center print:border-black">{slNo++}</td>
+                                  <td className="border border-gray-300 px-2 py-1 text-center print:border-black">{reasonData.serialNumber}</td>
                                   <td className="border border-gray-300 px-2 py-1 print:border-black">
                                     {displayReason}
                                   </td>

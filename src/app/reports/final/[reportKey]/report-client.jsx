@@ -40,13 +40,14 @@ export default function FinalReportClient({ reportKey, config }) {
   const [toDate, setToDate] = useState(today)
   const [employeeName, setEmployeeName] = useState('')
   const [employeeId, setEmployeeId] = useState(null)
+  const [shift, setShift] = useState('1')
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
 
   async function generate() {
     setLoading(true)
     try {
-      const result = await generateFinalReportAction(reportKey, fromDate, toDate, employeeId)
+      const result = await generateFinalReportAction(reportKey, fromDate, toDate, employeeId, reportKey === 'preparatory-shift-production' ? shift : null)
       if (!result.success) {
         setReport(null)
         toast.error(result.error || 'Unable to generate report')
@@ -78,6 +79,7 @@ export default function FinalReportClient({ reportKey, config }) {
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid gap-1 text-xs font-medium text-slate-600">From Date<input className="h-9 rounded-md border px-3 text-sm text-slate-900" type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-medium text-slate-600">To Date<input className="h-9 rounded-md border px-3 text-sm text-slate-900" type="date" value={toDate} onChange={event => setToDate(event.target.value)} /></label>
+          {reportKey === 'preparatory-shift-production' && <label className="grid gap-1 text-xs font-medium text-slate-600">Shift<select className="h-9 rounded-md border px-3 text-sm text-slate-900" value={shift} onChange={event => setShift(event.target.value)}><option value="">All shifts</option><option value="1">I Shift</option><option value="2">II Shift</option><option value="3">III Shift</option></select></label>}
           {config.requiresEmployee && <label className="grid min-w-64 flex-1 gap-1 text-xs font-medium text-slate-600">Sider<EmployeeAutocomplete value={employeeName} employeeId={employeeId} onChange={(name, employee) => { setEmployeeName(name); setEmployeeId(employee?.payroll_employee_id ?? null) }} placeholder="Search and select payroll employee" /></label>}
           <Button onClick={generate} disabled={loading || !fromDate || !toDate || (config.requiresEmployee && !employeeId)} className="h-9 bg-slate-900 hover:bg-slate-800"><Search className="mr-2 h-4 w-4" />{loading ? 'Generating...' : 'Generate'}</Button>
         </div>
@@ -90,6 +92,7 @@ export default function FinalReportClient({ reportKey, config }) {
           {report.template === 'preparatory-abstract' ? <div className="mb-5">
             <h2 className="text-center text-base font-bold text-slate-950">Kayaar Exports Private Limited</h2>
             <div className="mt-7 grid grid-cols-[1fr_1fr_1fr] text-xs font-bold text-slate-950"><span>Preparatory Hanks Abstract Report on</span><span className="text-center">{report.referenceDate}</span><span /></div>
+            {report.periodLabel && <p className="mt-2 text-xs">Period totals: {report.periodLabel}</p>}
           </div> : <div className="mb-4 text-center">
             <h2 className="text-lg font-bold tracking-wide text-slate-900">KAYAAR EXPORTS PRIVATE LIMITED</h2>
             <h3 className="mt-1 text-sm font-semibold uppercase text-slate-800">{report.title}</h3>
