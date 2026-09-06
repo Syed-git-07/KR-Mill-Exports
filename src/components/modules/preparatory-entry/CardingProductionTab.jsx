@@ -540,6 +540,7 @@ const CardingProductionTab = forwardRef(function CardingProductionTab({
                   </td>
                   <td className="border border-gray-300 px-0 py-0" data-row={index} data-col="emp_name">
                     <EmployeeAutocomplete
+                      departmentScope="preparatory"
                       value={row.employee_name || ''}
                       employeeId={row.payroll_employee_id}
                       onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}

@@ -22,6 +22,7 @@ function employeeReference(employee) {
 export default function EmployeeAutocomplete({ 
   value = '', 
   employeeId = null,
+  departmentScope = null,
   onChange, 
   placeholder = "Type employee name...",
   className = "",
@@ -59,7 +60,7 @@ export default function EmployeeAutocomplete({
     const requestSeq = ++requestSeqRef.current
     setIsLoading(true)
     try {
-      const result = await searchEmployeesAction(term, 50)
+      const result = await searchEmployeesAction(term, 50, departmentScope)
       if (requestSeq === requestSeqRef.current && result.success) {
         setEmployees(result.data || [])
       }
@@ -89,7 +90,7 @@ export default function EmployeeAutocomplete({
       setIsLoading(false)
     }
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }
-  }, [searchTerm, open])
+  }, [searchTerm, open, departmentScope])
 
   const applySelection = (employee) => {
     if (!employee) return

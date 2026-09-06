@@ -507,6 +507,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
+                        departmentScope="spinning"
                         value={row.sider1_name || ''}
                         employeeId={row.sider1_payroll_employee_id}
                         onChange={(value, employee) => handleEmployeeChange(row.id, 'sider1_name', value, employee)}
@@ -522,6 +523,7 @@ const SpinningProductionTab = forwardRef(function SpinningProductionTab({
                     </td>
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
+                        departmentScope="spinning"
                         value={row.sider2_name || ''}
                         employeeId={row.sider2_payroll_employee_id}
                         onChange={(value, employee) => handleEmployeeChange(row.id, 'sider2_name', value, employee)}

@@ -612,6 +612,7 @@ const LapFormerProductionTab = forwardRef(function LapFormerProductionTab({
                   </td>
                   <td className="border border-gray-300 px-0 py-0">
                     <EmployeeAutocomplete
+                      departmentScope="preparatory"
                       value={row.employee_name || ''}
                       employeeId={row.payroll_employee_id}
                       onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}

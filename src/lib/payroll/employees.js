@@ -5,7 +5,25 @@ import { formatPayrollEmployeeName, toPayrollEmployeeResponse } from './employee
 
 export { formatPayrollEmployeeName, toPayrollEmployeeResponse } from './employeeContract'
 
-export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
+const ENTRY_DEPARTMENTS = {
+  preparatory: [
+    'CARDING', 'BREAKER DRAWING', 'COMBER', 'FINISHER DRAWING', 'LAP FORMER', 'SIMPLEX',
+    'TCARDING', 'TLFORMERBD', 'TCOMBER', 'TFDRG', 'TSIMPLEX'
+  ],
+  autoconer: ['AUTOCONER', 'TAUTOCONER', 'AUTOCONER MAISTRY/WORKER TEACHER'],
+  spinning: [
+    'SPINNING', 'SPG SIDER', 'SPG DOFFER', 'SPINNING MAISTRY', 'SPINNING RELIVER',
+    'TSPINNING', 'TSPG SIDER', 'TSPG DOFFER'
+  ]
+}
+
+export async function searchPayrollEmployees(searchTerm = '', limit = 10, departmentScope = null) {
+  if (departmentScope !== null && !Object.hasOwn(ENTRY_DEPARTMENTS, departmentScope)) {
+    throw new Error('Invalid employee department scope.')
+  }
+  const departmentClause = departmentScope === null
+    ? Prisma.empty
+    : Prisma.sql`AND d.departmentname IN (${Prisma.join(ENTRY_DEPARTMENTS[departmentScope])})`
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(50, Number(limit))) : 10
   const term = String(searchTerm || '').trim()
   const companyId = getPayrollCompanyId()
@@ -54,13 +72,19 @@ export async function searchPayrollEmployees(searchTerm = '', limit = 10) {
     LEFT JOIN designations dg ON dg.id = e.designationId
     WHERE e.companyId = ${companyId}
       AND e.status = 'Active'
+    ${departmentClause}
     ${nameClause}
     ORDER BY ${priorityClause} e.firstName ASC, e.middleName ASC, e.lastName ASC,
       e.employeeCode ASC, e.biometricEnrollmentId ASC, e.id ASC
     LIMIT ${safeLimit}
   `
 
-  return (employees || []).map(toPayrollEmployeeResponse)
+  return (employees || []).map(employee => {
+    const result = toPayrollEmployeeResponse(employee)
+    // The eight production entry screens use scoped employee searches.
+    if (departmentScope !== null) result.emp_name = result.first_name
+    return result
+  })
 }
 
 export async function getPayrollEmployeesByIds(ids) {

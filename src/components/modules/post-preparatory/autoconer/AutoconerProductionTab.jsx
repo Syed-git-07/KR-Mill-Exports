@@ -488,6 +488,7 @@ const AutoconerProductionTab = forwardRef(function AutoconerProductionTab({
                     {/* Employee Name */}
                     <td className="border border-gray-300 px-0 py-0">
                       <EmployeeAutocomplete
+                        departmentScope="autoconer"
                         value={row.emp_name || ''}
                         employeeId={row.payroll_employee_id}
                         onChange={(value, employee) => handleEmployeeChange(row.id, value, employee)}

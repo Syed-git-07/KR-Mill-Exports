@@ -57,7 +57,7 @@ export async function preparePayrollEmployeeUpdate(updates, current, bindings) {
     }
 
     prepared[idField] = Number(employee.id)
-    prepared[nameField] = String(employee.emp_name || '').trim()
+    prepared[nameField] = String(employee.first_name || '').trim()
   }
 
   return prepared
