@@ -1561,7 +1561,7 @@ export async function getStoppageDetails() {
 
 // Get supervisors
 export async function getSupervisors() {
-  return getActiveProductionSupervisors()
+  return getActiveProductionSupervisors('preparatory')
 }
 
 // Get mixing options

@@ -1116,7 +1116,7 @@ export async function getSimplexStoppageReasons() {
 
 // Get all supervisors
 export async function getSupervisors() {
-  return getActiveProductionSupervisors()
+  return getActiveProductionSupervisors('preparatory')
 }
 
 // ============================================

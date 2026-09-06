@@ -1174,7 +1174,7 @@ export async function getAutoconerSpinningCounts() {
 
 // Get supervisors
 export async function getSupervisors() {
-  return getActiveProductionSupervisors()
+  return getActiveProductionSupervisors('autoconer')
 }
 
 // Get stoppage details for autoconer department (with category from stoppage_heads)

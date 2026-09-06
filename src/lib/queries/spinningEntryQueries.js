@@ -2089,12 +2089,12 @@ export async function searchSpinningStoppageReasons(searchTerm = '', limit = 20)
 
 // Get supervisors
 export async function getSupervisors() {
-  return getActiveProductionSupervisors()
+  return getActiveProductionSupervisors('spinning')
 }
 
 // Get maisitries
 export async function getMaisitries() {
-  const data = await getActiveProductionSupervisors()
+  const data = await getActiveProductionSupervisors('spinning')
   return data.map(item => ({ ...item, maisitry_name: item.supervisor_name }))
 }
 

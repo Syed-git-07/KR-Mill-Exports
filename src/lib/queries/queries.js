@@ -1,3 +1,4 @@
+import { PRODUCTION_DEPARTMENT_NAMES } from '../productionDepartments'
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { softDeleteMasterRecord } from './masterSoftDelete';
@@ -10,6 +11,7 @@ import { softDeleteMasterRecord } from './masterSoftDelete';
 export async function getDepartments() {
   try {
     const data = await prisma.departments.findMany({
+      where: { dept_name: { in: PRODUCTION_DEPARTMENT_NAMES } },
       select: {
         id: true,
         code: true,
@@ -97,7 +99,7 @@ export async function searchDepartments(field, condition, value) {
     });
 
     const data = await prisma.departments.findMany({
-      where: whereClause,
+      where: { AND: [whereClause, { dept_name: { in: PRODUCTION_DEPARTMENT_NAMES } }] },
       select: {
         id: true,
         code: true,

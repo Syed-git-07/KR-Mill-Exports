@@ -1,4 +1,5 @@
 import { prisma } from '../prisma'
+import { PRODUCTION_DEPARTMENTS } from '../productionDepartments'
 import { getPayrollEmployeesByIds } from '../payroll/employees'
 import { resolveHistoricalEmployeeIdentity } from '../payroll/historicalEmployeeIdentity'
 
@@ -39,9 +40,11 @@ export async function validateProductionSupervisorUpdate(updates) {
   return updates
 }
 
-export async function getActiveProductionSupervisors() {
+export async function getActiveProductionSupervisors(departmentScope) {
+  if (!Object.hasOwn(PRODUCTION_DEPARTMENTS, departmentScope)) throw new Error('Invalid supervisor department scope.')
   const assignments = await prisma.supervisors.findMany({
     where: {
+      departments: { dept_name: PRODUCTION_DEPARTMENTS[departmentScope], is_active: true },
       is_active: true,
       payroll_employee_id: { not: null }
     },

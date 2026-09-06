@@ -1,3 +1,4 @@
+import { PRODUCTION_DEPARTMENT_NAMES } from '../productionDepartments'
 import { prisma } from '../prisma';
 import { buildTypedSearchWhere } from '../masterSearch';
 import { findActivePayrollEmployeeById, getPayrollEmployeesByIds } from '../payroll/employees';
@@ -148,7 +149,8 @@ export async function getDepartmentsForDropdown() {
   // MySQL stores boolean as TINYINT, so is_active = true works correctly
   const data = await prisma.departments.findMany({
     where: { 
-      is_active: true 
+      is_active: true,
+      dept_name: { in: PRODUCTION_DEPARTMENT_NAMES }
     },
     select: {
       id: true,

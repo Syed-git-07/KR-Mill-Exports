@@ -1,3 +1,4 @@
+import { PRODUCTION_DEPARTMENT_NAMES } from '../productionDepartments'
 import { prisma } from '../prisma'
 import { buildTypedSearchWhere } from '../masterSearch'
 import { softDeleteMasterRecord } from './masterSoftDelete'
@@ -260,7 +261,7 @@ export async function getStoppageHeadsForDropdown() {
  */
 export async function getDepartmentsForDropdown() {
   const data = await prisma.departments.findMany({
-    where: { is_active: true },
+    where: { is_active: true, dept_name: { notIn: PRODUCTION_DEPARTMENT_NAMES } },
     select: {
       id: true,
       dept_name: true

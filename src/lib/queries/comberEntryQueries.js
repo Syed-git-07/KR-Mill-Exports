@@ -1236,7 +1236,7 @@ export async function syncNewMachinesToComberHeader(headerId, shift = null) {
 
 // Get all supervisors
 export async function getSupervisors() {
-  return getActiveProductionSupervisors()
+  return getActiveProductionSupervisors('preparatory')
 }
 
 // ============================================
